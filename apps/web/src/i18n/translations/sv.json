@@ -12509,5 +12509,15 @@
   "0f67ed3159fc7567": "{completed}/{total} klara",
   "363f6e6a0b0388ea": "Fäll ihop",
   "a6a838f6a8fb04aa": "Deluppgifter",
-  "12e035e7051a9f6f": "Det finns inga deluppgifter i den här konversationen."
+  "12e035e7051a9f6f": "Det finns inga deluppgifter i den här konversationen.",
+  "e433aad7944c364a": "Kategorier",
+  "02debf1da8e06e67": "Ny kategori",
+  "31211956cda3570b": "Kategorinamn",
+  "64a6fba3b76f523d": "Skapa kategori",
+  "73a60f140a9cd46d": "Flytta till kategori",
+  "ebbd20e3f8e244dc": "Okategoriserade",
+  "6544ef31a9c5ca12": "Det gick inte att spara sidofältets kategorier",
+  "3b6d302da910fc44": "Kompakta rader i sidofältet",
+  "19d4420ffc705df6": "Använd kompakta rader i sidofältets kategorier. Dra trådar till kompositören för att referera till dem, eller använd trådmenyn för att ändra kategorier eller fästa dem.",
+  "6330b8f1c4bf8e1e": "beta enkel sidofält kategorier mappar kompakt klassiskt sidofält"
 }

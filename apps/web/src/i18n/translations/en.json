@@ -12511,5 +12511,15 @@
   "0f67ed3159fc7567": "{completed}/{total} done",
   "363f6e6a0b0388ea": "Collapse",
   "a6a838f6a8fb04aa": "Subtasks",
-  "12e035e7051a9f6f": "No subtasks in this conversation."
+  "12e035e7051a9f6f": "No subtasks in this conversation.",
+  "e433aad7944c364a": "Categories",
+  "02debf1da8e06e67": "New category",
+  "31211956cda3570b": "Category name",
+  "64a6fba3b76f523d": "Create category",
+  "73a60f140a9cd46d": "Move to category",
+  "ebbd20e3f8e244dc": "Uncategorized",
+  "6544ef31a9c5ca12": "Could not save sidebar categories",
+  "3b6d302da910fc44": "Compact sidebar rows",
+  "19d4420ffc705df6": "Use compact rows in sidebar categories. Drag threads to the composer to reference them, or use the thread menu to change categories or pin them.",
+  "6330b8f1c4bf8e1e": "beta boring sidebar categories folders compact classic sidebar"
 }

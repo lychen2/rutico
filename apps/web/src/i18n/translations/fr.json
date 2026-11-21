@@ -12502,5 +12502,15 @@
   "0f67ed3159fc7567": "{completed}/{total} terminées",
   "363f6e6a0b0388ea": "Réduire",
   "a6a838f6a8fb04aa": "Sous-tâches",
-  "12e035e7051a9f6f": "Cette conversation ne contient aucune sous-tâche."
+  "12e035e7051a9f6f": "Cette conversation ne contient aucune sous-tâche.",
+  "e433aad7944c364a": "Catégories",
+  "02debf1da8e06e67": "Nouvelle catégorie",
+  "31211956cda3570b": "Nom de la catégorie",
+  "64a6fba3b76f523d": "Créer la catégorie",
+  "73a60f140a9cd46d": "Déplacer vers la catégorie",
+  "ebbd20e3f8e244dc": "Non catégorisé",
+  "6544ef31a9c5ca12": "Impossible d’enregistrer les catégories de la barre latérale",
+  "3b6d302da910fc44": "Lignes compactes de la barre latérale",
+  "19d4420ffc705df6": "Utilisez des lignes compactes dans les catégories de la barre latérale. Faites glisser les fils vers le compositeur pour les référencer, ou utilisez le menu du fil pour modifier les catégories ou les épingler.",
+  "6330b8f1c4bf8e1e": "bêta barre latérale sobre catégories dossiers barre latérale compacte classique"
 }

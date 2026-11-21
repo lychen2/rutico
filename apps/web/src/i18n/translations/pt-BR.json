@@ -12502,5 +12502,15 @@
   "0f67ed3159fc7567": "{completed}/{total} concluídas",
   "363f6e6a0b0388ea": "Recolher",
   "a6a838f6a8fb04aa": "Subtarefas",
-  "12e035e7051a9f6f": "Não há subtarefas nesta conversa."
+  "12e035e7051a9f6f": "Não há subtarefas nesta conversa.",
+  "e433aad7944c364a": "Categorias",
+  "02debf1da8e06e67": "Nova categoria",
+  "31211956cda3570b": "Nome da categoria",
+  "64a6fba3b76f523d": "Criar categoria",
+  "73a60f140a9cd46d": "Mover para a categoria",
+  "ebbd20e3f8e244dc": "Sem categoria",
+  "6544ef31a9c5ca12": "Não foi possível salvar as categorias da barra lateral",
+  "3b6d302da910fc44": "Linhas compactas da barra lateral",
+  "19d4420ffc705df6": "Use linhas compactas nas categorias da barra lateral. Arraste threads para o compositor para referenciá-las ou use o menu da thread para mudar categorias ou fixá-las.",
+  "6330b8f1c4bf8e1e": "beta barra lateral simples categorias pastas compacta barra lateral clássica"
 }

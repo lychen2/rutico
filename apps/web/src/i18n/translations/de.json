@@ -12502,5 +12502,15 @@
   "0f67ed3159fc7567": "{completed}/{total} erledigt",
   "363f6e6a0b0388ea": "Einklappen",
   "a6a838f6a8fb04aa": "Unteraufgaben",
-  "12e035e7051a9f6f": "In dieser Unterhaltung gibt es keine Unteraufgaben."
+  "12e035e7051a9f6f": "In dieser Unterhaltung gibt es keine Unteraufgaben.",
+  "e433aad7944c364a": "Kategorien",
+  "02debf1da8e06e67": "Neue Kategorie",
+  "31211956cda3570b": "Kategoriename",
+  "64a6fba3b76f523d": "Kategorie erstellen",
+  "73a60f140a9cd46d": "In Kategorie verschieben",
+  "ebbd20e3f8e244dc": "Nicht kategorisiert",
+  "6544ef31a9c5ca12": "Seitenleistenkategorien konnten nicht gespeichert werden",
+  "3b6d302da910fc44": "Kompakte Seitenleistenzeilen",
+  "19d4420ffc705df6": "Kompakte Zeilen in Seitenleistenkategorien verwenden. Ziehe Threads in den Composer, um sie zu referenzieren, oder ändere Kategorien bzw. pinne sie über das Thread-Menü.",
+  "6330b8f1c4bf8e1e": "Beta Seitenleiste Kategorien Ordner kompakt klassische Seitenleiste"
 }
