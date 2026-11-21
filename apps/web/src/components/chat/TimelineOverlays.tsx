@@ -20,36 +20,37 @@ export function WorkspaceFileDropOverlay() {
   );
 }
 
-/**
- * Sits `bottom` pixels up, clear of the composer and its attached banners. The summary names
- * what waits at the end of the timeline, which is out of view while it shows.
- */
+/** Without a separate timeline clearance the button shares the todo row's centerline. */
 export function ScrollToEndButton(props: {
-  readonly bottom: number;
+  readonly bottom?: number;
   readonly summary: string | null;
   readonly onScrollToEnd: () => void;
 }) {
+  const button = (
+    <Button
+      data-scroll-to-end="true"
+      onPointerDown={(event) => event.preventDefault()}
+      onClick={props.onScrollToEnd}
+      className="pointer-events-auto"
+      size="icon-sm-pill"
+      variant="glass"
+    >
+      <ChevronDownIcon aria-hidden className="size-4" />
+      <span className="sr-only">
+        <T>Scroll to end</T>
+        {props.summary === null ? null : ` · ${props.summary}`}
+      </span>
+    </Button>
+  );
+  if (props.bottom === undefined) {
+    return <div className="absolute inset-y-0 end-0 flex items-center">{button}</div>;
+  }
   return (
     <div
       className="chat-scroll-to-bottom chat-composer-lane pointer-events-none absolute z-30 flex justify-center py-1.5"
       style={{ bottom: props.bottom }}
     >
-      <div className="flex w-full max-w-(--chat-content-max-width) justify-end">
-        <Button
-          data-scroll-to-end="true"
-          onPointerDown={(event) => event.preventDefault()}
-          onClick={props.onScrollToEnd}
-          className="pointer-events-auto"
-          size="icon-sm-pill"
-          variant="glass"
-        >
-          <ChevronDownIcon aria-hidden className="size-4" />
-          <span className="sr-only">
-            <T>Scroll to end</T>
-            {props.summary === null ? null : ` · ${props.summary}`}
-          </span>
-        </Button>
-      </div>
+      <div className="flex w-full max-w-(--chat-content-max-width) justify-end">{button}</div>
     </div>
   );
 }

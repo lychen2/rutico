@@ -3712,7 +3712,7 @@ export default function ChatView(props: ChatViewProps) {
                 />
               </WorkspaceMutationIdContext>
 
-              {showScrollToBottom && !isThreadFindActive && (
+              {showScrollToBottom && !isThreadFindActive && !hasOmpTodo && (
                 <ScrollToEndButton
                   bottom={scrollToEndClearance + 4}
                   summary={scrollToEndSummary}
@@ -3744,7 +3744,17 @@ export default function ChatView(props: ChatViewProps) {
                   data-chat-composer-stack="true"
                   className="group/composer-stack pointer-events-auto relative z-10 mx-auto w-full max-w-(--chat-content-max-width)"
                 >
-                  {hasOmpTodo ? <ThreadOmpTodo key={routeThreadKey} progress={ompTodo} /> : null}
+                  {hasOmpTodo ? (
+                    <div className="relative mb-2 px-11">
+                      <ThreadOmpTodo key={routeThreadKey} progress={ompTodo} />
+                      {showScrollToBottom && !isThreadFindActive && (
+                        <ScrollToEndButton
+                          summary={scrollToEndSummary}
+                          onScrollToEnd={() => scrollToEnd(true)}
+                        />
+                      )}
+                    </div>
+                  ) : null}
                   {isDraftHeroState ? (
                     <div className="absolute inset-x-0 bottom-full">
                       <div

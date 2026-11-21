@@ -101,7 +101,7 @@ export function ThreadOmpTodo({ progress }: { readonly progress: OmpTodoProgress
   };
 
   return (
-    <section aria-label={label} className="relative z-20 mx-auto mb-2 w-fit max-w-full">
+    <section aria-label={label} className="relative z-20 mx-auto w-fit max-w-full">
       <Collapsible>
         <CollapsibleTrigger
           aria-label={[

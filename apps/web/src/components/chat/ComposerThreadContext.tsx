@@ -3,12 +3,10 @@ import type { OrchestrationV2Run, TurnTokenUsage } from "@t3tools/contracts";
 import { formatDuration } from "@t3tools/shared/orchestrationTiming";
 import * as DateTime from "effect/DateTime";
 import { msg, useGT, useLocale, useMessages } from "gt-react";
-import { ChevronUpIcon } from "lucide-react";
+import { ChevronDownIcon } from "lucide-react";
 
 import { tickTextContent } from "~/lib/tickTextContent";
-import { Button } from "../ui/button";
 import { Popover, PopoverPopup, PopoverTitle, PopoverTrigger } from "../ui/popover";
-import "./composerStatusGlass.css";
 
 const runStatusLabels = {
   preparing: msg("Preparing"),
@@ -56,6 +54,10 @@ export function ComposerThreadContext({
   const cacheRead = modelUsage?.cachedInputTokens;
   const cacheWrite = modelUsage?.cacheCreationTokens;
   const total = input !== undefined && output !== undefined ? input + output : null;
+  const rate =
+    output !== undefined && startMs !== null && endMs !== null && endMs > startMs
+      ? ((output * 1000) / (endMs - startMs)).toLocaleString(locale, { maximumFractionDigits: 1 })
+      : null;
   const cachePercent =
     input !== undefined && input > 0 && cacheRead !== undefined
       ? Math.round((cacheRead / input) * 100)
@@ -64,46 +66,71 @@ export function ComposerThreadContext({
   return (
     <div className="relative flex justify-center px-2 pt-1">
       <Popover>
-        <PopoverTrigger render={<Button variant="ghost" size="sm" data-composer-status-glass />}>
-          <span className="flex items-center gap-1.5 font-medium">
+        <PopoverTrigger
+          render={
+            <button
+              type="button"
+              className="group flex min-h-7 max-w-full flex-wrap items-center justify-center gap-x-2 rounded-sm px-1 text-xs text-muted-foreground tabular-nums hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring"
+            />
+          }
+        >
+          <span className="flex items-center gap-1.5">
             <span
               aria-hidden
-              className="grid size-3 shrink-0 place-items-center rounded-full border border-current/50"
-              style={
-                percent === null
-                  ? undefined
-                  : { background: `conic-gradient(currentColor ${percent}%, transparent 0)` }
+              className={
+                running ? "size-1.5 rounded-full bg-success" : "size-1.5 rounded-full bg-current"
               }
-            >
-              {percent === null ? null : <span className="size-2 rounded-full bg-background" />}
-            </span>
+            />
             {run === null
               ? gt("Context", { $context: "context window row label" })
               : gt("Round {round}", { round: run.ordinal.toLocaleString(locale) })}
           </span>
-          {status !== undefined ? <span>{resolve(runStatusLabels[status])}</span> : null}
+          {status !== undefined ? (
+            <span className="sr-only">{resolve(runStatusLabels[status])}</span>
+          ) : null}
           {stepCount !== null ? (
             <span>{gt("{steps, plural, one {# step} other {# steps}}", { steps: stepCount })}</span>
           ) : null}
-          {startMs !== null ? (
-            endMs !== null ? (
-              <span>{formatDuration(Math.max(0, endMs - startMs))}</span>
-            ) : running ? (
-              <span
-                ref={tickTextContent((nowMs) => formatDuration(Math.max(0, nowMs - startMs)), true)}
-              />
-            ) : null
-          ) : null}
+          {rate !== null && <span>· {rate} tok/s</span>}
           {total !== null ? (
-            <span>{gt("{tokens} tokens", { tokens: total.toLocaleString(locale) })}</span>
+            <span className="border-s ps-2">
+              {gt("{tokens} tokens", { tokens: total.toLocaleString(locale) })}
+            </span>
           ) : null}
           {cachePercent !== null ? (
             <span>{gt("Cache {percent}%", { percent: cachePercent })}</span>
           ) : null}
-          <ChevronUpIcon aria-hidden className="size-3 shrink-0" />
+          <ChevronDownIcon
+            aria-hidden
+            className="size-3 transition-transform group-aria-expanded:rotate-180 motion-reduce:transition-none"
+          />
         </PopoverTrigger>
-        <PopoverPopup side="top" align="start" padding="compact" width="sm">
+        <PopoverPopup side="bottom" align="center" padding="compact" width="sm">
           <PopoverTitle className="mb-2">{gt("Context window")}</PopoverTitle>
+          {run !== null ? (
+            <div className="mb-3 flex flex-wrap items-baseline gap-x-2 border-b pb-2 text-sm tabular-nums">
+              <strong>{gt("Round {round}", { round: run.ordinal.toLocaleString(locale) })}</strong>
+              <span>{resolve(runStatusLabels[run.status])}</span>
+              {rate !== null && <strong>{rate} tok/s</strong>}
+              {stepCount !== null && (
+                <span>
+                  {gt("{steps, plural, one {# step} other {# steps}}", { steps: stepCount })}
+                </span>
+              )}
+              {startMs !== null ? (
+                endMs !== null ? (
+                  <span>{formatDuration(Math.max(0, endMs - startMs))}</span>
+                ) : running ? (
+                  <span
+                    ref={tickTextContent(
+                      (nowMs) => formatDuration(Math.max(0, nowMs - startMs)),
+                      true,
+                    )}
+                  />
+                ) : null
+              ) : null}
+            </div>
+          ) : null}
           <p className="text-xs text-muted-foreground tabular-nums">
             {usage === null
               ? gt("Not reported")
@@ -115,6 +142,7 @@ export function ComposerThreadContext({
                     used: usage.usedTokens.toLocaleString(locale),
                     max: usage.maxTokens.toLocaleString(locale),
                   })}
+            {percent === null ? null : ` · ${percent}%`}
           </p>
           {input !== undefined ||
           output !== undefined ||

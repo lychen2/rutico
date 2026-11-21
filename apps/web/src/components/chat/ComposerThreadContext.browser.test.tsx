@@ -60,12 +60,14 @@ it("keeps round token and cache totals separate from the current context window"
   );
 
   const trigger = screen.getByRole("button", { name: /Round 7/ });
-  for (const value of ["Completed", "3 steps", "12s", "1,200 tokens", "Cache 75%"]) {
+  for (const value of ["3 steps", "1,200 tokens", "Cache 75%"]) {
     await expect.element(trigger.getByText(value, { exact: true })).toBeVisible();
   }
   await userEvent.click(trigger);
   const details = page.getByRole("dialog", { name: "Context window" });
-  await expect.element(details.getByText("42,000 of 200,000 tokens")).toBeVisible();
+  await expect.element(details.getByText("12s")).toBeVisible();
+  await expect.element(details.getByText("Completed")).toBeVisible();
+  await expect.element(details.getByText("42,000 of 200,000 tokens · 21%")).toBeVisible();
   await expect.element(details.getByText("Round token usage")).toBeVisible();
   await expect.element(details.getByText("750", { exact: true })).toBeVisible();
   await expect.element(details.getByText("100", { exact: true })).toBeVisible();
@@ -81,9 +83,9 @@ it("keeps round token and cache totals separate from the current context window"
   );
   await expect.element(details).not.toBeInTheDocument();
   const nextTrigger = screen.getByRole("button", { name: /Round 1/ });
-  await expect.element(nextTrigger.getByText("Starting", { exact: true })).toBeVisible();
   await expect.element(nextTrigger.getByText("0 steps", { exact: true })).toBeVisible();
   await userEvent.click(nextTrigger);
+  await expect.element(details.getByText("Starting")).toBeVisible();
   await expect.element(details.getByText("Not reported")).toBeVisible();
   await expect.element(details.getByText("Round token usage")).not.toBeInTheDocument();
 });
