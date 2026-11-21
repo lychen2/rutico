@@ -5,6 +5,7 @@ import {
   ChatAttachmentId,
   EnvironmentId,
   NodeId,
+  PlanId,
   ProviderInstanceId,
   ProviderSessionId,
   ProviderThreadId,
@@ -579,8 +580,28 @@ const openRuntime = Effect.fnUntraced(function* (
     ...(initialNativeThreadId === undefined ? {} : { initialNativeThreadId }),
   });
   const emitted = yield* Queue.unbounded<ProviderAdapter.ProviderAdapterV2Event>();
+  const todoProjectionEvents: Array<ProviderAdapter.ProviderAdapterV2Event> = [];
+  const dynamicToolUpdates: Array<{
+    readonly nativeItemId: string | null;
+    readonly status: string;
+  }> = [];
   yield* runtime.events.pipe(
-    Stream.runForEach((event) => Queue.offer(emitted, event)),
+    Stream.runForEach((event) => {
+      if (
+        (event.type === "node.updated" && event.node.kind === "todo_list") ||
+        event.type === "plan.updated" ||
+        (event.type === "turn_item.updated" && event.turnItem.type === "todo_list")
+      ) {
+        todoProjectionEvents.push(event);
+      }
+      if (event.type === "turn_item.updated" && event.turnItem.type === "dynamic_tool") {
+        dynamicToolUpdates.push({
+          nativeItemId: event.turnItem.nativeItemRef?.nativeId ?? null,
+          status: event.turnItem.status,
+        });
+      }
+      return Queue.offer(emitted, event);
+    }),
     Effect.forkScoped,
   );
   const takeEvent = (predicate: (event: ProviderAdapter.ProviderAdapterV2Event) => boolean) =>
@@ -590,7 +611,7 @@ const openRuntime = Effect.fnUntraced(function* (
         if (predicate(event)) return event;
       }
     });
-  return { runtime, takeEvent };
+  return { adapter, runtime, takeEvent, todoProjectionEvents, dynamicToolUpdates };
 });
 
 const makeAppThread = Effect.fnUntraced(function* (model: string, threadId = THREAD_ID) {
@@ -3320,6 +3341,443 @@ describe("PiAdapterV2", () => {
         });
         assert.deepEqual(event.turnItem.input, { city: "Berlin" });
       }
+
+      const deviceToolName = "mcp__t3-code__device_screenshot";
+      const deviceTitle = "xd://device · Screenshot phone";
+      const deviceContent = [{ type: "text", text: "Screenshot captured" }];
+      const deviceResult = {
+        content: deviceContent,
+        structuredContent: {
+          content: deviceContent,
+          structuredContent: { deviceId: "phone", width: 390, height: 844 },
+        },
+        details: { server: "t3-code", tool: "device_screenshot" },
+      };
+      yield* fake.emit({
+        type: "tool_execution_start",
+        toolCallId: "device-screenshot",
+        toolName: deviceToolName,
+        displayTitle: deviceTitle,
+        args: { deviceId: "phone" },
+      });
+      const deviceRunning = yield* takeEvent(
+        (event) =>
+          event.type === "turn_item.updated" &&
+          event.turnItem.type === "dynamic_tool" &&
+          event.turnItem.nativeItemRef?.nativeId === "device-screenshot",
+      );
+      assert.isTrue(
+        deviceRunning.type === "turn_item.updated" &&
+          deviceRunning.turnItem.type === "dynamic_tool" &&
+          deviceRunning.turnItem.title === deviceTitle &&
+          deviceRunning.turnItem.toolName === deviceToolName,
+      );
+      yield* fake.emit({
+        type: "tool_execution_end",
+        toolCallId: "device-screenshot",
+        toolName: deviceToolName,
+        displayTitle: deviceTitle,
+        isError: false,
+        result: deviceResult,
+      });
+      const deviceCompleted = yield* takeEvent(
+        (event) =>
+          event.type === "turn_item.updated" &&
+          event.turnItem.type === "dynamic_tool" &&
+          event.turnItem.nativeItemRef?.nativeId === "device-screenshot",
+      );
+      assert.isTrue(
+        deviceCompleted.type === "turn_item.updated" &&
+          deviceCompleted.turnItem.type === "dynamic_tool" &&
+          deviceCompleted.turnItem.title === deviceTitle &&
+          deviceCompleted.turnItem.toolName === deviceToolName &&
+          deviceCompleted.turnItem.status === "completed",
+      );
+      if (
+        deviceCompleted.type === "turn_item.updated" &&
+        deviceCompleted.turnItem.type === "dynamic_tool"
+      )
+        assert.deepEqual(deviceCompleted.turnItem.output, {
+          content: deviceContent,
+          structuredContent: { deviceId: "phone", width: 390, height: 844 },
+        });
+    }).pipe(Effect.scoped, Effect.provide(layerTest)),
+  );
+
+  it.effect("projects successful OMP todo calls as stable native todo lists", () =>
+    Effect.gen(function* () {
+      const fake = yield* makeFakePi;
+      const { adapter, runtime, takeEvent, todoProjectionEvents, dynamicToolUpdates } =
+        yield* openRuntime(fake);
+      const providerThread = yield* runtime.ensureThread({
+        threadId: THREAD_ID,
+        modelSelection: modelSelection("default"),
+        runtimePolicy,
+      });
+      const capabilities = yield* adapter.getCapabilities();
+      assert.isTrue(capabilities.planning.emitsPlanUpdated);
+      assert.isTrue(capabilities.planning.emitsTodoList);
+
+      const takeTodoProjection = Effect.fnUntraced(function* (nativeItemId: string) {
+        const nodeEvent = yield* takeEvent(
+          (event) =>
+            event.type === "node.updated" &&
+            event.node.kind === "todo_list" &&
+            event.node.nativeItemRef?.nativeId === nativeItemId,
+        );
+        const planEvent = yield* takeEvent((event) => event.type === "plan.updated");
+        const itemEvent = yield* takeEvent(
+          (event) =>
+            event.type === "turn_item.updated" &&
+            event.turnItem.type === "todo_list" &&
+            event.turnItem.nativeItemRef?.nativeId === nativeItemId,
+        );
+        if (nodeEvent.type !== "node.updated" || nodeEvent.node.kind !== "todo_list")
+          return yield* Effect.die("Expected a native todo_list node");
+        if (planEvent.type !== "plan.updated" || planEvent.plan.kind !== "todo_list")
+          return yield* Effect.die("Expected a native todo_list plan");
+        if (itemEvent.type !== "turn_item.updated" || itemEvent.turnItem.type !== "todo_list")
+          return yield* Effect.die("Expected a native todo_list turn item");
+        return { node: nodeEvent.node, plan: planEvent.plan, turnItem: itemEvent.turnItem };
+      });
+      const takeDynamicTool = Effect.fnUntraced(function* (nativeItemId: string) {
+        const event = yield* takeEvent(
+          (candidate) =>
+            candidate.type === "turn_item.updated" &&
+            candidate.turnItem.type === "dynamic_tool" &&
+            candidate.turnItem.nativeItemRef?.nativeId === nativeItemId,
+        );
+        if (event.type !== "turn_item.updated" || event.turnItem.type !== "dynamic_tool")
+          return yield* Effect.die("Expected the existing dynamic tool card");
+        return event.turnItem;
+      });
+
+      yield* startTurn(runtime, providerThread);
+      yield* fake.takeRequest("prompt");
+      yield* fake.emit({ type: "agent_start" });
+
+      const alias = "Todo · [2/5] Render cards";
+      const aliasOutput = [
+        "Objective: Ship presentation layer",
+        "Measure: Tests pass",
+        "Done when: npm test green",
+        "Progress: 2/5 closed · 1 completed · 1 abandoned · 1 in progress · 1 blocked · 1 pending",
+        "Build",
+        '  ✓ Parse frames — 12 min budget, 1.0 min elapsed; abcdef1 "feat: parse" (all changes)',
+        "    Wire the adapter",
+        "  ◉ Render cards",
+        "  ✕ Write docs",
+        "  ⊘ Blocked step — waiting on review",
+        "Verify",
+        "  ○ Run suite",
+      ].join("\n");
+      const aliasSnapshot = {
+        goal: {
+          objective: "Ship presentation layer",
+          measure: "Tests pass",
+          doneWhen: "npm test green",
+        },
+        phases: [
+          {
+            name: "Build",
+            items: [
+              {
+                title: "Parse frames",
+                explanation: "Wire the adapter",
+                status: "completed",
+                time: {
+                  kind: "estimated",
+                  budgetId: "b1",
+                  minutes: 12,
+                  elapsedMs: 60_000,
+                  runningSince: null,
+                },
+                commit: { sha: "abcdef1234567", message: "feat: parse", scope: { kind: "all" } },
+              },
+              { title: "Render cards", explanation: null, status: "in_progress" },
+              { title: "Write docs", explanation: null, status: "abandoned" },
+              {
+                title: "Blocked step",
+                explanation: null,
+                status: "blocked",
+                blocker: "waiting on review",
+              },
+            ],
+          },
+          { name: "Verify", items: [{ title: "Run suite", explanation: null, status: "pending" }] },
+        ],
+      };
+      yield* fake.emit({
+        type: "tool_execution_start",
+        toolCallId: "todo-alias",
+        toolName: "todo",
+        displayTitle: "Todo · INIT Ship presentation layer",
+        args: { summary: "INIT Ship presentation layer" },
+      });
+      const aliasRunning = yield* takeDynamicTool("todo-alias");
+      assert.equal(aliasRunning.title, "Todo · INIT Ship presentation layer");
+      assert.equal(aliasRunning.status, "running");
+      assert.equal(todoProjectionEvents.length, 0);
+      yield* fake.emit({
+        type: "tool_execution_end",
+        toolCallId: "todo-alias",
+        toolName: "todo",
+        displayTitle: alias,
+        isError: false,
+        result: {
+          content: [{ type: "text", text: aliasOutput }],
+          details: { more: aliasSnapshot },
+        },
+      });
+      const aliased = yield* takeTodoProjection("todo-alias");
+      const expectedPlanId = PlanId.make(`omp-todo:${THREAD_ID}`);
+      assert.equal(aliased.plan.id, expectedPlanId);
+      assert.equal(aliased.plan.status, "active");
+      assert.equal(aliased.node.kind, "todo_list");
+      assert.equal(aliased.node.status, "completed");
+      assert.equal(aliased.plan.nodeId, aliased.node.id);
+      assert.equal(aliased.turnItem.nodeId, aliased.node.id);
+      assert.equal(aliased.turnItem.id, aliasRunning.id);
+      assert.equal(aliased.turnItem.nativeItemRef?.nativeId, "todo-alias");
+      assert.equal(aliased.turnItem.explanation, aliasOutput);
+      assert.deepEqual(
+        aliased.turnItem.steps.map(({ text, status }) => ({ text, status })),
+        [
+          { text: "Build: Parse frames\nWire the adapter", status: "completed" },
+          { text: "Build: Render cards", status: "running" },
+          { text: "Build: Write docs\n[abandoned]", status: "pending" },
+          { text: "Build: Blocked step\n[blocked] waiting on review", status: "pending" },
+          { text: "Verify: Run suite", status: "pending" },
+        ],
+      );
+      assert.deepEqual(
+        todoProjectionEvents.slice(0, 3).map(({ type }) => type),
+        ["node.updated", "plan.updated", "turn_item.updated"],
+      );
+      assert.deepEqual(
+        dynamicToolUpdates
+          .filter(({ nativeItemId }) => nativeItemId === "todo-alias")
+          .map(({ status }) => status),
+        ["running"],
+      );
+
+      const closedOutput = "Goal: (missing)\nProgress: 2/2 closed · 1 completed · 1 abandoned";
+      const closedSnapshot = {
+        goal: null,
+        phases: [
+          {
+            name: "Build",
+            items: [
+              { title: "Parse frames", explanation: "Wire the adapter", status: "completed" },
+              { title: "Write docs", explanation: null, status: "abandoned" },
+            ],
+          },
+        ],
+      };
+      yield* fake.emit({
+        type: "tool_execution_end",
+        toolCallId: "todo-raw",
+        toolName: "todo",
+        isError: false,
+        result: {
+          content: [{ type: "text", text: closedOutput }],
+          details: { more: closedSnapshot },
+        },
+      });
+      const closed = yield* takeTodoProjection("todo-raw");
+      assert.equal(closed.plan.id, expectedPlanId);
+      assert.equal(closed.plan.status, "completed");
+      assert.equal(closed.turnItem.steps[1]?.id, aliased.turnItem.steps[2]?.id);
+      assert.equal(closed.turnItem.steps[1]?.status, "pending");
+      assert.isTrue(closed.turnItem.steps[1]?.text.includes("[abandoned]"));
+      assert.equal(closed.turnItem.explanation, closedOutput);
+
+      yield* fake.emit({
+        type: "tool_execution_end",
+        toolCallId: "todo-legacy",
+        toolName: "todo",
+        isError: false,
+        result: {
+          content: [{ type: "text", text: "Legacy todo" }],
+          details: {
+            phases: [
+              {
+                name: "Build",
+                tasks: [
+                  { content: "Compile", status: "in_progress" },
+                  { content: "Cancelled", status: "abandoned" },
+                ],
+              },
+            ],
+          },
+        },
+      });
+      const legacy = yield* takeTodoProjection("todo-legacy");
+      assert.equal(legacy.plan.id, expectedPlanId);
+      assert.deepEqual(
+        legacy.turnItem.steps.map(({ text, status }) => ({ text, status })),
+        [{ text: "Build: Compile", status: "running" }],
+      );
+
+      const projectionCount = todoProjectionEvents.length;
+      const validResult = {
+        content: [{ type: "text", text: aliasOutput }],
+        details: { more: aliasSnapshot },
+      };
+      yield* fake.emit({
+        type: "tool_execution_start",
+        toolCallId: "todo-partial",
+        toolName: "todo",
+        displayTitle: "Todo · update",
+        args: { summary: "update" },
+      });
+      yield* takeDynamicTool("todo-partial");
+      yield* fake.emit({
+        type: "tool_execution_update",
+        toolCallId: "todo-partial",
+        toolName: "todo",
+        displayTitle: "Todo · update",
+        partialResult: validResult,
+        isError: false,
+      });
+      yield* takeDynamicTool("todo-partial");
+      yield* fake.emit({
+        type: "tool_execution_end",
+        toolCallId: "todo-partial",
+        toolName: "todo",
+        displayTitle: "Todo · update",
+        result: validResult,
+        isError: true,
+      });
+      assert.equal((yield* takeDynamicTool("todo-partial")).status, "failed");
+
+      yield* fake.emit({
+        type: "tool_execution_end",
+        toolCallId: "todo-result-error",
+        toolName: "todo",
+        isError: false,
+        result: { ...validResult, isError: true },
+      });
+      assert.equal((yield* takeDynamicTool("todo-result-error")).status, "completed");
+      yield* fake.emit({
+        type: "tool_execution_end",
+        toolCallId: "todo-malformed",
+        toolName: "todo",
+        isError: false,
+        result: {
+          content: [{ type: "text", text: "unrecognized todo snapshot" }],
+          details: {
+            more: {
+              goal: null,
+              phases: [{ name: "Build", items: [{ title: " ", status: "pending" }] }],
+            },
+          },
+        },
+      });
+      assert.equal((yield* takeDynamicTool("todo-malformed")).status, "completed");
+      yield* fake.emit({
+        type: "tool_execution_start",
+        toolCallId: "subagent-call",
+        toolName: "subagent",
+        displayTitle: "Parent task",
+        args: { task: "work" },
+      });
+      const parentTool = yield* takeDynamicTool("subagent-call");
+      yield* fake.emit({
+        type: "tool_execution_end",
+        toolCallId: "todo-child",
+        parentToolCallId: "subagent-call",
+        toolName: "todo",
+        displayTitle: "Todo · Child task",
+        isError: false,
+        result: validResult,
+      });
+      const childNodeEvent = yield* takeEvent(
+        (event) =>
+          event.type === "node.updated" && event.node.nativeItemRef?.nativeId === "todo-child",
+      );
+      if (childNodeEvent.type !== "node.updated")
+        return yield* Effect.die("Expected the nested todo's execution node");
+      assert.equal(childNodeEvent.node.kind, "tool_call");
+      assert.equal(childNodeEvent.node.parentNodeId, parentTool.nodeId);
+      const childTodo = yield* takeDynamicTool("todo-child");
+      assert.equal(childTodo.status, "completed");
+      assert.equal(childTodo.title, "Todo · Child task");
+      assert.equal(childTodo.toolName, "todo");
+      assert.equal(childTodo.parentItemId, parentTool.id);
+      assert.equal(todoProjectionEvents.length, projectionCount);
+      yield* fake.emit({
+        type: "tool_execution_end",
+        toolCallId: "subagent-call",
+        toolName: "subagent",
+        displayTitle: "Parent task",
+        isError: false,
+        result: { content: [{ type: "text", text: "Child complete" }] },
+      });
+      assert.equal((yield* takeDynamicTool("subagent-call")).status, "completed");
+      yield* fake.emit({
+        type: "tool_execution_end",
+        toolCallId: "todo-event-error",
+        toolName: "todo",
+        isError: true,
+        result: validResult,
+      });
+      assert.equal((yield* takeDynamicTool("todo-event-error")).status, "failed");
+      yield* fake.emit({
+        type: "tool_execution_end",
+        toolCallId: "todo-projection-boundary",
+        toolName: "marker",
+        result: { content: [{ type: "text", text: "boundary" }] },
+      });
+      yield* takeDynamicTool("todo-projection-boundary");
+      assert.equal(todoProjectionEvents.length, projectionCount);
+      assert.deepEqual(
+        dynamicToolUpdates
+          .filter(({ nativeItemId }) => nativeItemId === "todo-partial")
+          .map(({ status }) => status),
+        ["running", "running", "failed"],
+      );
+
+      yield* fake.emit({ type: "agent_settled" });
+      yield* takeEvent((event) => event.type === "turn.terminal");
+      yield* startTurn(runtime, providerThread, "default", [], "Clear todos", undefined, 2);
+      yield* fake.takeRequest("prompt");
+      yield* fake.emit({ type: "agent_start" });
+      const emptyOutput = "Goal: (missing)\nThe list is empty.";
+      yield* fake.emit({
+        type: "tool_execution_end",
+        toolCallId: "todo-clear",
+        toolName: "todo",
+        isError: false,
+        result: {
+          content: [{ type: "text", text: emptyOutput }],
+          details: { more: { goal: null, phases: [] } },
+        },
+      });
+      const empty = yield* takeTodoProjection("todo-clear");
+      assert.equal(empty.plan.id, expectedPlanId);
+      assert.equal(empty.plan.status, "completed");
+      assert.deepEqual(empty.plan.steps, []);
+      assert.deepEqual(empty.turnItem.steps, []);
+      assert.equal(empty.turnItem.explanation, emptyOutput);
+      assert.equal(empty.turnItem.nativeItemRef?.nativeId, "todo-clear");
+      assert.deepEqual(
+        todoProjectionEvents.map(({ type }) => type),
+        [
+          "node.updated",
+          "plan.updated",
+          "turn_item.updated",
+          "node.updated",
+          "plan.updated",
+          "turn_item.updated",
+          "node.updated",
+          "plan.updated",
+          "turn_item.updated",
+          "node.updated",
+          "plan.updated",
+          "turn_item.updated",
+        ],
+      );
     }).pipe(Effect.scoped, Effect.provide(layerTest)),
   );
 
@@ -3600,6 +4058,93 @@ describe("PiAdapterV2", () => {
           );
         }
       }).pipe(Effect.scoped, Effect.provide(layerTest)),
+  );
+
+  it.effect("retains non-MCP details with structured output within the stored result bound", () =>
+    Effect.gen(function* () {
+      const fake = yield* makeFakePi;
+      const { runtime, takeEvent } = yield* openRuntime(fake);
+      const providerThread = yield* runtime.ensureThread({
+        threadId: THREAD_ID,
+        modelSelection: modelSelection("default"),
+        runtimePolicy,
+      });
+      yield* startTurn(runtime, providerThread);
+      yield* fake.takeRequest("prompt");
+      yield* fake.emit({ type: "agent_start" });
+
+      const content = [{ type: "text", text: "Read result" }];
+      const details = { path: "README.md", lines: 4 };
+      const cases = [
+        {
+          toolCallId: "details-only",
+          result: { content, details },
+          expected: { content, structuredContent: { details } },
+        },
+        {
+          toolCallId: "structured-and-details",
+          result: { content, structuredContent: { kind: "summary" }, details },
+          expected: {
+            content,
+            structuredContent: { structuredContent: { kind: "summary" }, details },
+          },
+        },
+      ];
+      for (const testCase of cases) {
+        const displayTitle = `Read · ${testCase.toolCallId}`;
+        yield* fake.emit({
+          type: "tool_execution_end",
+          toolCallId: testCase.toolCallId,
+          toolName: "read",
+          displayTitle,
+          result: testCase.result,
+        });
+        const event = yield* takeEvent(
+          (event) =>
+            event.type === "turn_item.updated" &&
+            event.turnItem.type === "dynamic_tool" &&
+            event.turnItem.nativeItemRef?.nativeId === testCase.toolCallId,
+        );
+        if (event.type !== "turn_item.updated" || event.turnItem.type !== "dynamic_tool")
+          return yield* Effect.die("Expected a dynamic read tool card");
+        assert.equal(event.turnItem.title, displayTitle);
+        assert.equal(event.turnItem.toolName, "read");
+        assert.deepEqual(event.turnItem.output, testCase.expected);
+      }
+
+      const oversizedCallId = "oversized-details";
+      const oversizedTitle = "Read · oversized details";
+      yield* fake.emit({
+        type: "tool_execution_end",
+        toolCallId: oversizedCallId,
+        toolName: "read",
+        displayTitle: oversizedTitle,
+        result: {
+          content,
+          structuredContent: { kind: "summary" },
+          details: { payload: "x".repeat(70 * 1024) },
+        },
+      });
+      const oversized = yield* takeEvent(
+        (event) =>
+          event.type === "turn_item.updated" &&
+          event.turnItem.type === "dynamic_tool" &&
+          event.turnItem.nativeItemRef?.nativeId === oversizedCallId,
+      );
+      if (oversized.type !== "turn_item.updated" || oversized.turnItem.type !== "dynamic_tool")
+        return yield* Effect.die("Expected an oversized metadata tool card");
+      assert.equal(oversized.turnItem.title, oversizedTitle);
+      assert.equal(oversized.turnItem.toolName, "read");
+      assert.deepEqual(oversized.turnItem.output, {
+        content: [
+          ...content,
+          {
+            type: "text",
+            text: "Structured output omitted because it exceeds the stored result limit.",
+          },
+        ],
+      });
+    }).pipe(Effect.scoped, Effect.provide(layerTest)),
   );
 
   it.effect(
@@ -3891,12 +4436,14 @@ describe("PiAdapterV2", () => {
         type: "tool_execution_start",
         toolCallId: "call_edit",
         toolName: "edit",
+        intent: "修正文件内容",
         args: { path: "a.ts", edits: [{ oldText: "old", newText: "new" }] },
       });
       yield* fake.emit({
         type: "tool_execution_end",
         toolCallId: "call_edit",
         toolName: "edit",
+        intent: "修正文件内容",
         isError: false,
         result: {
           content: [{ type: "text", text: "Successfully replaced 1 block(s) in a.ts." }],
@@ -3913,6 +4460,7 @@ describe("PiAdapterV2", () => {
         edit.type === "turn_item.updated" &&
           edit.turnItem.type === "file_change" &&
           edit.turnItem.fileName === "a.ts" &&
+          edit.turnItem.toolPurpose === "修正文件内容" &&
           edit.turnItem.diffStr === patch,
       );
 
@@ -3920,12 +4468,14 @@ describe("PiAdapterV2", () => {
         type: "tool_execution_start",
         toolCallId: "call_write",
         toolName: "write",
+        displayTitle: "Write · b.ts",
         args: { path: "b.ts", content: "export {};\n" },
       });
       yield* fake.emit({
         type: "tool_execution_end",
         toolCallId: "call_write",
         toolName: "write",
+        displayTitle: "Write · b.ts",
         isError: false,
         result: { content: [{ type: "text", text: "Successfully wrote to b.ts" }] },
       });
@@ -3938,8 +4488,45 @@ describe("PiAdapterV2", () => {
       assert.isTrue(
         write.type === "turn_item.updated" &&
           write.turnItem.type === "file_change" &&
+          write.turnItem.title === "Write · b.ts" &&
           write.turnItem.fileName === "b.ts" &&
           write.turnItem.newStr === "export {};\n",
+      );
+
+      const deviceWriteTitle = "xd://device · capture screenshot";
+      yield* fake.emit({
+        type: "tool_execution_start",
+        toolCallId: "call_write_device",
+        toolName: "write",
+        displayTitle: deviceWriteTitle,
+        args: { path: "xd://device/screenshot", content: "capture" },
+      });
+      yield* takeEvent(
+        (event) =>
+          event.type === "turn_item.updated" &&
+          event.turnItem.type === "dynamic_tool" &&
+          event.turnItem.nativeItemRef?.nativeId === "call_write_device",
+      );
+      yield* fake.emit({
+        type: "tool_execution_end",
+        toolCallId: "call_write_device",
+        toolName: "write",
+        displayTitle: deviceWriteTitle,
+        isError: false,
+        result: { content: [{ type: "text", text: "Device capture complete" }] },
+      });
+      const deviceWrite = yield* takeEvent(
+        (event) =>
+          event.type === "turn_item.updated" &&
+          event.turnItem.type === "dynamic_tool" &&
+          event.turnItem.nativeItemRef?.nativeId === "call_write_device",
+      );
+      assert.isTrue(
+        deviceWrite.type === "turn_item.updated" &&
+          deviceWrite.turnItem.type === "dynamic_tool" &&
+          deviceWrite.turnItem.title === deviceWriteTitle &&
+          deviceWrite.turnItem.toolName === "write" &&
+          deviceWrite.turnItem.status === "completed",
       );
 
       yield* fake.emit({
@@ -4819,10 +5406,12 @@ describe("PiAdapterV2", () => {
         });
         yield* startTurn(runtime, providerThread);
         yield* fake.takeRequest("prompt");
+        const displayTitle = `${toolName} · command output`;
         yield* fake.emit({
           type: "tool_execution_start",
           toolCallId: "shell-call",
           toolName,
+          displayTitle,
           args: { command: "echo hello" },
         });
         const running = yield* takeEvent(
@@ -4833,6 +5422,7 @@ describe("PiAdapterV2", () => {
           running.type === "turn_item.updated" &&
             running.turnItem.type === "command_execution" &&
             running.turnItem.status === "running" &&
+            running.turnItem.title === displayTitle &&
             running.turnItem.input === "echo hello",
         );
         // Pi resends the whole output so far every 100 ms; each snapshot item is a stored row.
@@ -4856,6 +5446,7 @@ describe("PiAdapterV2", () => {
           type: "tool_execution_end",
           toolCallId: "shell-call",
           toolName,
+          displayTitle,
           isError: exitCode !== 0,
           result: {
             content: [{ type: "text", text: "hello" }],
@@ -4878,7 +5469,7 @@ describe("PiAdapterV2", () => {
         assert.isTrue(
           completed.type === "turn_item.updated" &&
             completed.turnItem.type === "command_execution" &&
-            completed.turnItem.title === toolName &&
+            completed.turnItem.title === displayTitle &&
             completed.turnItem.input === "echo hello" &&
             completed.turnItem.output === "hello" &&
             completed.turnItem.exitCode === exitCode &&
@@ -5047,7 +5638,12 @@ describe("PiAdapterV2", () => {
         id: "ui-select",
         method: "select",
         title: "Pick a tag",
-        options: ["stable", ""],
+        options: [null, "stable", ""],
+        optionDetails: [
+          { description: "Unused invalid option" },
+          { description: " Stable release " },
+          { description: "Submit an empty value" },
+        ],
       });
       const event = yield* takeEvent(
         (event) =>
@@ -5058,10 +5654,10 @@ describe("PiAdapterV2", () => {
       }
       const questions = decodeUserInputQuestions(event.turnItem.questions);
       assert.deepEqual(
-        questions[0]?.options.map((option) => [option.label, option.value]),
+        questions[0]?.options.map((option) => [option.label, option.value, option.description]),
         [
-          ["stable", "stable"],
-          ["Empty value", ""],
+          ["stable", "stable", "Stable release"],
+          ["Empty value", "", "Submit an empty value"],
         ],
       );
       assert.equal(questions[0]?.header, "Question");

@@ -479,6 +479,13 @@ status and does not cancel work. `output` carries what the run submitted
 against its `outputSchema`; with `untilOutput`, a completed run that has not
 submitted yet is waited on until it has.
 
+A live T3 thread waiting on an independent thread in the same environment gets a
+durable wake. With no `timeoutMs`, the call returns `next` immediately while the
+target is active; with `timeoutMs`, it waits for that interval first and returns
+`next` with a wake if the target remains active. End the caller turn when `next`
+is present. A target blocked on a user question does not wake the caller. Stopping
+the caller cancels its wake without stopping the target.
+
 ### `t3_thread_interrupt`
 
 Interrupts a selected active run through the normal V2 `run.interrupt` command.

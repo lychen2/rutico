@@ -213,6 +213,7 @@ export function runOrchestratorV2ProviderReplayScenario<
     readonly providerInstances?: Partial<
       ProviderInstanceRegistry.ProviderInstanceRegistry["Service"]
     >;
+    readonly steerProviderTurn?: ProviderTurnControlService.ProviderTurnControlServiceV2Shape["steer"];
   } = {},
 ): Effect.Effect<
   OrchestratorV2ScenarioResult,
@@ -260,6 +261,7 @@ export function layerProviderReplay<Transcript extends ProviderReplayTranscript,
     readonly providerInstances?: Partial<
       ProviderInstanceRegistry.ProviderInstanceRegistry["Service"]
     >;
+    readonly steerProviderTurn?: ProviderTurnControlService.ProviderTurnControlServiceV2Shape["steer"];
   } = {},
 ): Layer.Layer<
   | Orchestrator.OrchestratorV2
@@ -301,6 +303,7 @@ export function layerWithRegistry<Error>(
     readonly providerInstances?: Partial<
       ProviderInstanceRegistry.ProviderInstanceRegistry["Service"]
     >;
+    readonly steerProviderTurn?: ProviderTurnControlService.ProviderTurnControlServiceV2Shape["steer"];
   } = {},
 ): Layer.Layer<
   | Orchestrator.OrchestratorV2
@@ -474,7 +477,7 @@ export function layerWithRegistry<Error>(
       ),
     ),
   );
-  const layerProviderTurnControlServiceProvided = ProviderTurnControlService.layer.pipe(
+  const layerProviderTurnControlServiceBase = ProviderTurnControlService.layer.pipe(
     Layer.provide(
       Layer.mergeAll(
         layerEventSinkProvided,
@@ -484,6 +487,17 @@ export function layerWithRegistry<Error>(
       ),
     ),
   );
+  const steerProviderTurn = options.steerProviderTurn;
+  const layerProviderTurnControlServiceProvided =
+    steerProviderTurn === undefined
+      ? layerProviderTurnControlServiceBase
+      : Layer.effect(
+          ProviderTurnControlService.ProviderTurnControlServiceV2,
+          Effect.gen(function* () {
+            const service = yield* ProviderTurnControlService.ProviderTurnControlServiceV2;
+            return { ...service, steer: steerProviderTurn };
+          }),
+        ).pipe(Layer.provide(layerProviderTurnControlServiceBase));
   const layerRuntimeRequestServiceProvided = RuntimeRequestService.layer.pipe(
     Layer.provide(Layer.merge(layerStores, layerProviderSessionManagerProvided)),
   );

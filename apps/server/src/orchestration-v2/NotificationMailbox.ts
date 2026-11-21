@@ -19,6 +19,15 @@ export function isBufferedProviderNotification(
   );
 }
 
+export function isBufferedThreadWaitWake(message: OrchestrationV2ConversationMessage): boolean {
+  return (
+    message.createdBy === "agent" &&
+    message.creationSource === "server" &&
+    message.notification?.source.kind === "thread_wait" &&
+    message.delegatedCompletion === undefined
+  );
+}
+
 /** Acceptance and receipts cannot commit atomically; reuse message ids for at-least-once delivery. */
 export function isUndeliveredMailboxSteer(
   projection: Pick<OrchestrationV2ThreadProjection, "messages" | "runs" | "providerTurns">,

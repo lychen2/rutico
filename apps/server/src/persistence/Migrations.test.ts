@@ -8,6 +8,7 @@ import * as Path from "effect/Path";
 import * as SqlClient from "effect/sql/SqlClient";
 
 import { migrationManifest, runMigrations } from "./Migrations.ts";
+import ThreadWaitWakeObligations from "./Migrations/106_ThreadWaitWakeObligations.ts";
 
 const v2Migrations = migrationManifest.filter(([id]) => id >= 55);
 const newerMigrationId = Math.max(...migrationManifest.map(([id]) => id)) + 1;
@@ -81,6 +82,56 @@ describe("runMigrations", () => {
       yield* sql`PRAGMA query_only = ON`;
       assert.deepStrictEqual(yield* runMigrations(), []);
       assert.deepStrictEqual(yield* history, migrationManifest);
+    }).pipe(Effect.provide(NodeSqliteClient.layer({ filename: ":memory:" }))),
+  );
+
+  it.effect("upgrades the deployed migration history through the wait wake migration", () =>
+    Effect.gen(function* () {
+      const sql = yield* SqlClient.SqlClient;
+      yield* runMigrations({ toMigrationInclusive: 96 });
+      const before = yield* history;
+      assert.includeDeepMembers(before, [
+        [73, "ActiveTurnItemIndexes"],
+        [96, "RepairStaleTitleRegeneration"],
+      ]);
+      assert.deepStrictEqual(
+        yield* runMigrations(),
+        migrationManifest.filter(([id]) => id > 96),
+      );
+      assert.deepStrictEqual(yield* history, migrationManifest);
+      assert.lengthOf(yield* sql`SELECT wake_id FROM thread_wait_wake_obligations`, 0);
+      assert.deepStrictEqual(yield* runMigrations(), []);
+    }).pipe(Effect.provide(NodeSqliteClient.layer({ filename: ":memory:" }))),
+  );
+
+  it.effect("keeps pending wake records when upgrading the old fork's migration 104", () =>
+    Effect.gen(function* () {
+      const sql = yield* SqlClient.SqlClient;
+      yield* runMigrations({ toMigrationInclusive: 103 });
+      yield* ThreadWaitWakeObligations;
+      yield* sql`
+        INSERT INTO effect_sql_migrations (migration_id, name)
+        VALUES (104, 'ThreadWaitWakeObligations')
+      `;
+      yield* sql`
+        INSERT INTO thread_wait_wake_obligations VALUES (
+          'wake', 'command', 'message', 'caller-project', 'caller-thread', 'caller-run',
+          'caller-session', 'provider', 14, 'target-project', 'target-thread', 'target-run',
+          27, 1, 'suspended'
+        )
+      `;
+
+      assert.deepStrictEqual(
+        yield* runMigrations(),
+        migrationManifest.filter(([id]) => id >= 104),
+      );
+      assert.deepStrictEqual(yield* history, migrationManifest);
+      assert.deepStrictEqual(yield* sql`SELECT wake_id, state FROM thread_wait_wake_obligations`, [
+        { wake_id: "wake", state: "suspended" },
+      ]);
+      yield* sql`SELECT tracked_folders_json FROM projection_projects`;
+      yield* sql`SELECT root FROM task_folders`;
+      assert.deepStrictEqual(yield* runMigrations(), []);
     }).pipe(Effect.provide(NodeSqliteClient.layer({ filename: ":memory:" }))),
   );
 

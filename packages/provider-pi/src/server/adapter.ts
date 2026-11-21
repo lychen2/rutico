@@ -6,6 +6,7 @@ import { readToolOutputImage } from "@t3tools/shared/toolOutput";
 import { isWorkspaceImagePreviewPath } from "@t3tools/shared/filePreview";
 import * as Predicate from "effect/Predicate";
 import {
+  PlanId,
   ProviderDriverKind,
   type ChatAttachment,
   type ModelSelection,
@@ -17,6 +18,7 @@ import {
   type OrchestrationV2ProviderSession,
   type OrchestrationV2ProviderThread,
   type OrchestrationV2ProviderTurn,
+  type OrchestrationV2PlanStep,
   type OrchestrationV2RuntimeRequest,
   type OrchestrationV2Subagent,
   type OrchestrationV2TurnItem,
@@ -157,8 +159,8 @@ const PiProviderCapabilitiesV2 = {
     approvalsCanOriginateFromSubagents: false,
   },
   planning: {
-    emitsPlanUpdated: false,
-    emitsTodoList: false,
+    emitsPlanUpdated: true,
+    emitsTodoList: true,
     emitsProposedPlan: false,
     supportsStructuredQuestions: true,
     planDeltasHaveItemIds: false,
@@ -288,6 +290,10 @@ function piToolOutput(result: unknown, toolName: string): unknown {
       structured = undefined;
     }
   }
+  if (!isMcpResult && details !== undefined) {
+    structured =
+      structured === undefined ? { details } : { structuredContent: structured, details };
+  }
   if (structured !== undefined && !isBoundedStructuredToolValue(structured)) {
     return {
       content: [
@@ -310,6 +316,126 @@ function piToolOutput(result: unknown, toolName: string): unknown {
   return {
     content,
     ...(structured === undefined ? {} : { structuredContent: structured }),
+  };
+}
+
+const ompTodoStatus = Schema.Literals([
+  "pending",
+  "in_progress",
+  "completed",
+  "abandoned",
+  "blocked",
+]);
+const ompTodoTitle = Schema.String.check(
+  Schema.makeFilter((value: string) => value.trim().length > 0),
+);
+const OmpTodoPhasesSchema = Schema.Array(
+  Schema.Struct({
+    name: Schema.String,
+    tasks: Schema.Array(
+      Schema.Struct({
+        content: ompTodoTitle,
+        status: ompTodoStatus,
+        blocker: Schema.optional(Schema.String),
+      }),
+    ),
+  }),
+);
+const isOmpTodoPhases = Schema.is(OmpTodoPhasesSchema);
+
+const OmpTodoSnapshotSchema = Schema.Struct({
+  goal: Schema.NullOr(
+    Schema.Struct({
+      objective: Schema.String,
+      measure: Schema.String,
+      doneWhen: Schema.String,
+    }),
+  ),
+  phases: Schema.Array(
+    Schema.Struct({
+      name: Schema.String,
+      items: Schema.Array(
+        Schema.Struct({
+          id: Schema.optional(Schema.String),
+          title: ompTodoTitle,
+          explanation: Schema.optional(Schema.NullOr(Schema.String)),
+          status: ompTodoStatus,
+          blockReason: Schema.optional(Schema.String),
+          blocker: Schema.optional(Schema.String),
+        }),
+      ),
+    }),
+  ),
+});
+const isOmpTodoSnapshot = Schema.is(OmpTodoSnapshotSchema);
+
+type OmpTodoSnapshot = typeof OmpTodoSnapshotSchema.Type;
+
+function ompTodoSnapshot(details: unknown): OmpTodoSnapshot | undefined {
+  const more = recordField(details, "more");
+  if (isOmpTodoSnapshot(more)) return more;
+  const phases = recordField(details, "phases");
+  if (!isOmpTodoPhases(phases)) return undefined;
+  return {
+    goal: null,
+    phases: phases.map(({ name, tasks }) => {
+      const occurrences = new Map<string, number>();
+      const items = tasks.flatMap(({ content, status, blocker }) => {
+        const occurrence = occurrences.get(content) ?? 0;
+        occurrences.set(content, occurrence + 1);
+        return status === "abandoned"
+          ? []
+          : [{ id: JSON.stringify([content, occurrence]), title: content, status, blocker }];
+      });
+      return { name, items };
+    }),
+  };
+}
+
+function ompTodoPlan(snapshot: OmpTodoSnapshot, outputText: string) {
+  const steps: Array<OrchestrationV2PlanStep> = [];
+  const explanation =
+    outputText.length > 0
+      ? outputText
+      : snapshot.goal === null
+        ? "Goal: (missing)"
+        : `Objective: ${snapshot.goal.objective}\nMeasure: ${snapshot.goal.measure}\nDone when: ${snapshot.goal.doneWhen}`;
+  let hasOpenSteps = false;
+
+  for (const phase of snapshot.phases) {
+    for (const item of phase.items) {
+      const closed = item.status === "completed" || item.status === "abandoned";
+      if (!closed) hasOpenSteps = true;
+      const stableItemKey = item.id?.trim() ? item.id : item.title;
+      const blockReason = item.blockReason?.trim() ? item.blockReason : item.blocker;
+      const statusNote =
+        item.status === "blocked"
+          ? `[blocked]${blockReason?.trim() ? ` ${blockReason}` : ""}`
+          : item.status === "abandoned"
+            ? "[abandoned]"
+            : undefined;
+      const text = [
+        phase.name.length > 0 ? `${phase.name}: ${item.title}` : item.title,
+        ...(statusNote === undefined ? [] : [statusNote]),
+        ...(item.explanation == null || item.explanation.length === 0 ? [] : [item.explanation]),
+      ].join("\n");
+      steps.push({
+        id: JSON.stringify([phase.name, stableItemKey]),
+        text,
+        status:
+          item.status === "completed"
+            ? "completed"
+            : item.status === "in_progress"
+              ? "running"
+              : "pending",
+      });
+    }
+  }
+
+  return {
+    status: steps.length === 0 || !hasOpenSteps ? ("completed" as const) : ("active" as const),
+    steps,
+    explanation,
   };
 }
 
@@ -1368,6 +1494,7 @@ export const makePiAdapterV2 = Effect.fn("makePiAdapterV2")(function* (
         const toolCallId = recordString(event, "toolCallId");
         const toolName = recordString(event, "toolName") ?? "tool";
         // Pi tags every phase of a call made through ctx.executeTool, such as from a codemode script.
+        const displayTitle = recordString(event, "displayTitle") ?? toolName;
         const parentToolCallId = recordString(event, "parentToolCallId");
         if (toolCallId === undefined) return;
         if (phase === "update" && (toolName === "bash" || toolName === "powershell")) {
@@ -1378,6 +1505,8 @@ export const makePiAdapterV2 = Effect.fn("makePiAdapterV2")(function* (
           turn.toolArgs.set(toolCallId, event["args"]);
         }
         const args = event["args"] ?? turn.toolArgs.get(toolCallId);
+        const toolPurpose =
+          recordString(event, "intent")?.trim() || recordString(args, "i")?.trim();
         const emittedAt = yield* DateTime.now;
         const startedAt = turn.toolStartedAt.get(toolCallId) ?? emittedAt;
         turn.toolStartedAt.set(toolCallId, startedAt);
@@ -1393,6 +1522,50 @@ export const makePiAdapterV2 = Effect.fn("makePiAdapterV2")(function* (
             : "completed"
           : "running";
         const base = baseItemFields(turn, toolCallId, startedAt, emittedAt, parentToolCallId);
+        if (
+          phase === "end" &&
+          !isError &&
+          recordField(resultRecord, "isError") !== true &&
+          parentToolCallId === undefined &&
+          toolName === "todo"
+        ) {
+          const snapshot = ompTodoSnapshot(recordField(resultRecord, "details"));
+          if (snapshot !== undefined) {
+            const planContent = ompTodoPlan(snapshot, outputText);
+            const planId = PlanId.make(`omp-todo:${turn.turnInput.threadId}`);
+            yield* emitItemNode(turn, toolCallId, "todo_list", "completed", startedAt, emittedAt);
+            yield* emit({
+              type: "plan.updated",
+              driver: PI_PROVIDER,
+              plan: {
+                id: planId,
+                threadId: turn.turnInput.threadId,
+                runId: turn.turnInput.runId,
+                nodeId: base.nodeId,
+                kind: "todo_list",
+                status: planContent.status,
+                steps: planContent.steps,
+                explanation: planContent.explanation,
+              },
+            });
+            yield* emit({
+              type: "turn_item.updated",
+              driver: PI_PROVIDER,
+              turnItem: {
+                ...base,
+                ...(toolPurpose ? { toolPurpose } : {}),
+                status: "completed",
+                title: null,
+                completedAt: emittedAt,
+                type: "todo_list",
+                planId,
+                steps: planContent.steps,
+                explanation: planContent.explanation,
+              },
+            });
+            return;
+          }
+        }
         yield* emitItemNode(
           turn,
           toolCallId,
@@ -1404,6 +1577,7 @@ export const makePiAdapterV2 = Effect.fn("makePiAdapterV2")(function* (
         );
         const shared = {
           ...base,
+          ...(toolPurpose ? { toolPurpose } : {}),
           status,
           completedAt: completed ? emittedAt : null,
         } as const;
@@ -1416,7 +1590,7 @@ export const makePiAdapterV2 = Effect.fn("makePiAdapterV2")(function* (
             driver: PI_PROVIDER,
             turnItem: {
               ...shared,
-              title: toolName,
+              title: displayTitle,
               type: "command_execution",
               input: recordString(args, "command") ?? "",
               ...(outputText.length > 0 ? { output: outputText } : {}),
@@ -1427,7 +1601,7 @@ export const makePiAdapterV2 = Effect.fn("makePiAdapterV2")(function* (
         }
         if (toolName === "edit" || toolName === "write") {
           const fileName = recordString(args, "path") ?? recordString(args, "file_path");
-          if (fileName !== undefined) {
+          if (fileName !== undefined && !/^[a-z][a-z\d+.-]*:\/\//i.test(fileName)) {
             const diffStr =
               recordString(recordField(resultRecord, "details"), "patch") ??
               (isError && outputText.trim().length > 0 ? outputText : undefined);
@@ -1437,7 +1611,7 @@ export const makePiAdapterV2 = Effect.fn("makePiAdapterV2")(function* (
               driver: PI_PROVIDER,
               turnItem: {
                 ...shared,
-                title: toolName,
+                title: displayTitle,
                 type: "file_change",
                 fileName,
                 ...(diffStr === undefined ? {} : { diffStr }),
@@ -1464,7 +1638,7 @@ export const makePiAdapterV2 = Effect.fn("makePiAdapterV2")(function* (
           driver: PI_PROVIDER,
           turnItem: {
             ...shared,
-            title: toolName,
+            title: displayTitle,
             type: "dynamic_tool",
             ...mcpToolPresentation({ toolName }),
             toolName,
@@ -4362,13 +4536,19 @@ function piQuestion(
 ): OrchestrationV2UserInputQuestion {
   const options =
     method === "select" && Array.isArray(event["options"])
-      ? event["options"]
-          .filter((option): option is string => typeof option === "string")
-          .map((option) => ({
-            label: option || "Empty value",
-            description: option || "Empty value",
-            value: option,
-          }))
+      ? event["options"].flatMap((option, index) => {
+          if (typeof option !== "string") return [];
+          const detail = Array.isArray(event["optionDetails"])
+            ? event["optionDetails"][index]
+            : undefined;
+          return [
+            {
+              label: option || "Empty value",
+              description: recordString(detail, "description")?.trim() || option || "Empty value",
+              value: option,
+            },
+          ];
+        })
       : method === "editor"
         ? []
         : [

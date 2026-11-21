@@ -149,6 +149,7 @@ it.effect.each([
         layerOrchestrator,
         ThreadManagementService.layer.pipe(
           Layer.provide(layerOrchestrator),
+          Layer.provide(SqlitePersistence.layerMemory),
           Layer.provide(ServerSettings.layerTest()),
           Layer.provide(
             CommandReceiptStore.layer.pipe(Layer.provide(SqlitePersistence.layerMemory)),

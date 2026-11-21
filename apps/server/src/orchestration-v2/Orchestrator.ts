@@ -149,6 +149,7 @@ import {
 } from "./RestartBackgroundNote.ts";
 import {
   isBufferedProviderNotification,
+  isBufferedThreadWaitWake,
   isUndeliveredMailboxSteer,
 } from "./NotificationMailbox.ts";
 import { EventSinkV2 } from "./EventSink.ts";
@@ -426,6 +427,11 @@ export interface OrchestratorV2Shape {
   readonly dispatch: (
     command: OrchestrationV2ServerCommand,
   ) => Effect.Effect<OrchestratorV2DispatchResult, OrchestratorV2Error>;
+  readonly dispatchWaitWake: (input: {
+    readonly threadId: ThreadId;
+    readonly callerRunId: RunId;
+    readonly command: Extract<OrchestrationV2ServerCommand, { readonly type: "message.dispatch" }>;
+  }) => Effect.Effect<"pending" | "cancelled" | "dispatched", OrchestratorV2Error>;
   readonly autoArmLimitRecovery: (input: {
     readonly commandId: CommandId;
     readonly threadId: ThreadId;
@@ -13240,7 +13246,11 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
               ),
             )).messages;
     const bufferedMessageIds = new Set(
-      queuedMessages.filter(isBufferedProviderNotification).map((message) => message.id),
+      queuedMessages
+        .filter(
+          (message) => isBufferedProviderNotification(message) || isBufferedThreadWaitWake(message),
+        )
+        .map((message) => message.id),
     );
     for (const run of runs) {
       // A resumed queue can have a lower ordinal than a pending continuation source.
@@ -16421,6 +16431,46 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       : dispatch;
   });
 
+  const dispatchWaitWake: OrchestratorV2Shape["dispatchWaitWake"] = (input) =>
+    threadDispatch.withLock(
+      input.threadId,
+      Effect.gen(function* () {
+        const records = yield* projectionStore
+          .getThreadRecords(input.threadId, ["runs", "turnItems"], {
+            turnItemTypes: ["run_interrupt_request"],
+          })
+          .pipe(
+            Effect.mapError(
+              (cause) => new OrchestratorProjectionError({ threadId: input.threadId, cause }),
+            ),
+          );
+        const callerRun = records.runs.find((run) => run.id === input.callerRunId);
+        if (
+          records.thread.archivedAt !== null ||
+          records.thread.deletedAt !== null ||
+          callerRun === undefined ||
+          callerRun.status === "interrupted" ||
+          callerRun.status === "cancelled" ||
+          records.turnItems.some(
+            (item) =>
+              item.type === "run_interrupt_request" &&
+              records.runs.some((run) => run.id === item.runId && run.ordinal >= callerRun.ordinal),
+          )
+        ) {
+          return "cancelled" as const;
+        }
+        if (
+          callerRun.status !== "completed" &&
+          callerRun.status !== "failed" &&
+          callerRun.status !== "rolled_back"
+        ) {
+          return "pending" as const;
+        }
+        yield* dispatchWithReceiptEffect(input.command);
+        return "dispatched" as const;
+      }),
+    );
+
   const handleRunUpdate = Effect.fn("Orchestrator.handleRunUpdate")(
     function* (stored: OrchestrationV2StoredEvent) {
       if (stored.event.type !== "run.updated") return;
@@ -16937,6 +16987,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       return effectOutbox.awaitSettled(`effect:restart-continuation:${run.id}`).pipe(Effect.ignore);
     }),
     dispatch: dispatchWithReceipt,
+    dispatchWaitWake,
     autoArmLimitRecovery: Effect.fn("OrchestratorV2.autoArmLimitRecovery")(function (input) {
       return threadDispatch.withLock(
         input.threadId,

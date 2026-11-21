@@ -755,7 +755,8 @@ describe("buildThreadFeed", () => {
     const activity = buildThreadFeed([projected(item, 0)]).flatMap((entry) =>
       entry.type === "activity-group" ? entry.activities : [],
     )[0]!;
-    expect(workEntryRowLabel(activity.workEntry)).toBe("src/a.ts +2 more");
+    expect(workEntryRowLabel(activity.workEntry)).toBe("Changed 3 files");
+    expect(workEntryRowLabel(activity.workEntry, true)).toBe("src/a.ts +2 more");
     expect(summarizeToolGroup([activity.workEntry]).summary).toBe("Changed 3 files");
   });
 
@@ -861,6 +862,50 @@ describe("buildThreadFeed", () => {
     const activity = feed.find((entry) => entry.type === "activity-group")?.activities[0];
     expect(activity?.projectedItem).toBe(rows[1]);
     expect(activity?.getFullDetail()).toContain('"input": "vp check"');
+  });
+
+  it("shows the purpose of an individual tool with the raw input still in its details", () => {
+    const item = { ...command(), toolPurpose: "核对手机工具标题" };
+    const activity = buildThreadFeed([projected(item, 0)]).find(
+      (entry) => entry.type === "activity-group",
+    )?.activities[0];
+    if (!activity) throw new Error("Expected a tool activity");
+    expect(workEntryRowLabel(activity.workEntry)).toBe(item.toolPurpose);
+    expect(activity.getFullDetail()).toContain(item.input);
+  });
+
+  it("uses the latest purpose for a collapsed group and keeps individual purposes on expansion", () => {
+    const first = { ...command(), toolPurpose: "检查 Android 构建配置" };
+    const second = {
+      ...command("2026-06-20T00:00:03.000Z"),
+      id: TurnItemId.make("second-command"),
+      ordinal: 2,
+      toolPurpose: "核对手机工具标题",
+    };
+    const feed = buildThreadFeed([
+      projected(userMessage(), 0),
+      projected(first, 1),
+      projected(second, 2),
+      projected(assistantMessage(), 3),
+    ]);
+    const expandedRuns = new Set([runId]);
+    const header = deriveThreadFeedPresentation(feed, null, expandedRuns).find(
+      (entry) => entry.type === "work-toggle",
+    );
+    if (!header) throw new Error("Expected a tool group");
+    expect(header.summary).toBe(second.toolPurpose);
+    const expanded = deriveThreadFeedPresentation(
+      feed,
+      null,
+      expandedRuns,
+      new Set([header.groupId]),
+    );
+    const labels = expanded.flatMap((entry) =>
+      entry.type === "activity-group"
+        ? entry.activities.map((activity) => workEntryRowLabel(activity.workEntry))
+        : [],
+    );
+    expect(labels).toEqual([first.toolPurpose, second.toolPurpose]);
   });
 
   it("keeps adjacent work from different V2 attempts in separate groups", () => {
@@ -1478,7 +1523,7 @@ describe("buildThreadFeed", () => {
     );
     expect(presented.find((entry) => entry.type === "activity-group")).toMatchObject({
       id: "live-activity-row",
-      activities: [{ live: true, groupStandIn: { label: "Running vp" } }],
+      activities: [{ live: true, groupStandIn: { label: "Running command" } }],
     });
     expect(presented.some((entry) => entry.type === "thinking")).toBe(false);
   });
@@ -1959,7 +2004,7 @@ it("stops stranded thinking after a steer and follows the next thought or tool",
     expect(live[0]).toMatchObject(
       items.at(-1)!.type === "reasoning"
         ? { summary: "Thinking", thought: "next-thought" }
-        : { summary: "Running vp" },
+        : { summary: "Running command" },
     );
   }
   expect(first.status).toBe("running");

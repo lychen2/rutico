@@ -108,6 +108,7 @@ function singleToolCallLabel(entry: WorkLogEntry, resolve: MessageResolver): str
   if (entry.itemType === "reasoning") {
     return entry.detail?.trim().replace(/\s+/g, " ") || resolve(msg("Thought"));
   }
+  if (entry.structuredPayload?.toolPurpose) return entry.structuredPayload.toolPurpose;
   const toolPresentation = resolveWorkEntryToolPresentation(entry, "completed", resolve);
   if (toolPresentation) return toolPresentation.displayName;
   const item = entry.structuredPayload;
@@ -156,6 +157,25 @@ export function workEntryDisplayLabel(
     const thought = entry.detail?.trim().replace(/\s+/g, " ");
     return thought || entry.label;
   }
+  const item = entry.structuredPayload;
+  if (item?.toolPurpose) return item.toolPurpose;
+  const title = item?.title?.trim();
+  if (item?.type === "dynamic_tool") {
+    const specializedTitle = dynamicToolTitle(item.toolName, item.input, item.title, resolve);
+    if (specializedTitle) return specializedTitle;
+    if (title && title !== item.toolName) return title;
+  } else if (
+    title &&
+    (item?.type === "command_execution" ||
+      item?.type === "file_change" ||
+      item?.type === "file_search") &&
+    title !== "bash" &&
+    title !== "powershell" &&
+    title !== "edit" &&
+    title !== "write"
+  ) {
+    return title;
+  }
   const toolPresentation = resolveWorkEntryToolPresentation(entry, undefined, resolve);
   if (toolPresentation) return toolPresentation.displayName;
   if (entry.command?.trim()) return commandDisplayText(entry.command);
@@ -179,12 +199,6 @@ export function workEntryDisplayLabel(
   }
   const providerRetry =
     entry.projectedItem?.item.type === "error" && entry.projectedItem.item.retry !== undefined;
-  const item = entry.structuredPayload;
-  const title =
-    item?.type === "dynamic_tool"
-      ? dynamicToolTitle(item.toolName, item.input, item.title, resolve)
-      : null;
-  if (title) return title;
   const compactDetail = entry.detail?.trim();
   const detailIsSearchOutput =
     (action === "code-search" || action === "search") && /[\r\n]/.test(compactDetail ?? "");
@@ -269,6 +283,8 @@ export function liveWorkEntryLabel(
       (status === "inProgress" ? resolve(msg("Thinking")) : resolve(msg("Thought")))
     );
   }
+  const toolPurpose = entry.structuredPayload?.toolPurpose;
+  if (toolPurpose) return toolPurpose;
   const toolPresentation = resolveWorkEntryToolPresentation(
     { ...entry, toolLifecycleStatus: status },
     undefined,

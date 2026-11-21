@@ -214,16 +214,14 @@ const cancelBackgroundOnlyTask = (
             ThreadManagementService.layer.pipe(
               Layer.provide(layerOrchestrator),
               Layer.provide(ServerSettings.layerTest()),
-              Layer.provide(
-                CommandReceiptStore.layer.pipe(Layer.provide(SqlitePersistence.layerMemory)),
-              ),
+              Layer.provide(CommandReceiptStore.layer.pipe(Layer.provide(databaseLayer))),
+              Layer.provide(databaseLayer),
             ),
           ),
           Layer.provide(layerOrchestrator),
           Layer.provide(ServerSettings.layerTest()),
-          Layer.provide(
-            CommandReceiptStore.layer.pipe(Layer.provide(SqlitePersistence.layerMemory)),
-          ),
+          Layer.provide(CommandReceiptStore.layer.pipe(Layer.provide(databaseLayer))),
+          Layer.provide(databaseLayer),
         ),
       );
       const layerTest = layerOrchestratorService.pipe(

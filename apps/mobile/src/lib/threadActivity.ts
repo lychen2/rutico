@@ -17,10 +17,7 @@ import {
   turnItemHasDetail,
   turnItemNeedsDetailFetch,
 } from "@t3tools/client-runtime/work-log/item-detail";
-import {
-  commandDisplayText,
-  commandProgramName,
-} from "@t3tools/client-runtime/work-log/command-label";
+import { commandDisplayText } from "@t3tools/client-runtime/work-log/command-label";
 import {
   commandlessCommandLabel,
   contextCompactionLabel,
@@ -299,6 +296,8 @@ export function workEntryRowLabel(
     return entry.toolLifecycleStatus === "inProgress"
       ? resolve(msg("Thinking"))
       : resolve(msg("Thought"));
+  const purpose = entry.structuredPayload?.toolPurpose?.trim();
+  if (purpose) return compactWorkEntryText(purpose);
   const presentation = resolveWorkEntryToolPresentation(entry, undefined, resolve);
   if (presentation) return presentation.displayName;
   if (entry.command?.trim()) return compactWorkEntryText(commandDisplayText(entry.command));
@@ -309,6 +308,9 @@ export function workEntryRowLabel(
   );
   if (commandless) return commandless;
   const action = toolGroupAction(entry);
+  if (!expanded && action === "edit" && (entry.changedFiles?.length ?? 0) > 1) {
+    return summarizeToolGroup([entry], resolve).summary;
+  }
   const isToolRead = action === "read" && entry.itemType === "dynamic_tool";
   if (action === "code-search" || action === "search") {
     const toolData =
@@ -955,10 +957,7 @@ function singleToolCallLabel(
     return expanded
       ? resolve(msg("Thought"))
       : compactWorkEntryText(activity.workEntry.detail ?? "") || resolve(msg("Thought"));
-  const presentation = resolveWorkEntryToolPresentation(activity.workEntry, "completed", resolve);
-  if (presentation) return presentation.displayName;
-  const command = activity.workEntry.command?.trim();
-  return command ? truncate(command, WORK_LOG_LABEL_MAX_LENGTH) : activity.summary;
+  return workEntryRowLabel(activity.workEntry, false, resolve);
 }
 
 function isEmptyMessage(entry: RawThreadFeedEntry): boolean {
@@ -2291,6 +2290,11 @@ function appendToolGroupRows(
     activities.map((activity) => activity.workEntry),
     resolve,
   );
+  const groupPurpose = live
+    ? undefined
+    : activities
+        .findLast((activity) => activity.projectedItem.item.toolPurpose?.trim())
+        ?.projectedItem.item.toolPurpose?.trim();
   const latestThought =
     live && !expanded
       ? activities.findLast(
@@ -2306,13 +2310,13 @@ function appendToolGroupRows(
         ? resolve(msg("Thinking"))
         : resolve(msg("Thought"))
       : liveToolActivitySummary(latestActivity, live, resolve)
-    : singleActivity !== null &&
-        singleActivity.toolLike &&
-        toolGroupAction(singleActivity.workEntry) !== "edit"
-      ? singleToolCallLabel(singleActivity, expanded, resolve)
-      : singleActivity !== null && !singleActivity.toolLike
-        ? singleActivity.workEntry.label
-        : groupSummary.summary;
+    : groupPurpose
+      ? compactWorkEntryText(groupPurpose)
+      : singleActivity !== null && singleActivity.toolLike
+        ? singleToolCallLabel(singleActivity, expanded, resolve)
+        : singleActivity !== null
+          ? singleActivity.workEntry.label
+          : groupSummary.summary;
   const id = shimmer ? LIVE_ACTIVITY_ROW_ID : `${live ? "work-live" : "work-toggle"}:${groupId}`;
   // Lone calls replace the header and disclose directly; lone thoughts retain the header to show text on expansion.
   if (singleActivity !== null && singleActivity.workEntry.itemType !== "reasoning") {
@@ -2367,12 +2371,7 @@ function appendToolGroupRows(
     ...(groupToolIcon ? { toolIcon: groupToolIcon } : {}),
     ...(summaryToolIcon ? { summaryToolIcon } : {}),
     ...(thought ? { thought } : {}),
-    hasFailure: (() => {
-      const lastToolLike = activities.findLast((activity) => activity.toolLike);
-      return (
-        lastToolLike !== undefined && workEntryDisplayIndicatesToolFailure(lastToolLike.workEntry)
-      );
-    })(),
+    hasFailure: activities.some((activity) => activity.status === "failure"),
     live,
     shimmer,
   });
@@ -2406,40 +2405,30 @@ function liveToolActivitySummary(
         (status === "inProgress" ? resolve(msg("Thinking")) : resolve(msg("Thought"))),
     );
   }
+  const purpose = activity.projectedItem.item.toolPurpose?.trim();
+  if (purpose) return compactWorkEntryText(purpose);
   const presentation = resolveWorkEntryToolPresentation(
     { ...activity.workEntry, toolLifecycleStatus: status },
     undefined,
     resolve,
   );
   if (presentation) return presentation.displayName;
-  const command = activity.workEntry.command?.trim();
-  if (command) {
-    const program = commandProgramName(command);
-    if (program === null || program === undefined) {
-      return status === "inProgress"
-        ? resolve(msg("Running command"))
-        : status === "failed"
-          ? resolve(msg("Failed command"))
-          : status === "declined"
-            ? resolve(msg("Declined command"))
-            : status === "stopped"
-              ? resolve(msg("Stopped command"))
-              : resolve(msg("Ran command"));
+  if (activity.workEntry.itemType === "command_execution" || activity.workEntry.command) {
+    switch (status) {
+      case "inProgress":
+        return resolve(msg("Running command"));
+      case "failed":
+        return resolve(msg("Failed command"));
+      case "declined":
+        return resolve(msg("Declined command"));
+      case "stopped":
+        return resolve(msg("Stopped command"));
+      default:
+        return resolve(msg("Ran command"));
     }
-    return status === "inProgress"
-      ? resolve(msg("Running {program}", { program }))
-      : status === "failed"
-        ? resolve(msg("Failed {program}", { program }))
-        : status === "declined"
-          ? resolve(msg("Declined {program}", { program }))
-          : status === "stopped"
-            ? resolve(msg("Stopped {program}", { program }))
-            : resolve(msg("Ran {program}", { program }));
   }
-  return (
-    commandlessCommandLabel(activity.workEntry, status, resolve) ??
-    compactWorkEntryText(activity.detail ?? activity.summary)
-  );
+  if (activity.toolLike) return workEntryRowLabel(activity.workEntry, false, resolve);
+  return compactWorkEntryText(activity.detail ?? activity.summary);
 }
 
 interface ThreadFeedBuild {

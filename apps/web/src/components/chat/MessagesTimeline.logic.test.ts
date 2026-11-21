@@ -35,6 +35,7 @@ import {
   isTimelineMinimapTurnVisible,
   resolveAssistantMessageCopyState,
   type MessagesTimelineRow,
+  liveWorkEntryLabel,
   workEntryDisplayLabel,
   workEntryReadOutput,
 } from "./MessagesTimeline.logic";
@@ -194,6 +195,54 @@ describe("deriveMessagesTimelineRows", () => {
       expect(rows.filter((row) => row.kind === "work-live" && row.active)).toEqual(
         placement === "alone" ? [] : [expect.objectContaining({ entry: tool.entry })],
       );
+    },
+  );
+
+  it.each(["read", "bash", "eval", "write", "edit", "grep"] as const)(
+    "shows the purpose of %s instead of its path, command or output",
+    (tool) => {
+      const fixture = makeStreamingTimelineFixture();
+      const source = fixture.visibleTurnItems[0]!;
+      const title = "检查材料参数";
+      const item: OrchestrationV2TurnItem =
+        tool === "bash"
+          ? {
+              ...source.item,
+              type: "command_execution",
+              title,
+              input: "cat materials.json",
+              output: "raw output",
+            }
+          : tool === "write" || tool === "edit"
+            ? {
+                ...source.item,
+                type: "file_change",
+                title,
+                fileName: "/repo/materials.json",
+                newStr: "{}",
+              }
+            : {
+                ...source.item,
+                type: "dynamic_tool",
+                title,
+                toolName: tool,
+                input:
+                  tool === "read"
+                    ? { path: "/repo/materials.json" }
+                    : tool === "grep"
+                      ? { path: "/repo", pattern: "material" }
+                      : { language: "js", code: "console.log(1)" },
+                output: "raw output",
+              };
+      const entries = deriveTimelineEntriesFromVisibleTurnItems({
+        visibleTurnItems: [{ ...source, item: { ...item, title: tool, toolPurpose: title } }],
+        optimisticMessages: [],
+      });
+      const entry = entries.find((row) => row.kind === "work");
+      if (entry?.kind !== "work") throw new Error("Expected tool row");
+      expect(workEntryDisplayLabel(entry.entry, "/repo")).toBe(title);
+      expect(liveWorkEntryLabel(entry.entry, "/repo", true)).toBe(title);
+      expect(entry.entry.structuredPayload).toEqual({ ...item, title: tool, toolPurpose: title });
     },
   );
 

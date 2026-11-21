@@ -1399,6 +1399,7 @@ const SubagentNotificationSource = Schema.Struct({
   childThreadId: Schema.optional(ThreadId),
 });
 const CommandNotificationSource = Schema.Struct({ kind: Schema.Literal("command") });
+const ThreadWaitNotificationSource = Schema.Struct({ kind: Schema.Literal("thread_wait") });
 const OrchestrationV2NotificationOutcome = Schema.Literals([
   "completed",
   "failed",
@@ -1451,6 +1452,7 @@ export const OrchestrationV2NotificationSource = kindUnionWithFallback(
     Schema.Struct({ kind: Schema.Literal("background_command").transform("command") }),
     SubagentNotificationSource,
     CommandNotificationSource,
+    ThreadWaitNotificationSource,
     Schema.Struct({
       kind: Schema.Literal("monitor"),
       pullRequest: Schema.optional(MonitorPullRequestStamp),
@@ -1736,6 +1738,7 @@ const OrchestrationV2TurnItemBaseFields = {
     }),
   ),
   toolNonExecutionKind: Schema.optional(Schema.String),
+  toolPurpose: Schema.optional(TrimmedNonEmptyString),
   toolSurface: Schema.optional(ToolActivitySurface),
   toolIcon: Schema.optional(ToolActivityIcon),
   toolSource: Schema.optional(ToolActivitySource),

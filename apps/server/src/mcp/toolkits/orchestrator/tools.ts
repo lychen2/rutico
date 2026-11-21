@@ -296,7 +296,7 @@ const ThreadSendTool = Tool.make("t3_thread_send", {
 
 const ThreadWaitTool = Tool.make("t3_thread_wait", {
   description:
-    "Wait for a thread's run to finish. No `runId`: latest. Idle: at once. On timeout, with `next` end your turn; without, call again.",
+    "Wait for a thread's run to finish. No `runId`: latest. Idle: at once. A local T3 thread caller waiting on an independent local thread gets a durable wake and `next` immediately, or after an explicit `timeoutMs`; when `next` is returned, end your turn. Other callers can call again after a timeout. Pending questions need a user response.",
   parameters: OrchestratorMcpThreadWaitInput,
   success: OrchestratorMcpThreadWaitResult,
   failure: OrchestratorMcpFailure,

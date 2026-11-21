@@ -113,6 +113,7 @@ import Migration0102 from "./Migrations/102_ThreadItemCounts.ts";
 import Migration0103 from "./Migrations/103_IssueTrackerAdditionalScopes.ts";
 import Migration0104 from "./Migrations/104_ProjectionProjectsTrackedFolders.ts";
 import Migration0105 from "./Migrations/105_TaskFolders.ts";
+import Migration0106 from "./Migrations/106_ThreadWaitWakeObligations.ts";
 
 const migrationEntries = [
   [1, "OrchestrationEvents", Migration0001],
@@ -221,6 +222,7 @@ const migrationEntries = [
   [103, "IssueTrackerAdditionalScopes", Migration0103],
   [104, "ProjectionProjectsTrackedFolders", Migration0104],
   [105, "TaskFolders", Migration0105],
+  [106, "ThreadWaitWakeObligations", Migration0106],
 ] as const;
 
 export const migrationManifest = migrationEntries.map(([id, name]) => [id, name] as const);
@@ -235,6 +237,8 @@ const makeMigrationLoader = (throughId?: number) =>
   );
 
 const FIRST_V2_MIGRATION_ID = 55;
+const LEGACY_WAIT_WAKE_MIGRATION_ID = 104;
+const LEGACY_WAIT_WAKE_MIGRATION_NAME = "ThreadWaitWakeObligations";
 
 export function skippedV2Migrations(
   recorded: ReadonlyArray<{ readonly id: number; readonly name: string }>,
@@ -250,6 +254,13 @@ export function skippedV2Migrations(
     )
       return [];
     const recordedName = recordedNames.get(id);
+    // The old fork recorded its wake table at 104. Startup frees that slot for upstream 104.
+    if (
+      id === LEGACY_WAIT_WAKE_MIGRATION_ID &&
+      id === latestRecordedId &&
+      recordedName === LEGACY_WAIT_WAKE_MIGRATION_NAME
+    )
+      return [];
     return recordedName === name ? [] : [`${id}_${name} (recorded: ${recordedName ?? "nothing"})`];
   });
 }
@@ -325,9 +336,24 @@ export const runMigrations = Effect.fn("runMigrations")(function* ({
     ledger.length === 0
       ? []
       : yield* sql<{
-          readonly id: number | null;
-        }>`SELECT MAX(migration_id) AS id FROM effect_sql_migrations`;
-  const latestRecordedId = latest?.id ?? 0;
+          readonly id: number;
+          readonly name: string;
+        }>`SELECT migration_id AS id, name FROM effect_sql_migrations ORDER BY migration_id DESC LIMIT 1`;
+  let latestRecordedId = latest?.id ?? 0;
+  if (
+    latest?.id === LEGACY_WAIT_WAKE_MIGRATION_ID &&
+    latest.name === LEGACY_WAIT_WAKE_MIGRATION_NAME &&
+    (toMigrationInclusive ?? latestMigrationId) >= LEGACY_WAIT_WAKE_MIGRATION_ID
+  ) {
+    // Keep the wake table and its rows. Migration 106 will adopt the existing schema.
+    yield* sql`
+      DELETE FROM effect_sql_migrations
+      WHERE migration_id = ${LEGACY_WAIT_WAKE_MIGRATION_ID}
+        AND name = ${LEGACY_WAIT_WAKE_MIGRATION_NAME}
+        AND migration_id = (SELECT MAX(migration_id) FROM effect_sql_migrations)
+    `;
+    latestRecordedId = LEGACY_WAIT_WAKE_MIGRATION_ID - 1;
+  }
   const pending = migrationEntries.filter(
     ([id]) =>
       id > latestRecordedId && (toMigrationInclusive === undefined || id <= toMigrationInclusive),

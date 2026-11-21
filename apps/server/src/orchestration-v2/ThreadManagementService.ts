@@ -52,16 +52,20 @@ import * as DateTime from "effect/DateTime";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
+import * as FiberSet from "effect/FiberSet";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Ref from "effect/Ref";
 import * as Result from "effect/Result";
 import * as Schema from "effect/Schema";
 import * as Semaphore from "effect/Semaphore";
+import * as SqlClient from "effect/sql/SqlClient";
 import * as Stream from "effect/Stream";
 
 import * as CommandReceiptStore from "./CommandReceiptStore.ts";
 import * as Orchestrator from "./Orchestrator.ts";
+import * as ThreadWaitWakeObligations from "../persistence/ThreadWaitWakeObligations.ts";
+import * as ServerActivation from "../serverActivation.ts";
 import * as ServerEnvironment from "../environment/ServerEnvironment.ts";
 import { projectedRowEncodedBytes } from "./threadHistoryPaging.ts";
 import { threadPullRequestsOf } from "../sourceControl/threadPullRequests.ts";
@@ -204,6 +208,23 @@ export interface ThreadManagementWaitResult {
   readonly timedOut: boolean;
   /** With `untilDelegatedWorkSettled`, once settled: the run with the thread's final answer. */
   readonly resultRun?: OrchestrationV2Run;
+}
+
+export interface ThreadManagementWaitState {
+  readonly threadId: ThreadId;
+  readonly run: OrchestrationV2Run | null;
+  readonly settled: boolean;
+  readonly resultRun?: OrchestrationV2Run;
+}
+
+export interface ThreadManagementWaitWakeRegistrationInput {
+  readonly callerThreadId: ThreadId;
+  readonly callerProviderSessionId: string;
+  readonly callerProviderInstanceId: ProviderInstanceId;
+  readonly targetProjectId: ProjectId;
+  readonly targetThreadId: ThreadId;
+  readonly targetRunId: RunId;
+  readonly untilDelegatedWorkSettled?: boolean;
 }
 
 export interface ThreadManagementInterruptInput {
@@ -507,6 +528,12 @@ export interface ThreadManagementServiceShape {
   readonly waitForThread: (
     input: ThreadManagementWaitInput,
   ) => Effect.Effect<ThreadManagementWaitResult, ThreadManagementError>;
+  readonly getThreadWaitState: (
+    input: Omit<ThreadManagementWaitInput, "timeoutMs">,
+  ) => Effect.Effect<ThreadManagementWaitState, ThreadManagementError>;
+  readonly registerThreadWaitWake: (
+    input: ThreadManagementWaitWakeRegistrationInput,
+  ) => Effect.Effect<boolean, ThreadManagementFailure>;
   /** Waits for the agent's run and automatic follow-ups before settling.
    * A new user turn or an unsuccessful ending leaves the thread active. */
   readonly settleAfterRun: (input: {
@@ -646,6 +673,9 @@ const make = Effect.gen(function* () {
   const serverSettings = yield* ServerSettings.ServerSettingsService;
   const receipts = yield* CommandReceiptStore.CommandReceiptStoreV2;
   const worktreeRestore = yield* ThreadWorktreeRestore;
+  const waitWakeObligations = yield* ThreadWaitWakeObligations.ThreadWaitWakeObligationRepository;
+  const waitWakeMonitors = yield* FiberSet.make<void, never>();
+  const activeWaitWakeIds = yield* Ref.make<ReadonlySet<string>>(new Set());
 
   const assertProviderInstanceEnabled: ThreadManagementServiceShape["assertProviderInstanceEnabled"] =
     (input) =>
@@ -1072,6 +1102,60 @@ const make = Effect.gen(function* () {
     return { runId: run.id };
   });
 
+  // Shared by synchronous waits and durable wake reconciliation.
+  const evaluateThreadWait = Effect.fnUntraced(function* (
+    input: Omit<ThreadManagementWaitInput, "timeoutMs">,
+    selectedRun: OrchestrationV2Run,
+    runs: ReadonlyArray<OrchestrationV2Run>,
+  ) {
+    const loadError = (cause: unknown) =>
+      new ThreadManagementProjectionLoadError({
+        projectId: input.projectId,
+        threadId: input.threadId,
+        cause,
+      });
+    const current = runs.find((candidate) => candidate.id === selectedRun.id);
+    if (current === undefined) {
+      return yield* new ThreadManagementRunNotFoundError({
+        threadId: input.threadId,
+        runId: selectedRun.id,
+      });
+    }
+    const run = latestRestartContinuation(runs, current);
+    const pending =
+      isTerminalRunStatus(run.status) &&
+      (yield* orchestrator.restartContinuationPending(run).pipe(Effect.mapError(loadError)));
+    const owesOutput =
+      input.untilOutput === true &&
+      run.status === "completed" &&
+      run.outputSchema !== undefined &&
+      run.output === undefined;
+    const settled = isTerminalRunStatus(run.status) && !pending && !owesOutput;
+    if (!settled || input.untilDelegatedWorkSettled !== true) {
+      return { run, pending, settled, resultRun: undefined };
+    }
+
+    const records = yield* getProjectThreadRecords(
+      input,
+      ["runs", "messages", "subagents", "providerThreads"],
+      { messageRoles: ["user"], monitorNotificationsOnly: true },
+    );
+    const progress = delegatedTaskProgress(records);
+    let resultRun: OrchestrationV2Run | undefined;
+    if (
+      progress.resultRun === undefined &&
+      records.runs.every((candidate) => isTerminalRunStatus(candidate.status))
+    ) {
+      resultRun = latestRun(records);
+    } else if (progress.state === "result_available") {
+      const resultPending = yield* orchestrator
+        .delegatedTaskResultPending(input.threadId)
+        .pipe(Effect.mapError(loadError));
+      if (!resultPending) resultRun = progress.resultRun;
+    }
+    return { run, pending, settled: resultRun !== undefined, resultRun };
+  });
+
   const waitForThread: ThreadManagementServiceShape["waitForThread"] = Effect.fn(
     "ThreadManagementService.waitForThread",
   )(function* (input) {
@@ -1100,57 +1184,9 @@ const make = Effect.gen(function* () {
     if (selectedRun === undefined) {
       return { threadId: input.threadId, run: null, timedOut: false };
     }
-    // A restart cuts a run and continues it as a new run. Follow that chain,
-    // so a cut run is not the answer while its continuation is pending.
-    // Runs per matching event and is already covered by the waitForThread span.
-    const outcome = Effect.fnUntraced(function* (runs: ReadonlyArray<OrchestrationV2Run>) {
-      const current = runs.find((candidate) => candidate.id === selectedRun.id);
-      if (current === undefined) {
-        return yield* new ThreadManagementRunNotFoundError({
-          threadId: input.threadId,
-          runId: selectedRun.id,
-        });
-      }
-      const run = latestRestartContinuation(runs, current);
-      const pending =
-        isTerminalRunStatus(run.status) && (yield* orchestrator.restartContinuationPending(run));
-      const owesOutput =
-        input.untilOutput === true &&
-        run.status === "completed" &&
-        run.outputSchema !== undefined &&
-        run.output === undefined;
-      return { run, pending, settled: isTerminalRunStatus(run.status) && !pending && !owesOutput };
-    });
     const untilDelegatedWorkSettled = input.untilDelegatedWorkSettled === true;
-    const delegatedWorkResult = Effect.gen(function* () {
-      const records = yield* getProjectThreadRecords(
-        input,
-        ["runs", "messages", "subagents", "providerThreads"],
-        { messageRoles: ["user"], monitorNotificationsOnly: true },
-      );
-      const progress = delegatedTaskProgress(records);
-      // A thread rolled back past all its work, with nothing left running, has no answer to wait for.
-      if (
-        progress.resultRun === undefined &&
-        records.runs.every((run) => isTerminalRunStatus(run.status))
-      ) {
-        return latestRun(records);
-      }
-      if (progress.state !== "result_available") return undefined;
-      const pending = yield* orchestrator
-        .delegatedTaskResultPending(input.threadId)
-        .pipe(Effect.mapError(loadError));
-      return pending ? undefined : progress.resultRun;
-    });
-    const evaluate = Effect.fn("orchestrationV2.threadManagement.evaluate")(function* (
-      runs: ReadonlyArray<OrchestrationV2Run>,
-    ) {
-      const current = yield* outcome(runs);
-      if (!current.settled || !untilDelegatedWorkSettled) {
-        return { ...current, resultRun: undefined };
-      }
-      const resultRun = yield* delegatedWorkResult;
-      return { ...current, settled: resultRun !== undefined, resultRun };
+    const evaluate = Effect.fnUntraced(function* (runs: ReadonlyArray<OrchestrationV2Run>) {
+      return yield* evaluateThreadWait(input, selectedRun, runs);
     });
     const settledResult = (current: Effect.Success<ReturnType<typeof evaluate>>) => ({
       threadId: input.threadId,
@@ -1214,6 +1250,305 @@ const make = Effect.gen(function* () {
     // happened, so only a still-active run counts as timed out.
     return settledResult(yield* evaluate((yield* getProjectThreadRecords(input, ["runs"])).runs));
   });
+
+  const getThreadWaitState: ThreadManagementServiceShape["getThreadWaitState"] = Effect.fn(
+    "ThreadManagementService.getThreadWaitState",
+  )(function* (input) {
+    const target = yield* getProjectThreadRecords(input, ["runs"]);
+    const selectedRun =
+      input.runId === undefined
+        ? latestRun(target)
+        : target.runs.find((candidate) => candidate.id === input.runId);
+    if (input.runId !== undefined && selectedRun === undefined) {
+      return yield* new ThreadManagementRunNotFoundError({
+        threadId: input.threadId,
+        runId: input.runId,
+      });
+    }
+    if (selectedRun === undefined) {
+      return {
+        threadId: input.threadId,
+        run: null,
+        settled: true,
+      } satisfies ThreadManagementWaitState;
+    }
+
+    const evaluated = yield* evaluateThreadWait(input, selectedRun, target.runs);
+    return {
+      threadId: input.threadId,
+      run: evaluated.run,
+      settled: evaluated.settled,
+      ...(evaluated.resultRun === undefined ? {} : { resultRun: evaluated.resultRun }),
+    } satisfies ThreadManagementWaitState;
+  });
+
+  // One subscription per durable obligation; failures leave the row for startup recovery.
+  const reconcileThreadWaitWake = Effect.fnUntraced(function* (wakeId: string) {
+    const obligationOption = yield* waitWakeObligations.get(wakeId);
+    if (Option.isNone(obligationOption)) return false;
+    const obligation = obligationOption.value;
+    const discard = () =>
+      waitWakeObligations.delete(wakeId).pipe(
+        Effect.mapError(
+          (cause) =>
+            new ThreadManagementProjectionLoadError({
+              projectId: obligation.callerProjectId,
+              threadId: obligation.callerThreadId,
+              cause,
+            }),
+        ),
+        Effect.as(false),
+      );
+
+    const callerShell = yield* orchestrator.getThreadShell(obligation.callerThreadId);
+    if (callerShell === null || callerShell.archivedAt !== null) return yield* discard();
+    const callerRecords = yield* orchestrator.getThreadRecords(
+      obligation.callerThreadId,
+      ["runs", "turnItems"],
+      {
+        turnItemTypes: ["run_interrupt_request"],
+      },
+    );
+    const callerRun = callerRecords.runs.find((run) => run.id === obligation.callerRunId);
+    if (
+      callerRecords.thread.deletedAt !== null ||
+      callerRun === undefined ||
+      callerRun.status === "interrupted" ||
+      callerRun.status === "cancelled" ||
+      callerRecords.turnItems.some(
+        (item) =>
+          item.type === "run_interrupt_request" &&
+          callerRecords.runs.some(
+            (run) => run.id === item.runId && run.ordinal >= callerRun.ordinal,
+          ),
+      )
+    ) {
+      return yield* discard();
+    }
+    if (!isTerminalRunStatus(callerRun.status)) return true;
+    if (obligation.state === "registering") {
+      yield* waitWakeObligations.markSuspended(wakeId);
+    }
+
+    const targetShell = yield* orchestrator.getThreadShell(obligation.targetThreadId);
+    if (
+      targetShell === null ||
+      targetShell.archivedAt !== null ||
+      targetShell.projectId !== obligation.targetProjectId
+    ) {
+      return yield* discard();
+    }
+    const targetRecords = yield* orchestrator.getThreadRecords(obligation.targetThreadId, [
+      "runtimeRequests",
+    ]);
+    if (
+      targetRecords.thread.deletedAt !== null ||
+      targetRecords.thread.archivedAt !== null ||
+      targetRecords.runtimeRequests.some((request) => request.status === "pending")
+    ) {
+      return yield* discard();
+    }
+    const targetWait = yield* getThreadWaitState({
+      projectId: obligation.targetProjectId,
+      threadId: obligation.targetThreadId,
+      runId: obligation.targetRunId,
+      ...(obligation.untilDelegatedWorkSettled ? { untilDelegatedWorkSettled: true } : {}),
+    });
+    if (!targetWait.settled || targetWait.run === null) return true;
+
+    const finalRun = targetWait.resultRun ?? targetWait.run;
+    const outcome =
+      finalRun.status === "completed"
+        ? "completed"
+        : finalRun.status === "failed"
+          ? "failed"
+          : finalRun.status === "interrupted" ||
+              finalRun.status === "cancelled" ||
+              finalRun.status === "rolled_back"
+            ? "cancelled"
+            : "unknown";
+    const command: Extract<OrchestrationV2ServerCommand, { readonly type: "message.dispatch" }> = {
+      type: "message.dispatch",
+      commandId: obligation.commandId,
+      threadId: obligation.callerThreadId,
+      messageId: obligation.messageId,
+      text: `The waited-for thread ${obligation.targetThreadId} finished run ${finalRun.id} with status ${finalRun.status}.`,
+      notification: {
+        source: { kind: "thread_wait" },
+        outcome,
+        summary: `Thread ${obligation.targetThreadId} run ${finalRun.id} finished.`,
+      },
+      attachments: [],
+      dispatchMode: { type: "queue_after_active" },
+      createdBy: "agent",
+      creationSource: "server",
+    };
+    const dispatched = yield* orchestrator.dispatchWaitWake({
+      threadId: obligation.callerThreadId,
+      callerRunId: obligation.callerRunId,
+      command,
+    });
+    if (dispatched === "pending") return true;
+    return yield* discard();
+  });
+
+  const startThreadWaitWakeMonitor = Effect.fnUntraced(function* (wakeId: string) {
+    const started = yield* Ref.modify(activeWaitWakeIds, (active) => {
+      if (active.has(wakeId)) return [false, active] as const;
+      const next = new Set(active);
+      next.add(wakeId);
+      return [true, next] as const;
+    });
+    if (!started) return;
+
+    yield* FiberSet.run(waitWakeMonitors)(
+      Effect.gen(function* () {
+        const obligationOption = yield* waitWakeObligations.get(wakeId);
+        if (Option.isNone(obligationOption)) return;
+        const obligation = obligationOption.value;
+        const [callerSequence, targetSequence] = yield* Effect.all([
+          orchestrator.getThreadEventSequence(obligation.callerThreadId),
+          orchestrator.getThreadEventSequence(obligation.targetThreadId),
+        ]);
+        const stop = yield* Ref.make(false);
+        const events = Stream.merge(
+          orchestrator.streamStoredEventsFrom({
+            threadId: obligation.callerThreadId,
+            afterSequence: Math.max(callerSequence, obligation.callerSequenceAtRegistration),
+          }),
+          orchestrator.streamStoredEventsFrom({
+            threadId: obligation.targetThreadId,
+            afterSequence: Math.max(targetSequence, obligation.targetSequenceAtRegistration),
+          }),
+        );
+        const keepMonitoring = yield* reconcileThreadWaitWake(wakeId);
+        if (!keepMonitoring) return;
+        yield* events.pipe(
+          Stream.tap(() =>
+            reconcileThreadWaitWake(wakeId).pipe(Effect.flatMap((keep) => Ref.set(stop, !keep))),
+          ),
+          Stream.takeUntilEffect(() => Ref.get(stop)),
+          Stream.runDrain,
+        );
+      }).pipe(
+        Effect.ensuring(
+          Ref.update(activeWaitWakeIds, (active) => {
+            const next = new Set(active);
+            next.delete(wakeId);
+            return next;
+          }),
+        ),
+        Effect.catchCause((cause) =>
+          Effect.logWarning("Unable to monitor a durable thread wait wake", { cause }),
+        ),
+      ),
+    );
+  });
+
+  const registerThreadWaitWake: ThreadManagementServiceShape["registerThreadWaitWake"] = Effect.fn(
+    "ThreadManagementService.registerThreadWaitWake",
+  )(function* (input) {
+    if (input.callerThreadId === input.targetThreadId) return false;
+    const caller = yield* orchestrator.getThreadRecords(input.callerThreadId, [
+      "runs",
+      "providerThreads",
+    ]);
+    if (
+      caller.thread.archivedAt !== null ||
+      caller.thread.deletedAt !== null ||
+      caller.thread.lineage.relationshipToParent === "subagent"
+    ) {
+      return false;
+    }
+    const callerProviderThread = caller.providerThreads.find(
+      (candidate) =>
+        candidate.providerSessionId === input.callerProviderSessionId &&
+        candidate.providerInstanceId === input.callerProviderInstanceId,
+    );
+    if (callerProviderThread === undefined) return false;
+    const callerRun = caller.runs
+      .filter((run) => run.providerThreadId === callerProviderThread.id && isActiveRun(run))
+      .toSorted((left, right) => right.ordinal - left.ordinal)[0];
+    if (callerRun === undefined) return false;
+    const stopRequests = yield* orchestrator.getThreadRecords(input.callerThreadId, ["turnItems"], {
+      turnItemTypes: ["run_interrupt_request"],
+      turnItemRunIds: [callerRun.id],
+    });
+    if (stopRequests.turnItems.some((item) => item.type === "run_interrupt_request")) return false;
+
+    const target = yield* orchestrator.getThreadRecords(input.targetThreadId, ["runtimeRequests"]);
+    if (
+      target.thread.projectId !== input.targetProjectId ||
+      target.thread.archivedAt !== null ||
+      target.thread.deletedAt !== null ||
+      target.thread.lineage.relationshipToParent === "subagent" ||
+      target.runtimeRequests.some((request) => request.status === "pending")
+    ) {
+      return false;
+    }
+    const targetWait = yield* getThreadWaitState({
+      projectId: input.targetProjectId,
+      threadId: input.targetThreadId,
+      runId: input.targetRunId,
+      ...(input.untilDelegatedWorkSettled ? { untilDelegatedWorkSettled: true } : {}),
+    });
+    if (targetWait.settled || targetWait.run === null) return false;
+
+    const wakeId = [
+      "thread-wait",
+      encodeURIComponent(input.callerThreadId),
+      encodeURIComponent(callerRun.id),
+      encodeURIComponent(input.targetThreadId),
+      encodeURIComponent(targetWait.run.id),
+      input.untilDelegatedWorkSettled ? "delegated" : "run",
+    ].join(":");
+    const [callerSequenceAtRegistration, targetSequenceAtRegistration] = yield* Effect.all([
+      orchestrator.getThreadEventSequence(input.callerThreadId),
+      orchestrator.getThreadEventSequence(input.targetThreadId),
+    ]);
+    const persistenceFailure = (cause: unknown) =>
+      new ThreadManagementProjectionLoadError({
+        projectId: caller.thread.projectId,
+        threadId: input.callerThreadId,
+        cause,
+      });
+    const persisted = yield* waitWakeObligations
+      .insertIfAbsent({
+        wakeId,
+        commandId: CommandId.make(`command:${wakeId}`),
+        messageId: MessageId.make(`message:${wakeId}`),
+        callerProjectId: caller.thread.projectId,
+        callerThreadId: input.callerThreadId,
+        callerRunId: callerRun.id,
+        callerProviderSessionId: input.callerProviderSessionId,
+        callerProviderInstanceId: input.callerProviderInstanceId,
+        callerSequenceAtRegistration,
+        targetProjectId: input.targetProjectId,
+        targetThreadId: input.targetThreadId,
+        targetRunId: targetWait.run.id,
+        targetSequenceAtRegistration,
+        untilDelegatedWorkSettled: input.untilDelegatedWorkSettled === true,
+        state: "registering",
+      })
+      .pipe(Effect.mapError(persistenceFailure));
+    if (!persisted) {
+      const existing = yield* waitWakeObligations
+        .get(wakeId)
+        .pipe(Effect.mapError(persistenceFailure));
+      if (Option.isNone(existing)) return false;
+    }
+    yield* startThreadWaitWakeMonitor(wakeId);
+    return true;
+  });
+
+  yield* ServerActivation.forkParked(
+    Effect.gen(function* () {
+      const obligations = yield* waitWakeObligations.list();
+      for (const obligation of obligations) {
+        yield* startThreadWaitWakeMonitor(obligation.wakeId);
+      }
+    }),
+  );
 
   const settleAfterRun: ThreadManagementServiceShape["settleAfterRun"] = Effect.fn(
     "orchestrationV2.threadManagement.settleAfterRun",
@@ -1870,6 +2205,8 @@ const make = Effect.gen(function* () {
     isProviderInstanceEnabledForProject,
     hasReceipt,
     waitForThread,
+    getThreadWaitState,
+    registerThreadWaitWake,
     settleAfterRun,
     settleThread,
     interruptThread,
@@ -1912,10 +2249,12 @@ export const layer: Layer.Layer<
   | ProviderSessionManager.ProviderSessionManagerV2
   | ServerSettings.ServerSettingsService
   | CommandReceiptStore.CommandReceiptStoreV2
+  | SqlClient.SqlClient
 > = Layer.effect(ThreadManagementService, make).pipe(
   Layer.provide(layerLegacyV1ThreadImporterNoop),
   Layer.provide(layerThreadWorktreeRestoreNoop),
   Layer.provide(ThreadCommandExecutor.layer),
+  Layer.provide(ThreadWaitWakeObligations.layer),
 );
 
 export const layerWithLegacyImporter: Layer.Layer<
@@ -1927,4 +2266,8 @@ export const layerWithLegacyImporter: Layer.Layer<
   | ProviderSessionManager.ProviderSessionManagerV2
   | ServerSettings.ServerSettingsService
   | CommandReceiptStore.CommandReceiptStoreV2
-> = Layer.effect(ThreadManagementService, make).pipe(Layer.provide(ThreadCommandExecutor.layer));
+  | SqlClient.SqlClient
+> = Layer.effect(ThreadManagementService, make).pipe(
+  Layer.provide(ThreadCommandExecutor.layer),
+  Layer.provide(ThreadWaitWakeObligations.layer),
+);

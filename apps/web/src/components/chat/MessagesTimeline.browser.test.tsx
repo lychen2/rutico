@@ -2315,6 +2315,43 @@ describe("ChangedFilesCard", () => {
   );
 });
 
+it.each(["read", "bash"] as const)(
+  "shows the %s purpose and expands the original input",
+  async (tool) => {
+    setup();
+    const fixture = makeStreamingTimelineFixture();
+    const source = fixture.visibleTurnItems[4]!;
+    const toolPurpose = "检查材料参数";
+    const path = "/repo/materials.json";
+    const command = `cat ${path}`;
+    const base = { ...source.item, status: "completed" as const, toolPurpose };
+    const item =
+      tool === "read"
+        ? { ...base, type: "dynamic_tool" as const, toolName: tool, title: tool, input: { path } }
+        : {
+            ...base,
+            type: "command_execution" as const,
+            title: tool,
+            input: command,
+            output: "material data",
+          };
+    const timelineEntries = deriveTimelineEntriesFromVisibleTurnItems({
+      visibleTurnItems: [{ ...source, item }],
+      optimisticMessages: [],
+    });
+    await using screen = await renderElement(
+      <MessagesTimeline {...baseProps()} timelineEntries={timelineEntries} />,
+    );
+    await screen.getByRole("button", { name: /^Worked for/ }).click();
+    const originalInput = screen.getByText(tool === "read" ? path : command, { exact: true });
+    const heading = screen.getByRole("button", { name: toolPurpose });
+    await expect.element(heading).toBeVisible();
+    await expect.element(originalInput).not.toBeInTheDocument();
+    await heading.click();
+    await expect.element(originalInput).toBeVisible();
+  },
+);
+
 it("keeps concurrent approvals actionable outside collapsed work and restores settled rows", async () => {
   setup();
   const fixture = makeStreamingTimelineFixture();

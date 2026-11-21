@@ -68,6 +68,7 @@ function makeHarness(
     Layer.provide(layerOrchestrator),
     Layer.provide(layerServerSettings),
     Layer.provide(CommandReceiptStore.layer.pipe(Layer.provide(layerDatabase))),
+    Layer.provide(layerDatabase),
   );
   const layerOutbox = EffectOutbox.layer.pipe(Layer.provide(layerDatabase));
   const generateThreadTitle = vi.fn(

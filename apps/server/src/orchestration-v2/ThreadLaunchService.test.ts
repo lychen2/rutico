@@ -174,6 +174,7 @@ function makeHarness(options: HarnessOptions = {}) {
     Layer.provide(layerOrchestrator),
     Layer.provide(layerServerSettings),
     Layer.provide(layerReceipts),
+    Layer.provide(layerDatabase),
   );
   const layerOutbox = EffectOutbox.layer.pipe(Layer.provide(layerDatabase));
   const createWorktree = vi.fn(

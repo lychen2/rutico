@@ -3353,6 +3353,7 @@ it.effect("reports a restart that stops the running turn as restarted", () =>
       Effect.provide(
         ThreadManagementService.layer.pipe(
           Layer.provideMerge(layer),
+          Layer.provide(SqlitePersistence.layerMemory),
           Layer.provide(ServerSettings.layerTest()),
           Layer.provide(
             CommandReceiptStore.layer.pipe(Layer.provide(SqlitePersistence.layerMemory)),
@@ -3442,6 +3443,7 @@ it.effect("replays an accepted steer after its target turn completes", () =>
       Effect.provide(
         ThreadManagementService.layer.pipe(
           Layer.provideMerge(layer),
+          Layer.provide(SqlitePersistence.layerMemory),
           Layer.provide(ServerSettings.layerTest()),
           Layer.provide(
             CommandReceiptStore.layer.pipe(Layer.provide(SqlitePersistence.layerMemory)),
