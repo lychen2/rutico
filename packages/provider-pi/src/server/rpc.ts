@@ -42,8 +42,8 @@ export class PiRpcTimeoutError extends Schema.TaggedError<PiRpcTimeoutError>()(
   }
 }
 
-export const TextDeltaReceivedAt = Symbol("TextDeltaReceivedAt");
-export type PiRpcRecord = Record<string, unknown> & { [TextDeltaReceivedAt]?: number };
+export const ModelDeltaReceivedAt = Symbol("ModelDeltaReceivedAt");
+export type PiRpcRecord = Record<string, unknown> & { [ModelDeltaReceivedAt]?: number };
 
 export function piRecordField(input: unknown, key: string): unknown {
   return Predicate.isObject(input) ? input[key] : undefined;
@@ -332,12 +332,15 @@ export const makePiRpcConnection = Effect.fnUntraced(function* (options: PiRpcSp
           return;
         }
       }
-      if (
-        receivedAt !== undefined &&
-        record["type"] === "message_update" &&
-        piRecordString(record["assistantMessageEvent"], "type") === "text_delta"
-      ) {
-        record[TextDeltaReceivedAt] = receivedAt;
+      if (receivedAt !== undefined && record["type"] === "message_update") {
+        const delta = record["assistantMessageEvent"];
+        const type = piRecordString(delta, "type");
+        if (
+          (type === "text_delta" || type === "thinking_delta" || type === "toolcall_delta") &&
+          piRecordString(delta, "delta")
+        ) {
+          record[ModelDeltaReceivedAt] = receivedAt;
+        }
       }
       yield* Queue.offer(events, record);
     });

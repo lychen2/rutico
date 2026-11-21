@@ -115,18 +115,8 @@ function toThreadStructureTurnItem(item: TurnItem): ThreadStructureTurnItem {
   if (item.type !== "assistant_message" && item.type !== "reasoning") return item;
   let structure = structureTurnItems.get(item);
   if (structure === undefined) {
-    if (item.type === "assistant_message") {
-      const {
-        text: _text,
-        updatedAt: _updatedAt,
-        textStreamTiming: _textStreamTiming,
-        ...rest
-      } = item;
-      structure = rest;
-    } else {
-      const { text: _text, updatedAt: _updatedAt, ...rest } = item;
-      structure = rest;
-    }
+    const { text: _text, updatedAt: _updatedAt, ...rest } = item;
+    structure = rest;
     structureTurnItems.set(item, structure);
   }
   return structure;

@@ -1,20 +1,10 @@
-import { RegistryContext } from "@effect/atom-react";
 import { deriveLatestContextWindowSnapshot } from "@t3tools/client-runtime/state/context-window";
-import {
-  MessageId,
-  ProviderTurnId,
-  NodeId,
-  RunId,
-  ThreadId,
-  TurnItemId,
-  type OrchestrationV2TurnItem,
-} from "@t3tools/contracts";
+import { MessageId, ProviderTurnId, NodeId, RunId, ThreadId, TurnItemId } from "@t3tools/contracts";
 import * as DateTime from "effect/DateTime";
-import { Atom, AtomRegistry } from "effect/reactivity";
 import { expect, it } from "vite-plus/test";
 import { page, userEvent } from "vite-plus/test/browser";
 
-import { act, render } from "../../../test/render";
+import { render } from "../../../test/render";
 import { ComposerThreadContext } from "./ComposerThreadContext";
 import { currentRoundActivity } from "./currentRoundActivity";
 
@@ -84,17 +74,6 @@ it("keeps round token and cache totals separate from the current context window"
     toolName: "read",
     input: {},
   } as const;
-  const turnItemsAtom = Atom.make<readonly OrchestrationV2TurnItem[]>([
-    reply,
-    { ...reply, id: TurnItemId.make("earlier"), runId: RunId.make("run-6") },
-    { ...reply, id: TurnItemId.make("child"), parentItemId: reply.id },
-    {
-      ...reply,
-      id: TurnItemId.make("previous-attempt"),
-      providerTurnId: ProviderTurnId.make("old"),
-    },
-    reasoning,
-  ]);
   await using screen = await render(
     <ComposerThreadContext
       key="first"
@@ -105,8 +84,6 @@ it("keeps round token and cache totals separate from the current context window"
       })}
       contextStatus="mc: 131.7K (65%) · Ready"
       run={run}
-      providerTurnId={providerTurnId}
-      turnItemsAtom={turnItemsAtom}
       stepCount={2}
       activity={{
         tools: { count: 2, milliseconds: 3000, timed: 2 },
@@ -157,8 +134,6 @@ it("keeps round token and cache totals separate from the current context window"
         providerTurnId,
       )}
       run={run}
-      providerTurnId={providerTurnId}
-      turnItemsAtom={turnItemsAtom}
       stepCount={null}
       turnUsage={null}
     />,
@@ -170,102 +145,59 @@ it("keeps round token and cache totals separate from the current context window"
   await expect.element(details.getByText("1 · Σ 9s", { exact: true })).toBeVisible();
   await expect.element(details.getByText("1 · Σ 3s", { exact: true })).toBeVisible();
 
-  const registry = AtomRegistry.make();
   const liveRun = { ...run, status: "running", completedAt: null } as const;
-  registry.set(turnItemsAtom, []);
   await screen.rerender(
-    <RegistryContext.Provider value={registry}>
-      <ComposerThreadContext
-        key="live"
-        usage={null}
-        run={liveRun}
-        providerTurnId={providerTurnId}
-        turnItemsAtom={turnItemsAtom}
-        stepCount={null}
-        turnUsage={null}
-      />
-    </RegistryContext.Provider>,
+    <ComposerThreadContext
+      key="live"
+      usage={null}
+      run={liveRun}
+      stepCount={null}
+      turnUsage={null}
+    />,
   );
   const liveTrigger = screen.getByRole("button", { name: /Round 7/ });
   await userEvent.click(liveTrigger);
   await expect.element(details.getByText("Not reported").first()).toBeVisible();
-  const firstDeltaAtMs = DateTime.toEpochMillis(startedAt) + 2500;
-  const firstBlock = {
-    ...reply,
-    streaming: true,
-    textStreamTiming: { firstDeltaAtMs, durationMs: 0, charactersAfterFirstDelta: 0 },
-  };
-  await act(() => registry.set(turnItemsAtom, [firstBlock]));
-  await expect.element(details.getByText("Time to first text")).toBeVisible();
+  const firstOutputAtMs = DateTime.toEpochMillis(startedAt) + 2500;
+  const firstOutput = { firstOutputAtMs, sampledDurationMs: 0, sampledCharacters: 0 };
+  await screen.rerender(
+    <ComposerThreadContext
+      key="live"
+      usage={null}
+      run={liveRun}
+      modelOutputTiming={firstOutput}
+      stepCount={null}
+      turnUsage={null}
+    />,
+  );
+  await expect.element(details.getByText("Time to first output")).toBeVisible();
   await expect.element(details.getByText("2.5s", { exact: true })).toBeVisible();
   await expect.element(liveTrigger.getByText(/chars\/s|tok\/s/)).not.toBeInTheDocument();
 
-  const firstMeasuredBlock = {
-    ...firstBlock,
-    streaming: false,
-    textStreamTiming: {
-      ...firstBlock.textStreamTiming,
-      durationMs: 500,
-      charactersAfterFirstDelta: 10,
-    },
-  };
-  const secondMeasuredBlock = {
-    ...reply,
-    id: TurnItemId.make("second-block"),
-    streaming: true,
-    textStreamTiming: {
-      firstDeltaAtMs: firstDeltaAtMs + 4500,
-      durationMs: 1000,
-      charactersAfterFirstDelta: 5,
-    },
-  };
-  await act(() =>
-    registry.set(turnItemsAtom, [
-      firstMeasuredBlock,
-      secondMeasuredBlock,
-      {
-        ...firstMeasuredBlock,
-        id: TurnItemId.make("old-attempt"),
-        providerTurnId: ProviderTurnId.make("old"),
-        textStreamTiming: {
-          firstDeltaAtMs: firstDeltaAtMs - 1000,
-          durationMs: 10,
-          charactersAfterFirstDelta: 200,
-        },
-      },
-      {
-        ...firstMeasuredBlock,
-        id: TurnItemId.make("child-body"),
-        parentItemId: tool.id,
-        textStreamTiming: {
-          firstDeltaAtMs: firstDeltaAtMs - 1000,
-          durationMs: 10,
-          charactersAfterFirstDelta: 200,
-        },
-      },
-      {
-        ...reply,
-        id: TurnItemId.make("same-time"),
-        textStreamTiming: { firstDeltaAtMs, durationMs: 0, charactersAfterFirstDelta: 200 },
-      },
-    ]),
+  const measuredOutput = { ...firstOutput, sampledDurationMs: 1500, sampledCharacters: 15 };
+  await screen.rerender(
+    <ComposerThreadContext
+      key="live"
+      usage={null}
+      run={liveRun}
+      modelOutputTiming={measuredOutput}
+      stepCount={null}
+      turnUsage={null}
+    />,
   );
   await expect.element(liveTrigger.getByText("· 10 chars/s", { exact: true })).toBeVisible();
   await expect.element(details.getByText("10 chars/s", { exact: true })).toBeVisible();
   await expect.element(details.getByText("2.5s", { exact: true })).toBeVisible();
 
   await screen.rerender(
-    <RegistryContext.Provider value={registry}>
-      <ComposerThreadContext
-        key="live"
-        usage={null}
-        run={run}
-        providerTurnId={providerTurnId}
-        turnItemsAtom={turnItemsAtom}
-        stepCount={null}
-        turnUsage={null}
-      />
-    </RegistryContext.Provider>,
+    <ComposerThreadContext
+      key="live"
+      usage={null}
+      run={run}
+      modelOutputTiming={measuredOutput}
+      stepCount={null}
+      turnUsage={null}
+    />,
   );
   await expect.element(details.getByText("10 chars/s", { exact: true })).toBeVisible();
   await expect.element(details.getByText("14s", { exact: true })).toBeVisible();

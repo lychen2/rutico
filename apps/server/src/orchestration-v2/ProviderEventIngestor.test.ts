@@ -366,6 +366,7 @@ it.effect("records accepted billed turn usage once without billing the context w
     const eventSink = yield* EventSink.EventSinkV2;
     const ingestor = yield* ProviderEventIngestor.ProviderEventIngestorV2;
     const idAllocator = yield* IdAllocator.IdAllocatorV2;
+    const projectionStore = yield* ProjectionStore.ProjectionStoreV2;
     const threadEvent = yield* threadCreatedEvent(now);
     yield* eventSink.write({ events: [threadEvent] });
     const providerSessionId = yield* idAllocator.allocate.providerSession({
@@ -386,6 +387,11 @@ it.effect("records accepted billed turn usage once without billing the context w
       status: "completed" as const,
       startedAt: now,
       completedAt: DateTime.makeUnsafe(DateTime.toEpochMillis(now) + 120),
+      modelOutputTiming: {
+        firstOutputAtMs: DateTime.toEpochMillis(now) + 20,
+        sampledDurationMs: 60,
+        sampledCharacters: 3,
+      },
       tokenUsage: {
         inputTokens: 4000,
         cachedInputTokens: 3000,
@@ -440,6 +446,11 @@ it.effect("records accepted billed turn usage once without billing the context w
       },
     });
     assert.isEmpty(ignored);
+    const projection = yield* projectionStore.getThreadProjection(threadEvent.threadId);
+    assert.deepEqual(
+      projection.providerTurns[0]?.modelOutputTiming,
+      providerTurn.modelOutputTiming,
+    );
     assert.lengthOf(recorded, 1);
     assert.deepEqual(recorded[0], {
       driver: CODEX_DRIVER,

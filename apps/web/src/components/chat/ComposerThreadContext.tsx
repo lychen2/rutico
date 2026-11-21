@@ -1,14 +1,11 @@
 import type { ContextWindowSnapshot } from "@t3tools/client-runtime/state/context-window";
 import type {
   OrchestrationV2Run,
-  OrchestrationV2TurnItem,
-  ProviderTurnId,
+  OrchestrationV2ProviderTurn,
   TurnTokenUsage,
 } from "@t3tools/contracts";
 import { formatDuration } from "@t3tools/shared/orchestrationTiming";
-import { useAtomValue } from "@effect/atom-react";
 import * as DateTime from "effect/DateTime";
-import { Atom } from "effect/reactivity";
 import { msg, useGT, useLocale, useMessages } from "gt-react";
 import { ChevronDownIcon } from "lucide-react";
 
@@ -31,18 +28,12 @@ const runStatusLabels = {
 import type { currentRoundActivity } from "./currentRoundActivity";
 import "./composerSessionOverview.css";
 
-const noTextTimingAtom = Atom.make<{
-  firstAtMs: number;
-  durationMs: number;
-  characters: number;
-} | null>(null);
 export function ComposerThreadContext({
   usage,
   run,
   stepCount,
   turnUsage,
-  providerTurnId,
-  turnItemsAtom,
+  modelOutputTiming,
   activity,
   contextStatus,
 }: {
@@ -53,8 +44,7 @@ export function ComposerThreadContext({
   > | null;
   readonly stepCount: number | null;
   readonly turnUsage: TurnTokenUsage | null;
-  readonly providerTurnId?: ProviderTurnId | undefined;
-  readonly turnItemsAtom?: Atom.Atom<readonly OrchestrationV2TurnItem[]> | undefined;
+  readonly modelOutputTiming?: OrchestrationV2ProviderTurn["modelOutputTiming"];
   readonly activity?: ReturnType<typeof currentRoundActivity> | null;
   readonly contextStatus?: string | undefined;
 }) {
@@ -86,43 +76,19 @@ export function ComposerThreadContext({
   const cacheWrite = modelUsage?.cacheCreationTokens;
   const reasoningTokens = modelUsage?.reasoningTokens;
   const total = input !== undefined && output !== undefined ? input + output : null;
-  const runId = run?.id;
-  const textTimingAtom =
-    runId !== undefined && turnItemsAtom !== undefined
-      ? Atom.map(turnItemsAtom, (items) => {
-          let firstAtMs = Infinity;
-          let durationMs = 0;
-          let characters = 0;
-          for (const item of items) {
-            if (
-              item.type !== "assistant_message" ||
-              item.runId !== runId ||
-              item.parentItemId !== null ||
-              item.providerTurnId !== providerTurnId ||
-              item.textStreamTiming === undefined
-            ) {
-              continue;
-            }
-            const sample = item.textStreamTiming;
-            firstAtMs = Math.min(firstAtMs, sample.firstDeltaAtMs);
-            if (sample.durationMs > 0) {
-              durationMs += sample.durationMs;
-              characters += sample.charactersAfterFirstDelta;
-            }
-          }
-          return firstAtMs === Infinity ? null : { firstAtMs, durationMs, characters };
-        })
-      : noTextTimingAtom;
-  const textTiming = useAtomValue(textTimingAtom);
-  const firstTextMs =
-    startMs === null || textTiming === null ? null : textTiming.firstAtMs - startMs;
-  const firstText = firstTextMs === null || firstTextMs < 0 ? null : formatDuration(firstTextMs);
+  const firstOutputMs =
+    startMs === null || modelOutputTiming === undefined
+      ? null
+      : modelOutputTiming.firstOutputAtMs - startMs;
+  const firstOutput =
+    firstOutputMs === null || firstOutputMs < 0 ? null : formatDuration(firstOutputMs);
   const speed =
-    textTiming !== null && textTiming.durationMs > 0 && textTiming.characters > 0
+    modelOutputTiming !== undefined && modelOutputTiming.sampledDurationMs > 0
       ? gt("{rate} chars/s", {
-          rate: ((textTiming.characters * 1000) / textTiming.durationMs).toLocaleString(locale, {
-            maximumFractionDigits: 1,
-          }),
+          rate: (
+            (modelOutputTiming.sampledCharacters * 1000) /
+            modelOutputTiming.sampledDurationMs
+          ).toLocaleString(locale, { maximumFractionDigits: 1 }),
         })
       : null;
   const cachePercent =
@@ -193,42 +159,51 @@ export function ComposerThreadContext({
               )}
             </div>
             {run !== null ? (
-              <div className="mb-3 grid grid-cols-2 gap-4 border-b pb-3 text-xs tabular-nums">
-                <div className="grid gap-1">
-                  <span className="text-muted-foreground">{gt("Activity")}</span>
-                  <strong className="text-base">
-                    {gt("Round {round}", { round: run.ordinal.toLocaleString(locale) })}
-                  </strong>
-                  {stepCount !== null && (
-                    <span>
-                      {gt("{steps, plural, one {# step} other {# steps}}", { steps: stepCount })}
-                    </span>
-                  )}
-                </div>
-                <div className="grid gap-1">
-                  <span className="text-muted-foreground">{gt("Text speed")}</span>
-                  <strong className="text-base">{speed ?? gt("Not reported")}</strong>
-                  <div className="flex gap-1 text-muted-foreground">
-                    <span>{gt("Time to first text")}</span>
-                    <span>{firstText ?? gt("Not reported")}</span>
+              <>
+                <div className="mb-3 grid grid-cols-2 gap-4 border-b pb-3 text-xs tabular-nums">
+                  <div className="grid gap-1">
+                    <span className="text-muted-foreground">{gt("Activity")}</span>
+                    <strong className="text-base">
+                      {gt("Round {round}", { round: run.ordinal.toLocaleString(locale) })}
+                    </strong>
+                    {stepCount !== null && (
+                      <span>
+                        {gt("{steps, plural, one {# step} other {# steps}}", { steps: stepCount })}
+                      </span>
+                    )}
                   </div>
-                  <div className="flex gap-1 text-muted-foreground">
-                    <span>{gt("Duration")}</span>
-                    {startMs !== null ? (
-                      endMs !== null ? (
-                        <span>{formatDuration(Math.max(0, endMs - startMs))}</span>
-                      ) : running ? (
-                        <span
-                          ref={tickTextContent(
-                            (nowMs) => formatDuration(Math.max(0, nowMs - startMs)),
-                            true,
-                          )}
-                        />
-                      ) : null
-                    ) : null}
+                  <div className="grid gap-1">
+                    <span className="text-muted-foreground">{gt("Model output speed")}</span>
+                    <strong className="text-base">{speed ?? gt("Not reported")}</strong>
+                    <div className="flex gap-1 text-muted-foreground">
+                      <span>{gt("Time to first output")}</span>
+                      <span>{firstOutput ?? gt("Not reported")}</span>
+                    </div>
+                    <div className="flex gap-1 text-muted-foreground">
+                      <span>{gt("Duration")}</span>
+                      {startMs !== null ? (
+                        endMs !== null ? (
+                          <span>{formatDuration(Math.max(0, endMs - startMs))}</span>
+                        ) : running ? (
+                          <span
+                            ref={tickTextContent(
+                              (nowMs) => formatDuration(Math.max(0, nowMs - startMs)),
+                              true,
+                            )}
+                          />
+                        ) : null
+                      ) : null}
+                    </div>
                   </div>
                 </div>
-              </div>
+                {modelOutputTiming !== undefined && (
+                  <p className="mb-3 text-xs text-muted-foreground">
+                    {gt(
+                      "Samples text, thinking and tool arguments received from the main model. Speed uses the time between the first and last chunks of each model response, excluding first-chunk characters, tool execution and results.",
+                    )}
+                  </p>
+                )}
+              </>
             ) : null}
             {(activity || reasoningTokens !== undefined) && (
               <dl className="mb-3 grid grid-cols-[1fr_auto] gap-x-4 gap-y-1.5 text-xs tabular-nums">

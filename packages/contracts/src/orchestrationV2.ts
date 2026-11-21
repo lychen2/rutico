@@ -1332,6 +1332,13 @@ export const OrchestrationV2ProviderTurn = Schema.Struct({
   completedAt: Schema.NullOr(Schema.DateTimeUtc),
   tokenUsage: Schema.optional(OrchestrationV2ProviderTurnTokenUsage),
   turnTokenUsage: Schema.optional(TurnTokenUsage),
+  modelOutputTiming: Schema.optional(
+    Schema.Struct({
+      firstOutputAtMs: NonNegativeInt,
+      sampledDurationMs: NonNegativeInt,
+      sampledCharacters: NonNegativeInt,
+    }),
+  ),
   /** The model the provider reported running this turn's root agent, which can differ from the requested one. */
   model: Schema.optional(TrimmedNonEmptyString),
 });
@@ -1841,12 +1848,6 @@ const OrchestrationV2LinkRequestFields = {
   failure: Schema.optional(Schema.String),
 } as const;
 
-const AssistantTextStreamTiming = Schema.Struct({
-  firstDeltaAtMs: NonNegativeInt,
-  durationMs: NonNegativeInt,
-  charactersAfterFirstDelta: NonNegativeInt,
-});
-
 export const OrchestrationV2TurnItem = Schema.Union([
   Schema.Struct({
     ...OrchestrationV2TurnItemBaseFields,
@@ -1881,7 +1882,6 @@ export const OrchestrationV2TurnItem = Schema.Union([
     textOmitted: DedupedBodyMarker,
     attachments: Schema.optional(Schema.Array(ChatAttachment)),
     streaming: Schema.Boolean,
-    textStreamTiming: Schema.optional(AssistantTextStreamTiming),
   }),
   Schema.Struct({
     ...OrchestrationV2TurnItemBaseFields,
@@ -2776,7 +2776,6 @@ export const OrchestrationV2TurnItemJson = Schema.Union([
     text: Schema.String,
     attachments: Schema.optional(Schema.Array(ChatAttachment)),
     streaming: Schema.Boolean,
-    textStreamTiming: Schema.optional(AssistantTextStreamTiming),
   }),
   Schema.Struct({
     ...OrchestrationV2TurnItemJsonBaseFields,

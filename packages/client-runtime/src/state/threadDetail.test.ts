@@ -185,9 +185,8 @@ describe("quietThreadAtom", () => {
     };
   }
 
-  it("keeps the same value through streamed text and its timing samples", () => {
-    const firstSample = { firstDeltaAtMs: 100, durationMs: 0, charactersAfterFirstDelta: 0 };
-    using thread = setup(withItem({ ...assistant, text: "Hello", textStreamTiming: firstSample }));
+  it("keeps the same value through streamed text", () => {
+    using thread = setup(withItem({ ...assistant, text: "Hello" }));
     const first = thread.read();
     thread.push(
       withItem(
@@ -195,7 +194,6 @@ describe("quietThreadAtom", () => {
           ...assistant,
           text: "Hello there",
           updatedAt: later,
-          textStreamTiming: { ...firstSample, durationMs: 100, charactersAfterFirstDelta: 6 },
         },
         later,
       ),

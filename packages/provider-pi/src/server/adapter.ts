@@ -70,7 +70,7 @@ import {
   findReportedPiModel,
   makePiRpcConnection,
   resolvePiModelSlug,
-  TextDeltaReceivedAt,
+  ModelDeltaReceivedAt,
   piRecordField as recordField,
   piRecordNumber as recordNumber,
   piRecordString as recordString,
@@ -95,6 +95,7 @@ const DEFAULT_PI_SETTINGS = Schema.decodeSync(PiSettings)({});
 const PI_INHERIT_MODEL_SLUG = "default";
 
 const STREAM_FLUSH_MS = 50;
+const MODEL_OUTPUT_FLUSH_MS = 250;
 const PI_REQUEST_TIMEOUT_MS = 15_000;
 const PI_SUBAGENT_ASYNC_PREFIX = "PI_SUBAGENT_ASYNC_JSON:";
 const decodePiJson = Schema.decodeUnknownOption(Schema.fromJsonString(Schema.Unknown));
@@ -453,12 +454,21 @@ interface PiStreamItemState {
   flushScheduled: boolean;
   published: boolean;
   readonly startedAt: DateTime.Utc;
-  textTiming?: {
-    readonly firstDeltaAtMs: number;
-    segmentStartedAtMs: number | null;
-    durationMs: number;
-    charactersAfterFirstDelta: number;
-  };
+}
+
+// One assistant response can interleave several content indices on a single receive timeline.
+interface ModelOutputSegment {
+  readonly startedAtMs: number;
+  durationMs: number;
+  charactersAfterFirstDelta: number;
+}
+
+interface ModelOutputSampler {
+  readonly firstOutputAtMs: number;
+  durationMs: number;
+  characters: number;
+  segment: ModelOutputSegment | null;
+  flushScheduled: boolean;
 }
 
 type PiCompactionStatus = "running" | "completed" | "failed" | "cancelled";
@@ -496,6 +506,7 @@ interface ActivePiTurn {
   nextItemOrdinal: number;
   messageOrdinal: number;
   readonly streamItems: Map<string, PiStreamItemState>;
+  modelOutput?: ModelOutputSampler;
   readonly toolArgs: Map<string, unknown>;
   readonly toolPurposes: Map<string, string>;
   readonly toolStartedAt: Map<string, DateTime.Utc>;
@@ -1240,6 +1251,86 @@ export const makePiAdapterV2 = Effect.fn("makePiAdapterV2")(function* (
           });
         });
 
+      const closeModelOutputSegment = (turn: ActivePiTurn) => {
+        const timing = turn.modelOutput;
+        if (timing === undefined || timing.segment === null) return;
+        if (timing.segment.durationMs > 0) {
+          timing.durationMs += timing.segment.durationMs;
+          timing.characters += timing.segment.charactersAfterFirstDelta;
+        }
+        timing.segment = null;
+      };
+
+      const modelOutputTiming = (turn: ActivePiTurn) => {
+        const timing = turn.modelOutput;
+        if (timing === undefined) return undefined;
+        const segment = timing.segment;
+        const measurable = segment !== null && segment.durationMs > 0 ? segment : null;
+        return {
+          firstOutputAtMs: timing.firstOutputAtMs,
+          sampledDurationMs: timing.durationMs + (measurable?.durationMs ?? 0),
+          sampledCharacters: timing.characters + (measurable?.charactersAfterFirstDelta ?? 0),
+        };
+      };
+
+      const publishModelOutputTiming = Effect.fnUntraced(function* (turn: ActivePiTurn) {
+        const sample = modelOutputTiming(turn);
+        const previous = turn.providerTurn.modelOutputTiming;
+        if (
+          sample === undefined ||
+          (previous?.sampledDurationMs === sample.sampledDurationMs &&
+            previous.sampledCharacters === sample.sampledCharacters)
+        )
+          return;
+        turn.providerTurn = { ...turn.providerTurn, modelOutputTiming: sample };
+        yield* emit({
+          type: "provider_turn.updated",
+          driver: driverKind,
+          threadId: turn.turnInput.threadId,
+          providerTurn: turn.providerTurn,
+        });
+      });
+
+      const sampleModelOutput = Effect.fnUntraced(function* (
+        turn: ActivePiTurn,
+        receivedAt: number,
+        delta: string,
+      ) {
+        const timing = (turn.modelOutput ??= {
+          firstOutputAtMs: receivedAt,
+          durationMs: 0,
+          characters: 0,
+          segment: null,
+          flushScheduled: false,
+        });
+        if (timing.segment === null) {
+          timing.segment = { startedAtMs: receivedAt, durationMs: 0, charactersAfterFirstDelta: 0 };
+          if (turn.providerTurn.modelOutputTiming === undefined)
+            yield* publishModelOutputTiming(turn);
+          return;
+        }
+        for (const _character of delta) timing.segment.charactersAfterFirstDelta++;
+        timing.segment.durationMs = Math.max(
+          timing.segment.durationMs,
+          receivedAt - timing.segment.startedAtMs,
+        );
+        if (timing.segment.durationMs === 0 || timing.flushScheduled) return;
+        timing.flushScheduled = true;
+        yield* Effect.sleep(Duration.millis(MODEL_OUTPUT_FLUSH_MS)).pipe(
+          Effect.andThen(
+            sessionEventPermit.withPermits(1)(
+              Effect.suspend(() => {
+                timing.flushScheduled = false;
+                return threadState?.activeTurn === turn
+                  ? publishModelOutputTiming(turn)
+                  : Effect.void;
+              }),
+            ),
+          ),
+          Effect.forkIn(scope),
+        );
+      });
+
       const baseItemFields = (
         turn: ActivePiTurn,
         nativeItemId: string,
@@ -1411,15 +1502,6 @@ export const makePiAdapterV2 = Effect.fn("makePiAdapterV2")(function* (
                 messageId,
                 text: item.text,
                 streaming,
-                ...(item.textTiming === undefined
-                  ? {}
-                  : {
-                      textStreamTiming: {
-                        firstDeltaAtMs: item.textTiming.firstDeltaAtMs,
-                        durationMs: item.textTiming.durationMs,
-                        charactersAfterFirstDelta: item.textTiming.charactersAfterFirstDelta,
-                      },
-                    }),
               },
             });
             yield* emit({
@@ -2395,6 +2477,7 @@ export const makePiAdapterV2 = Effect.fn("makePiAdapterV2")(function* (
                   ...(input === undefined ? {} : { inputTokens: input }),
                   ...(output === undefined ? {} : { outputTokens: output }),
                 };
+        const outputTiming = modelOutputTiming(turn);
         yield* emit({
           type: "provider_turn.updated",
           driver: driverKind,
@@ -2411,6 +2494,7 @@ export const makePiAdapterV2 = Effect.fn("makePiAdapterV2")(function* (
             completedAt,
             ...(tokenUsage === undefined ? {} : { tokenUsage }),
             ...(turnTokenUsage === undefined ? {} : { turnTokenUsage }),
+            ...(outputTiming === undefined ? {} : { modelOutputTiming: outputTiming }),
             ...(turn.reportedModel === undefined ? {} : { model: turn.reportedModel }),
           },
         });
@@ -2716,6 +2800,7 @@ export const makePiAdapterV2 = Effect.fn("makePiAdapterV2")(function* (
           case "message_start": {
             const role = recordString(event["message"], "role");
             if (turn !== null && role === "assistant") {
+              closeModelOutputSegment(turn);
               turn.sawAgentActivity = true;
               turn.messageOrdinal += 1;
             }
@@ -2738,17 +2823,15 @@ export const makePiAdapterV2 = Effect.fn("makePiAdapterV2")(function* (
             const delta = event["assistantMessageEvent"];
             const deltaType = recordString(delta, "type");
             const contentIndex = recordNumber(delta, "contentIndex") ?? 0;
+            const receivedAt = event[ModelDeltaReceivedAt];
+            if (receivedAt !== undefined) {
+              const outputDelta = recordString(delta, "delta");
+              if (outputDelta) yield* sampleModelOutput(turn, receivedAt, outputDelta);
+            }
             if (deltaType === "text_start" || deltaType === "thinking_start") {
               // A provider that reconnects mid-block starts it again; its earlier text is abandoned.
               const restarted = turn.streamItems.get(streamItemId(turn, contentIndex));
-              if (restarted !== undefined && !restarted.completed) {
-                restarted.text = "";
-                if (restarted.textTiming !== undefined) {
-                  restarted.textTiming.segmentStartedAtMs = null;
-                  restarted.textTiming.durationMs = 0;
-                  restarted.textTiming.charactersAfterFirstDelta = 0;
-                }
-              }
+              if (restarted !== undefined && !restarted.completed) restarted.text = "";
               return;
             }
             if (deltaType === "text_delta" || deltaType === "thinking_delta") {
@@ -2759,24 +2842,6 @@ export const makePiAdapterV2 = Effect.fn("makePiAdapterV2")(function* (
               );
               const text = recordString(delta, "delta") ?? "";
               item.text += text;
-              const receivedAt = event[TextDeltaReceivedAt];
-              if (deltaType === "text_delta" && receivedAt !== undefined && text.length > 0) {
-                const timing = (item.textTiming ??= {
-                  firstDeltaAtMs: receivedAt,
-                  segmentStartedAtMs: null,
-                  durationMs: 0,
-                  charactersAfterFirstDelta: 0,
-                });
-                if (timing.segmentStartedAtMs === null) {
-                  timing.segmentStartedAtMs = receivedAt;
-                } else {
-                  for (const _character of text) timing.charactersAfterFirstDelta++;
-                  timing.durationMs = Math.max(
-                    timing.durationMs,
-                    receivedAt - timing.segmentStartedAtMs,
-                  );
-                }
-              }
               yield* scheduleStreamFlush(turn, item);
               return;
             }
@@ -2799,6 +2864,8 @@ export const makePiAdapterV2 = Effect.fn("makePiAdapterV2")(function* (
             if (turn === null) return;
             const message = event["message"];
             if (recordString(message, "role") !== "assistant") return;
+            closeModelOutputSegment(turn);
+            yield* publishModelOutputTiming(turn);
             yield* completeOpenStreamItems(turn);
             const usage = recordField(message, "usage");
             if (usage !== undefined) {
@@ -2849,6 +2916,7 @@ export const makePiAdapterV2 = Effect.fn("makePiAdapterV2")(function* (
           }
           case "tool_execution_start":
             if (turn !== null) {
+              closeModelOutputSegment(turn);
               turn.sawAgentActivity = true;
               yield* emitToolItem(turn, event, "start");
             }

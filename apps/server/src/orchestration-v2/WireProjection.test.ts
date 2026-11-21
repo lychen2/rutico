@@ -467,17 +467,12 @@ describe("live body deduper", () => {
         messageId,
         text,
         streaming: true,
-        textStreamTiming: {
-          firstDeltaAtMs: DateTime.toEpochMillis(at),
-          durationMs: sequence * 20,
-          charactersAfterFirstDelta: text.length - 1,
-        },
       },
     });
   const payloadOf = (item: OrchestrationV2ThreadStreamItem) =>
     item.kind === "event" ? item.event.payload : undefined;
 
-  it("keeps the latest reply timing when coalescing, deduping and persisting text", () => {
+  it("keeps the latest reply when coalescing and deduping text", () => {
     const delivered = coalesceLiveUpdatedEvents([
       message(1, "a"),
       reply(2, "a"),
@@ -491,15 +486,6 @@ describe("live body deduper", () => {
       [3, message(3, "ab").event.payload],
       [4, { ...reply(4, "ab").event.payload, text: "", textOmitted: true }],
     ]);
-    const payload = payloadOf(delivered[1]!);
-    const item = decodeTurnItem(payload);
-    expect(decodeTurnItemJson(encodeTurnItemJson(item))).toMatchObject({
-      textStreamTiming: {
-        firstDeltaAtMs: DateTime.toEpochMillis(at),
-        durationMs: 80,
-        charactersAfterFirstDelta: 1,
-      },
-    });
   });
 
   it("caps a large checkpoint's files for the wire and still dedupes its item", () => {
