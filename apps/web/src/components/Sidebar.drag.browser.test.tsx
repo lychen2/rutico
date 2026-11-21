@@ -1,5 +1,6 @@
 import { createMemoryHistory } from "@tanstack/react-router";
 import { DEFAULT_CLIENT_SETTINGS } from "@t3tools/contracts/settings";
+import { scopeThreadRef, scopedThreadKey } from "@t3tools/client-runtime/environment";
 import type * as Context from "effect/Context";
 import { expect, it, vi } from "vite-plus/test";
 import { page, userEvent } from "vite-plus/test/browser";
@@ -17,6 +18,7 @@ import {
 } from "../../test/fakeEnvironment";
 import { act, render } from "../../test/render";
 import { makeThreadFixture } from "../test-fixtures";
+import { SIDEBAR_CATEGORIES_STORAGE_KEY } from "./sidebar/SidebarCategories";
 import { SidebarSearchResultRow } from "./sidebar/SidebarThreadRow";
 
 // The socket is the only fake layer; see test/appScenarios.renders.tsx.
@@ -37,7 +39,27 @@ vi.mock(import("~/rpc/requestLatencyState"), async (original) => ({
 it("shows the titled preview inside and outside search results from a collapsed folder", async () => {
   await page.viewport(1400, 900);
   const [first, second] = [threadWithHistory("visible", 1), threadWithHistory("search-target", 1)];
-  using _environment = installFakeEnvironment([first, second]);
+  const older = { ...threadWithHistory("older-categorized", 1), olderSettled: true } as const;
+  using _environment = installFakeEnvironment([first, second, older]);
+  using storage = new DisposableStack();
+  const previous = localStorage.getItem(SIDEBAR_CATEGORIES_STORAGE_KEY);
+  storage.defer(() => {
+    if (previous === null) localStorage.removeItem(SIDEBAR_CATEGORIES_STORAGE_KEY);
+    else localStorage.setItem(SIDEBAR_CATEGORIES_STORAGE_KEY, previous);
+  });
+  localStorage.setItem(
+    SIDEBAR_CATEGORIES_STORAGE_KEY,
+    JSON.stringify({
+      categories: [{ id: "saved-category", name: "Saved work" }],
+      assignments: Object.fromEntries(
+        [second, older].map(({ id }) => [
+          scopedThreadKey(scopeThreadRef(ENVIRONMENT_ID, id)),
+          "saved-category",
+        ]),
+      ),
+      collapsed: [],
+    }),
+  );
   __setClientSettingsForTests({
     ...DEFAULT_CLIENT_SETTINGS,
     boringSidebarEnabled: true,
@@ -51,11 +73,14 @@ it("shows the titled preview inside and outside search results from a collapsed 
     // AppRoot brings its own router.
     router: false,
   });
-  const folder = page.getByRole("button", { name: /^render/ });
+  const folder = page.getByRole("button", { name: /^Saved work/ });
   await expect.element(folder).toHaveAttribute("aria-expanded", "true");
   // A removed row fades out as a clone without its test id, so match the live row only.
   const secondRow = page.getByTestId("sidebar-row-folder").filter({ hasText: second.title });
   await expect.element(secondRow).toBeInTheDocument();
+  await expect
+    .element(page.getByTestId("sidebar-row-folder").filter({ hasText: older.title }))
+    .toBeInTheDocument();
   // The shift guard drops pointer presses on a row that appeared under 500ms ago; keys pass.
   folder.element().focus();
   await userEvent.keyboard("{Enter}");

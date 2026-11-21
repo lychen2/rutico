@@ -6,9 +6,8 @@ need a separate branch and working directory.
 ## Start a thread
 
 On web and desktop, **New thread** opens the project picker when you have more than one
-open project in the default or project-grouped sidebar. Archived projects don't count. **Shift-click** to start in
-the current project, or use a project's own new-thread action. A new thread carries
-your model and mode selections, unless the destination project has its own model default.
+open project. Archived projects don't count. **Shift-click** to start in the current project.
+A new thread carries your model and mode selections, unless the destination project has its own model default.
 Its branch and workspace mode come from your configured defaults. To continue in
 an existing worktree, use **New thread in this worktree** from the branch toolbar.
 While the sidebar is filtered to one project, the sidebar's **New thread** button
@@ -60,9 +59,9 @@ in a new thread's model picker to add or remove them. A regular click returns to
 single model. Choose a base branch and send. Each selection starts a separate thread
 and worktree while you stay in the new thread composer. This requires a Git project.
 
-On web and desktop, the sidebar shows running threads and threads waiting for your
-approval or answer above the project list. Select a thread there to open it without
-changing its project or moving it in the list.
+On web and desktop, **Running now** lists active threads and subtasks. Expand the list
+to see more, or select a thread to open it in its own environment. **Needs my attention**
+also gathers requests for your approval or answer.
 
 ## Pin and reorder threads
 
@@ -85,8 +84,8 @@ scroll position instead of following the thread to its new place in the list.
 
 Pinning does not prevent automatic settlement. Settling a thread removes its pin.
 
-On web and desktop, drag a thread between sections to change its state. Drag a thread up into
-the pinned section to pin it at the spot you drop it; drag a pinned thread down into the active
+On web and desktop, drag a thread between sections in **Uncategorized** to change its state.
+Drag a thread up into the pinned section to pin it at the spot you drop it; drag a pinned thread down into the active
 list to unpin it. Dragging a thread onto the **Settled** header settles it, and dragging a settled
 thread into the active list un-settles it. A snoozed thread can be dragged out of the snoozed
 shelf, which wakes it, but threads cannot be dragged into the shelf because snoozing needs a wake
@@ -137,34 +136,19 @@ rename a thread, regenerate its title, or link and unlink a pull request. These 
 appear on web, desktop, and mobile without requiring the originating browser to remain
 open.
 
-### Fold working threads (beta)
+### Fold working threads on mobile
 
-Threads that are working or waiting on work they will resume from move into a collapsed
-**Working** section below the active list.
-That includes subagents, watched pull requests with checks still running, Claude monitors,
-and background commands or other monitors the agent says it is waiting on. A dev server or other process an agent leaves running does not keep a thread
-there. A thread returns to the top of the active list when it finishes, fails, or needs an approval or
-answer. The Working section lists the thread you last sent work to first. Pinned threads stay in
-the pinned section.
+On iOS and Android, **Settings → General → Working section** controls whether working threads
+move out of the active list until they finish or need you. This is on by default and each device
+keeps its own choice.
 
-This is on by default. Turn it off with **Settings → General → Working section** on web and desktop,
-or **Settings → General → Working section** on iOS and Android. Each device keeps its own
-choice.
+### Group threads by category
 
-While this is on, the active list is ordered by when each thread last came back to you, so you
-cannot drag or move threads within it. Your saved order returns when you turn it off.
-
-### Group threads by project (beta)
-
-Turn on **Settings → Labs → Boring sidebar (group by project)** on web and desktop to put active
-threads in a folder for each project. Pinned projects come first. A project with no active
-threads has no folder unless it is pinned or you pick it in the project filter. An archived
-project's folder comes last and shows only while it has active threads. Click a folder to open or
-close it. A closed folder shows how many threads it holds, and a dot when one of them
-needs you. Use the pen button on a folder, or right-click it, to start a thread in that project.
-Pinned threads stay above the folders, and Snoozed and Settled stay below them. In this mode you
-can drag a thread onto the composer to mention it, but not within the sidebar, and the Working
-section is off. Each device keeps its own choice.
+On web and desktop, select **New category** above the thread list, then use **Move to category**
+in a thread's menu to assign it. Choose **Uncategorized** in the same menu to remove the assignment.
+Click a category name to collapse or expand it. The client saves its categories, assignments, and
+collapse state across reloads without changing any thread's project, working directory, or environment.
+Search threads across categories, including collapsed ones.
 
 ## Settle finished work
 

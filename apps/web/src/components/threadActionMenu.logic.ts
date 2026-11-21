@@ -8,6 +8,7 @@ export type ThreadActionMenuId =
   | "find"
   | "new-thread-on-branch"
   | "filter-by-project"
+  | "move-to-category"
   | "turn-into-project"
   | "project-settings"
   | "pin"
@@ -98,6 +99,7 @@ export interface ThreadActionMenuState {
   readonly canFind?: boolean;
   /** False where no inline title editor is rendered, such as sidebar search results. */
   readonly canRename?: boolean;
+  readonly canMoveToCategory?: boolean;
   readonly branch: string | null;
   readonly projectFilter: {
     readonly label: string;
@@ -131,6 +133,7 @@ export function threadActionRequiresOperate(action: ThreadActionMenuId): boolean
     "find",
     "new-thread-on-branch",
     "project-settings",
+    "move-to-category",
     "mark-unread",
     "share-guest",
     "copy",
@@ -220,6 +223,15 @@ export function buildThreadActionMenuItems(
         ]
       : []),
     { id: "mark-unread", label: resolve(msg("Mark unread")), icon: "mail-open" },
+    ...(state.canMoveToCategory
+      ? [
+          {
+            id: "move-to-category" as const,
+            label: resolve(msg("Move to category")),
+            icon: "folder",
+          },
+        ]
+      : []),
     ...(state.canShareWithGuest
       ? [{ id: "share-guest" as const, label: resolve(msg("Share with guest")), icon: "user-plus" }]
       : []),

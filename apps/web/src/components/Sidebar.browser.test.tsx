@@ -14,7 +14,7 @@ import {
 } from "@t3tools/contracts";
 import { isMacPlatform } from "@t3tools/shared/keybindings";
 import { describe, expect, it, vi } from "vite-plus/test";
-import { userEvent } from "vite-plus/test/browser";
+import { page, userEvent } from "vite-plus/test/browser";
 
 import { act, fakeTimers, render } from "../../test/render";
 import { openCommandPalette } from "../commandPaletteBus";
@@ -29,9 +29,11 @@ import { readEnvironmentScope, useEnvironmentScope } from "../state/session";
 import { useOrchestrationCommand } from "../state/use-orchestration-command";
 import { useTerminalUiStateStore } from "../terminalUiStateStore";
 import { readLocalApi } from "../localApi";
+import * as localApi from "../localApi";
 import type { Project } from "../types";
 import Sidebar from "./Sidebar";
 import { THREAD_JUMP_HINT_SHOW_DELAY_MS } from "./Sidebar.logic";
+import { SIDEBAR_CATEGORIES_STORAGE_KEY } from "./sidebar/SidebarCategories";
 import { SortableThreadRow } from "./sidebar/SidebarThreadRow";
 import { SidebarProvider } from "./ui/sidebar";
 
@@ -203,24 +205,25 @@ function threadShell(projectId: ProjectId, index: number): EnvironmentThreadShel
   });
 }
 
-it("opens a pending child request from the overview without routing to its parent", async () => {
+it("expands the only running section and opens a pending remote child without routing to its parent", async () => {
   const group = project("overview-test");
   const parent = threadShell(group.id, 0);
   const child = makeThreadFixture({
-    environmentId: group.environmentId,
+    environmentId: EnvironmentId.make("remote"),
     projectId: group.id,
     id: ThreadId.make("overview-child"),
     title: "Approval for child work",
-    lineage: {
-      rootThreadId: parent.id,
-      parentThreadId: parent.id,
-      relationshipToParent: "subagent",
-    },
+    delegatedFrom: { ...scopeThreadRef(parent.environmentId, parent.id), title: parent.title },
     hasPendingApprovals: true,
   });
   const parentRef = scopeThreadRef(parent.environmentId, parent.id);
+  const earlier = [1, 2, 3].map((index) => ({
+    ...threadShell(group.id, index),
+    createdAt: "2025-12-01T00:00:00.000Z",
+    hasPendingUserInput: true,
+  }));
   vi.mocked(useProjects).mockReturnValue([group]);
-  vi.mocked(useQuietThreadShells).mockReturnValue([parent, child]);
+  vi.mocked(useQuietThreadShells).mockReturnValue([...earlier, parent, child]);
   vi.mocked(useThreadRouteTarget).mockReturnValue({ kind: "server", threadRef: parentRef });
   vi.mocked(useHandleNewThread).mockReturnValue({
     activeDraftThread: null,
@@ -237,6 +240,16 @@ it("opens a pending child request from the overview without routing to its paren
     </SidebarProvider>,
     { router: `/${parent.environmentId}/${parent.id}` },
   );
+  const running = screen.getByRole("region", { name: "Running now" });
+  expect(running.elements()).toHaveLength(1);
+  await expect.element(screen.getByRole("button", { name: /^Running\b/ })).not.toBeInTheDocument();
+  await expect
+    .element(running.getByRole("button", { name: /Approval for child work/ }))
+    .not.toBeInTheDocument();
+  await userEvent.click(running.getByRole("button", { name: /Show all 5 running tasks/ }));
+  await expect
+    .element(running.getByRole("button", { name: /Approval for child work.*Needs approval/ }))
+    .toBeVisible();
   const attention = screen.getByRole("region", { name: "Needs my attention" });
   await userEvent.click(attention.getByRole("button", { name: /Needs approval/ }));
   await vi.waitFor(() => {
@@ -407,6 +420,81 @@ describe("sidebar thread menu", () => {
     await vi.waitFor(() => expect(show).toHaveBeenCalledTimes(2));
     expect(show.mock.lastCall?.[2]).toBe("mouse");
   });
+});
+
+it("restores category assignments and collapse state without moving the same ID in another environment", async () => {
+  using stack = new DisposableStack();
+  const style = document.createElement("style");
+  style.textContent = appCss;
+  document.head.append(style);
+  stack.defer(() => style.remove());
+  const saved = localStorage.getItem(SIDEBAR_CATEGORIES_STORAGE_KEY);
+  localStorage.removeItem(SIDEBAR_CATEGORIES_STORAGE_KEY);
+  stack.defer(() => {
+    if (saved === null) localStorage.removeItem(SIDEBAR_CATEGORIES_STORAGE_KEY);
+    else localStorage.setItem(SIDEBAR_CATEGORIES_STORAGE_KEY, saved);
+  });
+  const local = project("local-project");
+  const remote = { ...project("remote-project"), environmentId: EnvironmentId.make("remote") };
+  const thread = threadShell(local.id, 0);
+  const remoteThread = makeThreadFixture({
+    environmentId: remote.environmentId,
+    projectId: remote.id,
+    id: thread.id,
+    title: "Remote session",
+  });
+  const show = vi.fn<LocalApi["contextMenu"]["show"]>().mockResolvedValue("move-to-category");
+  using _api = vi.spyOn(localApi, "readLocalApi").mockReturnValue({
+    contextMenu: { show },
+  } as unknown as LocalApi);
+  vi.mocked(useProjects).mockReturnValue([local, remote]);
+  vi.mocked(useQuietThreadShells).mockReturnValue([thread, remoteThread]);
+  const localRef = scopeThreadRef(local.environmentId, thread.id);
+  vi.mocked(useThreadRouteTarget).mockReturnValue({ kind: "server", threadRef: localRef });
+  vi.mocked(useHandleNewThread).mockReturnValue({
+    activeDraftThread: null,
+    activeThread: null,
+    defaultProjectRef: scopeProjectRef(local.environmentId, local.id),
+    defaultProjectFallbackReady: true,
+    handleNewThread: vi.fn(),
+    routeDraftId: null,
+    routeThreadRef: localRef,
+  });
+  const tree = () => (
+    <SidebarProvider>
+      <Sidebar routeReveal={{ observedKey: null, pendingKey: null }} />
+    </SidebarProvider>
+  );
+  {
+    await using screen = await render(tree());
+    await userEvent.click(screen.getByRole("button", { name: "New category" }));
+    const create = page.getByRole("dialog", { name: "New category" });
+    await userEvent.fill(create.getByRole("textbox", { name: "Category name" }), "Release work");
+    await userEvent.click(create.getByRole("button", { name: "Create category" }));
+    const remoteRow = screen.getByText("Remote session").first();
+    await userEvent.click(remoteRow, { button: "right" });
+    const move = page.getByRole("dialog", { name: "Move to category" });
+    await userEvent.click(move.getByRole("button", { name: "Release work" }));
+    await expect.element(move).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Release work", exact: true }));
+    await expect.element(remoteRow).not.toBeInTheDocument();
+    await expect.element(screen.getByText(thread.title).first()).toBeVisible();
+    const localRow = screen.getByText(thread.title).first().element().closest("[data-sidebar-row]");
+    expect(localRow?.getAttribute("data-sidebar-parent")).toBe("category:uncategorized");
+  }
+  await using restored = await render(tree());
+  const category = restored.getByRole("button", { name: /^Release work/ });
+  const remoteRow = restored.getByText("Remote session").first();
+  await expect.element(category).toHaveAttribute("aria-expanded", "false");
+  await expect.element(remoteRow).not.toBeInTheDocument();
+  await userEvent.click(category);
+  await expect.element(remoteRow).toBeVisible();
+  await userEvent.click(remoteRow, { button: "right" });
+  const move = page.getByRole("dialog", { name: "Move to category" });
+  await userEvent.click(move.getByRole("button", { name: "Uncategorized" }));
+  await expect.element(move).not.toBeInTheDocument();
+  await userEvent.click(category);
+  await expect.element(remoteRow).toBeVisible();
 });
 
 describe("sidebar settled pagination", () => {

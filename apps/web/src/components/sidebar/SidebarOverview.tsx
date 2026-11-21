@@ -7,12 +7,15 @@ import { ChevronDownIcon, ChevronRightIcon } from "lucide-react";
 import { useState } from "react";
 import { cn } from "~/lib/utils";
 import { useNowMinute } from "../../hooks/useNowMinute";
-import { useAllEnvironmentShellsBootstrapped, useQuietThreadProjection } from "../../state/entities";
+import {
+  useAllEnvironmentShellsBootstrapped,
+  useQuietThreadProjection,
+} from "../../state/entities";
 import { useEnvironments } from "../../state/environments";
 import { formatRelativeElapsed } from "../../timestampFormat";
 import { useUiStateStore } from "../../uiStateStore";
 import { Button } from "../ui/button";
-import { Popover, PopoverPopup, PopoverTitle, PopoverTrigger } from "../ui/popover";
+import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import type { SidebarProviderEntry } from "./SidebarThreadRow";
 import {
   ATTENTION_PREVIEW_LIMIT,
@@ -44,7 +47,10 @@ function OverviewProgress({ row }: { row: OverviewRow }) {
   if (progress === null) return null;
   return (
     <>
-      <span aria-hidden className="h-0.75 w-8 shrink-0 overflow-hidden rounded-full bg-sidebar-border">
+      <span
+        aria-hidden
+        className="h-0.75 w-8 shrink-0 overflow-hidden rounded-full bg-sidebar-border"
+      >
         <span
           className="block h-full origin-left rounded-full bg-current rtl:origin-right"
           style={{ transform: `scaleX(${progress.done / progress.total})` }}
@@ -80,47 +86,59 @@ function OverviewThreadButton({
     timestamp === null || !Number.isFinite(timestamp)
       ? null
       : formatRelativeElapsed(
-          Math.max(0, toServerClock(row.ref.environmentId, Date.parse(`${minute}:00Z`)) - timestamp),
+          Math.max(
+            0,
+            toServerClock(row.ref.environmentId, Date.parse(`${minute}:00Z`)) - timestamp,
+          ),
           messages,
         );
   const indicator: Record<OverviewStatus, string> = {
-    approval: "bg-amber-500 dark:bg-amber-300/90",
-    input: "bg-amber-500 dark:bg-amber-300/90",
-    starting: "bg-primary",
-    queued: "bg-primary",
-    working: "bg-primary",
-    waiting: "bg-primary",
-    background: "bg-primary",
-    children: "bg-primary",
-    failed: "bg-destructive",
-    unread: "bg-sidebar-muted-foreground/65",
+    approval: "bg-orange-600 dark:bg-orange-400",
+    input: "bg-orange-600 dark:bg-orange-400",
+    starting: "bg-amber-600 dark:bg-amber-400",
+    queued: "bg-amber-600 dark:bg-amber-400",
+    working: "bg-amber-600 dark:bg-amber-400",
+    waiting: "bg-sky-600 dark:bg-sky-400",
+    background: "bg-sky-600 dark:bg-sky-400",
+    children: "bg-sky-600 dark:bg-sky-400",
+    failed: "bg-red-600 dark:bg-red-400",
+    unread: "bg-emerald-600 dark:bg-emerald-400",
   };
   return (
-    <button
-      type="button"
-      aria-current={active ? "page" : undefined}
-      title={context === null ? title : `${title} · ${context}`}
-      onClick={onOpen}
-      className="block min-w-0 flex-1 cursor-pointer rounded-md px-2 py-1.5 text-start text-sidebar-foreground outline-none hover:bg-sidebar-row-hover focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring aria-[current=page]:bg-sidebar-row-active"
-    >
-      <span className="flex min-w-0 items-center gap-2">
-        <span aria-hidden className={cn("size-1.5 shrink-0 rounded-full", indicator[row.status])} />
-        <span className="min-w-0 flex-1 truncate text-sm">{title}</span>
-        {time === null ? null : (
-          <span className="shrink-0 text-2xs text-sidebar-muted-foreground tabular-nums">
-            <span className="sr-only">{time.label}</span>
-            <span aria-hidden>{time.value}</span>
-          </span>
-        )}
-      </span>
-      <span className="flex min-w-0 items-center gap-1.5 ps-3.5 text-2xs text-sidebar-muted-foreground">
-        {showProgress && row.status !== "children" ? <OverviewProgress row={row} /> : null}
-        <span className="truncate">
-          {statusLabel}
-          {context === null ? null : ` · ${context}`}
+    <Tooltip>
+      <TooltipTrigger
+        render={
+          <button
+            type="button"
+            aria-current={active ? "page" : undefined}
+            onClick={onOpen}
+            className="block min-w-0 flex-1 cursor-pointer rounded-md px-2 py-1.5 text-start text-sidebar-foreground outline-none hover:bg-sidebar-row-hover focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring aria-[current=page]:bg-sidebar-row-active"
+          />
+        }
+      >
+        <span className="flex min-w-0 items-center gap-2">
+          <span
+            aria-hidden
+            className={cn("size-1.5 shrink-0 rounded-full", indicator[row.status])}
+          />
+          <span className="min-w-0 flex-1 truncate text-sm">{title}</span>
+          {time === null ? null : (
+            <span className="shrink-0 text-2xs text-sidebar-muted-foreground tabular-nums">
+              <span className="sr-only">{time.label}</span>
+              <span aria-hidden>{time.value}</span>
+            </span>
+          )}
         </span>
-      </span>
-    </button>
+        <span className="flex min-w-0 items-center gap-1.5 ps-3.5 text-2xs text-sidebar-muted-foreground">
+          {showProgress && row.status !== "children" ? <OverviewProgress row={row} /> : null}
+          <span className="truncate">
+            {statusLabel}
+            {context === null ? null : ` · ${context}`}
+          </span>
+        </span>
+      </TooltipTrigger>
+      <TooltipPopup>{context === null ? title : `${title} · ${context}`}</TooltipPopup>
+    </Tooltip>
   );
 }
 
@@ -158,14 +176,15 @@ export function SidebarOverview({
   const preview = previewActiveWork(active);
   const childCount = active.reduce((sum, group) => sum + group.childCount, 0);
   const hiddenActive =
-    active.length > preview.length || preview.some((group) => group.children.length < group.childCount);
+    active.length > preview.length ||
+    preview.some((group) => group.children.length < group.childCount);
   const activeLabel = gt("Running now");
   const attentionLabel = gt("Needs my attention");
   const shownAttention = showAllAttention ? attention : attention.slice(0, ATTENTION_PREVIEW_LIMIT);
   const headingClass =
     "flex min-w-0 items-center gap-2 px-2 pt-2 pb-1 text-2xs text-sidebar-muted-foreground";
 
-  const renderRow = (row: OverviewRow, mode: "preview" | "all" | "attention", count = 0) => {
+  const renderRow = (row: OverviewRow, mode: "running" | "attention", count = 0) => {
     const thread = row.thread;
     const title = thread.title || gt("Untitled thread");
     const statusLabel =
@@ -186,22 +205,19 @@ export function SidebarOverview({
         context={context ?? null}
         active={activeKey === row.key}
         showProgress={mode === "attention" || activeKey === row.key}
-        onOpen={() => {
-          if (mode === "all") setShowAllRunning(false);
-          onNavigate(row.ref);
-        }}
+        onOpen={() => onNavigate(row.ref)}
       />
     );
   };
-  const renderActive = (groups: Overview["active"], all: boolean) => (
+  const renderActive = (groups: Overview["active"]) => (
     <ul aria-label={activeLabel} className="space-y-px">
       {groups.map(({ root, children, childCount: count }) => {
-        const expanded = all || !collapsedGroups.has(root.key);
+        const expanded = !collapsedGroups.has(root.key);
         const title = root.thread.title || gt("Untitled thread");
         return (
           <li key={root.key}>
             <div className="flex min-w-0 items-center">
-              {children.length > 0 && !all ? (
+              {children.length > 0 ? (
                 <button
                   type="button"
                   aria-label={gt("Subtasks of {thread}", { thread: title })}
@@ -223,13 +239,13 @@ export function SidebarOverview({
                   )}
                 </button>
               ) : null}
-              {renderRow(root, all ? "all" : "preview", count)}
+              {renderRow(root, "running", count)}
             </div>
             {expanded && children.length > 0 ? (
               <ul className="ms-3 space-y-px border-s border-sidebar-border ps-1">
                 {children.map((child) => (
                   <li key={child.key} className="flex min-w-0">
-                    {renderRow(child, all ? "all" : "preview")}
+                    {renderRow(child, "running")}
                   </li>
                 ))}
               </ul>
@@ -241,7 +257,10 @@ export function SidebarOverview({
   );
 
   return (
-    <div className="mb-2 space-y-1.5 border-b border-sidebar-border pb-2" data-thread-selection-safe>
+    <div
+      className="mb-2 space-y-1.5 border-b border-sidebar-border pb-2"
+      data-thread-selection-safe
+    >
       <section aria-label={activeLabel}>
         <h2 className={headingClass}>
           <span>{activeLabel}</span>
@@ -266,22 +285,21 @@ export function SidebarOverview({
             {gt("Some connections are still syncing. Status may be out of date.")}
           </p>
         ) : null}
-        {active.length > 0 ? renderActive(preview, false) : null}
+        {active.length > 0 ? renderActive(showAllRunning ? active : preview) : null}
         {hiddenActive ? (
-          <Popover open={showAllRunning} onOpenChange={setShowAllRunning}>
-            <PopoverTrigger render={<Button variant="ghost" size="compact" />}>
-              {gt(
-                "{count, plural, one {Show all {count} running task} other {Show all {count} running tasks}}",
-                { count: active.length + childCount },
-              )}
-            </PopoverTrigger>
-            <PopoverPopup side="right" align="start" width="lg" padding="compact">
-              <PopoverTitle>{activeLabel}</PopoverTitle>
-              <div className="mt-2 max-h-[min(65vh,40rem)] overflow-y-auto">
-                {showAllRunning ? renderActive(active, true) : null}
-              </div>
-            </PopoverPopup>
-          </Popover>
+          <Button
+            variant="ghost"
+            size="compact"
+            aria-expanded={showAllRunning}
+            onClick={() => setShowAllRunning(!showAllRunning)}
+          >
+            {showAllRunning
+              ? gt("Collapse")
+              : gt(
+                  "{count, plural, one {Show all {count} running task} other {Show all {count} running tasks}}",
+                  { count: active.length + childCount },
+                )}
+          </Button>
         ) : null}
       </section>
       {attention.length > 0 ? (
@@ -291,7 +309,7 @@ export function SidebarOverview({
             <span
               className={cn(
                 "ms-auto rounded-full px-1.5 font-medium tabular-nums",
-                attentionCount > 0 && "bg-amber-500/15 text-amber-700 dark:text-amber-300",
+                attentionCount > 0 && "bg-warning-surface text-warning-foreground",
               )}
             >
               {attentionCount}

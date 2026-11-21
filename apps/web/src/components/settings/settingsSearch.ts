@@ -482,16 +482,10 @@ export const SETTINGS_SEARCH_ITEMS = [
     searchTerms: [msg("usage quota rate limit reset recover continue")],
   },
   {
-    id: "working-shelf",
-    title: msg("Working section"),
-    to: "/settings/general",
-    searchTerms: [msg("hide fold running monitoring threads inbox sidebar shelf")],
-  },
-  {
     id: "boring-sidebar",
-    title: msg("Boring sidebar (group by project)"),
+    title: msg("Compact sidebar rows"),
     to: "/settings/labs",
-    searchTerms: [msg("beta folders project tree classic sidebar")],
+    searchTerms: [msg("beta boring sidebar categories folders compact classic sidebar")],
   },
   {
     id: "boring-sidebar-multiline",

@@ -41,13 +41,13 @@ function BoringSidebarRow() {
     <SettingsRow
       {...searchableSetting("boring-sidebar")}
       description={gt(
-        "Group sidebar threads into project folders. Pinned threads stay on top, and Snoozed and Settled stay below the folders.",
+        "Use compact rows in sidebar categories. Drag threads to the composer to reference them, or use the thread menu to change categories or pin them.",
       )}
       control={
         <Switch
           checked={settings.boringSidebarEnabled}
           onCheckedChange={(checked) => updateSettings({ boringSidebarEnabled: Boolean(checked) })}
-          aria-label={gt("Boring sidebar (group by project)")}
+          aria-label={gt("Compact sidebar rows")}
         />
       }
     >
