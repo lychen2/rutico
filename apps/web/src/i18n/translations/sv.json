@@ -1,4 +1,12 @@
 {
+  "dd5ea665781ec551": "Nytt resultat",
+  "8afba139960777ad": "Pågår nu",
+  "5cb731c8126c3138": "Kräver min uppmärksamhet",
+  "5a3d4262873c36a2": "Deluppgifter för {thread}",
+  "c5e2630f59cbfbf0": "Inga pågående uppgifter",
+  "9d201db75b1faa1f": "Antal deluppgifter: {count}",
+  "70d65630264cf233": "Vissa anslutningar synkroniseras fortfarande. Statusen kan vara inaktuell.",
+  "0775f67e322bb4c1": "Visa alla pågående uppgifter ({count})",
   "4bcfa3b976a421cf": "Sidochatt",
   "23be753133ae6950": "Tråd",
   "0001ae5846061bb6": "Tråd på {machine}",

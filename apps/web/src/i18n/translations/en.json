@@ -1,4 +1,12 @@
 {
+  "dd5ea665781ec551": "New result",
+  "8afba139960777ad": "Running now",
+  "5cb731c8126c3138": "Needs my attention",
+  "5a3d4262873c36a2": "Subtasks of {thread}",
+  "c5e2630f59cbfbf0": "No running tasks",
+  "9d201db75b1faa1f": "{count, plural, one {Includes {count} subtask} other {Includes {count} subtasks}}",
+  "70d65630264cf233": "Some connections are still syncing. Status may be out of date.",
+  "0775f67e322bb4c1": "{count, plural, one {Show all {count} running task} other {Show all {count} running tasks}}",
   "4bcfa3b976a421cf": "Side chat",
   "23be753133ae6950": "Thread",
   "0001ae5846061bb6": "Thread on {machine}",

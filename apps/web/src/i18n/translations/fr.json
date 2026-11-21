@@ -1,4 +1,12 @@
 {
+  "dd5ea665781ec551": "Nouveau résultat",
+  "8afba139960777ad": "En cours",
+  "5cb731c8126c3138": "À traiter",
+  "5a3d4262873c36a2": "Sous-tâches de {thread}",
+  "c5e2630f59cbfbf0": "Aucune tâche en cours",
+  "9d201db75b1faa1f": "Sous-tâches incluses : {count}",
+  "70d65630264cf233": "Certaines connexions sont en cours de synchronisation. Le statut peut être obsolète.",
+  "0775f67e322bb4c1": "Voir toutes les tâches en cours ({count})",
   "4bcfa3b976a421cf": "Discussion annexe",
   "23be753133ae6950": "Fil",
   "0001ae5846061bb6": "Fil sur {machine}",

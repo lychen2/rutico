@@ -1,4 +1,12 @@
 {
+  "dd5ea665781ec551": "Nuevo resultado",
+  "8afba139960777ad": "En ejecución",
+  "5cb731c8126c3138": "Requiere mi atención",
+  "5a3d4262873c36a2": "Subtareas de {thread}",
+  "c5e2630f59cbfbf0": "No hay tareas en ejecución",
+  "9d201db75b1faa1f": "Subtareas incluidas: {count}",
+  "70d65630264cf233": "Algunas conexiones siguen sincronizándose. El estado podría estar desactualizado.",
+  "0775f67e322bb4c1": "Ver todas las tareas en ejecución ({count})",
   "4bcfa3b976a421cf": "Chat lateral",
   "23be753133ae6950": "Hilo",
   "0001ae5846061bb6": "Hilo en {machine}",

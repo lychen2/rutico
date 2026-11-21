@@ -1,4 +1,12 @@
 {
+  "dd5ea665781ec551": "Neues Ergebnis",
+  "8afba139960777ad": "Wird ausgeführt",
+  "5cb731c8126c3138": "Benötigt meine Aufmerksamkeit",
+  "5a3d4262873c36a2": "Unteraufgaben von {thread}",
+  "c5e2630f59cbfbf0": "Keine laufenden Aufgaben",
+  "9d201db75b1faa1f": "Unteraufgaben: {count}",
+  "70d65630264cf233": "Einige Verbindungen werden noch synchronisiert. Der Status ist möglicherweise veraltet.",
+  "0775f67e322bb4c1": "Alle laufenden Aufgaben anzeigen ({count})",
   "4bcfa3b976a421cf": "Nebenchat",
   "23be753133ae6950": "Thread",
   "0001ae5846061bb6": "Thread auf {machine}",
