@@ -185,7 +185,8 @@ it("keeps round token and cache totals separate from the current context window"
       turnUsage={null}
     />,
   );
-  await expect.element(liveTrigger.getByText("· 10 chars/s", { exact: true })).toBeVisible();
+  await expect.element(liveTrigger.getByText("Model output speed 10 chars/s")).toBeVisible();
+  await expect.element(liveTrigger.getByText("Time to first output 2.5s")).toBeVisible();
   await expect.element(details.getByText("10 chars/s", { exact: true })).toBeVisible();
   await expect.element(details.getByText("2.5s", { exact: true })).toBeVisible();
 

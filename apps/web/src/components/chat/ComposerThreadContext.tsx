@@ -130,8 +130,17 @@ export function ComposerThreadContext({
                 {gt("{steps, plural, one {# step} other {# steps}}", { steps: stepCount })}
               </span>
             ) : null}
-            {speed !== null && <span>· {speed}</span>}
           </span>
+          {run !== null && (
+            <span className="inline-flex items-center gap-2 border-s ps-2">
+              <span>
+                {gt("Time to first output")} {firstOutput ?? gt("Not reported")}
+              </span>
+              <span>
+                {gt("Model output speed")} {speed ?? gt("Not reported")}
+              </span>
+            </span>
+          )}
           {total !== null ? (
             <span className="border-s ps-2">
               {gt("{tokens} tokens", { tokens: total.toLocaleString(locale) })}
