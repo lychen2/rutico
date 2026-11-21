@@ -95,7 +95,12 @@ it("discloses only the current OMP checklist inline in the timeline footer", asy
   const checklist = page.getByRole("region", { name: "待办清单" });
   const trigger = checklist.getByRole("button", { name: /^待办清单/ });
   const steps = checklist.getByRole("list");
-  const context = page.locator('[data-chat-composer-overlay="true"]');
+  await expect
+    .element(page.getByText("已使用 24,600 token", { exact: true }).first())
+    .toBeVisible();
+  const context = page.elementLocator(
+    document.querySelector<HTMLElement>('[data-chat-composer-overlay="true"]')!,
+  );
   await expect.element(context.getByText("已使用 24,600 token", { exact: true })).toBeVisible();
   await expect.element(context.getByText("已使用 25%", { exact: true })).toBeVisible();
   await expect.element(checklist).not.toBeInTheDocument();
@@ -153,10 +158,14 @@ it("discloses only the current OMP checklist inline in the timeline footer", asy
       steps: [{ id: "other", text: "其他提供方的任务", status: "running" }],
     },
   });
+  await page.getByText(/^工作了/).click();
   await expect.element(page.getByText(/其他提供方的任务/)).toBeVisible();
-  await expect.element(page.getByText(/旧 OMP 待办快照|相邻会话的待办快照/)).not.toBeInTheDocument();
+  await expect
+    .element(page.getByText(/旧 OMP 待办快照|相邻会话的待办快照/))
+    .not.toBeInTheDocument();
   await expect.element(trigger).toHaveAttribute("aria-expanded", "false");
-  await expect.element(trigger).toHaveTextContent(/校对仪表盘.*已完成 0\/3/);
+  await expect.element(trigger.getByText(/校对仪表盘/)).toBeVisible();
+  await expect.element(trigger.getByText("已完成 0/3", { exact: true })).toBeVisible();
   expect(checklist.element().closest(".messages-timeline-scroll")).not.toBeNull();
   await expect.element(steps).not.toBeInTheDocument();
   await trigger.click();
@@ -177,7 +186,8 @@ it("discloses only the current OMP checklist inline in the timeline footer", asy
       })),
     },
   });
-  await expect.element(trigger).toHaveTextContent(/检查窄屏显示.*已完成 1\/3/);
+  await expect.element(trigger.getByText(/检查窄屏显示/)).toBeVisible();
+  await expect.element(trigger.getByText("已完成 1/3", { exact: true })).toBeVisible();
   await expect.element(trigger).toHaveAttribute("aria-expanded", "true");
   await expect
     .element(steps.getByRole("listitem").filter({ hasText: "检查窄屏显示" }).getByText("进行中"))
