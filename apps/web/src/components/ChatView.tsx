@@ -156,7 +156,7 @@ import {
   squashAtomCommandFailure,
   type AtomCommandResult,
 } from "@t3tools/client-runtime/state/runtime";
-import { AsyncResult } from "effect/reactivity";
+import { AsyncResult, Atom } from "effect/reactivity";
 import { isElectron } from "../env";
 import { useActiveThreadRef } from "../hooks/useActiveThreadRef";
 import { composerRequiresModifier } from "../composer-logic";
@@ -265,7 +265,7 @@ import { revisionedQuery } from "../state/revisionedQuery";
 import { useEnvironmentScope } from "~/state/session";
 import { primaryServerKeybindingsAtom, serverEnvironment } from "../state/server";
 import { hostEnvironmentIdAtom } from "../state/primaryEnvironment";
-import { threadEnvironment } from "../state/threads";
+import { environmentThreadDetails, threadEnvironment } from "../state/threads";
 import {
   resolveProviderSkillsForCwd,
   resolveProvidersForCwd,
@@ -530,6 +530,11 @@ export default function ChatView(props: ChatViewProps) {
   });
   const serverThreadProjection = useQuietThreadProjection(routeThreadDetailRef);
   const serverProjection = serverThreadProjection?.projection ?? null;
+  const liveThreadAtom = routeThreadDetailRef
+    ? environmentThreadDetails.threadAtom(routeThreadDetailRef)
+    : undefined;
+  const composerTurnItemsAtom =
+    liveThreadAtom && Atom.map(liveThreadAtom, (thread) => thread?.projection.turnItems ?? []);
   // Only the shell-less fallback needs these; with a shell, the shell carries them.
   const fallbackDetailRef = serverThreadShell === null ? routeThreadDetailRef : null;
   const fallbackUpdatedAt = useThreadUpdatedAt(fallbackDetailRef);
@@ -3295,6 +3300,10 @@ export default function ChatView(props: ChatViewProps) {
   const composerContextRun = showSessionStatus
     ? (serverProjection.runs.find((run) => run.id === activeActivityRun?.runId) ?? null)
     : null;
+  const composerProviderTurn = latestProviderTurnForAttempt(
+    serverProjection?.providerTurns ?? [],
+    composerContextRun?.activeAttemptId,
+  );
   const composerActivity =
     composerContextRun && serverProjection
       ? currentRoundActivity(composerContextRun, serverProjection.nodes)
@@ -3972,14 +3981,9 @@ export default function ChatView(props: ChatViewProps) {
                                 ? composerActivity.tools.count + composerActivity.reasoning.count
                                 : null
                             }
-                            turnUsage={
-                              composerContextRun && serverProjection
-                                ? (latestProviderTurnForAttempt(
-                                    serverProjection.providerTurns,
-                                    composerContextRun.activeAttemptId,
-                                  )?.turnTokenUsage ?? null)
-                                : null
-                            }
+                            turnUsage={composerProviderTurn?.turnTokenUsage ?? null}
+                            providerTurnId={composerProviderTurn?.id}
+                            turnItemsAtom={composerTurnItemsAtom}
                             usage={
                               activeProviderThread?.driver === "omp" ? activeContextWindow : null
                             }

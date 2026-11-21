@@ -1,7 +1,14 @@
 import type { ContextWindowSnapshot } from "@t3tools/client-runtime/state/context-window";
-import type { OrchestrationV2Run, TurnTokenUsage } from "@t3tools/contracts";
+import type {
+  OrchestrationV2Run,
+  OrchestrationV2TurnItem,
+  ProviderTurnId,
+  TurnTokenUsage,
+} from "@t3tools/contracts";
 import { formatDuration } from "@t3tools/shared/orchestrationTiming";
+import { useAtomValue } from "@effect/atom-react";
 import * as DateTime from "effect/DateTime";
+import { Atom } from "effect/reactivity";
 import { msg, useGT, useLocale, useMessages } from "gt-react";
 import { ChevronDownIcon } from "lucide-react";
 
@@ -24,21 +31,27 @@ const runStatusLabels = {
 import type { currentRoundActivity } from "./currentRoundActivity";
 import "./composerSessionOverview.css";
 
+const noOutputCountAtom = Atom.make<number | null>(null);
+
 export function ComposerThreadContext({
   usage,
   run,
   stepCount,
   turnUsage,
+  providerTurnId,
+  turnItemsAtom,
   activity,
   contextStatus,
 }: {
   readonly usage: ContextWindowSnapshot | null;
   readonly run: Pick<
     OrchestrationV2Run,
-    "ordinal" | "status" | "workStartedAt" | "startedAt" | "completedAt"
+    "id" | "ordinal" | "status" | "workStartedAt" | "startedAt" | "completedAt"
   > | null;
   readonly stepCount: number | null;
   readonly turnUsage: TurnTokenUsage | null;
+  readonly providerTurnId?: ProviderTurnId | undefined;
+  readonly turnItemsAtom?: Atom.Atom<readonly OrchestrationV2TurnItem[]> | undefined;
   readonly activity?: ReturnType<typeof currentRoundActivity> | null;
   readonly contextStatus?: string | undefined;
 }) {
@@ -46,7 +59,7 @@ export function ComposerThreadContext({
   const locale = useLocale();
   const resolve = useMessages();
   const status = run?.status;
-  const start = run?.workStartedAt ?? run?.startedAt ?? null;
+  const start = run?.startedAt ?? run?.workStartedAt ?? null;
   const startMs = start === null ? null : DateTime.toEpochMillis(start);
   const endMs = run?.completedAt == null ? null : DateTime.toEpochMillis(run.completedAt);
   const running =
@@ -59,10 +72,37 @@ export function ComposerThreadContext({
   const cacheRead = modelUsage?.cachedInputTokens;
   const cacheWrite = modelUsage?.cacheCreationTokens;
   const total = input !== undefined && output !== undefined ? input + output : null;
-  const rate =
-    output !== undefined && startMs !== null && endMs !== null && endMs > startMs
-      ? ((output * 1000) / (endMs - startMs)).toLocaleString(locale, { maximumFractionDigits: 1 })
-      : null;
+  const runId = run?.id;
+  const useTextCount = output === undefined && !turnUsage?.localCommand && startMs !== null;
+  const outputCountAtom =
+    useTextCount && runId !== undefined && turnItemsAtom !== undefined
+      ? Atom.map(turnItemsAtom, (items) => {
+          let characters = 0;
+          for (const item of items) {
+            if (
+              item.type !== "assistant_message" ||
+              item.runId !== runId ||
+              item.parentItemId !== null ||
+              (providerTurnId !== undefined && item.providerTurnId !== providerTurnId)
+            ) {
+              continue;
+            }
+            for (const _character of item.text) characters++;
+          }
+          return characters > 0 ? characters : null;
+        })
+      : noOutputCountAtom;
+  const characters = useAtomValue(outputCountAtom);
+  const outputCount = output ?? characters;
+  const liveSpeed = running && endMs === null && startMs !== null && outputCount !== null;
+  function formatSpeed(sampleEndMs: number) {
+    if (startMs === null || outputCount === null || sampleEndMs <= startMs) return null;
+    const rate = ((outputCount * 1000) / (sampleEndMs - startMs)).toLocaleString(locale, {
+      maximumFractionDigits: 1,
+    });
+    return output === undefined ? gt("{rate} chars/s", { rate }) : gt("{rate} tok/s", { rate });
+  }
+  const speed = endMs === null ? null : formatSpeed(endMs);
   const cachePercent =
     input !== undefined && input > 0 && cacheRead !== undefined
       ? Math.round((cacheRead / input) * 100)
@@ -102,7 +142,16 @@ export function ComposerThreadContext({
                 {gt("{steps, plural, one {# step} other {# steps}}", { steps: stepCount })}
               </span>
             ) : null}
-            {rate !== null && <span>· {rate} tok/s</span>}
+            {speed !== null ? (
+              <span>· {speed}</span>
+            ) : liveSpeed ? (
+              <span
+                ref={tickTextContent((nowMs) => {
+                  const currentSpeed = formatSpeed(nowMs);
+                  return currentSpeed === null ? "" : `· ${currentSpeed}`;
+                }, true)}
+              />
+            ) : null}
           </span>
           {total !== null ? (
             <span className="border-s ps-2">
@@ -145,9 +194,20 @@ export function ComposerThreadContext({
                 </div>
                 <div className="grid gap-1">
                   <span className="text-muted-foreground">{gt("Speed")}</span>
-                  <strong className="text-base">
-                    {rate === null ? gt("Not reported") : `${rate} tok/s`}
-                  </strong>
+                  {liveSpeed ? (
+                    <strong
+                      className="text-base"
+                      ref={tickTextContent(
+                        (nowMs) => formatSpeed(nowMs) ?? gt("Not reported"),
+                        true,
+                      )}
+                    />
+                  ) : (
+                    <strong className="text-base">{speed ?? gt("Not reported")}</strong>
+                  )}
+                  <span className="text-muted-foreground">
+                    {gt("End-to-end average, including tools and waiting.")}
+                  </span>
                   <div className="flex gap-1 text-muted-foreground">
                     <span>{gt("Duration")}</span>
                     {startMs !== null ? (
