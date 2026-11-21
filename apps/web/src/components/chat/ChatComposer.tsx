@@ -20,7 +20,6 @@ import {
   trackOpenQuestionAttachmentDraft,
   useQuestionAttachmentPreparation,
 } from "../../questionAttachments";
-import type { ContextWindowSnapshot } from "@t3tools/client-runtime/state/context-window";
 import type {
   KeybindingCommand,
   AssistantCitation,
@@ -128,7 +127,6 @@ import { ComposerBanner } from "./ComposerBanner";
 import { ComposerSurface } from "./ComposerSurface";
 import { CollapsedComposerPromptPreview } from "./CollapsedComposerPromptPreview";
 import { ComposerBannerStack, type ComposerBannerStackItem } from "./ComposerBannerStack";
-import { ComposerThreadContext } from "./ComposerThreadContext";
 import {
   attachmentsToReleaseOnUploadCapabilityLoss,
   composerOtherFilesForPresentation,
@@ -393,7 +391,6 @@ export interface ChatComposerProps {
   isPreparingWorktree: boolean;
   canSteer: boolean;
   bannerItems: readonly ComposerBannerStackItem[];
-  threadContextUsage?: ContextWindowSnapshot | null | undefined;
   resumeCompactionTokens: number | null;
   keepFullHistory: boolean;
   onToggleKeepFullHistory: () => void;
@@ -3484,9 +3481,6 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       <ComposerBanner.Dock>
         <ComposerBanner.Column>
           <ComposerBannerStack items={shelfItems} />
-          {!hasBlockingComposerTopDrawer && props.threadContextUsage !== undefined ? (
-            <ComposerThreadContext usage={props.threadContextUsage} />
-          ) : null}
           {showComposerTopDrawer ? (
             <ComposerBanner.Attachment>
               <ComposerBanner.Root data-chat-composer-top-drawer="true" variant="info">

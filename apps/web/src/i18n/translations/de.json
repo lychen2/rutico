@@ -12480,5 +12480,21 @@
   "27d76249d09eb69f": "Review-Leitfaden bereit",
   "faa3bb26abb39c93": "Review-Leitfaden fehlgeschlagen",
   "b7df38b7d8792d78": "Leitfaden öffnen",
-  "9e91e9a77b664e4e": "Review-Leitfaden konnte nicht gestartet werden"
+  "9e91e9a77b664e4e": "Review-Leitfaden konnte nicht gestartet werden",
+  "2a1419da20c2bb27": "In der Warteschlange",
+  "7342bfc328008926": "Läuft",
+  "7a9df0a1eb190444": "Zurückgesetzt",
+  "a891d04595671afb": "Runde {round}",
+  "f6a9d5782c89dc25": "{steps, plural, one {# Schritt} other {# Schritte}}",
+  "11a5a798041da0a8": "{tokens} Tokens",
+  "642b3eb1b9603cdc": "Cache {percent} %",
+  "980ec55ecec77ab6": "Tokenverbrauch der Runde",
+  "da9a6e38757e32f9": "Aufgabenliste",
+  "9756b09ffd8a55c6": "In Bearbeitung",
+  "4dccb48528cb04d2": "Blockiert",
+  "353b08f4363dbb2c": "Ausstehend",
+  "0f67ed3159fc7567": "{completed}/{total} erledigt",
+  "363f6e6a0b0388ea": "Einklappen",
+  "a6a838f6a8fb04aa": "Unteraufgaben",
+  "12e035e7051a9f6f": "In dieser Unterhaltung gibt es keine Unteraufgaben."
 }

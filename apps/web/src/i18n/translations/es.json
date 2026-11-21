@@ -12475,5 +12475,21 @@
   "27d76249d09eb69f": "Guía de revisión lista",
   "faa3bb26abb39c93": "Falló la guía de revisión",
   "b7df38b7d8792d78": "Abrir guía",
-  "9e91e9a77b664e4e": "No se pudo iniciar una guía de revisión"
+  "9e91e9a77b664e4e": "No se pudo iniciar una guía de revisión",
+  "2a1419da20c2bb27": "En cola",
+  "7342bfc328008926": "En ejecución",
+  "7a9df0a1eb190444": "Revertido",
+  "a891d04595671afb": "Ronda {round}",
+  "f6a9d5782c89dc25": "{steps, plural, one {# paso} other {# pasos}}",
+  "11a5a798041da0a8": "{tokens} tokens",
+  "642b3eb1b9603cdc": "Caché: {percent} %",
+  "980ec55ecec77ab6": "Uso de tokens de la ronda",
+  "da9a6e38757e32f9": "Lista de tareas",
+  "9756b09ffd8a55c6": "En curso",
+  "4dccb48528cb04d2": "Bloqueada",
+  "353b08f4363dbb2c": "Pendiente",
+  "0f67ed3159fc7567": "{completed}/{total} completadas",
+  "363f6e6a0b0388ea": "Contraer",
+  "a6a838f6a8fb04aa": "Subtareas",
+  "12e035e7051a9f6f": "No hay subtareas en esta conversación."
 }

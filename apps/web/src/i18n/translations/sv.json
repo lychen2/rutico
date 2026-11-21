@@ -12487,5 +12487,21 @@
   "27d76249d09eb69f": "Granskningsguiden är klar",
   "faa3bb26abb39c93": "Granskningsguiden misslyckades",
   "b7df38b7d8792d78": "Öppna guiden",
-  "9e91e9a77b664e4e": "Kunde inte starta en granskningsguide"
+  "9e91e9a77b664e4e": "Kunde inte starta en granskningsguide",
+  "2a1419da20c2bb27": "I kö",
+  "7342bfc328008926": "Körs",
+  "7a9df0a1eb190444": "Återställd",
+  "a891d04595671afb": "Omgång {round}",
+  "f6a9d5782c89dc25": "{steps, plural, one {# steg} other {# steg}}",
+  "11a5a798041da0a8": "{tokens} token",
+  "642b3eb1b9603cdc": "Cache: {percent} %",
+  "980ec55ecec77ab6": "Tokenanvändning för omgången",
+  "da9a6e38757e32f9": "Att göra",
+  "9756b09ffd8a55c6": "Pågår",
+  "4dccb48528cb04d2": "Blockerad",
+  "353b08f4363dbb2c": "Väntar",
+  "0f67ed3159fc7567": "{completed}/{total} klara",
+  "363f6e6a0b0388ea": "Fäll ihop",
+  "a6a838f6a8fb04aa": "Deluppgifter",
+  "12e035e7051a9f6f": "Det finns inga deluppgifter i den här konversationen."
 }

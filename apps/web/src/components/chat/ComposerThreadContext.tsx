@@ -1,43 +1,156 @@
 import type { ContextWindowSnapshot } from "@t3tools/client-runtime/state/context-window";
-import { useGT, useLocale } from "gt-react";
-import { ComposerBanner } from "./ComposerBanner";
+import type { OrchestrationV2Run, TurnTokenUsage } from "@t3tools/contracts";
+import { formatDuration } from "@t3tools/shared/orchestrationTiming";
+import * as DateTime from "effect/DateTime";
+import { msg, useGT, useLocale, useMessages } from "gt-react";
+import { ChevronUpIcon } from "lucide-react";
 
-export function ComposerThreadContext({ usage }: { readonly usage: ContextWindowSnapshot | null }) {
+import { tickTextContent } from "~/lib/tickTextContent";
+import { Popover, PopoverPopup, PopoverTitle, PopoverTrigger } from "../ui/popover";
+
+const runStatusLabels = {
+  preparing: msg("Preparing"),
+  queued: msg("Queued"),
+  starting: msg("Starting"),
+  running: msg("Running"),
+  waiting: msg("Waiting"),
+  completed: msg("Completed"),
+  interrupted: msg("Interrupted"),
+  failed: msg("Failed"),
+  cancelled: msg("Cancelled"),
+  rolled_back: msg("Rolled back"),
+} satisfies Record<OrchestrationV2Run["status"], string>;
+
+export function ComposerThreadContext({
+  usage,
+  run,
+  stepCount,
+  turnUsage,
+}: {
+  readonly usage: ContextWindowSnapshot | null;
+  readonly run: Pick<
+    OrchestrationV2Run,
+    "ordinal" | "status" | "workStartedAt" | "startedAt" | "completedAt"
+  > | null;
+  readonly stepCount: number | null;
+  readonly turnUsage: TurnTokenUsage | null;
+}) {
   const gt = useGT();
   const locale = useLocale();
+  const resolve = useMessages();
+  const status = run?.status;
+  const start = run?.workStartedAt ?? run?.startedAt ?? null;
+  const startMs = start === null ? null : DateTime.toEpochMillis(start);
+  const endMs = run?.completedAt == null ? null : DateTime.toEpochMillis(run.completedAt);
+  const running =
+    status === "preparing" || status === "starting" || status === "running" || status === "waiting";
   const percent = usage?.usedPercentage == null ? null : Math.round(usage.usedPercentage);
-  const contextLabel = gt("Context", { $context: "context window row label" });
-  const tokenCount = usage?.usedTokens.toLocaleString(locale);
-  const tokenLabel =
-    tokenCount === undefined
-      ? gt("Not reported")
-      : gt("{usedTokens} tokens used", { usedTokens: tokenCount });
+  const modelUsage =
+    turnUsage?.usageStatus !== "unavailable" && !turnUsage?.localCommand ? turnUsage : null;
+  const input = modelUsage?.inputTokens;
+  const output = modelUsage?.outputTokens;
+  const cacheRead = modelUsage?.cachedInputTokens;
+  const cacheWrite = modelUsage?.cacheCreationTokens;
+  const total = input !== undefined && output !== undefined ? input + output : null;
+  const cachePercent =
+    input !== undefined && input > 0 && cacheRead !== undefined
+      ? Math.round((cacheRead / input) * 100)
+      : null;
 
   return (
-    <ComposerBanner.Attachment>
-      <ComposerBanner.Root data-chat-composer-collapsed-controls="true">
-        <div className="flex min-h-8 min-w-0 flex-wrap items-center gap-x-2 px-2 py-1 @sm:min-h-9">
-          {percent === null ? (
+    <div className="relative px-2 pt-1">
+      <Popover>
+        <PopoverTrigger
+          type="button"
+          className="inline-flex min-h-7 max-w-full flex-wrap items-center gap-x-2 gap-y-0.5 rounded-md px-1.5 py-0.5 text-start text-xs text-muted-foreground tabular-nums hover:bg-accent hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring"
+        >
+          <span className="flex items-center gap-1.5 font-medium">
             <span
               aria-hidden
-              className="size-3 shrink-0 rounded-full border border-muted-foreground/45"
-            />
-          ) : (
-            <span
-              aria-hidden
-              className="grid size-3 shrink-0 place-items-center rounded-full text-primary forced-colors:border"
-              style={{ background: `conic-gradient(currentColor ${percent}%, var(--border) 0)` }}
+              className="grid size-3 shrink-0 place-items-center rounded-full border border-muted-foreground/45 text-primary"
+              style={
+                percent === null
+                  ? undefined
+                  : { background: `conic-gradient(currentColor ${percent}%, transparent 0)` }
+              }
             >
-              <span className="size-2 rounded-full bg-(--chat-composer-attached-surface)" />
+              {percent === null ? null : <span className="size-2 rounded-full bg-background" />}
             </span>
-          )}
-          <span className="font-medium">{contextLabel}</span>
-          <span className="text-muted-foreground tabular-nums">{tokenLabel}</span>
-          {percent !== null ? (
-            <span className="font-medium tabular-nums">{gt("{used}% used", { used: percent })}</span>
+            {run === null
+              ? gt("Context", { $context: "context window row label" })
+              : gt("Round {round}", { round: run.ordinal.toLocaleString(locale) })}
+          </span>
+          {status !== undefined ? <span>{resolve(runStatusLabels[status])}</span> : null}
+          {stepCount !== null ? (
+            <span>{gt("{steps, plural, one {# step} other {# steps}}", { steps: stepCount })}</span>
           ) : null}
-        </div>
-      </ComposerBanner.Root>
-    </ComposerBanner.Attachment>
+          {startMs !== null ? (
+            endMs !== null ? (
+              <span>{formatDuration(Math.max(0, endMs - startMs))}</span>
+            ) : running ? (
+              <span
+                ref={tickTextContent((nowMs) => formatDuration(Math.max(0, nowMs - startMs)), true)}
+              />
+            ) : null
+          ) : null}
+          {total !== null ? (
+            <span>{gt("{tokens} tokens", { tokens: total.toLocaleString(locale) })}</span>
+          ) : null}
+          {cachePercent !== null ? (
+            <span>{gt("Cache {percent}%", { percent: cachePercent })}</span>
+          ) : null}
+          <ChevronUpIcon aria-hidden className="size-3 shrink-0" />
+        </PopoverTrigger>
+        <PopoverPopup side="top" align="start" padding="compact" width="sm">
+          <PopoverTitle className="mb-2">{gt("Context window")}</PopoverTitle>
+          <p className="text-xs text-muted-foreground tabular-nums">
+            {usage === null
+              ? gt("Not reported")
+              : usage.maxTokens === null
+                ? gt("{usedTokens} tokens used", {
+                    usedTokens: usage.usedTokens.toLocaleString(locale),
+                  })
+                : gt("{used} of {max} tokens", {
+                    used: usage.usedTokens.toLocaleString(locale),
+                    max: usage.maxTokens.toLocaleString(locale),
+                  })}
+          </p>
+          {input !== undefined ||
+          output !== undefined ||
+          cacheRead !== undefined ||
+          cacheWrite !== undefined ? (
+            <>
+              <p className="mt-3 text-sm font-semibold">{gt("Round token usage")}</p>
+              <dl className="mt-1 grid grid-cols-[1fr_auto] gap-x-2 gap-y-1 text-xs text-muted-foreground tabular-nums">
+                {input !== undefined ? (
+                  <>
+                    <dt>{gt("Input")}</dt>
+                    <dd>{input.toLocaleString(locale)}</dd>
+                  </>
+                ) : null}
+                {output !== undefined ? (
+                  <>
+                    <dt>{gt("Output")}</dt>
+                    <dd>{output.toLocaleString(locale)}</dd>
+                  </>
+                ) : null}
+                {cacheRead !== undefined ? (
+                  <>
+                    <dt>{gt("Cache read")}</dt>
+                    <dd>{cacheRead.toLocaleString(locale)}</dd>
+                  </>
+                ) : null}
+                {cacheWrite !== undefined ? (
+                  <>
+                    <dt>{gt("Cache write")}</dt>
+                    <dd>{cacheWrite.toLocaleString(locale)}</dd>
+                  </>
+                ) : null}
+              </dl>
+            </>
+          ) : null}
+        </PopoverPopup>
+      </Popover>
+    </div>
   );
 }
