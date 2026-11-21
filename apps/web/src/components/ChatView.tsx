@@ -3306,7 +3306,12 @@ export default function ChatView(props: ChatViewProps) {
   );
   const composerActivity =
     composerContextRun && serverProjection
-      ? currentRoundActivity(composerContextRun, serverProjection.nodes)
+      ? currentRoundActivity(
+          composerContextRun,
+          serverProjection.nodes,
+          serverProjection.turnItems,
+          composerProviderTurn?.id,
+        )
       : null;
   const timelineFooter =
     pendingHandoff === null &&

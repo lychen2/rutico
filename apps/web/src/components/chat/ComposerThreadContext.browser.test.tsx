@@ -3,6 +3,7 @@ import { deriveLatestContextWindowSnapshot } from "@t3tools/client-runtime/state
 import {
   MessageId,
   ProviderTurnId,
+  NodeId,
   RunId,
   ThreadId,
   TurnItemId,
@@ -15,6 +16,7 @@ import { page, userEvent } from "vite-plus/test/browser";
 
 import { act, render } from "../../../test/render";
 import { ComposerThreadContext } from "./ComposerThreadContext";
+import { currentRoundActivity } from "./currentRoundActivity";
 
 it("opens context details by keyboard and returns focus when dismissed", async () => {
   await using screen = await render(
@@ -32,7 +34,7 @@ it("opens context details by keyboard and returns focus when dismissed", async (
   await userEvent.keyboard("{Enter}");
 
   const details = page.getByRole("dialog", { name: "Overview" });
-  await expect.element(details.getByText("Not reported")).toBeVisible();
+  await expect.element(details.getByText("≈131.7K tokens used · 65%")).toBeVisible();
   await details.getByText("Diagnostics").click();
   await expect.element(details.getByText(/historian failed/)).toBeVisible();
   await userEvent.keyboard("{Escape}");
@@ -46,6 +48,7 @@ it("keeps round token and cache totals separate from the current context window"
   const providerTurnId = ProviderTurnId.make("turn-7");
   const run = {
     id: runId,
+    rootNodeId: NodeId.make("run-root"),
     ordinal: 7,
     status: "completed",
     startedAt,
@@ -72,6 +75,15 @@ it("keeps round token and cache totals separate from the current context window"
     text: "中😀".repeat(14),
     streaming: false,
   } as const;
+  const reasoning = { ...reply, id: TurnItemId.make("reasoning"), type: "reasoning" } as const;
+  const tool = {
+    ...reply,
+    id: TurnItemId.make("tool"),
+    completedAt: DateTime.add(startedAt, { seconds: 3 }),
+    type: "dynamic_tool",
+    toolName: "read",
+    input: {},
+  } as const;
   const turnItemsAtom = Atom.make<readonly OrchestrationV2TurnItem[]>([
     reply,
     { ...reply, id: TurnItemId.make("earlier"), runId: RunId.make("run-6") },
@@ -81,7 +93,7 @@ it("keeps round token and cache totals separate from the current context window"
       id: TurnItemId.make("previous-attempt"),
       providerTurnId: ProviderTurnId.make("old"),
     },
-    { ...reply, id: TurnItemId.make("reasoning"), type: "reasoning" },
+    reasoning,
   ]);
   await using screen = await render(
     <ComposerThreadContext
@@ -91,13 +103,14 @@ it("keeps round token and cache totals separate from the current context window"
         maxTokens: 200_000,
         updatedAt: "2026-11-20T12:00:14Z",
       })}
+      contextStatus="mc: 131.7K (65%) · Ready"
       run={run}
       providerTurnId={providerTurnId}
       turnItemsAtom={turnItemsAtom}
-      stepCount={3}
+      stepCount={2}
       activity={{
         tools: { count: 2, milliseconds: 3000, timed: 2 },
-        reasoning: { count: 1, milliseconds: 2000, timed: 1 },
+        reasoning: { count: 0, milliseconds: 0, timed: 0 },
       }}
       turnUsage={{
         usageScope: "main_agent",
@@ -107,17 +120,19 @@ it("keeps round token and cache totals separate from the current context window"
         outputTokens: 200,
         cachedInputTokens: 750,
         cacheCreationTokens: 100,
+        reasoningTokens: 30,
       }}
     />,
   );
 
   const trigger = screen.getByRole("button", { name: /Round 7/ });
-  for (const value of ["3 steps", "· 14.3 tok/s", "1,200 tokens", "Cache 75%"]) {
+  for (const value of ["2 steps", "· 14.3 tok/s", "1,200 tokens", "Cache 75%"]) {
     await expect.element(trigger.getByText(value, { exact: true })).toBeVisible();
   }
   await userEvent.click(trigger);
   const details = page.getByRole("dialog", { name: "Overview" });
   await expect.element(details.getByText("2 · Σ 3s")).toBeVisible();
+  await expect.element(details.getByText("30 tokens", { exact: true })).toBeVisible();
   await expect.element(details.getByText("14.3 tok/s", { exact: true })).toBeVisible();
   await expect.element(details.getByText("14s")).toBeVisible();
   await expect
@@ -133,6 +148,17 @@ it("keeps round token and cache totals separate from the current context window"
     <ComposerThreadContext
       key="history"
       usage={null}
+      activity={currentRoundActivity(
+        run,
+        [],
+        [
+          tool,
+          reasoning,
+          { ...tool, providerTurnId: ProviderTurnId.make("old") },
+          { ...reasoning, parentItemId: tool.id },
+        ],
+        providerTurnId,
+      )}
       run={run}
       providerTurnId={providerTurnId}
       turnItemsAtom={turnItemsAtom}
@@ -144,6 +170,9 @@ it("keeps round token and cache totals separate from the current context window"
   await expect.element(historyTrigger.getByText("· 2 chars/s", { exact: true })).toBeVisible();
   await userEvent.click(historyTrigger);
   await expect.element(details.getByText("2 chars/s", { exact: true })).toBeVisible();
+  await expect.element(details.getByText("Reasoning", { exact: true })).toBeVisible();
+  await expect.element(details.getByText("1 · Σ 9s", { exact: true })).toBeVisible();
+  await expect.element(details.getByText("1 · Σ 3s", { exact: true })).toBeVisible();
 
   const registry = AtomRegistry.make();
   using _now = vi.spyOn(Date, "now").mockReturnValue(DateTime.toEpochMillis(run.completedAt));
@@ -180,6 +209,7 @@ it("keeps round token and cache totals separate from the current context window"
         startedAt: null,
         completedAt: null,
       }}
+      activity={currentRoundActivity(run, [], [], providerTurnId)}
       stepCount={0}
       turnUsage={null}
     />,
@@ -190,5 +220,6 @@ it("keeps round token and cache totals separate from the current context window"
   await userEvent.click(nextTrigger);
   await expect.element(details.getByText("Starting")).toBeVisible();
   await expect.element(details.getByText("Not reported").first()).toBeVisible();
+  await expect.element(details.getByText("Reasoning", { exact: true })).not.toBeInTheDocument();
   await expect.element(details.getByText("Round token usage")).not.toBeInTheDocument();
 });

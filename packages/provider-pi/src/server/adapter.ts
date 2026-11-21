@@ -27,6 +27,7 @@ import {
   type ProviderInstanceId,
   type MessageId,
   type OrchestrationV2ProviderTurnTokenUsage,
+  type TurnTokenUsage,
 } from "@t3tools/contracts";
 import { PiSettings } from "../settings.ts";
 import * as Cause from "effect/Cause";
@@ -482,7 +483,7 @@ function compactionTitle(status: PiCompactionStatus): string {
 
 interface ActivePiTurn {
   readonly turnInput: ProviderAdapter.ProviderAdapterV2TurnInput;
-  readonly providerTurn: OrchestrationV2ProviderTurn;
+  providerTurn: OrchestrationV2ProviderTurn;
   readonly startedAt: DateTime.Utc;
   readonly itemOrdinals: Map<string, number>;
   nextItemOrdinal: number;
@@ -499,6 +500,13 @@ interface ActivePiTurn {
   promptMayBeCommandOnly: boolean;
   latestCompactionAfterTokens: number | null;
   lastLiveUsedTokens: number | null;
+  usageMessages: number;
+  inputTokens: number | undefined;
+  cacheReadTokens: number | undefined;
+  cacheWriteTokens: number | undefined;
+  outputTokens: number | undefined;
+  reasoningTokens: number | undefined;
+  hasSubagents: boolean;
   settleProbeGeneration: number;
   /** An extension may start compaction immediately after Pi emits agent_settled. */
   settleWhenIdle: boolean;
@@ -1152,11 +1160,11 @@ export const makePiAdapterV2 = Effect.fn("makePiAdapterV2")(function* (
         updatedAt: DateTime.Utc,
       ): OrchestrationV2ProviderTurnTokenUsage | undefined => {
         const contextUsage = recordField(stats, "contextUsage");
-        const maxTokens = nonNegativeInteger(contextUsage, "contextWindow");
+        const nativeMax = nonNegativeInteger(contextUsage, "contextWindow");
+        const maxTokens = nativeMax && nativeMax > 0 ? nativeMax : contextWindow;
         const usedTokens =
           nonNegativeInteger(contextUsage, "tokens") ?? fallbackUsedTokens ?? undefined;
-        if (usedTokens === undefined || maxTokens === undefined || maxTokens === 0)
-          return undefined;
+        if (usedTokens === undefined) return undefined;
 
         const totals = recordField(stats, "tokens");
         const inputTokens = nonNegativeInteger(totals, "input");
@@ -1164,7 +1172,7 @@ export const makePiAdapterV2 = Effect.fn("makePiAdapterV2")(function* (
         const outputTokens = nonNegativeInteger(totals, "output");
         return {
           usedTokens,
-          maxTokens,
+          ...(maxTokens === null ? {} : { maxTokens }),
           ...(inputTokens === undefined ? {} : { inputTokens }),
           ...(cachedInputTokens === undefined ? {} : { cachedInputTokens }),
           ...(outputTokens === undefined ? {} : { outputTokens }),
@@ -1183,37 +1191,45 @@ export const makePiAdapterV2 = Effect.fn("makePiAdapterV2")(function* (
        */
       const reportLiveUsage =
         /* Provider events include streaming deltas; avoid a span for each update. */
-        Effect.fnUntraced(function* (turn: ActivePiTurn, usage: unknown) {
+        Effect.fnUntraced(function* (turn: ActivePiTurn, usage: unknown, reasoningChanged = false) {
           const usedTokens = nonNegativeInteger(usage, "totalTokens");
-          if (
-            usedTokens === undefined ||
-            usedTokens === 0 ||
-            usedTokens === turn.lastLiveUsedTokens ||
-            contextWindow === null ||
-            contextWindow === 0
-          ) {
-            return;
-          }
-          turn.lastLiveUsedTokens = usedTokens;
-          const inputTokens = nonNegativeInteger(usage, "input");
-          const cachedInputTokens = nonNegativeInteger(usage, "cacheRead");
-          const outputTokens = nonNegativeInteger(usage, "output");
-          const updatedAt = yield* DateTime.now;
-          yield* emit({
-            type: "provider_turn.updated",
-            driver: driverKind,
-            threadId: turn.turnInput.threadId,
-            providerTurn: {
+          const contextChanged =
+            usedTokens !== undefined && usedTokens > 0 && usedTokens !== turn.lastLiveUsedTokens;
+          if (!contextChanged && !reasoningChanged) return;
+          if (contextChanged) {
+            turn.lastLiveUsedTokens = usedTokens;
+            const inputTokens = nonNegativeInteger(usage, "input");
+            const cachedInputTokens = nonNegativeInteger(usage, "cacheRead");
+            const outputTokens = nonNegativeInteger(usage, "output");
+            const updatedAt = yield* DateTime.now;
+            turn.providerTurn = {
               ...turn.providerTurn,
               tokenUsage: {
                 usedTokens,
-                maxTokens: contextWindow,
+                ...(contextWindow === null ? {} : { maxTokens: contextWindow }),
                 ...(inputTokens === undefined ? {} : { inputTokens }),
                 ...(cachedInputTokens === undefined ? {} : { cachedInputTokens }),
                 ...(outputTokens === undefined ? {} : { outputTokens }),
                 updatedAt: DateTime.formatIso(updatedAt),
               },
-            },
+            };
+          }
+          if (reasoningChanged && turn.reasoningTokens !== undefined) {
+            turn.providerTurn = {
+              ...turn.providerTurn,
+              turnTokenUsage: {
+                usageScope: "main_agent",
+                usageStatus: "partial",
+                hasSubagents: turn.hasSubagents,
+                reasoningTokens: turn.reasoningTokens,
+              },
+            };
+          }
+          yield* emit({
+            type: "provider_turn.updated",
+            driver: driverKind,
+            threadId: turn.turnInput.threadId,
+            providerTurn: turn.providerTurn,
           });
         });
 
@@ -1684,6 +1700,7 @@ export const makePiAdapterV2 = Effect.fn("makePiAdapterV2")(function* (
           },
         });
         if (toolName === "subagent") {
+          turn.hasSubagents = true;
           yield* emitSubagentTasks(turn, toolCallId, resultRecord, completed);
         }
       });
@@ -2331,6 +2348,37 @@ export const makePiAdapterV2 = Effect.fn("makePiAdapterV2")(function* (
           ? yield* readTokenUsage(turn.latestCompactionAfterTokens, completedAt)
           : undefined;
         const failure = interrupted ? null : (turn.rejectedPromptFailure ?? turn.failure);
+        const status = interrupted ? "interrupted" : failure !== null ? "failed" : "completed";
+        const coversAllMessages = turn.usageMessages >= turn.messageOrdinal;
+        const input = coversAllMessages ? turn.inputTokens : undefined;
+        const output = coversAllMessages ? turn.outputTokens : undefined;
+        const reportedUsage = {
+          usageScope: "main_agent" as const,
+          hasSubagents: turn.hasSubagents,
+          ...(!coversAllMessages || turn.cacheReadTokens === undefined
+            ? {}
+            : { cachedInputTokens: turn.cacheReadTokens }),
+          ...(!coversAllMessages || turn.cacheWriteTokens === undefined
+            ? {}
+            : { cacheCreationTokens: turn.cacheWriteTokens }),
+          ...(turn.reasoningTokens === undefined ? {} : { reasoningTokens: turn.reasoningTokens }),
+        };
+        const turnTokenUsage: TurnTokenUsage | undefined =
+          turn.usageMessages === 0
+            ? undefined
+            : status === "completed" && input !== undefined && output !== undefined
+              ? {
+                  ...reportedUsage,
+                  usageStatus: "complete",
+                  inputTokens: input,
+                  outputTokens: output,
+                }
+              : {
+                  ...reportedUsage,
+                  usageStatus: "partial",
+                  ...(input === undefined ? {} : { inputTokens: input }),
+                  ...(output === undefined ? {} : { outputTokens: output }),
+                };
         yield* emit({
           type: "provider_turn.updated",
           driver: driverKind,
@@ -2343,9 +2391,10 @@ export const makePiAdapterV2 = Effect.fn("makePiAdapterV2")(function* (
             ...(state.providerThread.nativeThreadRef === null
               ? {}
               : { nativeThreadRef: state.providerThread.nativeThreadRef }),
-            status: interrupted ? "interrupted" : failure !== null ? "failed" : "completed",
+            status,
             completedAt,
             ...(tokenUsage === undefined ? {} : { tokenUsage }),
+            ...(turnTokenUsage === undefined ? {} : { turnTokenUsage }),
             ...(turn.reportedModel === undefined ? {} : { model: turn.reportedModel }),
           },
         });
@@ -2709,6 +2758,40 @@ export const makePiAdapterV2 = Effect.fn("makePiAdapterV2")(function* (
             const message = event["message"];
             if (recordString(message, "role") !== "assistant") return;
             yield* completeOpenStreamItems(turn);
+            const usage = recordField(message, "usage");
+            if (usage !== undefined) {
+              turn.usageMessages++;
+              const input = nonNegativeInteger(usage, "input");
+              const cacheRead = nonNegativeInteger(usage, "cacheRead");
+              const cacheWrite = nonNegativeInteger(usage, "cacheWrite");
+              const output = nonNegativeInteger(usage, "output");
+              const reasoning =
+                nonNegativeInteger(usage, "reasoningTokens") ??
+                nonNegativeInteger(usage, "reasoning");
+              // Native input excludes both cache counters; T3 input includes them.
+              turn.inputTokens =
+                input === undefined ||
+                cacheRead === undefined ||
+                cacheWrite === undefined ||
+                turn.inputTokens === undefined
+                  ? undefined
+                  : turn.inputTokens + input + cacheRead + cacheWrite;
+              turn.cacheReadTokens =
+                cacheRead === undefined || turn.cacheReadTokens === undefined
+                  ? undefined
+                  : turn.cacheReadTokens + cacheRead;
+              turn.cacheWriteTokens =
+                cacheWrite === undefined || turn.cacheWriteTokens === undefined
+                  ? undefined
+                  : turn.cacheWriteTokens + cacheWrite;
+              turn.outputTokens =
+                output === undefined || turn.outputTokens === undefined
+                  ? undefined
+                  : turn.outputTokens + output;
+              if (reasoning !== undefined)
+                turn.reasoningTokens = (turn.reasoningTokens ?? 0) + reasoning;
+              yield* reportLiveUsage(turn, usage, reasoning !== undefined);
+            }
             const reportedProvider = recordString(message, "provider");
             const reportedModelId = recordString(message, "model");
             if (reportedProvider && reportedModelId) {
@@ -3869,6 +3952,13 @@ export const makePiAdapterV2 = Effect.fn("makePiAdapterV2")(function* (
                 compactCommand !== null || (payload?.message.trimStart().startsWith("/") ?? false),
               latestCompactionAfterTokens: null,
               lastLiveUsedTokens: null,
+              usageMessages: 0,
+              inputTokens: 0,
+              cacheReadTokens: 0,
+              cacheWriteTokens: 0,
+              outputTokens: 0,
+              reasoningTokens: undefined,
+              hasSubagents: false,
               settleProbeGeneration: 0,
               settleWhenIdle: false,
               compactionCancelled: false,

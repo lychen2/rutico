@@ -6847,6 +6847,74 @@ describe("PiAdapterV2", () => {
     }).pipe(Effect.scoped, Effect.provide(layerTest)),
   );
 
+  it.effect("reports per-turn model usage separately from session context usage", () =>
+    Effect.gen(function* () {
+      const fake = yield* makeFakePi;
+      const { runtime, takeEvent } = yield* openRuntime(fake);
+      const providerThread = yield* runtime.ensureThread({
+        threadId: THREAD_ID,
+        modelSelection: modelSelection("default"),
+        runtimePolicy,
+      });
+      yield* startTurn(runtime, providerThread);
+      yield* fake.takeRequest("prompt");
+      const firstUsage = {
+        input: 90,
+        cacheRead: 900,
+        cacheWrite: 10,
+        output: 80,
+        totalTokens: 1080,
+        reasoningTokens: 25,
+      };
+      const secondUsage = {
+        input: 200,
+        cacheRead: 800,
+        cacheWrite: 0,
+        output: 30,
+        reasoningTokens: 5,
+      };
+      for (const usage of [firstUsage, secondUsage]) {
+        yield* fake.emit({ type: "message_start", message: { role: "assistant" } });
+        yield* fake.emit({ type: "message_end", message: { role: "assistant", usage } });
+        if (usage === firstUsage) {
+          const live = yield* takeEvent(
+            (event) =>
+              event.type === "provider_turn.updated" &&
+              event.providerTurn.turnTokenUsage?.reasoningTokens === 25,
+          );
+          if (live.type !== "provider_turn.updated") return assert.fail("Expected live usage");
+          assert.equal(live.providerTurn.status, "running");
+          assert.equal(live.providerTurn.tokenUsage?.usedTokens, 1080);
+          assert.deepEqual(live.providerTurn.turnTokenUsage, {
+            usageScope: "main_agent",
+            usageStatus: "partial",
+            hasSubagents: false,
+            reasoningTokens: 25,
+          });
+        }
+      }
+      fake.queueStats({ contextUsage: { tokens: 1500 }, tokens: { output: 1000 } });
+      yield* fake.emit({ type: "agent_settled" });
+      const update = yield* takeEvent(
+        (event) =>
+          event.type === "provider_turn.updated" && event.providerTurn.status === "completed",
+      );
+      if (update.type !== "provider_turn.updated")
+        return assert.fail("Expected provider turn update");
+      assert.deepInclude(update.providerTurn.tokenUsage, { usedTokens: 1500, outputTokens: 1000 });
+      assert.deepEqual(update.providerTurn.turnTokenUsage, {
+        usageScope: "main_agent",
+        usageStatus: "complete",
+        hasSubagents: false,
+        inputTokens: 2000,
+        outputTokens: 110,
+        cachedInputTokens: 1700,
+        cacheCreationTokens: 10,
+        reasoningTokens: 30,
+      });
+    }).pipe(Effect.scoped, Effect.provide(layerTest)),
+  );
+
   // Streamed text is published on a real timer, so this runs on the live clock.
   it.live("shows only the new reasoning when Pi starts a streaming block again", () =>
     Effect.gen(function* () {

@@ -64,13 +64,24 @@ export function ComposerThreadContext({
   const endMs = run?.completedAt == null ? null : DateTime.toEpochMillis(run.completedAt);
   const running =
     status === "preparing" || status === "starting" || status === "running" || status === "waiting";
-  const percent = usage?.usedPercentage == null ? null : Math.round(usage.usedPercentage);
+  const extensionWindow =
+    usage === null
+      ? /^mc: (\d+(?:\.\d+)?[KMB]?) \((\d+)%\)(?: · |$)/u.exec(contextStatus ?? "")
+      : null;
+  const extensionUsed = extensionWindow?.[1];
+  const percent =
+    usage?.usedPercentage != null
+      ? Math.round(usage.usedPercentage)
+      : extensionWindow === null
+        ? null
+        : Number(extensionWindow[2]);
   const modelUsage =
     turnUsage?.usageStatus !== "unavailable" && !turnUsage?.localCommand ? turnUsage : null;
   const input = modelUsage?.inputTokens;
   const output = modelUsage?.outputTokens;
   const cacheRead = modelUsage?.cachedInputTokens;
   const cacheWrite = modelUsage?.cacheCreationTokens;
+  const reasoningTokens = modelUsage?.reasoningTokens;
   const total = input !== undefined && output !== undefined ? input + output : null;
   const runId = run?.id;
   const useTextCount = output === undefined && !turnUsage?.localCommand && startMs !== null;
@@ -226,28 +237,39 @@ export function ComposerThreadContext({
                 </div>
               </div>
             ) : null}
-            {activity && (
+            {(activity || reasoningTokens !== undefined) && (
               <dl className="mb-3 grid grid-cols-[1fr_auto] gap-x-4 gap-y-1.5 text-xs tabular-nums">
-                {(
-                  [
-                    [gt("Reasoning"), activity.reasoning],
-                    [gt("Tool calls"), activity.tools],
-                  ] as const
-                ).map(([label, group]) => (
-                  <div key={label} className="contents">
-                    <dt>{label}</dt>
+                {reasoningTokens !== undefined || (activity?.reasoning.count ?? 0) > 0 ? (
+                  <>
+                    <dt>{gt("Reasoning")}</dt>
                     <dd className="text-end">
-                      {group.count}
-                      {group.timed > 0 && ` · Σ ${formatDuration(group.milliseconds)}`}
+                      {reasoningTokens !== undefined
+                        ? gt("{tokens} tokens", { tokens: reasoningTokens.toLocaleString(locale) })
+                        : activity?.reasoning.count}
+                      {activity &&
+                        activity.reasoning.timed > 0 &&
+                        ` · Σ ${formatDuration(activity.reasoning.milliseconds)}`}
                     </dd>
-                  </div>
-                ))}
+                  </>
+                ) : null}
+                {activity && (
+                  <>
+                    <dt>{gt("Tool calls")}</dt>
+                    <dd className="text-end">
+                      {activity.tools.count}
+                      {activity.tools.timed > 0 &&
+                        ` · Σ ${formatDuration(activity.tools.milliseconds)}`}
+                    </dd>
+                  </>
+                )}
               </dl>
             )}
             <p className="mb-1 text-xs font-semibold">{gt("Context window")}</p>
             <p className="text-xs text-muted-foreground tabular-nums">
               {usage === null
-                ? gt("Not reported")
+                ? extensionUsed === undefined
+                  ? gt("Not reported")
+                  : gt("{usedTokens} tokens used", { usedTokens: `≈${extensionUsed}` })
                 : usage.maxTokens == null
                   ? gt("{usedTokens} tokens used", {
                       usedTokens: usage.usedTokens.toLocaleString(locale),
