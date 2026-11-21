@@ -69,7 +69,7 @@ export function ComposerThreadContext({
       : null;
 
   return (
-    <div data-session-footer="" className="flex justify-center px-3 pb-1 pt-2">
+    <div data-session-footer="" className="flex justify-start px-3 py-1">
       <Popover>
         <PopoverTrigger
           render={
@@ -79,31 +79,41 @@ export function ComposerThreadContext({
             />
           }
         >
-          <span className="flex items-center gap-1.5">
-            <span
-              aria-hidden
-              className={
-                running ? "size-1.5 rounded-full bg-success" : "size-1.5 rounded-full bg-current"
-              }
-            />
-            {run === null
-              ? gt("Context", { $context: "context window row label" })
-              : gt("Round {round}", { round: run.ordinal.toLocaleString(locale) })}
+          <span
+            data-session-primary=""
+            className="inline-flex items-center gap-1.5 rounded-full px-2 py-1"
+          >
+            <span className="flex items-center gap-1.5">
+              <span
+                aria-hidden
+                className={
+                  running ? "size-1.5 rounded-full bg-success" : "size-1.5 rounded-full bg-current"
+                }
+              />
+              {run === null
+                ? gt("Context", { $context: "context window row label" })
+                : gt("Round {round}", { round: run.ordinal.toLocaleString(locale) })}
+            </span>
+            {status !== undefined ? (
+              <span className="sr-only">{resolve(runStatusLabels[status])}</span>
+            ) : null}
+            {stepCount !== null ? (
+              <span>
+                {gt("{steps, plural, one {# step} other {# steps}}", { steps: stepCount })}
+              </span>
+            ) : null}
+            {rate !== null && <span>· {rate} tok/s</span>}
           </span>
-          {status !== undefined ? (
-            <span className="sr-only">{resolve(runStatusLabels[status])}</span>
-          ) : null}
-          {stepCount !== null ? (
-            <span>{gt("{steps, plural, one {# step} other {# steps}}", { steps: stepCount })}</span>
-          ) : null}
-          {rate !== null && <span>· {rate} tok/s</span>}
           {total !== null ? (
             <span className="border-s ps-2">
               {gt("{tokens} tokens", { tokens: total.toLocaleString(locale) })}
             </span>
           ) : null}
           {cachePercent !== null ? (
-            <span>{gt("Cache {percent}%", { percent: cachePercent })}</span>
+            <>
+              {total !== null && <span aria-hidden>·</span>}
+              <span>{gt("Cache {percent}%", { percent: cachePercent })}</span>
+            </>
           ) : null}
           <ChevronDownIcon
             aria-hidden

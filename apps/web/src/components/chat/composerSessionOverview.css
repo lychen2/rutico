@@ -1,22 +1,29 @@
 [data-session-footer] {
   margin-inline: 0.5rem;
   border-radius: 0 0 var(--radius-xl) var(--radius-xl);
-  background: linear-gradient(
-    to bottom,
-    light-dark(#e1e1e1, #39393c),
-    light-dark(#ededed, #333336)
-  );
-  color: light-dark(#454549, #d3d3d6);
-  box-shadow: inset 0 1px 0 #80808030;
+  background: color-mix(in srgb, var(--background) 79%, transparent);
+  backdrop-filter: blur(14px);
+  color: var(--muted-foreground);
+  box-shadow: inset 0 -1px 0 var(--border);
+}
+@media (prefers-reduced-transparency: reduce) {
+  [data-session-footer] {
+    background: var(--background);
+    backdrop-filter: none;
+  }
 }
 [data-session-footer] button {
   color: inherit;
 }
+[data-session-primary] {
+  background: color-mix(in srgb, var(--foreground) 6%, transparent);
+  color: var(--foreground);
+}
 [data-session-overview] {
   width: 100%;
   border-radius: inherit;
-  background: light-dark(#f5f5f6, #28282b);
-  color: light-dark(#242426, #ededee);
+  background: var(--popover);
+  color: var(--popover-foreground);
 }
 [data-context-meter] {
   display: block;
