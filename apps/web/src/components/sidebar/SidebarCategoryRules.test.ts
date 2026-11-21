@@ -20,6 +20,17 @@ describe("sidebar thread classification", () => {
     ["Claude 在 MacBook 上的代理", "devices"],
     ["排查 Claude 额度骤耗", "models"],
     ["Obsidian 定时同步", "automation"],
+    ["Hologram phase optimization", "optics"],
+    ["Optical imaging system design", "optics"],
+    ["超表面衍射模型", "optics"],
+    ["CUDA_FDTD convergence benchmark", "numerical-simulation"],
+    ["Electromagnetic simulation convergence", "numerical-simulation"],
+    ["GitHub pull request review", "software-development"],
+    ["重构前端路由", "software-development"],
+    ["修复子代理的回归测试", "software-development"],
+    ["配置 HTTP 代理", "devices"],
+    ["配置代理", "devices"],
+    ["T3 Code 的子代理管理", "t3"],
   ])("classifies %s before trying the project name", (title, category) => {
     expect(classifyThread({ title, projectName: "AI 工作台" })).toBe(category);
   });
@@ -30,10 +41,29 @@ describe("sidebar thread classification", () => {
     ["公司管理", "company"],
     ["电商客户", "client"],
     ["AI 工作台", "tools-other"],
+    ["hologram-phase-retrieval", "optics"],
+    ["cuda-fdtd-unitcell", "numerical-simulation"],
+    ["TypeScript SDK", "software-development"],
+    ["t3code-feature-branch", "t3"],
+    ["No project", UNCATEGORIZED],
     ["项目管理", UNCATEGORIZED],
     [undefined, UNCATEGORIZED],
   ])("falls back to the category of project %s", (projectName, category) => {
     expect(classifyThread({ title: "聊聊最近的状态", projectName })).toBe(category);
+  });
+
+  it.each([
+    ["GitHub pull request review", "hologram-phase-retrieval", "software-development"],
+    ["Hologram 误差分析", "cuda-fdtd-unitcell", "optics"],
+    ["优化全息 FDTD 仿真", "hologram-phase-retrieval", "numerical-simulation"],
+    ["整理模型结果", "hologram-phase-retrieval", "optics"],
+    ["代理商沟通", "No project", UNCATEGORIZED],
+    ["整理模型结果", "No project", UNCATEGORIZED],
+    ["解释 token ring 的历史", "No project", UNCATEGORIZED],
+    ["Checkout the hologrammatic art", "No project", UNCATEGORIZED],
+    ["Estimate electron density", "No project", UNCATEGORIZED],
+  ])("classifies %s in %s from explicit signals only", (title, projectName, category) => {
+    expect(classifyThread({ title, projectName })).toBe(category);
   });
 
   it.each([

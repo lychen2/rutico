@@ -111,7 +111,7 @@ it("files loaded old and new threads without overriding a saved manual choice in
   const newThread = makeThreadFixture({
     environmentId: local,
     projectId,
-    title: "Claude 视频抖音发布",
+    title: "FDTD convergence benchmark",
   });
   {
     await using screen = await render(tree());
@@ -134,7 +134,8 @@ it("files loaded old and new threads without overriding a saved manual choice in
   await using restored = await render(tree());
   await expectParent(renamedTitle, "shelf:settled");
   await expectParent(remoteOld.title, "category:invest");
-  await expectParent(newThread.title, "category:douyin-other");
+  await expectParent(newThread.title, "category:numerical-simulation");
+  await expect.element(page.getByRole("button", { name: "Numerical simulation" })).toBeVisible();
   const localRow = restored.getByText(renamedTitle, { exact: true }).first();
   await userEvent.click(localRow, { button: "right" });
   await expect
