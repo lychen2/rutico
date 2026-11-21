@@ -1,7 +1,7 @@
 import { ProviderDriverKind } from "@t3tools/contracts";
 import { defineProviderClient } from "@t3tools/provider-core/client";
 
-import { PiSettings } from "./settings.ts";
+import { OmpSettings, PiSettings } from "./settings.ts";
 
 export const piClient = defineProviderClient({
   driverKind: ProviderDriverKind.make("pi"),
@@ -19,4 +19,10 @@ export const piClient = defineProviderClient({
       { d: "M517.36 400H634.72V634.72H517.36Z" },
     ],
   },
+});
+
+export const ompClient = defineProviderClient({
+  driverKind: ProviderDriverKind.make("omp"),
+  label: "OMP",
+  settingsSchema: OmpSettings,
 });

@@ -4,6 +4,8 @@ import * as FileSystem from "effect/FileSystem";
 
 import type { McpProviderSessionConfig } from "@t3tools/provider-core/server/mcpSession";
 import {
+  OMP_T3_MCP_EXTENSION_FILENAME,
+  OMP_T3_MCP_EXTENSION_SOURCE,
   PI_T3_MCP_EXTENSION_FILENAME,
   PI_T3_MCP_EXTENSION_SOURCE,
   T3_MCP_BEARER_ENV,
@@ -159,6 +161,37 @@ export function resolvePiLaunchArgs(launchArgs: string): PiLaunchArgsResolution 
   return { ok: true, args };
 }
 
+export function resolveOmpLaunchArgs(launchArgs: string): PiLaunchArgsResolution {
+  const args = tokenizeCliArgs(launchArgs);
+  const controlled =
+    /^(?:--(?:mode|cwd|continue|resume|restore|no-session|export|help|print|version|approval-mode|auto-approve|goal)(?:=|$)|-[crphv]$)/;
+  for (let index = 0; index < args.length; index += 1) {
+    const arg = args[index];
+    if (arg === undefined) continue;
+    if (arg === "--" || controlled.test(arg) || !arg.startsWith("-")) {
+      return {
+        ok: false,
+        message: `OMP launch argument '${arg}' is controlled by T3 Code or is a positional prompt.`,
+      };
+    }
+    // OMP accepts both --key=value and --key value. Only value-bearing flags can
+    // consume a following word; treating a prompt as an unknown flag's value
+    // would let it run before T3 owns the turn.
+    if (
+      /^(?:--(?:model|provider|smol|slow|plan|prewalk-into|plan-yolo-into|api-key|system-prompt|system-prompt-template|append-system-prompt|profile|config|add-dir|session-dir|models|tools|thinking|service-tier|hook|extension|skills|spinner-interval|max-fps|motion|max-time|warn-cost|max-cost|plugin-dir)|-e)$/.test(
+        arg,
+      )
+    ) {
+      const value = args[index + 1];
+      if (value === undefined || value.startsWith("-")) {
+        return { ok: false, message: `OMP launch argument '${arg}' requires a value.` };
+      }
+      index += 1;
+    }
+  }
+  return { ok: true, args };
+}
+
 function bearerTokenFromAuthorizationHeader(header: string): string {
   return header.startsWith("Bearer ") ? header.slice("Bearer ".length) : header;
 }
@@ -220,25 +253,24 @@ function withoutToolSelectionArgs(args: ReadonlyArray<string>): ReadonlyArray<st
   return filtered;
 }
 
-function piT3McpExtensionDestPath(cacheDir: string): string {
-  return `${cacheDir.replace(/\\/g, "/")}/${PI_T3_MCP_EXTENSION_FILENAME}`;
-}
-
 export const materializePiT3McpExtension = Effect.fn("materializePiT3McpExtension")(function* (
   cacheDir: string,
+  omp = false,
 ) {
   const fs = yield* FileSystem.FileSystem;
   yield* fs.makeDirectory(cacheDir, { recursive: true });
-  const dest = piT3McpExtensionDestPath(cacheDir);
+  const filename = omp ? OMP_T3_MCP_EXTENSION_FILENAME : PI_T3_MCP_EXTENSION_FILENAME;
+  const source = omp ? OMP_T3_MCP_EXTENSION_SOURCE : PI_T3_MCP_EXTENSION_SOURCE;
+  const dest = `${cacheDir.replace(/\\/g, "/")}/${filename}`;
   const existing = yield* fs.readFileString(dest).pipe(Effect.orElseSucceed(() => ""));
-  if (existing !== PI_T3_MCP_EXTENSION_SOURCE) {
+  if (existing !== source) {
     // Concurrent pi launches read this file: stage it in a per-call directory
     // and rename so readers and other writers never see a partial file.
     yield* Effect.scoped(
       Effect.gen(function* () {
         const stagingDir = yield* fs.makeTempDirectoryScoped({ directory: cacheDir });
-        const staging = `${stagingDir.replace(/\\/g, "/")}/${PI_T3_MCP_EXTENSION_FILENAME}`;
-        yield* fs.writeFileString(staging, PI_T3_MCP_EXTENSION_SOURCE);
+        const staging = `${stagingDir.replace(/\\/g, "/")}/${filename}`;
+        yield* fs.writeFileString(staging, source);
         yield* fs.rename(staging, dest).pipe(Effect.retry({ times: 3 }));
       }),
     );
@@ -248,6 +280,7 @@ export const materializePiT3McpExtension = Effect.fn("materializePiT3McpExtensio
 
 export function buildPiRpcLaunch(input: {
   readonly launchArgs: ReadonlyArray<string>;
+  readonly omp?: boolean;
   readonly environment: NodeJS.ProcessEnv;
   readonly mcpSession: McpProviderSessionConfig | undefined;
   readonly extensionPath: string | undefined;
@@ -273,17 +306,29 @@ export function buildPiRpcLaunch(input: {
     input.disableTools === true ? withoutToolSelectionArgs(extensionSafeArgs) : extensionSafeArgs;
   const args = [
     "--mode",
-    "rpc",
+    input.omp ? "rpc-ui" : "rpc",
     ...(input.ephemeral === true
       ? ["--no-session"]
       : input.sessionPath !== undefined
-        ? ["--session", input.sessionPath]
+        ? // OMP's --restore requires the TUI; RPC attaches to persisted history with --resume.
+          [input.omp ? "--resume" : "--session", input.sessionPath]
         : []),
     ...launchArgs,
     ...(input.shortLived === true && !launchArgs.includes("--offline") ? ["--offline"] : []),
     // Restrictions must follow launch args so user flags cannot re-enable unattended tools/extensions.
     ...(input.disableExtensions === true ? ["--no-extensions"] : []),
     ...(input.disableTools === true ? ["--no-tools"] : []),
+    ...(input.omp && input.shortLived ? ["--no-title", "--no-lsp", "--no-ui"] : []),
+    ...(input.omp && input.runtimeMode !== undefined
+      ? [
+          "--approval-mode",
+          input.runtimeMode === "full-access"
+            ? "yolo"
+            : input.runtimeMode === "auto-accept-edits"
+              ? "write"
+              : "always-ask",
+        ]
+      : []),
   ];
   if (
     hasT3Extension &&

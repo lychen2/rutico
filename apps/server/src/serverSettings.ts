@@ -497,6 +497,34 @@ function migrateLegacyProviderSettings(
   };
 }
 
+// Keep the instance ID: thread selections and resume data reference it, not the executable.
+function migrateOmpBridgeInstances(settings: ServerSettings) {
+  let providerInstances: Record<ProviderInstanceId, ProviderInstanceConfig> | undefined;
+  for (const [id, instance] of Object.entries(settings.providerInstances)) {
+    if (instance.driver !== "pi") continue;
+    if (
+      instance.config === null ||
+      typeof instance.config !== "object" ||
+      !("binaryPath" in instance.config)
+    )
+      continue;
+    const { binaryPath, ...config } = instance.config;
+    if (
+      typeof binaryPath !== "string" ||
+      !/(?:^|[/\\])omp-t3(?:\.(?:exe|cmd|bat|ps1))?$/i.test(binaryPath.trim())
+    )
+      continue;
+    providerInstances ??= { ...settings.providerInstances };
+    providerInstances[ProviderInstanceId.make(id)] = {
+      ...instance,
+      driver: ProviderDriverKind.make("omp"),
+      displayName: instance.displayName ?? "OMP",
+      config,
+    };
+  }
+  return providerInstances === undefined ? settings : { ...settings, providerInstances };
+}
+
 const ACP_REGISTRY_DRIVER = ProviderDriverKind.make("acpRegistry");
 
 function selectionSupportsTextGeneration(
@@ -888,9 +916,10 @@ const make = Effect.gen(function* () {
         ? settings
         : migrateLegacyProviderSettings(settings, legacyProviders, providerHistory),
     );
+    const nativeOmp = settingsFileTrusted ? migrateOmpBridgeInstances(loaded) : loaded;
     const folded = settingsFileTrusted
-      ? foldLegacyProjectSettings(loaded, legacyProjectRows)
-      : loaded;
+      ? foldLegacyProjectSettings(nativeOmp, legacyProjectRows)
+      : nativeOmp;
     // Remove retired keys only after copying secrets and writing the new file; failures retry on next load.
     const legacySecretsCopied = yield* Effect.forEach(
       settingsFileTrusted

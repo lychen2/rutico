@@ -15,7 +15,7 @@ import { parseGenericCliVersion } from "@t3tools/provider-core/server/snapshotPr
 import type { PiSettings } from "../settings.ts";
 
 import { makePiRpcConnection, piRecordField, piRecordString, resolvePiModelSlug } from "./rpc.ts";
-import { buildPiRpcLaunch, resolvePiLaunchArgs } from "./mcpInjection.ts";
+import { buildPiRpcLaunch, resolveOmpLaunchArgs, resolvePiLaunchArgs } from "./mcpInjection.ts";
 import * as TextGenerationOperations from "@t3tools/provider-core/server/textGenerationOperations";
 import { isPiThinkingLevel } from "./modelCapabilities.ts";
 import { runPiVersionCommand } from "./status.ts";
@@ -37,6 +37,7 @@ export const makePiTextGeneration = Effect.fn("makePiTextGeneration")(function* 
   piSettings: PiSettings,
   environment: NodeJS.ProcessEnv = process.env,
   compatibility: ProviderCompatibilityLookup = noCompatibilityPolicy,
+  omp = false,
 ) {
   const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
 
@@ -44,7 +45,7 @@ export const makePiTextGeneration = Effect.fn("makePiTextGeneration")(function* 
     function* (request) {
       const { operation, cwd, prompt, modelSelection } = request;
       const thinking = getModelSelectionStringOptionValue(modelSelection, "thinking");
-      if (thinking !== undefined && isPiThinkingLevel(thinking)) {
+      if (!omp && thinking !== undefined && isPiThinkingLevel(thinking)) {
         const output = yield* runPiVersionCommand(piSettings, environment, cwd).pipe(
           Effect.timeoutOption(4_000),
           Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner),
@@ -66,7 +67,9 @@ export const makePiTextGeneration = Effect.fn("makePiTextGeneration")(function* 
         }
       }
 
-      const resolvedLaunchArgs = resolvePiLaunchArgs(piSettings.launchArgs);
+      const resolvedLaunchArgs = (omp ? resolveOmpLaunchArgs : resolvePiLaunchArgs)(
+        piSettings.launchArgs,
+      );
       if (!resolvedLaunchArgs.ok) {
         return yield* new TextGenerationError({
           operation,
@@ -74,6 +77,7 @@ export const makePiTextGeneration = Effect.fn("makePiTextGeneration")(function* 
         });
       }
       const launch = buildPiRpcLaunch({
+        omp,
         launchArgs: resolvedLaunchArgs.args,
         environment,
         mcpSession: undefined,
@@ -85,6 +89,7 @@ export const makePiTextGeneration = Effect.fn("makePiTextGeneration")(function* 
         disableTools: true,
       });
       const connection = yield* makePiRpcConnection({
+        omp,
         command: piSettings.binaryPath || "pi",
         args: launch.args,
         cwd,
@@ -138,7 +143,9 @@ export const makePiTextGeneration = Effect.fn("makePiTextGeneration")(function* 
       yield* Effect.gen(function* () {
         while (true) {
           const event = yield* Queue.take(connection.events);
-          if (event["type"] === "agent_settled") return;
+          if (event["type"] === "agent_settled" || (omp && event["type"] === "session_settled"))
+            return;
+          if (omp && event["type"] === "prompt_result" && event["sessionSettled"] === true) return;
           const message = event["message"];
           if (event["type"] === "message_end" && piRecordString(message, "role") === "assistant") {
             turnError =
@@ -161,7 +168,7 @@ export const makePiTextGeneration = Effect.fn("makePiTextGeneration")(function* 
           detail: turnError ?? "Pi returned empty output.",
         });
       }
-      return yield* TextGenerationOperations.decodeJsonReply(request, "Pi", text);
+      return yield* TextGenerationOperations.decodeJsonReply(request, omp ? "OMP" : "Pi", text);
     },
     (effect, request) => {
       const { operation } = request;

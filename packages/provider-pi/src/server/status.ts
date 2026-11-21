@@ -26,7 +26,7 @@ import * as HttpClient from "effect/http/HttpClient";
 import * as ChildProcess from "effect/process/ChildProcess";
 import * as ChildProcessSpawner from "effect/process/ChildProcessSpawner";
 
-import { buildPiRpcLaunch, resolvePiLaunchArgs } from "./mcpInjection.ts";
+import { buildPiRpcLaunch, resolveOmpLaunchArgs, resolvePiLaunchArgs } from "./mcpInjection.ts";
 import {
   makePiRpcConnection,
   PiRpcError,
@@ -63,6 +63,7 @@ const PI_PRESENTATION = {
   reportsContextWindow: true,
 } as const;
 
+const OMP_PRESENTATION = { ...PI_PRESENTATION, displayName: "OMP" };
 const VERSION_PROBE_TIMEOUT_MS = 10_000;
 const PI_RPC_DISCOVERY_TIMEOUT_MS = 30_000;
 const PI_TEXT_GENERATION_DISCOVERY_TIMEOUT_MS = 5_000;
@@ -101,6 +102,7 @@ function piModelsFromSettings(
 function parseDiscoveredModels(
   data: unknown,
   state: unknown,
+  omp = false,
 ): Result.Result<ReadonlyArray<ServerProviderModel>, PiRpcError> {
   const models = recordField(data, "models");
   if (!Array.isArray(models)) {
@@ -134,6 +136,7 @@ function parseDiscoveredModels(
         provider === activeProvider && id === activeModelId
           ? recordString(state, "thinkingLevel")
           : undefined,
+        omp,
       ),
     });
   }
@@ -146,8 +149,10 @@ const makePiDiscoveryConnection = Effect.fnUntraced(function* (
   launchArgs: ReadonlyArray<string>,
   cwd?: string,
   textGenerationLaunch = false,
+  omp = false,
 ) {
   const launch = buildPiRpcLaunch({
+    omp,
     launchArgs,
     environment,
     mcpSession: undefined,
@@ -158,6 +163,7 @@ const makePiDiscoveryConnection = Effect.fnUntraced(function* (
     shortLived: true,
   });
   const connection = yield* makePiRpcConnection({
+    omp,
     command: piSettings.binaryPath || "pi",
     args: launch.args,
     cwd,
@@ -682,3 +688,105 @@ export const enrichPiSnapshot = (input: {
     Effect.asVoid,
   );
 };
+
+export const discoverOmpInventory = Effect.fn("discoverOmpInventory")(function* (
+  settings: PiSettings,
+  environment: NodeJS.ProcessEnv,
+  cwd: string,
+) {
+  const launchArgs = resolveOmpLaunchArgs(settings.launchArgs);
+  if (!launchArgs.ok) {
+    return yield* new PiRpcError({ operation: "launch", detail: launchArgs.message });
+  }
+  const connection = yield* makePiDiscoveryConnection(
+    settings,
+    providerProbeEnvironment(environment),
+    launchArgs.args,
+    cwd,
+    false,
+    true,
+  );
+  const state = yield* connection.request({ type: "get_state" });
+  const models = yield* connection.request({ type: "get_available_models" });
+  const commands = yield* connection.request({ type: "get_available_commands" });
+  return {
+    models: yield* Effect.fromResult(parseDiscoveredModels(models, state, true)),
+    ...parsePiDiscoveredCommands(commands),
+  };
+}, Effect.scoped);
+
+export const buildInitialOmpSnapshot = Effect.fn("buildInitialOmpSnapshot")(function* (
+  settings: PiSettings,
+) {
+  return buildServerProvider({
+    presentation: OMP_PRESENTATION,
+    checkedAt: DateTime.formatIso(yield* DateTime.now),
+    enabled: settings.enabled,
+    models: [{ ...PI_DEFAULT_MODEL, name: "OMP default" }],
+    probe: {
+      installed: settings.enabled,
+      version: null,
+      status: "warning",
+      auth: { status: "unknown" },
+      message: settings.enabled
+        ? "Checking OMP CLI availability..."
+        : "OMP is disabled in T3 Code settings.",
+    },
+  });
+});
+
+export const checkOmpStatus = Effect.fn("checkOmpStatus")(function* (
+  settings: PiSettings,
+  environment: NodeJS.ProcessEnv,
+  cwd: string,
+) {
+  const initial = yield* buildInitialOmpSnapshot(settings);
+  if (!settings.enabled) return initial;
+  const output = yield* runPiVersionCommand(
+    settings,
+    providerProbeEnvironment(environment),
+    cwd,
+  ).pipe(
+    Effect.timeoutOption(VERSION_PROBE_TIMEOUT_MS),
+    Effect.orElseSucceed(() => Option.none()),
+  );
+  const version = Option.isSome(output) ? parseCliVersionResult(output.value) : null;
+  const inventory =
+    version === null
+      ? Option.none()
+      : yield* discoverOmpInventory(settings, environment, cwd).pipe(Effect.option);
+  return buildServerProvider({
+    presentation: OMP_PRESENTATION,
+    checkedAt: DateTime.formatIso(yield* DateTime.now),
+    enabled: true,
+    models: Option.isNone(inventory)
+      ? initial.models
+      : providerModelsFromSettings(
+          [...initial.models, ...inventory.value.models],
+          settings.customModels,
+          EMPTY_PI_MODEL_CAPABILITIES,
+        ),
+    ...(Option.isSome(inventory)
+      ? { slashCommands: inventory.value.slashCommands, skills: inventory.value.skills }
+      : {}),
+    probe: {
+      installed: Option.isSome(output),
+      version,
+      status: Option.isSome(inventory) ? "ready" : "warning",
+      auth: {
+        status:
+          Option.isSome(inventory) && inventory.value.models.length > 0
+            ? "authenticated"
+            : "unknown",
+      },
+      ...(Option.isNone(inventory)
+        ? {
+            message:
+              version === null
+                ? "Could not run the configured OMP binary."
+                : "OMP model and command discovery did not complete.",
+          }
+        : {}),
+    },
+  });
+});

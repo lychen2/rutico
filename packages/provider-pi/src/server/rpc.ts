@@ -90,6 +90,7 @@ export interface PiRpcSpawnOptions {
   readonly args: ReadonlyArray<string>;
   readonly cwd: string | undefined;
   readonly env: NodeJS.ProcessEnv;
+  readonly omp?: boolean;
 }
 
 export interface PiRpcConnection {
@@ -289,6 +290,7 @@ export const makePiRpcConnection = Effect.fnUntraced(function* (options: PiRpcSp
   const events = yield* Queue.unbounded<PiRpcRecord, PiRpcError>();
   const outgoing = yield* Queue.unbounded<Uint8Array, PiRpcError>();
   const transportDown = yield* Deferred.make<never, PiRpcError>();
+  const ready = options.omp ? yield* Deferred.make<void>() : undefined;
   const exitDeferred = yield* Deferred.make<number, PiRpcError>();
   let nextRequestId = 0;
 
@@ -306,6 +308,10 @@ export const makePiRpcConnection = Effect.fnUntraced(function* (options: PiRpcSp
   const routeRecord =
     /* Protocol records and writes include streaming deltas; avoid a span per record. */
     Effect.fnUntraced(function* (record: PiRpcRecord) {
+      if (ready !== undefined && record["type"] === "ready") {
+        yield* Deferred.succeed(ready, undefined);
+        return;
+      }
       if (record["type"] === "response" && typeof record["id"] === "string") {
         const pending = pendingRequests.get(record["id"]);
         if (pending !== undefined) {
@@ -427,6 +433,20 @@ export const makePiRpcConnection = Effect.fnUntraced(function* (options: PiRpcSp
   const send =
     /* Protocol records and writes include streaming deltas; avoid a span per record. */
     Effect.fnUntraced(function* (record: PiRpcRecord): Effect.fn.Return<void, PiRpcError> {
+      if (ready !== undefined) {
+        yield* Effect.raceFirst(Deferred.await(ready), Deferred.await(transportDown)).pipe(
+          Effect.timeoutOrElse({
+            duration: Duration.seconds(60),
+            orElse: () =>
+              Effect.fail(
+                new PiRpcError({
+                  operation: "startup",
+                  detail: "OMP did not send its ready frame",
+                }),
+              ),
+          }),
+        );
+      }
       const accepted = yield* Queue.offer(
         outgoing,
         new TextEncoder().encode(`${encodeJsonLine(record)}\n`),

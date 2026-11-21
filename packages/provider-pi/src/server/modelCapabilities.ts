@@ -35,10 +35,11 @@ export const PI_STANDARD_SERVICE_TIER = "default";
 export function piModelCapabilities(
   model: unknown,
   defaultThinkingLevel: unknown,
+  omp = false,
 ): ModelCapabilities {
   const optionDescriptors = [
-    thinkingDescriptor(model, defaultThinkingLevel),
-    serviceTierDescriptor(model),
+    thinkingDescriptor(model, defaultThinkingLevel, omp),
+    omp ? undefined : serviceTierDescriptor(model),
   ].filter(Predicate.isNotUndefined);
   return optionDescriptors.length === 0
     ? EMPTY_PI_MODEL_CAPABILITIES
@@ -48,8 +49,16 @@ export function piModelCapabilities(
 function thinkingDescriptor(
   model: unknown,
   defaultThinkingLevel: unknown,
+  omp: boolean,
 ): ProviderOptionDescriptor | undefined {
-  const levels = supportedPiThinkingLevelsFromModel(model);
+  const nativeLevels = recordField(recordField(model, "thinking"), "efforts");
+  const levels =
+    omp && Array.isArray(nativeLevels)
+      ? nativeLevels.filter(
+          (level): level is PiThinkingLevel =>
+            typeof level === "string" && isPiThinkingLevel(level),
+        )
+      : supportedPiThinkingLevelsFromModel(model);
   if (levels.length === 0) return undefined;
   const defaultLevel = clampPiThinkingLevel(defaultThinkingLevel, levels);
   return {

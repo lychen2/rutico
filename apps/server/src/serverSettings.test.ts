@@ -961,6 +961,42 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("server settings"
     }).pipe(Effect.provide(layerServerSettings())),
   );
 
+  it.effect("migrates OMP bridges without changing the provider instance IDs", () =>
+    Effect.gen(function* () {
+      const { settingsPath } = yield* ServerConfig.ServerConfig;
+      const fileSystem = yield* FileSystem.FileSystem;
+      const serverSettings = yield* ServerSettingsModule.ServerSettingsService;
+      yield* fileSystem.writeFileString(
+        settingsPath,
+        JSON.stringify({
+          providerInstances: {
+            OMP: {
+              driver: "pi",
+              enabled: true,
+              displayName: "My OMP",
+              config: {
+                binaryPath: "C:\\Users\\me\\bin\\omp-t3.cmd",
+                launchArgs: "--thinking high",
+              },
+            },
+            pi: { driver: "pi", enabled: false, config: { binaryPath: "/opt/pi" } },
+          },
+        }),
+      );
+      const { providerInstances } = yield* serverSettings.getSettings;
+      const migrated = {
+        driver: "omp",
+        enabled: true,
+        displayName: "My OMP",
+        config: { launchArgs: "--thinking high" },
+      };
+      assert.deepEqual(providerInstances[ProviderInstanceId.make("OMP")], migrated);
+      assert.equal(providerInstances[ProviderInstanceId.make("pi")]?.driver, "pi");
+      const persisted = JSON.parse(yield* fileSystem.readFileString(settingsPath));
+      assert.deepEqual(persisted.providerInstances.OMP, migrated);
+    }).pipe(Effect.provide(layerServerSettings())),
+  );
+
   it.effect("keeps an explicit default instance over the legacy blob for its driver", () =>
     Effect.gen(function* () {
       const serverConfig = yield* ServerConfig.ServerConfig;

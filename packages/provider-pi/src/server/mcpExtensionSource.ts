@@ -3,6 +3,7 @@ import { T3_CODE_ORCHESTRATION_INSTRUCTIONS } from "@t3tools/provider-core/serve
 import { PULL_REQUEST_LINKING_INSTRUCTIONS } from "@t3tools/provider-core/server/runtimeInstructions";
 
 export const PI_T3_MCP_EXTENSION_FILENAME = "pi-t3-mcp-extension.ts";
+export const OMP_T3_MCP_EXTENSION_FILENAME = "omp-t3-mcp-extension.ts";
 
 export const T3_MCP_URL_ENV = "T3_MCP_URL";
 export const T3_MCP_BEARER_ENV = "T3_MCP_BEARER_TOKEN";
@@ -13,13 +14,22 @@ export const PI_T3_SERVICE_TIER_COMMAND = "t3-service-tier";
 // These tools trigger file-change approvals, bypassed by Auto-accept edits.
 export const PI_FILE_CHANGE_TOOLS = ["edit", "write"] as const;
 
-export const PI_T3_MCP_EXTENSION_SOURCE = `\
-import { stripFrontmatter, type ExtensionAPI, type ExtensionContext } from "@earendil-works/pi-coding-agent";
+const buildT3McpExtensionSource = (omp: boolean) => `\
+${
+  omp
+    ? `import { loadSkillPromptBody, type ExtensionAPI, type ExtensionContext } from "@oh-my-pi/pi-coding-agent";
+import { getModelMatchPreferences, parseModelPattern, resolveConfiguredModelPatterns } from "@oh-my-pi/pi-coding-agent/config/model-resolver";
+import { AgentRegistry } from "@oh-my-pi/pi-coding-agent/registry/agent-registry";
+import { isLocalAgentSession } from "@oh-my-pi/pi-coding-agent/session/agent-session-handle";
+import { cfgTaskAgentModelOverrides } from "@oh-my-pi/pi-coding-agent/task/settings";`
+    : 'import { stripFrontmatter, type ExtensionAPI, type ExtensionContext } from "@earendil-works/pi-coding-agent";'
+}
 import * as NodeCrypto from "node:crypto";
 import * as NodeFSP from "node:fs/promises";
 import * as NodePath from "node:path";
 import { Type } from "typebox";
 
+const OMP = ${omp};
 const URL_ENV = ${JSON.stringify(T3_MCP_URL_ENV)};
 const TOKEN_ENV = ${JSON.stringify(T3_MCP_BEARER_ENV)};
 const RUNTIME_MODE_ENV = ${JSON.stringify(T3_PI_RUNTIME_MODE_ENV)};
@@ -281,9 +291,10 @@ export default async function t3McpExtension(pi: ExtensionAPI) {
       const command = commands.find((candidate) => candidate.name === "skill:" + name);
       if (command === undefined) continue;
       seen.add(name);
-      const path = command.sourceInfo.path;
+      const path = OMP ? command.path : command.sourceInfo.path;
+      if (typeof path !== "string") continue;
       try {
-        const body = stripFrontmatter(await NodeFSP.readFile(path, "utf8")).trim();
+        const body = ${omp ? "await loadSkillPromptBody({ filePath: path })" : 'stripFrontmatter(await NodeFSP.readFile(path, "utf8")).trim()'};
         blocks.push(
           \`<skill name="\${name}" location="\${path}">\\nReferences are relative to \${NodePath.dirname(path)}.\\n\\n\${body}\\n</skill>\`,
         );
@@ -302,14 +313,14 @@ export default async function t3McpExtension(pi: ExtensionAPI) {
   // Pi has no service tier setting, so T3 sets one through this command before each turn.
   // Only a tier the active model advertises is sent; Standard sends none.
   let serviceTier: string | undefined;
-  pi.registerCommand(SERVICE_TIER_COMMAND, {
+  if (!OMP) pi.registerCommand(SERVICE_TIER_COMMAND, {
     description: "Set the service tier T3 Code sends with provider requests",
     handler: async (args) => {
       serviceTier = args.trim() || undefined;
     },
   });
 
-  pi.on("before_provider_request", (event, ctx) => {
+  if (!OMP) pi.on("before_provider_request", (event, ctx) => {
     const payload = event.payload;
     if (typeof payload !== "object" || payload === null || Array.isArray(payload)) return;
     const replacement = { ...payload } as Record<string, unknown>;
@@ -362,7 +373,7 @@ export default async function t3McpExtension(pi: ExtensionAPI) {
       NodePath.resolve(tool.sourceInfo.path) === NodePath.resolve(extensionPath));
   };
 
-  pi.on("tool_call", async (event, ctx) => {
+  if (!OMP) pi.on("tool_call", async (event, ctx) => {
     const mode = runtimeMode();
     if (mode === "full-access") return;
     if ((event.toolName === "tool_search" ? hasBuiltinToolSearch() : READ_ONLY_TOOLS.has(event.toolName)) || isReadOnlyMcpTool(event.toolName)) {
@@ -395,7 +406,7 @@ export default async function t3McpExtension(pi: ExtensionAPI) {
 
   // Tool exposure arrived with registerMcpServer in Pi 0.99. Keep the HTTP
   // bridge as the credential owner: mcp.json overrides native registrations.
-  const supportsExposure = "registerMcpServer" in pi && typeof pi.registerMcpServer === "function";
+  const supportsExposure = !OMP && "registerMcpServer" in pi && typeof pi.registerMcpServer === "function";
   const directTools = new Set(["orchestrator_capabilities", "delegate_task", "task_status"]);
   const ALIAS_PREFIX = "mcp__t3_code__";
   let deferOptionalTools = supportsExposure;
@@ -410,6 +421,50 @@ export default async function t3McpExtension(pi: ExtensionAPI) {
     registered.has("mcp__t3-code__" + name) &&
     (isDeferred(name) || active.includes("mcp__t3-code__" + name));
   let catalog: ReadonlyArray<McpTool> = [];
+
+  ${
+    omp
+      ? `
+  const ompRoutes = (ctx: ExtensionContext) => {
+    const file = ctx.sessionManager.getSessionFile();
+    for (const ref of AgentRegistry.global().list()) {
+      const session = ref.session;
+      if (!session || !isLocalAgentSession(session)) continue;
+      if (session.sessionManager !== ctx.sessionManager && (!file || session.sessionManager.getSessionFile() !== file)) continue;
+      const settings = session.settings;
+      const preferences = getModelMatchPreferences(settings);
+      const models = ctx.modelRegistry.getAvailable();
+      return new Map(Object.entries(cfgTaskAgentModelOverrides.get(settings)).map(([agent, pattern]) => [agent,
+        resolveConfiguredModelPatterns(pattern, settings).flatMap((selector) => {
+          const { model, thinkingLevel, explicitThinkingLevel } = parseModelPattern(selector, models, preferences, { allowInvalidThinkingSelectorFallback: false });
+          return model ? [{ model: model.provider + "/" + model.id, thinking: explicitThinkingLevel ? thinkingLevel : undefined }] : [];
+        }),
+      ]));
+    }
+    return undefined;
+  };
+  const checkOmpDelegate = (ctx: ExtensionContext, params: Record<string, unknown>) => {
+    const { agent, target, mode } = params;
+    if (typeof agent !== "string" || agent.length === 0) return "Set agent to an exact key of OMP task.agentModelOverrides.";
+    if (mode !== "async") return 'Set mode to "async"; the child completion wakes this thread.';
+    if (typeof target !== "object" || target === null || !("providerInstanceId" in target) || target.providerInstanceId !== env("T3_OMP_INSTANCE_ID")) {
+      return "Set target.providerInstanceId to this local OMP instance: " + env("T3_OMP_INSTANCE_ID");
+    }
+    if (!("model" in target) || typeof target.model !== "string") return "Set target.model to an exact OMP provider/model ID.";
+    const options = "options" in target ? target.options : undefined;
+    const values: unknown[] = Array.isArray(options) ? options.flatMap((entry: unknown) =>
+      typeof entry === "object" && entry !== null && "id" in entry && entry.id === "thinking" && "value" in entry ? [entry.value] : [],
+    ) : typeof options === "object" && options !== null && "thinking" in options ? [options.thinking] : [];
+    const routes = ompRoutes(ctx);
+    if (!routes) return "The live OMP settings are not available for this session.";
+    const candidates = routes.get(agent);
+    if (!candidates || candidates.length === 0) return "No available route for agent " + agent + ".";
+    if (values.length <= 1 && candidates.some((candidate) => candidate.model === target.model && (candidate.thinking === undefined || candidate.thinking === values[0]))) return undefined;
+    return "Use one configured route for " + agent + ": " + candidates.map(({ model, thinking }) => thinking === undefined ? model : model + ":" + thinking).join(", ");
+  };
+  `
+      : ""
+  }
 
   const client = createMcpClient(endpoint, token);
   let started: Promise<void> | undefined;
@@ -431,11 +486,37 @@ export default async function t3McpExtension(pi: ExtensionAPI) {
           name: toolName,
           label: name,
           description: tool.description ?? name,
-          parameters: jsonSchemaToTypebox(tool.inputSchema),
+          parameters: jsonSchemaToTypebox(OMP && name === "delegate_task" ? {
+            ...tool.inputSchema,
+            properties: {
+              ...(tool.inputSchema?.properties as Record<string, unknown> | undefined),
+              agent: { type: "string", minLength: 1, description: "Exact OMP task.agentModelOverrides key." },
+            },
+            required: [...(Array.isArray(tool.inputSchema?.required) ? tool.inputSchema.required : []), "agent"],
+          } : tool.inputSchema),
           ...(supportsExposure ? { outputSchema: mcpOutputSchema(tool) } : {}),
+          ...(OMP ? {
+            // OpenAI strict mode requires every property; MCP optionals must stay omittable.
+            strict: false,
+            loadMode: directTools.has(name) || /^(?:preview_|browser_|t3_preview_)/.test(name) ? "essential" : "discoverable",
+            approval: tool.annotations?.readOnlyHint === true ? "read" : "exec",
+            mcpServerName: "t3-code",
+            mcpToolName: name,
+          } : {}),
           ...(supportsExposure ? { exposure } : {}),
           ...(isAlias ? { prepareLoadout: () => ({ hiddenDeclarations: [toolName] }) } : {}),
-          async execute(_toolCallId, params, signal) {
+          async execute(_toolCallId, params, signal, _onUpdate, ctx) {
+            let resolvedParams = (params ?? {}) as Record<string, unknown>;
+            ${
+              omp
+                ? `if (name === "delegate_task") {
+              const reason = checkOmpDelegate(ctx, resolvedParams);
+              if (reason !== undefined) return { content: [{ type: "text", text: reason }], details: {}, isError: true };
+              const { agent: _agent, ...forwarded } = resolvedParams;
+              resolvedParams = forwarded;
+            }`
+                : ""
+            }
             // Another extension may switch the public tool off after reconciliation.
             if (
               isAlias &&
@@ -445,7 +526,7 @@ export default async function t3McpExtension(pi: ExtensionAPI) {
             }
             const result = await client.callTool(
               name,
-              (params ?? {}) as Record<string, unknown>,
+              resolvedParams,
               signal,
             );
             const content = mcpModelContent(result);
@@ -529,7 +610,19 @@ export default async function t3McpExtension(pi: ExtensionAPI) {
   // Keep guidance in the system prompt so leading slash commands still expand.
   pi.on("before_agent_start", (event, ctx) => {
     reconcileDiscovery(ctx);
-    const instructions = ORCHESTRATION_INSTRUCTIONS + "\\n\\n" + PULL_REQUEST_LINKING_INSTRUCTIONS;
+    let instructions = ORCHESTRATION_INSTRUCTIONS + "\\n\\n" + PULL_REQUEST_LINKING_INSTRUCTIONS;
+    ${
+      omp
+        ? `const routes = ompRoutes(ctx);
+    if (routes) {
+      instructions += "\\n\\nOMP delegation: choose an exact agent, model and pinned thinking below. " +
+        'Set mode:"async" and target.providerInstanceId to ' + env("T3_OMP_INSTANCE_ID") + ". Do not poll.\\n" +
+        [...routes].flatMap(([agent, candidates]) => candidates.map(({ model, thinking }) =>
+          "- " + agent + ": " + model + (thinking === undefined ? "" : " (thinking=" + thinking + ")"),
+        )).join("\\n");
+    }`
+        : ""
+    }
     const sections = event.systemPromptOptions?.sections;
     if (sections && typeof sections === "object" && event.systemPromptOptions?.forceSystemPrompt === undefined) {
       // A full prompt override bypasses Pi's later section rendering.
@@ -540,3 +633,6 @@ export default async function t3McpExtension(pi: ExtensionAPI) {
   });
 }
 `;
+
+export const PI_T3_MCP_EXTENSION_SOURCE = buildT3McpExtensionSource(false);
+export const OMP_T3_MCP_EXTENSION_SOURCE = buildT3McpExtensionSource(true);
