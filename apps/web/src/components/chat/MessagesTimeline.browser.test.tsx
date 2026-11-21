@@ -1267,7 +1267,7 @@ describe("MessagesTimeline citations", () => {
           kind: "sent-message",
           createdAt: CREATED_AT,
           runId: RunId.make("run-sent"),
-          text,
+          text: `\u00a7630\u00a7 ${text}`,
         },
       ],
       { onCiteAssistantText: () => true },
@@ -1286,7 +1286,7 @@ describe("MessagesTimeline citations", () => {
           {...baseProps()}
           timelineEntries={[
             message("A question", {}, "question"),
-            message("the cited answer", { role: "assistant" }, "cited"),
+            message("\u00a7630\u00a7 the cited answer", { role: "assistant" }, "cited"),
           ]}
           citationRequest={CITATION_REQUEST}
           citationHistory={{ _tag: "found" }}
@@ -1295,6 +1295,7 @@ describe("MessagesTimeline citations", () => {
       // The test router mounts route content without StrictMode's effect replay.
       { router: false },
     );
+    await expect.element(page.getByText("the cited answer", { exact: true })).toBeVisible();
     // StrictMode replays effect cleanups on mount; the activation must survive them.
     await vi.waitFor(() =>
       expect(document.querySelector("[data-citation-highlighted]")?.textContent).toContain(

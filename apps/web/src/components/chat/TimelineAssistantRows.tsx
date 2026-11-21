@@ -44,6 +44,8 @@ import { vcsEnvironment } from "../../state/vcs";
 
 const NO_VCS_STATUS = Atom.make(AsyncResult.initial());
 
+const magicContextPrefix = /^\u00a7\d+\u00a7(?:[ \t]|$)/;
+
 export function AssistantTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" }> }) {
   const ctx = use(TimelineRowCtx);
   const gt = useGT();
@@ -69,7 +71,7 @@ export function AssistantTimelineRow({ row }: { row: Extract<TimelineRow, { kind
             listRef={ctx.listRef}
           >
             <ChatMarkdown
-              text={messageText}
+              text={messageText.replace(magicContextPrefix, "")}
               renderInsights
               cwd={ctx.markdownCwd}
               agentDirectories={() =>
@@ -135,7 +137,7 @@ export function SentMessageTimelineRow({
         listRef={ctx.listRef}
       >
         <ChatMarkdown
-          text={row.text}
+          text={row.text.replace(magicContextPrefix, "")}
           cwd={ctx.markdownCwd}
           threadRef={ctx.threadRef ?? undefined}
           lineBreaks={shouldPreserveAssistantLineBreaks(row.text)}
