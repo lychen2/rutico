@@ -21,8 +21,9 @@ it("opens context details by keyboard and returns focus when dismissed", async (
   await expect.element(trigger).toHaveFocus();
   await userEvent.keyboard("{Enter}");
 
-  const details = page.getByRole("dialog", { name: "Context window" });
+  const details = page.getByRole("dialog", { name: "Overview" });
   await expect.element(details.getByText("Not reported")).toBeVisible();
+  await details.getByText("Diagnostics").click();
   await expect.element(details.getByText(/historian failed/)).toBeVisible();
   await userEvent.keyboard("{Escape}");
   await expect.element(details).not.toBeInTheDocument();
@@ -47,6 +48,10 @@ it("keeps round token and cache totals separate from the current context window"
         completedAt: DateTime.add(startedAt, { seconds: 14 }),
       }}
       stepCount={3}
+      activity={{
+        tools: { count: 2, milliseconds: 3000, timed: 2 },
+        reasoning: { count: 1, milliseconds: 2000, timed: 1 },
+      }}
       turnUsage={{
         usageScope: "main_agent",
         usageStatus: "complete",
@@ -64,7 +69,9 @@ it("keeps round token and cache totals separate from the current context window"
     await expect.element(trigger.getByText(value, { exact: true })).toBeVisible();
   }
   await userEvent.click(trigger);
-  const details = page.getByRole("dialog", { name: "Context window" });
+  const details = page.getByRole("dialog", { name: "Overview" });
+  await expect.element(details.getByText("2 · Σ 3s")).toBeVisible();
+  await expect.element(details.getByText("16.7 tok/s")).toBeVisible();
   await expect.element(details.getByText("12s")).toBeVisible();
   await expect.element(details.getByText("Completed")).toBeVisible();
   await expect.element(details.getByText("42,000 of 200,000 tokens · 21%")).toBeVisible();
@@ -86,6 +93,6 @@ it("keeps round token and cache totals separate from the current context window"
   await expect.element(nextTrigger.getByText("0 steps", { exact: true })).toBeVisible();
   await userEvent.click(nextTrigger);
   await expect.element(details.getByText("Starting")).toBeVisible();
-  await expect.element(details.getByText("Not reported")).toBeVisible();
+  await expect.element(details.getByText("Not reported").first()).toBeVisible();
   await expect.element(details.getByText("Round token usage")).not.toBeInTheDocument();
 });

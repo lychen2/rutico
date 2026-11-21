@@ -56,11 +56,7 @@ import { usePendingThreadRequests } from "./chat/usePendingThreadRequests";
 import { isScratchProject } from "@t3tools/client-runtime/state/projects";
 import { resolveWorktreeRepositorySelection } from "@t3tools/client-runtime/state/thread-repositories";
 import { visibleThreadPullRequests } from "@t3tools/shared/threadPullRequests";
-import {
-  isToolLifecycleItemType,
-  latestProviderTurnForAttempt,
-  type UsageLimitSourceSnapshots,
-} from "@t3tools/contracts";
+import { latestProviderTurnForAttempt, type UsageLimitSourceSnapshots } from "@t3tools/contracts";
 import { feedbackBannerItem } from "./chat/ComposerFeedback";
 import { freshSessionBannerItem } from "./chat/ComposerFreshSession";
 import { armFreshSession, disarmFreshSession, useFreshSessionArmed } from "./chat/freshSessionArms";
@@ -400,6 +396,7 @@ import { ChatRightPanel } from "./chat/ChatRightPanel";
 import { useDraftEnvironmentRouting } from "./chat/useDraftEnvironmentRouting";
 import { branchMismatchBannerItem, extensionStatusBannerItem } from "./chat/ThreadActivityBanners";
 import { ComposerThreadContext } from "./chat/ComposerThreadContext";
+import { currentRoundActivity } from "./chat/currentRoundActivity";
 import { selectOmpTodo, ThreadOmpTodo, withoutOmpTodoSnapshots } from "./chat/ThreadOmpTodo";
 import { ThreadNow } from "./chat/ThreadNow";
 import { threadRuntimeIsActive, type ThreadStructure } from "@t3tools/client-runtime/state/shell";
@@ -3298,22 +3295,10 @@ export default function ChatView(props: ChatViewProps) {
   const composerContextRun = showSessionStatus
     ? (serverProjection.runs.find((run) => run.id === activeActivityRun?.runId) ?? null)
     : null;
-  const composerContextStepCount =
-    composerContextRun === null
-      ? null
-      : serverVisibleTurnItems.reduce(
-          (count, { item }) =>
-            count +
-            Number(
-              item.runId === composerContextRun.id &&
-                item.nodeId === composerContextRun.rootNodeId &&
-                (item.type === "reasoning" ||
-                  isToolLifecycleItemType(item.type) ||
-                  item.type === "file_search" ||
-                  item.type === "dynamic_tool"),
-            ),
-          0,
-        );
+  const composerActivity =
+    composerContextRun && serverProjection
+      ? currentRoundActivity(composerContextRun, serverProjection.nodes)
+      : null;
   const timelineFooter =
     pendingHandoff === null &&
     !hasThreadNow &&
@@ -3981,7 +3966,12 @@ export default function ChatView(props: ChatViewProps) {
                             contextStatus={
                               extensionStatuses.find(({ key }) => key === "magic-context")?.text
                             }
-                            stepCount={composerContextStepCount}
+                            activity={composerActivity}
+                            stepCount={
+                              composerActivity
+                                ? composerActivity.tools.count + composerActivity.reasoning.count
+                                : null
+                            }
                             turnUsage={
                               composerContextRun && serverProjection
                                 ? (latestProviderTurnForAttempt(

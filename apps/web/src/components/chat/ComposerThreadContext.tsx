@@ -21,11 +21,15 @@ const runStatusLabels = {
   rolled_back: msg("Rolled back"),
 } satisfies Record<OrchestrationV2Run["status"], string>;
 
+import type { currentRoundActivity } from "./currentRoundActivity";
+import "./composerSessionOverview.css";
+
 export function ComposerThreadContext({
   usage,
   run,
   stepCount,
   turnUsage,
+  activity,
   contextStatus,
 }: {
   readonly usage: ContextWindowSnapshot | null;
@@ -35,6 +39,7 @@ export function ComposerThreadContext({
   > | null;
   readonly stepCount: number | null;
   readonly turnUsage: TurnTokenUsage | null;
+  readonly activity?: ReturnType<typeof currentRoundActivity> | null;
   readonly contextStatus?: string | undefined;
 }) {
   const gt = useGT();
@@ -64,7 +69,7 @@ export function ComposerThreadContext({
       : null;
 
   return (
-    <div className="relative flex justify-center px-2 pt-1">
+    <div data-session-footer="" className="flex justify-center px-3 pb-1 pt-2">
       <Popover>
         <PopoverTrigger
           render={
@@ -105,82 +110,134 @@ export function ComposerThreadContext({
             className="size-3 transition-transform group-aria-expanded:rotate-180 motion-reduce:transition-none"
           />
         </PopoverTrigger>
-        <PopoverPopup side="bottom" align="center" padding="compact" width="sm">
-          <PopoverTitle className="mb-2">{gt("Context window")}</PopoverTitle>
-          {run !== null ? (
-            <div className="mb-3 flex flex-wrap items-baseline gap-x-2 border-b pb-2 text-sm tabular-nums">
-              <strong>{gt("Round {round}", { round: run.ordinal.toLocaleString(locale) })}</strong>
-              <span>{resolve(runStatusLabels[run.status])}</span>
-              {rate !== null && <strong>{rate} tok/s</strong>}
-              {stepCount !== null && (
-                <span>
-                  {gt("{steps, plural, one {# step} other {# steps}}", { steps: stepCount })}
+        <PopoverPopup side="top" align="center" padding="none" width="md">
+          <div data-session-overview="" className="p-4">
+            <div className="mb-3 flex items-center justify-between">
+              <PopoverTitle>{gt("Overview")}</PopoverTitle>
+              {status && (
+                <span className="text-xs text-muted-foreground">
+                  {resolve(runStatusLabels[status])}
                 </span>
               )}
-              {startMs !== null ? (
-                endMs !== null ? (
-                  <span>{formatDuration(Math.max(0, endMs - startMs))}</span>
-                ) : running ? (
-                  <span
-                    ref={tickTextContent(
-                      (nowMs) => formatDuration(Math.max(0, nowMs - startMs)),
-                      true,
-                    )}
-                  />
-                ) : null
-              ) : null}
             </div>
-          ) : null}
-          <p className="text-xs text-muted-foreground tabular-nums">
-            {usage === null
-              ? gt("Not reported")
-              : usage.maxTokens == null
-                ? gt("{usedTokens} tokens used", {
-                    usedTokens: usage.usedTokens.toLocaleString(locale),
-                  })
-                : gt("{used} of {max} tokens", {
-                    used: usage.usedTokens.toLocaleString(locale),
-                    max: usage.maxTokens.toLocaleString(locale),
-                  })}
-            {percent === null ? null : ` · ${percent}%`}
-          </p>
-          {input !== undefined ||
-          output !== undefined ||
-          cacheRead !== undefined ||
-          cacheWrite !== undefined ? (
-            <>
-              <p className="mt-3 text-sm font-semibold">{gt("Round token usage")}</p>
-              <dl className="mt-1 grid grid-cols-[1fr_auto] gap-x-2 gap-y-1 text-xs text-muted-foreground tabular-nums">
-                {input !== undefined ? (
-                  <>
-                    <dt>{gt("Input")}</dt>
-                    <dd>{input.toLocaleString(locale)}</dd>
-                  </>
-                ) : null}
-                {output !== undefined ? (
-                  <>
-                    <dt>{gt("Output")}</dt>
-                    <dd>{output.toLocaleString(locale)}</dd>
-                  </>
-                ) : null}
-                {cacheRead !== undefined ? (
-                  <>
-                    <dt>{gt("Cache read")}</dt>
-                    <dd>{cacheRead.toLocaleString(locale)}</dd>
-                  </>
-                ) : null}
-                {cacheWrite !== undefined ? (
-                  <>
-                    <dt>{gt("Cache write")}</dt>
-                    <dd>{cacheWrite.toLocaleString(locale)}</dd>
-                  </>
-                ) : null}
+            {run !== null ? (
+              <div className="mb-3 grid grid-cols-2 gap-4 border-b pb-3 text-xs tabular-nums">
+                <div className="grid gap-1">
+                  <span className="text-muted-foreground">{gt("Activity")}</span>
+                  <strong className="text-base">
+                    {gt("Round {round}", { round: run.ordinal.toLocaleString(locale) })}
+                  </strong>
+                  {stepCount !== null && (
+                    <span>
+                      {gt("{steps, plural, one {# step} other {# steps}}", { steps: stepCount })}
+                    </span>
+                  )}
+                </div>
+                <div className="grid gap-1">
+                  <span className="text-muted-foreground">{gt("Speed")}</span>
+                  <strong className="text-base">
+                    {rate === null ? gt("Not reported") : `${rate} tok/s`}
+                  </strong>
+                  <div className="flex gap-1 text-muted-foreground">
+                    <span>{gt("Duration")}</span>
+                    {startMs !== null ? (
+                      endMs !== null ? (
+                        <span>{formatDuration(Math.max(0, endMs - startMs))}</span>
+                      ) : running ? (
+                        <span
+                          ref={tickTextContent(
+                            (nowMs) => formatDuration(Math.max(0, nowMs - startMs)),
+                            true,
+                          )}
+                        />
+                      ) : null
+                    ) : null}
+                  </div>
+                </div>
+              </div>
+            ) : null}
+            {activity && (
+              <dl className="mb-3 grid grid-cols-[1fr_auto] gap-x-4 gap-y-1.5 text-xs tabular-nums">
+                {(
+                  [
+                    [gt("Reasoning"), activity.reasoning],
+                    [gt("Tool calls"), activity.tools],
+                  ] as const
+                ).map(([label, group]) => (
+                  <div key={label} className="contents">
+                    <dt>{label}</dt>
+                    <dd className="text-end">
+                      {group.count}
+                      {group.timed > 0 && ` · Σ ${formatDuration(group.milliseconds)}`}
+                    </dd>
+                  </div>
+                ))}
               </dl>
-            </>
-          ) : null}
-          {contextStatus ? (
-            <p className="mt-2 text-xs text-muted-foreground">{contextStatus}</p>
-          ) : null}
+            )}
+            <p className="mb-1 text-xs font-semibold">{gt("Context window")}</p>
+            <p className="text-xs text-muted-foreground tabular-nums">
+              {usage === null
+                ? gt("Not reported")
+                : usage.maxTokens == null
+                  ? gt("{usedTokens} tokens used", {
+                      usedTokens: usage.usedTokens.toLocaleString(locale),
+                    })
+                  : gt("{used} of {max} tokens", {
+                      used: usage.usedTokens.toLocaleString(locale),
+                      max: usage.maxTokens.toLocaleString(locale),
+                    })}
+              {percent === null ? null : ` · ${percent}%`}
+            </p>
+            {percent !== null && (
+              <progress
+                data-context-meter=""
+                className="mt-1 w-full"
+                max={100}
+                value={percent}
+                aria-label={gt("Context window")}
+              />
+            )}
+            {input !== undefined ||
+            output !== undefined ||
+            cacheRead !== undefined ||
+            cacheWrite !== undefined ? (
+              <>
+                <p className="mt-3 text-sm font-semibold">{gt("Round token usage")}</p>
+                <dl className="mt-1 grid grid-cols-[1fr_auto] gap-x-2 gap-y-1 text-xs text-muted-foreground tabular-nums">
+                  {input !== undefined ? (
+                    <>
+                      <dt>{gt("Input")}</dt>
+                      <dd>{input.toLocaleString(locale)}</dd>
+                    </>
+                  ) : null}
+                  {output !== undefined ? (
+                    <>
+                      <dt>{gt("Output")}</dt>
+                      <dd>{output.toLocaleString(locale)}</dd>
+                    </>
+                  ) : null}
+                  {cacheRead !== undefined ? (
+                    <>
+                      <dt>{gt("Cache read")}</dt>
+                      <dd>{cacheRead.toLocaleString(locale)}</dd>
+                    </>
+                  ) : null}
+                  {cacheWrite !== undefined ? (
+                    <>
+                      <dt>{gt("Cache write")}</dt>
+                      <dd>{cacheWrite.toLocaleString(locale)}</dd>
+                    </>
+                  ) : null}
+                </dl>
+              </>
+            ) : null}
+            {contextStatus ? (
+              <details className="mt-3 border-t pt-2 text-xs text-muted-foreground">
+                <summary className="cursor-pointer">{gt("Diagnostics")}</summary>
+                <p className="mt-2 break-words">{contextStatus}</p>
+              </details>
+            ) : null}
+          </div>
         </PopoverPopup>
       </Popover>
     </div>
