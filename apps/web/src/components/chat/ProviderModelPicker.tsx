@@ -34,6 +34,7 @@ import { takeOpenTarget, useComposerMenuProps } from "./composerEventScope";
 import { shortcutLabelForCommand } from "../../keybindings";
 import { serverEnvironment } from "../../state/server";
 import { useAtomCommand } from "../../state/use-atom-command";
+import "./composerModelPicker.css";
 
 /** Holds the page still behind the open picker; its lifetime is the popup element's. */
 function lockBackgroundScroll(popup: HTMLElement | null) {
@@ -54,7 +55,7 @@ function lockBackgroundScroll(popup: HTMLElement | null) {
     return (
       target instanceof Element &&
       target.closest(
-        "[data-model-picker-content], [data-model-picker-effort], [data-model-picker-option-menu]",
+        "[data-model-picker-content], [data-composer-model-picker-popup], [data-model-picker-option-menu]",
       )
     );
   };
@@ -86,7 +87,7 @@ function lockBackgroundScroll(popup: HTMLElement | null) {
   };
 }
 
-/** What a docked effort column needs from its picker: the model it serves. */
+/** What the effort section needs from its picker: the model it serves. */
 export const DockedPickerContext = createContext<{ modelLabel: string }>({ modelLabel: "" });
 
 export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
@@ -124,8 +125,8 @@ export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
   /** Composer shortcuts this trigger answers besides the picker's own. */
   triggerShortcuts?: string;
   /**
-   * Docks an effort column beside the list and a footer under both. The popup then stays open
-   * until Escape or an outside press, and picking a model moves focus to its levels.
+   * Adds an effort section and footer below the list. The popup then stays open until Escape
+   * or an outside press, and picking a model moves focus to its levels.
    */
   effortColumn?: ReactNode;
   footer?: ReactNode;
@@ -195,19 +196,19 @@ export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
 
   /**
    * Focuses the selected reasoning level, else the first level. With `rows: "any"` it falls back
-   * to the column's first enabled option. False when nothing took focus.
+   * to the section's first enabled option. False when nothing took focus.
    */
   const focusEffort = (rows: "levels" | "any") => {
-    const column = popupRef.current?.querySelector("[data-model-picker-effort]");
+    const effort = popupRef.current?.querySelector("[data-model-picker-effort]");
     const level =
-      column?.querySelector<HTMLElement>(
+      effort?.querySelector<HTMLElement>(
         '[data-effort-level][aria-checked="true"]:not(:disabled)',
-      ) ?? column?.querySelector<HTMLElement>("[data-effort-level]:not(:disabled)");
+      ) ?? effort?.querySelector<HTMLElement>("[data-effort-level]:not(:disabled)");
     // No aria-checked here: an On switch is checked but is not where focus belongs.
     const row =
       level ??
       (rows === "any"
-        ? column?.querySelector<HTMLElement>("[data-effort-row]:not(:disabled)")
+        ? effort?.querySelector<HTMLElement>("[data-effort-row]:not(:disabled)")
         : null);
     row?.focus({ preventScroll: true });
     row?.scrollIntoView({ block: "nearest" });
@@ -230,7 +231,7 @@ export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
       setIsMenuOpen(false);
       return;
     }
-    // The column renders the new model's levels on commit.
+    // The section renders the new model's levels on commit.
     window.requestAnimationFrame(() => focusEffort("levels"));
   };
 
@@ -324,7 +325,6 @@ export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
         ? {
             docked,
             onFocusEffort: () => void focusEffort("any"),
-            // Inside the fixed height, so switching to or from a ChatGPT plan never resizes it.
             ...(props.selectedModels === undefined
               ? { listFooter: <ChatGptSharingControl provider={activeEntry?.snapshot ?? null} /> }
               : {}),
@@ -472,29 +472,32 @@ export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
           ? { side: "top" as const, collisionAvoidance: { side: "shift", align: "shift" } as const }
           : {})}
         className="before:hidden"
+        data-composer-model-picker-popup={docked ? "" : undefined}
         padding="none"
         touchBackdrop
       >
-        {props.effortColumn ? (
+        {props.effortColumn !== undefined ? (
           <DockedPickerContext value={{ modelLabel: triggerTitle }}>
-            <div className="flex max-h-(--available-height) flex-col">
-              {/* One fixed height, so a model with more options never resizes the popup. Short
-                  windows shrink it and keep the footer. */}
-              <div className="flex h-86.5 min-h-0 max-sm:h-auto max-sm:flex-col">
-                {picker}
-                <div
-                  data-model-picker-effort
-                  className="flex min-h-0 w-48 flex-col sm:shrink-0 border-l border-border/70 bg-muted/40 max-sm:h-64 max-sm:w-full max-sm:border-t max-sm:border-l-0"
-                  onKeyDown={(event) => {
-                    if (event.key !== "ArrowLeft" || event.altKey || event.ctrlKey || event.metaKey)
-                      return;
-                    event.preventDefault();
-                    event.stopPropagation();
-                    searchInputRef.current?.focus();
-                  }}
-                >
-                  {props.effortColumn}
-                </div>
+            <div className="flex w-full flex-col">
+              {picker}
+              <div
+                data-model-picker-effort
+                className="min-w-0 border-t border-border/70 bg-muted/40"
+                onKeyDown={(event) => {
+                  if (
+                    event.key !== "ArrowLeft" ||
+                    event.altKey ||
+                    event.ctrlKey ||
+                    event.metaKey ||
+                    !event.currentTarget.contains(document.activeElement)
+                  )
+                    return;
+                  event.preventDefault();
+                  event.stopPropagation();
+                  searchInputRef.current?.focus();
+                }}
+              >
+                {props.effortColumn}
               </div>
               {props.footer}
             </div>
