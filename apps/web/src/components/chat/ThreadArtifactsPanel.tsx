@@ -1,15 +1,31 @@
+import { AuthOrchestrationOperateScope, WS_METHODS } from "@t3tools/contracts";
 import type { AssetResource, EnvironmentId, ThreadArtifact, ThreadId } from "@t3tools/contracts";
 import { useGT, useLocale } from "gt-react";
-import { FileTextIcon, FilmIcon, GlobeIcon, ImageIcon, PaperclipIcon } from "lucide-react";
+import * as Cause from "effect/Cause";
+import { AsyncResult } from "effect/reactivity";
+import {
+  FileTextIcon,
+  FilmIcon,
+  FolderOpenIcon,
+  GlobeIcon,
+  ImageIcon,
+  PaperclipIcon,
+} from "lucide-react";
 import { useLayoutEffect, useRef, useState } from "react";
 
 import { useAssetUrlRefresh, useAssetUrlState } from "~/assets/assetUrls";
+import { cn } from "~/lib/utils";
 import { formatBytes } from "~/lib/formatBytes";
 import { threadArtifactsQuery } from "~/state/assets";
 import { useFilesystemReadAccess } from "~/state/filesystem";
-import { useEnvironmentQuery } from "~/state/query";
+import { useEnvironmentQuery, useEnvironmentQuerySelector } from "~/state/query";
+import { useEnvironmentScope } from "~/state/session";
+import { shellEnvironment } from "~/state/shell";
+import { useAtomCommand } from "~/state/use-atom-command";
+import { AttachmentFilePreview } from "../files/AttachmentFilePreview";
 import { Button } from "../ui/button";
 import { ScrollArea } from "../ui/scroll-area";
+import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "../ui/select";
 
 const groupIcons = {
   image: ImageIcon,
@@ -18,6 +34,23 @@ const groupIcons = {
   document: FileTextIcon,
 };
 const groupOrder = ["image", "video", "page", "document"] as const;
+type ArtifactFilter = "all" | ThreadArtifact["kind"];
+
+function isUnsupportedArtifactQuery(result: AsyncResult.AsyncResult<unknown, unknown>) {
+  if (result._tag !== "Failure") return false;
+  const defect = Cause.findDefect(result.cause);
+  if (defect._tag !== "Success") return false;
+  const message = defect.success instanceof Error ? defect.success.message : defect.success;
+  return message === `Unknown request tag: ${WS_METHODS.assetsListThreadArtifacts}`;
+}
+
+function useThreadArtifacts(environmentId: EnvironmentId, threadId: ThreadId) {
+  const { canReadFiles, isPending } = useFilesystemReadAccess(environmentId);
+  const atom = canReadFiles ? threadArtifactsQuery({ environmentId, input: { threadId } }) : null;
+  const query = useEnvironmentQuery(atom);
+  const isUnsupported = useEnvironmentQuerySelector(atom, isUnsupportedArtifactQuery);
+  return { ...query, canReadFiles, isUnsupported, isPending: isPending || query.isPending };
+}
 
 export function ThreadArtifactsPanel({
   environmentId,
@@ -29,23 +62,20 @@ export function ThreadArtifactsPanel({
   onAttachFiles: (files: File[]) => void;
 }) {
   const gt = useGT();
-  const { canReadFiles, isPending } = useFilesystemReadAccess(environmentId);
-  const query = useEnvironmentQuery(
-    canReadFiles ? threadArtifactsQuery({ environmentId, input: { threadId } }) : null,
-  );
+  const query = useThreadArtifacts(environmentId, threadId);
   const artifacts = query.data?.artifacts;
 
-  if (isPending || (query.isPending && artifacts === undefined)) {
-    return (
-      <p className="px-3 py-4 text-sm text-muted-foreground" role="status">
-        {gt("Loading artifacts…")}
-      </p>
-    );
-  }
-  if (!canReadFiles) {
+  if (!query.canReadFiles && !query.isPending) {
     return (
       <p className="px-3 py-4 text-sm text-muted-foreground">
         {gt("This connection cannot read host files.")}
+      </p>
+    );
+  }
+  if (query.isUnsupported && artifacts === undefined) {
+    return (
+      <p className="px-3 py-4 text-sm text-muted-foreground" role="alert">
+        {gt("This server does not support thread artifacts. Update the environment and reconnect.")}
       </p>
     );
   }
@@ -61,7 +91,14 @@ export function ThreadArtifactsPanel({
       </div>
     );
   }
-  if (!artifacts?.length) {
+  if (artifacts === undefined) {
+    return (
+      <p className="px-3 py-4 text-sm text-muted-foreground" role="status">
+        {gt("Loading artifacts…")}
+      </p>
+    );
+  }
+  if (artifacts.length === 0) {
     return (
       <p className="px-3 py-4 text-sm text-muted-foreground">
         {gt("No artifacts in this thread yet.")}
@@ -69,69 +106,117 @@ export function ThreadArtifactsPanel({
     );
   }
 
-  const grouped: Record<ThreadArtifact["kind"], ThreadArtifact[]> = {
-    image: [],
-    video: [],
-    page: [],
-    document: [],
-  };
-  for (const artifact of artifacts) grouped[artifact.kind].push(artifact);
-  const featured = grouped.image[0];
-  const groupLabels = {
+  return (
+    <ThreadArtifactCollection
+      key={`${environmentId}:${threadId}`}
+      environmentId={environmentId}
+      artifacts={artifacts}
+      onAttachFiles={onAttachFiles}
+    />
+  );
+}
+
+function ThreadArtifactCollection({
+  artifacts,
+  environmentId,
+  onAttachFiles,
+}: {
+  artifacts: readonly ThreadArtifact[];
+  environmentId: EnvironmentId;
+  onAttachFiles: (files: File[]) => void;
+}) {
+  const gt = useGT();
+  const locale = useLocale();
+  const [filter, setFilter] = useState<ArtifactFilter>("all");
+  const [selectedKey, setSelectedKey] = useState<string | null>(null);
+  const counts = { all: artifacts.length, image: 0, video: 0, page: 0, document: 0 };
+  const rows = artifacts.map((artifact) => {
+    counts[artifact.kind]++;
+    return { artifact, key: JSON.stringify(artifact.resource) };
+  });
+  const filtered =
+    filter === "all" ? rows : rows.filter(({ artifact }) => artifact.kind === filter);
+  const selected =
+    filtered.find(({ key }) => key === selectedKey) ??
+    filtered.find(({ artifact }) => artifact.kind === "image") ??
+    filtered[0];
+  const labels = {
+    all: gt("All"),
     image: gt("Images"),
     video: gt("Videos"),
     page: gt("Pages"),
     document: gt("Documents"),
   };
+  const time = new Intl.DateTimeFormat(locale, { hour: "numeric", minute: "2-digit" });
 
   return (
     <section className="min-w-0 space-y-3 px-3 pt-3 pb-2" aria-label={gt("Artifacts")}>
-      {featured ? (
-        <FeaturedThreadArtifact
-          artifact={featured}
-          environmentId={environmentId}
-          onAttachFiles={onAttachFiles}
-        />
-      ) : null}
-      <ScrollArea scrollFade className="max-h-64 min-h-0" aria-label={gt("Thread artifacts")}>
-        <div className="space-y-3 pe-1">
-          {groupOrder.map((kind) => {
-            const items = grouped[kind];
-            if (!items.length) return null;
-            const Icon = groupIcons[kind];
-            return (
-              <div key={kind}>
-                <h3 className="px-1 pb-1 text-xs font-medium text-muted-foreground">
-                  {groupLabels[kind]}
-                </h3>
-                <ul className="space-y-0.5">
-                  {items.map((artifact) => (
-                    <li
-                      key={JSON.stringify(artifact.resource)}
-                      className="flex min-w-0 items-center gap-2 rounded-md py-0.5 ps-1 hover:bg-muted/50"
+      <Select
+        value={filter}
+        onValueChange={(value) => {
+          if (value !== null) {
+            setFilter(value);
+            setSelectedKey(null);
+          }
+        }}
+      >
+        <SelectTrigger size="compact" variant="ghost" aria-label={gt("Artifact type")}>
+          <SelectValue>{`${labels[filter]} · ${counts[filter]}`}</SelectValue>
+        </SelectTrigger>
+        <SelectPopup alignItemWithTrigger={false} matchTriggerWidth={false}>
+          {(["all", ...groupOrder] as const).map((kind) => (
+            <SelectItem key={kind} value={kind}>
+              {`${labels[kind]} · ${counts[kind]}`}
+            </SelectItem>
+          ))}
+        </SelectPopup>
+      </Select>
+      {selected ? (
+        <>
+          <SelectedThreadArtifact
+            key={selected.key}
+            artifact={selected.artifact}
+            environmentId={environmentId}
+            onAttachFiles={onAttachFiles}
+          />
+          <ScrollArea scrollFade className="max-h-64 min-h-0" aria-label={gt("Thread artifacts")}>
+            <ul className="space-y-0.5 pe-1">
+              {filtered.map(({ artifact, key }) => {
+                const Icon = groupIcons[artifact.kind];
+                return (
+                  <li key={key}>
+                    <button
+                      type="button"
+                      aria-pressed={selected.key === key}
+                      className={cn(
+                        "flex min-h-8 w-full min-w-0 items-center gap-2 rounded-md px-2 text-start text-xs hover:bg-muted/50 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
+                        selected.key === key && "bg-muted font-medium",
+                      )}
+                      onClick={() => setSelectedKey(key)}
                     >
                       <Icon className="size-3.5 shrink-0 text-muted-foreground" aria-hidden />
-                      <span title={artifact.name} className="min-w-0 flex-1 truncate text-xs">
-                        {artifact.name}
-                      </span>
-                      <AttachArtifactButton
-                        environmentId={environmentId}
-                        artifact={artifact}
-                        onAttachFiles={onAttachFiles}
-                      />
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            );
-          })}
-        </div>
-      </ScrollArea>
+                      <span className="min-w-0 flex-1 truncate">{artifact.name}</span>
+                      <time
+                        dateTime={new Date(artifact.modifiedAt).toISOString()}
+                        className="shrink-0 tabular-nums text-muted-foreground"
+                      >
+                        {time.format(artifact.modifiedAt)}
+                      </time>
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+          </ScrollArea>
+        </>
+      ) : (
+        <p className="py-2 text-sm text-muted-foreground">{gt("No artifacts of this type.")}</p>
+      )}
     </section>
   );
 }
 
-function FeaturedThreadArtifact({
+function SelectedThreadArtifact({
   artifact,
   environmentId,
   onAttachFiles,
@@ -142,15 +227,25 @@ function FeaturedThreadArtifact({
 }) {
   const gt = useGT();
   const locale = useLocale();
-  const previewResource: AssetResource =
-    artifact.resource._tag === "attachment"
-      ? { ...artifact.resource, disposition: "inline" }
-      : artifact.resource;
+  const canReveal = useEnvironmentScope(environmentId, AuthOrchestrationOperateScope);
+  const reveal = useAtomCommand(shellEnvironment.openInEditor, "reveal artifact");
+  const resource = artifact.resource;
+  const fileResource = resource._tag === "media-file" ? resource : null;
+  const attachment =
+    resource._tag === "attachment" ? { ...resource, disposition: "inline" as const } : null;
+  const media = artifact.kind === "image" || artifact.kind === "video";
   const preview = useAssetUrlState(
     environmentId,
-    previewResource,
+    media ? (attachment ?? fileResource) : null,
     `${artifact.modifiedAt}:${artifact.sizeBytes}`,
   );
+  const [failedUrl, setFailedUrl] = useState<string | null>(null);
+  const fileAsset = attachment
+    ? { environmentId, attachmentId: attachment.attachmentId }
+    : fileResource
+      ? { environmentId, resource: fileResource }
+      : undefined;
+  const Icon = groupIcons[artifact.kind];
   const previewLabel = gt("Preview {name}", { name: artifact.name });
   const date = new Intl.DateTimeFormat(locale, {
     month: "short",
@@ -162,48 +257,90 @@ function FeaturedThreadArtifact({
   return (
     <article
       className="overflow-hidden rounded-xl border border-border/70 bg-card"
-      aria-label={gt("Latest image")}
+      aria-label={previewLabel}
     >
-      <div className="grid aspect-16/10 place-items-center overflow-hidden bg-muted/50">
-        {preview._tag === "Success" ? (
-          <a
-            className="block size-full min-h-0 cursor-zoom-in outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
-            href={preview.url}
-            target="_blank"
-            rel="noreferrer"
-            aria-label={previewLabel}
-          >
-            <img
-              src={preview.url}
-              alt={artifact.name}
-              decoding="async"
-              className="size-full object-cover"
-            />
-          </a>
-        ) : (
-          <span
-            role="status"
-            aria-label={preview._tag === "Loading" ? gt("Loading image") : gt("Preview unavailable")}
-          >
-            <ImageIcon className="size-5 text-muted-foreground" aria-hidden />
-          </span>
-        )}
-      </div>
-      <div className="flex min-w-0 flex-wrap items-center justify-between gap-2 p-2.5">
+      {media ? (
+        <div className="grid aspect-16/10 place-items-center overflow-hidden bg-muted/50">
+          {preview._tag === "Success" && failedUrl !== preview.url ? (
+            artifact.kind === "image" ? (
+              <a
+                className="block size-full min-h-0 cursor-zoom-in outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+                href={preview.url}
+                target="_blank"
+                rel="noreferrer"
+                aria-label={gt("Open image")}
+              >
+                <img
+                  src={preview.url}
+                  alt={artifact.name}
+                  decoding="async"
+                  className="size-full object-contain"
+                  onError={() => setFailedUrl(preview.url)}
+                />
+              </a>
+            ) : (
+              <video
+                controls
+                playsInline
+                preload="metadata"
+                src={preview.url}
+                aria-label={artifact.name}
+                className="size-full"
+                onError={() => setFailedUrl(preview.url)}
+              />
+            )
+          ) : (
+            <span
+              role="status"
+              aria-label={
+                preview._tag === "Loading" ? gt("Loading file preview…") : gt("Preview unavailable")
+              }
+            >
+              <Icon className="size-5 text-muted-foreground" aria-hidden />
+            </span>
+          )}
+        </div>
+      ) : fileAsset ? (
+        <div className="flex aspect-16/10 min-h-0 overflow-hidden border-b border-border/70">
+          <AttachmentFilePreview
+            key={artifact.modifiedAt}
+            name={artifact.name}
+            mimeType={artifact.mimeType}
+            sizeBytes={artifact.sizeBytes}
+            asset={fileAsset}
+          />
+        </div>
+      ) : null}
+      <div className="space-y-2 p-2.5">
         <div className="min-w-0 flex-1">
-          <h3 className="truncate text-sm font-medium" title={artifact.name}>
-            {artifact.name}
-          </h3>
+          <h3 className="text-sm font-medium [overflow-wrap:anywhere]">{artifact.name}</h3>
           <p className="mt-0.5 truncate text-xs text-muted-foreground">
             {formatBytes(artifact.sizeBytes)} · {date}
           </p>
         </div>
-        <AttachArtifactButton
-          environmentId={environmentId}
-          artifact={artifact}
-          onAttachFiles={onAttachFiles}
-          featured
-        />
+        <div className="flex flex-wrap items-center gap-2">
+          <AttachArtifactButton
+            environmentId={environmentId}
+            artifact={artifact}
+            onAttachFiles={onAttachFiles}
+          />
+          {canReveal && fileResource ? (
+            <Button
+              type="button"
+              size="xs"
+              variant="outline"
+              onClick={() =>
+                void reveal({
+                  environmentId,
+                  input: { cwd: fileResource.path, editor: "file-manager", reveal: true },
+                })
+              }
+            >
+              <FolderOpenIcon aria-hidden />
+              {gt("Open file location")}
+            </Button>
+          ) : null}
+        </div>
       </div>
     </article>
   );
@@ -213,12 +350,10 @@ function AttachArtifactButton({
   environmentId,
   artifact,
   onAttachFiles,
-  featured = false,
 }: {
   environmentId: EnvironmentId;
   artifact: ThreadArtifact;
   onAttachFiles: (files: File[]) => void;
-  featured?: boolean;
 }) {
   const gt = useGT();
   const controllerRef = useRef<AbortController | null>(null);
@@ -265,8 +400,8 @@ function AttachArtifactButton({
     <div className="shrink-0">
       <Button
         type="button"
-        size={featured ? "xs" : "icon-xs"}
-        variant={featured ? "outline" : "ghost-muted"}
+        size="xs"
+        variant="default"
         aria-label={attachLabel}
         title={status === "error" ? gt("Could not attach this artifact.") : attachLabel}
         aria-busy={status === "loading"}
@@ -274,10 +409,12 @@ function AttachArtifactButton({
         onClick={() => void attach()}
       >
         <PaperclipIcon aria-hidden />
-        {featured ? gt("Attach") : null}
+        {gt("Attach")}
       </Button>
       {status === "error" ? (
-        <span role="alert" className="sr-only">{gt("Could not attach this artifact.")}</span>
+        <span role="alert" className="sr-only">
+          {gt("Could not attach this artifact.")}
+        </span>
       ) : null}
     </div>
   );
