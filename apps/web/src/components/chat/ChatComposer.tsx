@@ -128,6 +128,10 @@ import { ComposerSurface } from "./ComposerSurface";
 import { CollapsedComposerPromptPreview } from "./CollapsedComposerPromptPreview";
 import { ComposerBannerStack, type ComposerBannerStackItem } from "./ComposerBannerStack";
 import {
+  ComposerThreadDashboard,
+  type ComposerThreadDashboardData,
+} from "./ComposerThreadDashboard";
+import {
   attachmentsToReleaseOnUploadCapabilityLoss,
   composerOtherFilesForPresentation,
   fileAttachmentCapabilityBlockReason,
@@ -391,6 +395,7 @@ export interface ChatComposerProps {
   isPreparingWorktree: boolean;
   canSteer: boolean;
   bannerItems: readonly ComposerBannerStackItem[];
+  threadDashboard?: ComposerThreadDashboardData | null;
   resumeCompactionTokens: number | null;
   keepFullHistory: boolean;
   onToggleKeepFullHistory: () => void;
@@ -3478,6 +3483,12 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       <ComposerBanner.Dock>
         <ComposerBanner.Column>
           <ComposerBannerStack items={shelfItems} />
+          {!hasBlockingComposerTopDrawer && props.threadDashboard ? (
+            <ComposerThreadDashboard
+              key={props.threadDashboard.threadKey}
+              {...props.threadDashboard}
+            />
+          ) : null}
           {showComposerTopDrawer ? (
             <ComposerBanner.Attachment>
               <ComposerBanner.Root data-chat-composer-top-drawer="true" variant="info">

@@ -17,6 +17,7 @@ import { formatDuration } from "@t3tools/shared/orchestrationTimingCopy";
 import * as DateTime from "effect/DateTime";
 import { msg, T, Var } from "gt-react";
 import {
+  ActivityIcon,
   CircleDashedIcon,
   CircleStopIcon,
   GitBranchIcon,
@@ -38,13 +39,21 @@ import type { ThreadNowItem } from "./ThreadNow";
 
 export function extensionStatusBannerItem(
   statuses: NonNullable<OrchestrationV2ProviderSession["extensionStatuses"]>,
+  showOmpDashboard: boolean,
 ): ComposerBannerStackItem | null {
-  if (statuses.length === 0) return null;
+  const visible = showOmpDashboard
+    ? statuses.filter(
+        ({ key, text }) =>
+          !(key === "magic-context" && /^mc: [\d.]+[KMB]?(?: \(\d+%\))? · idle$/i.test(text)) &&
+          !(key === "bansos" && /^(?:中继\s*[:：]\s*关闭|relay\s*:?\s*off)$/i.test(text)),
+      )
+    : statuses;
+  if (visible.length === 0) return null;
   return {
-    id: "pi-extension-status",
+    id: "extension-status",
     variant: "default",
-    icon: <span>▸</span>,
-    title: <output>{`Pi · ${statuses.map((status) => status.text).join(" · ")}`}</output>,
+    icon: <ActivityIcon />,
+    title: <output>{visible.map((status) => status.text).join(" · ")}</output>,
   };
 }
 

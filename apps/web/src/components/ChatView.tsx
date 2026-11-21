@@ -394,6 +394,7 @@ import { ChatTerminalDrawers } from "./chat/ChatTerminalDrawers";
 import { ChatRightPanel } from "./chat/ChatRightPanel";
 import { useDraftEnvironmentRouting } from "./chat/useDraftEnvironmentRouting";
 import { branchMismatchBannerItem, extensionStatusBannerItem } from "./chat/ThreadActivityBanners";
+import { selectOmpTodoSteps } from "./chat/ComposerThreadDashboard";
 import { ThreadNow } from "./chat/ThreadNow";
 import type { ThreadStructure } from "@t3tools/client-runtime/state/shell";
 import { useDelayedStatus } from "../hooks/useDelayedStatus";
@@ -2687,6 +2688,14 @@ export default function ChatView(props: ChatViewProps) {
       : null,
     messages,
   );
+  const selectedInstanceId = serverProjection?.thread.modelSelection.instanceId;
+  const selectedDriver =
+    activeProviderThread?.providerInstanceId === selectedInstanceId
+      ? activeProviderThread?.driver
+      : providerStatuses.find((provider) => provider.instanceId === selectedInstanceId)?.driver;
+  const showOmpDashboard = serverProjection !== null && selectedDriver === "omp";
+  const ompTodoSteps = showOmpDashboard ? selectOmpTodoSteps(serverProjection) : null;
+
   const composerBannerItems = (() => {
     const fallbackSelection = draftFallback?.selection;
     const defaultSelection =
@@ -2739,6 +2748,7 @@ export default function ChatView(props: ChatViewProps) {
     const limitRecoveryItems = limitRecoveryBanner === null ? [] : [limitRecoveryBanner];
     const extensionStatusBanner = extensionStatusBannerItem(
       deriveProviderExtensionStatuses(serverProjection),
+      showOmpDashboard,
     );
     const extensionStatusItems = extensionStatusBanner === null ? [] : [extensionStatusBanner];
     const usageLimitsItems = usageLimitsBanner === null ? [] : [usageLimitsBanner];
@@ -3809,6 +3819,18 @@ export default function ChatView(props: ChatViewProps) {
                                   isDraftHeroState || composerBannerItems.length === 0
                                     ? EMPTY_COMPOSER_BANNER_ITEMS
                                     : composerBannerItems
+                                }
+                                threadDashboard={
+                                  showOmpDashboard && !isDraftHeroState
+                                    ? {
+                                        threadKey: routeThreadKey,
+                                        usage:
+                                          activeProviderThread?.driver === "omp"
+                                            ? activeContextWindow
+                                            : null,
+                                        steps: ompTodoSteps,
+                                      }
+                                    : null
                                 }
                                 resumeCompactionTokens={resumeCompactionTokens}
                                 keepFullHistory={keepFullHistory}
