@@ -1841,6 +1841,12 @@ const OrchestrationV2LinkRequestFields = {
   failure: Schema.optional(Schema.String),
 } as const;
 
+const AssistantTextStreamTiming = Schema.Struct({
+  firstDeltaAtMs: NonNegativeInt,
+  durationMs: NonNegativeInt,
+  charactersAfterFirstDelta: NonNegativeInt,
+});
+
 export const OrchestrationV2TurnItem = Schema.Union([
   Schema.Struct({
     ...OrchestrationV2TurnItemBaseFields,
@@ -1875,6 +1881,7 @@ export const OrchestrationV2TurnItem = Schema.Union([
     textOmitted: DedupedBodyMarker,
     attachments: Schema.optional(Schema.Array(ChatAttachment)),
     streaming: Schema.Boolean,
+    textStreamTiming: Schema.optional(AssistantTextStreamTiming),
   }),
   Schema.Struct({
     ...OrchestrationV2TurnItemBaseFields,
@@ -2769,6 +2776,7 @@ export const OrchestrationV2TurnItemJson = Schema.Union([
     text: Schema.String,
     attachments: Schema.optional(Schema.Array(ChatAttachment)),
     streaming: Schema.Boolean,
+    textStreamTiming: Schema.optional(AssistantTextStreamTiming),
   }),
   Schema.Struct({
     ...OrchestrationV2TurnItemJsonBaseFields,

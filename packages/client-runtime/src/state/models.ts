@@ -45,7 +45,10 @@ type StreamedProjectionTurnItem = Extract<
 /** A turn item without the fields that move while it streams. */
 export type ThreadStructureTurnItem =
   | Exclude<ProjectionTurnItem, StreamedProjectionTurnItem>
-  | Omit<Extract<ProjectionTurnItem, { readonly type: "assistant_message" }>, "text" | "updatedAt">
+  | Omit<
+      Extract<ProjectionTurnItem, { readonly type: "assistant_message" }>,
+      "text" | "updatedAt" | "textStreamTiming"
+    >
   | Omit<Extract<ProjectionTurnItem, { readonly type: "reasoning" }>, "text" | "updatedAt">;
 
 export type ThreadStructureVisibleTurnItem = Omit<

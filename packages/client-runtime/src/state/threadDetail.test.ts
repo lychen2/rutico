@@ -185,11 +185,21 @@ describe("quietThreadAtom", () => {
     };
   }
 
-  it("keeps the same value through streamed text", () => {
-    const thread = setup(withItem(assistant));
+  it("keeps the same value through streamed text and its timing samples", () => {
+    const firstSample = { firstDeltaAtMs: 100, durationMs: 0, charactersAfterFirstDelta: 0 };
+    using thread = setup(withItem({ ...assistant, text: "Hello", textStreamTiming: firstSample }));
     const first = thread.read();
-    thread.push(withItem({ ...assistant, text: "Hello", updatedAt: later }, later));
-    thread.push(withItem({ ...assistant, text: "Hello there", updatedAt: later }, later));
+    thread.push(
+      withItem(
+        {
+          ...assistant,
+          text: "Hello there",
+          updatedAt: later,
+          textStreamTiming: { ...firstSample, durationMs: 100, charactersAfterFirstDelta: 6 },
+        },
+        later,
+      ),
+    );
     expect(thread.read()).toBe(first);
   });
 

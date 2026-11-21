@@ -52,6 +52,7 @@ import { AgentScope } from "@t3tools/shared/AgentScope";
 import { toolOutputImages, compactDynamicToolOutput } from "@t3tools/shared/toolOutput";
 import {
   makePiAdapterV2,
+  OMP_PROVIDER,
   PiAdapterV2Driver,
   PI_PROVIDER,
   type PiAdapterV2Options,
@@ -579,6 +580,12 @@ const openRuntime = Effect.fnUntraced(function* (
     runtimePolicy,
     ...(initialNativeThreadId === undefined ? {} : { initialNativeThreadId }),
   });
+  return { adapter, ...(yield* captureRuntime(runtime)) };
+});
+
+const captureRuntime = Effect.fnUntraced(function* (
+  runtime: ProviderAdapter.ProviderAdapterV2SessionRuntime,
+) {
   const emitted = yield* Queue.unbounded<ProviderAdapter.ProviderAdapterV2Event>();
   const todoProjectionEvents: Array<ProviderAdapter.ProviderAdapterV2Event> = [];
   const dynamicToolUpdates: Array<{
@@ -611,7 +618,7 @@ const openRuntime = Effect.fnUntraced(function* (
         if (predicate(event)) return event;
       }
     });
-  return { adapter, runtime, takeEvent, todoProjectionEvents, dynamicToolUpdates };
+  return { runtime, takeEvent, todoProjectionEvents, dynamicToolUpdates };
 });
 
 const makeAppThread = Effect.fnUntraced(function* (model: string, threadId = THREAD_ID) {
@@ -6912,6 +6919,108 @@ describe("PiAdapterV2", () => {
         cacheCreationTokens: 10,
         reasoningTokens: 30,
       });
+    }).pipe(Effect.scoped, Effect.provide(layerTest)),
+  );
+
+  it.effect("measures OMP text at arrival, independently of flush and settlement", () =>
+    Effect.gen(function* () {
+      const fake = yield* makeFakePi;
+      yield* fake.emit({ type: "ready" });
+      const adapter = yield* makePiAdapterV2({
+        driverKind: OMP_PROVIDER,
+        instanceId: PI_INSTANCE_ID,
+        settings: { enabled: true, binaryPath: "omp", launchArgs: "", customModels: [] },
+        environment: {},
+      }).pipe(Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, fake.spawner));
+      const runtime = yield* adapter.openSession({
+        threadId: THREAD_ID,
+        providerSessionId: SESSION_ID,
+        modelSelection: modelSelection("default"),
+        runtimePolicy,
+      });
+      const { takeEvent } = yield* captureRuntime(runtime);
+      const providerThread = yield* runtime.ensureThread({
+        threadId: THREAD_ID,
+        modelSelection: modelSelection("default"),
+        runtimePolicy,
+      });
+      yield* startTurn(runtime, providerThread);
+      yield* fake.takeRequest("prompt");
+      yield* fake.emit({ type: "agent_start" });
+      yield* fake.emit({ type: "message_start", message: { role: "assistant" } });
+      const update = (contentIndex: number, event: Record<string, unknown>) =>
+        fake.emit({ type: "message_update", assistantMessageEvent: { contentIndex, ...event } });
+      const takeText = Effect.fnUntraced(function* (streaming: boolean) {
+        const event = yield* takeEvent(
+          (event) =>
+            event.type === "turn_item.updated" &&
+            event.turnItem.type === "assistant_message" &&
+            event.turnItem.streaming === streaming &&
+            event.turnItem.text.length > 0,
+        );
+        if (event.type !== "turn_item.updated" || event.turnItem.type !== "assistant_message") {
+          return assert.fail("Expected assistant text");
+        }
+        return event.turnItem;
+      });
+      const processed = Effect.fnUntraced(function* (statusText: string) {
+        yield* fake.emit({
+          type: "extension_ui_request",
+          method: "setStatus",
+          statusKey: "timing",
+          statusText,
+        });
+        yield* takeEvent(
+          (event) =>
+            event.type === "provider_session.updated" &&
+            event.providerSession.extensionStatuses?.some(
+              (status) => status.text === statusText,
+            ) === true,
+        );
+      });
+
+      yield* update(0, { type: "thinking_delta", delta: "Not visible text" });
+      yield* update(0, { type: "thinking_end" });
+      yield* TestClock.adjust(1000);
+      yield* update(1, { type: "text_delta", delta: "" });
+      yield* TestClock.adjust(1000);
+      const firstDeltaAtMs = DateTime.toEpochMillis(yield* DateTime.now);
+      yield* update(1, { type: "text_delta", delta: "first block" });
+      yield* processed("first delta processed");
+      yield* TestClock.adjust(100);
+      assert.deepEqual((yield* takeText(true)).textStreamTiming, {
+        firstDeltaAtMs,
+        durationMs: 0,
+        charactersAfterFirstDelta: 0,
+      });
+      yield* update(1, { type: "text_delta", delta: "中😀" });
+      yield* processed("second delta processed");
+      yield* TestClock.adjust(200);
+      const live = yield* takeText(true);
+      assert.deepEqual(live.textStreamTiming, {
+        firstDeltaAtMs,
+        durationMs: 100,
+        charactersAfterFirstDelta: 2,
+      });
+      yield* update(1, { type: "text_delta", delta: "" });
+      yield* TestClock.adjust(2000);
+      yield* update(1, { type: "text_end", content: "first block中😀 final-only text" });
+      const completed = yield* takeText(false);
+      assert.deepEqual(completed.textStreamTiming, live.textStreamTiming);
+
+      yield* TestClock.adjust(5000);
+      const secondDeltaAtMs = DateTime.toEpochMillis(yield* DateTime.now);
+      yield* update(2, { type: "text_delta", delta: "next block" });
+      yield* update(2, { type: "text_delta", delta: "same timestamp" });
+      fake.queueState({ ...recordedIdleState(FAKE_SESSION_FILE), isSettled: true });
+      yield* fake.emit({ type: "session_settled" });
+      assert.deepEqual((yield* takeText(false)).textStreamTiming, {
+        firstDeltaAtMs: secondDeltaAtMs,
+        durationMs: 0,
+        charactersAfterFirstDelta: 14,
+      });
+      const terminal = yield* takeEvent((event) => event.type === "turn.terminal");
+      assert.isTrue(terminal.type === "turn.terminal" && terminal.status === "completed");
     }).pipe(Effect.scoped, Effect.provide(layerTest)),
   );
 

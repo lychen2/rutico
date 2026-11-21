@@ -70,6 +70,7 @@ import {
   findReportedPiModel,
   makePiRpcConnection,
   resolvePiModelSlug,
+  TextDeltaReceivedAt,
   piRecordField as recordField,
   piRecordNumber as recordNumber,
   piRecordString as recordString,
@@ -452,6 +453,12 @@ interface PiStreamItemState {
   flushScheduled: boolean;
   published: boolean;
   readonly startedAt: DateTime.Utc;
+  textTiming?: {
+    readonly firstDeltaAtMs: number;
+    segmentStartedAtMs: number | null;
+    durationMs: number;
+    charactersAfterFirstDelta: number;
+  };
 }
 
 type PiCompactionStatus = "running" | "completed" | "failed" | "cancelled";
@@ -1404,6 +1411,15 @@ export const makePiAdapterV2 = Effect.fn("makePiAdapterV2")(function* (
                 messageId,
                 text: item.text,
                 streaming,
+                ...(item.textTiming === undefined
+                  ? {}
+                  : {
+                      textStreamTiming: {
+                        firstDeltaAtMs: item.textTiming.firstDeltaAtMs,
+                        durationMs: item.textTiming.durationMs,
+                        charactersAfterFirstDelta: item.textTiming.charactersAfterFirstDelta,
+                      },
+                    }),
               },
             });
             yield* emit({
@@ -2725,7 +2741,14 @@ export const makePiAdapterV2 = Effect.fn("makePiAdapterV2")(function* (
             if (deltaType === "text_start" || deltaType === "thinking_start") {
               // A provider that reconnects mid-block starts it again; its earlier text is abandoned.
               const restarted = turn.streamItems.get(streamItemId(turn, contentIndex));
-              if (restarted !== undefined && !restarted.completed) restarted.text = "";
+              if (restarted !== undefined && !restarted.completed) {
+                restarted.text = "";
+                if (restarted.textTiming !== undefined) {
+                  restarted.textTiming.segmentStartedAtMs = null;
+                  restarted.textTiming.durationMs = 0;
+                  restarted.textTiming.charactersAfterFirstDelta = 0;
+                }
+              }
               return;
             }
             if (deltaType === "text_delta" || deltaType === "thinking_delta") {
@@ -2734,7 +2757,26 @@ export const makePiAdapterV2 = Effect.fn("makePiAdapterV2")(function* (
                 deltaType === "text_delta" ? "assistant_message" : "reasoning",
                 contentIndex,
               );
-              item.text += recordString(delta, "delta") ?? "";
+              const text = recordString(delta, "delta") ?? "";
+              item.text += text;
+              const receivedAt = event[TextDeltaReceivedAt];
+              if (deltaType === "text_delta" && receivedAt !== undefined && text.length > 0) {
+                const timing = (item.textTiming ??= {
+                  firstDeltaAtMs: receivedAt,
+                  segmentStartedAtMs: null,
+                  durationMs: 0,
+                  charactersAfterFirstDelta: 0,
+                });
+                if (timing.segmentStartedAtMs === null) {
+                  timing.segmentStartedAtMs = receivedAt;
+                } else {
+                  for (const _character of text) timing.charactersAfterFirstDelta++;
+                  timing.durationMs = Math.max(
+                    timing.durationMs,
+                    receivedAt - timing.segmentStartedAtMs,
+                  );
+                }
+              }
               yield* scheduleStreamFlush(turn, item);
               return;
             }

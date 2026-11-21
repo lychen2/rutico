@@ -42,7 +42,8 @@ export class PiRpcTimeoutError extends Schema.TaggedError<PiRpcTimeoutError>()(
   }
 }
 
-export type PiRpcRecord = Record<string, unknown>;
+export const TextDeltaReceivedAt = Symbol("TextDeltaReceivedAt");
+export type PiRpcRecord = Record<string, unknown> & { [TextDeltaReceivedAt]?: number };
 
 export function piRecordField(input: unknown, key: string): unknown {
   return Predicate.isObject(input) ? input[key] : undefined;
@@ -307,7 +308,7 @@ export const makePiRpcConnection = Effect.fnUntraced(function* (options: PiRpcSp
 
   const routeRecord =
     /* Protocol records and writes include streaming deltas; avoid a span per record. */
-    Effect.fnUntraced(function* (record: PiRpcRecord) {
+    Effect.fnUntraced(function* (record: PiRpcRecord, receivedAt?: number) {
       if (ready !== undefined && record["type"] === "ready") {
         yield* Deferred.succeed(ready, undefined);
         return;
@@ -330,6 +331,13 @@ export const makePiRpcConnection = Effect.fnUntraced(function* (options: PiRpcSp
           }
           return;
         }
+      }
+      if (
+        receivedAt !== undefined &&
+        record["type"] === "message_update" &&
+        piRecordString(record["assistantMessageEvent"], "type") === "text_delta"
+      ) {
+        record[TextDeltaReceivedAt] = receivedAt;
       }
       yield* Queue.offer(events, record);
     });
@@ -355,6 +363,8 @@ export const makePiRpcConnection = Effect.fnUntraced(function* (options: PiRpcSp
       Stream.runForEach((chunk) =>
         Effect.gen(function* () {
           const { lines, droppedLengths } = frame(chunk);
+          const receivedAt =
+            options.omp && lines.length > 0 ? yield* Clock.currentTimeMillis : undefined;
           yield* logDroppedPiRecords(droppedLengths);
           for (const line of lines) {
             const record = parsePiRecord(line);
@@ -364,7 +374,7 @@ export const makePiRpcConnection = Effect.fnUntraced(function* (options: PiRpcSp
               });
               continue;
             }
-            yield* routeRecord(record);
+            yield* routeRecord(record, receivedAt);
           }
         }),
       ),
@@ -373,7 +383,9 @@ export const makePiRpcConnection = Effect.fnUntraced(function* (options: PiRpcSp
     yield* logDroppedPiRecords(flushed.droppedLengths);
     for (const line of flushed.lines) {
       const trailing = parsePiRecord(line);
-      if (trailing !== undefined) yield* routeRecord(trailing);
+      if (trailing !== undefined) {
+        yield* routeRecord(trailing, options.omp ? yield* Clock.currentTimeMillis : undefined);
+      }
     }
   }).pipe(
     Effect.matchCauseEffect({

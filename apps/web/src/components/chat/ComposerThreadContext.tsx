@@ -31,8 +31,11 @@ const runStatusLabels = {
 import type { currentRoundActivity } from "./currentRoundActivity";
 import "./composerSessionOverview.css";
 
-const noOutputCountAtom = Atom.make<number | null>(null);
-
+const noTextTimingAtom = Atom.make<{
+  firstAtMs: number;
+  durationMs: number;
+  characters: number;
+} | null>(null);
 export function ComposerThreadContext({
   usage,
   run,
@@ -84,36 +87,44 @@ export function ComposerThreadContext({
   const reasoningTokens = modelUsage?.reasoningTokens;
   const total = input !== undefined && output !== undefined ? input + output : null;
   const runId = run?.id;
-  const useTextCount = output === undefined && !turnUsage?.localCommand && startMs !== null;
-  const outputCountAtom =
-    useTextCount && runId !== undefined && turnItemsAtom !== undefined
+  const textTimingAtom =
+    runId !== undefined && turnItemsAtom !== undefined
       ? Atom.map(turnItemsAtom, (items) => {
+          let firstAtMs = Infinity;
+          let durationMs = 0;
           let characters = 0;
           for (const item of items) {
             if (
               item.type !== "assistant_message" ||
               item.runId !== runId ||
               item.parentItemId !== null ||
-              (providerTurnId !== undefined && item.providerTurnId !== providerTurnId)
+              item.providerTurnId !== providerTurnId ||
+              item.textStreamTiming === undefined
             ) {
               continue;
             }
-            for (const _character of item.text) characters++;
+            const sample = item.textStreamTiming;
+            firstAtMs = Math.min(firstAtMs, sample.firstDeltaAtMs);
+            if (sample.durationMs > 0) {
+              durationMs += sample.durationMs;
+              characters += sample.charactersAfterFirstDelta;
+            }
           }
-          return characters > 0 ? characters : null;
+          return firstAtMs === Infinity ? null : { firstAtMs, durationMs, characters };
         })
-      : noOutputCountAtom;
-  const characters = useAtomValue(outputCountAtom);
-  const outputCount = output ?? characters;
-  const liveSpeed = running && endMs === null && startMs !== null && outputCount !== null;
-  function formatSpeed(sampleEndMs: number) {
-    if (startMs === null || outputCount === null || sampleEndMs <= startMs) return null;
-    const rate = ((outputCount * 1000) / (sampleEndMs - startMs)).toLocaleString(locale, {
-      maximumFractionDigits: 1,
-    });
-    return output === undefined ? gt("{rate} chars/s", { rate }) : gt("{rate} tok/s", { rate });
-  }
-  const speed = endMs === null ? null : formatSpeed(endMs);
+      : noTextTimingAtom;
+  const textTiming = useAtomValue(textTimingAtom);
+  const firstTextMs =
+    startMs === null || textTiming === null ? null : textTiming.firstAtMs - startMs;
+  const firstText = firstTextMs === null || firstTextMs < 0 ? null : formatDuration(firstTextMs);
+  const speed =
+    textTiming !== null && textTiming.durationMs > 0 && textTiming.characters > 0
+      ? gt("{rate} chars/s", {
+          rate: ((textTiming.characters * 1000) / textTiming.durationMs).toLocaleString(locale, {
+            maximumFractionDigits: 1,
+          }),
+        })
+      : null;
   const cachePercent =
     input !== undefined && input > 0 && cacheRead !== undefined
       ? Math.round((cacheRead / input) * 100)
@@ -153,16 +164,7 @@ export function ComposerThreadContext({
                 {gt("{steps, plural, one {# step} other {# steps}}", { steps: stepCount })}
               </span>
             ) : null}
-            {speed !== null ? (
-              <span>· {speed}</span>
-            ) : liveSpeed ? (
-              <span
-                ref={tickTextContent((nowMs) => {
-                  const currentSpeed = formatSpeed(nowMs);
-                  return currentSpeed === null ? "" : `· ${currentSpeed}`;
-                }, true)}
-              />
-            ) : null}
+            {speed !== null && <span>· {speed}</span>}
           </span>
           {total !== null ? (
             <span className="border-s ps-2">
@@ -204,21 +206,12 @@ export function ComposerThreadContext({
                   )}
                 </div>
                 <div className="grid gap-1">
-                  <span className="text-muted-foreground">{gt("Speed")}</span>
-                  {liveSpeed ? (
-                    <strong
-                      className="text-base"
-                      ref={tickTextContent(
-                        (nowMs) => formatSpeed(nowMs) ?? gt("Not reported"),
-                        true,
-                      )}
-                    />
-                  ) : (
-                    <strong className="text-base">{speed ?? gt("Not reported")}</strong>
-                  )}
-                  <span className="text-muted-foreground">
-                    {gt("End-to-end average, including tools and waiting.")}
-                  </span>
+                  <span className="text-muted-foreground">{gt("Text speed")}</span>
+                  <strong className="text-base">{speed ?? gt("Not reported")}</strong>
+                  <div className="flex gap-1 text-muted-foreground">
+                    <span>{gt("Time to first text")}</span>
+                    <span>{firstText ?? gt("Not reported")}</span>
+                  </div>
                   <div className="flex gap-1 text-muted-foreground">
                     <span>{gt("Duration")}</span>
                     {startMs !== null ? (

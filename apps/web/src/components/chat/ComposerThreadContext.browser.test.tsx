@@ -11,7 +11,7 @@ import {
 } from "@t3tools/contracts";
 import * as DateTime from "effect/DateTime";
 import { Atom, AtomRegistry } from "effect/reactivity";
-import { expect, it, vi } from "vite-plus/test";
+import { expect, it } from "vite-plus/test";
 import { page, userEvent } from "vite-plus/test/browser";
 
 import { act, render } from "../../../test/render";
@@ -126,18 +126,15 @@ it("keeps round token and cache totals separate from the current context window"
   );
 
   const trigger = screen.getByRole("button", { name: /Round 7/ });
-  for (const value of ["2 steps", "· 14.3 tok/s", "1,200 tokens", "Cache 75%"]) {
+  for (const value of ["2 steps", "1,200 tokens", "Cache 75%"]) {
     await expect.element(trigger.getByText(value, { exact: true })).toBeVisible();
   }
   await userEvent.click(trigger);
   const details = page.getByRole("dialog", { name: "Overview" });
   await expect.element(details.getByText("2 · Σ 3s")).toBeVisible();
   await expect.element(details.getByText("30 tokens", { exact: true })).toBeVisible();
-  await expect.element(details.getByText("14.3 tok/s", { exact: true })).toBeVisible();
+  await expect.element(details.getByText("Not reported", { exact: true }).first()).toBeVisible();
   await expect.element(details.getByText("14s")).toBeVisible();
-  await expect
-    .element(details.getByText("End-to-end average, including tools and waiting."))
-    .toBeVisible();
   await expect.element(details.getByText("Completed")).toBeVisible();
   await expect.element(details.getByText("42,000 of 200,000 tokens · 21%")).toBeVisible();
   await expect.element(details.getByText("Round token usage")).toBeVisible();
@@ -167,15 +164,13 @@ it("keeps round token and cache totals separate from the current context window"
     />,
   );
   const historyTrigger = screen.getByRole("button", { name: /Round 7/ });
-  await expect.element(historyTrigger.getByText("· 2 chars/s", { exact: true })).toBeVisible();
+  await expect.element(historyTrigger.getByText(/chars\/s|tok\/s/)).not.toBeInTheDocument();
   await userEvent.click(historyTrigger);
-  await expect.element(details.getByText("2 chars/s", { exact: true })).toBeVisible();
   await expect.element(details.getByText("Reasoning", { exact: true })).toBeVisible();
   await expect.element(details.getByText("1 · Σ 9s", { exact: true })).toBeVisible();
   await expect.element(details.getByText("1 · Σ 3s", { exact: true })).toBeVisible();
 
   const registry = AtomRegistry.make();
-  using _now = vi.spyOn(Date, "now").mockReturnValue(DateTime.toEpochMillis(run.completedAt));
   const liveRun = { ...run, status: "running", completedAt: null } as const;
   registry.set(turnItemsAtom, []);
   await screen.rerender(
@@ -194,9 +189,86 @@ it("keeps round token and cache totals separate from the current context window"
   const liveTrigger = screen.getByRole("button", { name: /Round 7/ });
   await userEvent.click(liveTrigger);
   await expect.element(details.getByText("Not reported").first()).toBeVisible();
-  await act(() => registry.set(turnItemsAtom, [{ ...reply, streaming: true }]));
-  await expect.element(liveTrigger.getByText("· 2 chars/s", { exact: true })).toBeVisible();
-  await expect.element(details.getByText("2 chars/s", { exact: true })).toBeVisible();
+  const firstDeltaAtMs = DateTime.toEpochMillis(startedAt) + 2500;
+  const firstBlock = {
+    ...reply,
+    streaming: true,
+    textStreamTiming: { firstDeltaAtMs, durationMs: 0, charactersAfterFirstDelta: 0 },
+  };
+  await act(() => registry.set(turnItemsAtom, [firstBlock]));
+  await expect.element(details.getByText("Time to first text")).toBeVisible();
+  await expect.element(details.getByText("2.5s", { exact: true })).toBeVisible();
+  await expect.element(liveTrigger.getByText(/chars\/s|tok\/s/)).not.toBeInTheDocument();
+
+  const firstMeasuredBlock = {
+    ...firstBlock,
+    streaming: false,
+    textStreamTiming: {
+      ...firstBlock.textStreamTiming,
+      durationMs: 500,
+      charactersAfterFirstDelta: 10,
+    },
+  };
+  const secondMeasuredBlock = {
+    ...reply,
+    id: TurnItemId.make("second-block"),
+    streaming: true,
+    textStreamTiming: {
+      firstDeltaAtMs: firstDeltaAtMs + 4500,
+      durationMs: 1000,
+      charactersAfterFirstDelta: 5,
+    },
+  };
+  await act(() =>
+    registry.set(turnItemsAtom, [
+      firstMeasuredBlock,
+      secondMeasuredBlock,
+      {
+        ...firstMeasuredBlock,
+        id: TurnItemId.make("old-attempt"),
+        providerTurnId: ProviderTurnId.make("old"),
+        textStreamTiming: {
+          firstDeltaAtMs: firstDeltaAtMs - 1000,
+          durationMs: 10,
+          charactersAfterFirstDelta: 200,
+        },
+      },
+      {
+        ...firstMeasuredBlock,
+        id: TurnItemId.make("child-body"),
+        parentItemId: tool.id,
+        textStreamTiming: {
+          firstDeltaAtMs: firstDeltaAtMs - 1000,
+          durationMs: 10,
+          charactersAfterFirstDelta: 200,
+        },
+      },
+      {
+        ...reply,
+        id: TurnItemId.make("same-time"),
+        textStreamTiming: { firstDeltaAtMs, durationMs: 0, charactersAfterFirstDelta: 200 },
+      },
+    ]),
+  );
+  await expect.element(liveTrigger.getByText("· 10 chars/s", { exact: true })).toBeVisible();
+  await expect.element(details.getByText("10 chars/s", { exact: true })).toBeVisible();
+  await expect.element(details.getByText("2.5s", { exact: true })).toBeVisible();
+
+  await screen.rerender(
+    <RegistryContext.Provider value={registry}>
+      <ComposerThreadContext
+        key="live"
+        usage={null}
+        run={run}
+        providerTurnId={providerTurnId}
+        turnItemsAtom={turnItemsAtom}
+        stepCount={null}
+        turnUsage={null}
+      />
+    </RegistryContext.Provider>,
+  );
+  await expect.element(details.getByText("10 chars/s", { exact: true })).toBeVisible();
+  await expect.element(details.getByText("14s", { exact: true })).toBeVisible();
 
   await screen.rerender(
     <ComposerThreadContext
