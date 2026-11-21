@@ -7,6 +7,7 @@ import {
 } from "@t3tools/contracts";
 import { RegistryContext } from "@effect/atom-react";
 import { T, useGT } from "gt-react";
+import { ChevronDownIcon } from "lucide-react";
 import {
   createContext,
   memo,
@@ -285,7 +286,7 @@ export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
     className: cn(
       "min-w-0 flex-1 overflow-hidden truncate",
       // Long names such as "Fusion (Claude Opus 5.5 Medium + SWE-2 High)" would push the composer.
-      props.isComposerOwned && "max-w-56",
+      props.isComposerOwned && "max-w-56 font-medium",
     ),
     "data-chat-provider-model-picker-label": "true",
   } as const;
@@ -371,7 +372,7 @@ export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
               openTarget(target);
             }}
             className={cn(
-              "min-w-0 shrink justify-between whitespace-nowrap",
+              "group min-w-0 shrink justify-between whitespace-nowrap",
               props.compact
                 ? "max-w-42 shrink-0"
                 : !props.isComposerOwned && "max-w-48 sm:max-w-56",
@@ -447,6 +448,11 @@ export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
             </Badge>
           ) : null}
         </span>
+        <ChevronDownIcon
+          aria-hidden="true"
+          className="size-3 text-muted-foreground group-aria-expanded:rotate-180"
+          data-composer-control-chevron
+        />
       </PopoverTrigger>
       <PopoverPopup
         {...(props.isComposerOwned ? composerFloatingLayerProps : {})}

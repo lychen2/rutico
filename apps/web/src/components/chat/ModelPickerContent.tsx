@@ -953,6 +953,7 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
     )?.name;
     announce(gt("Model: {name}", { name: name ?? selectedSlug }), "model-picker");
   };
+  const frameHeight = `min(calc(var(--spacing) * ${tallestTabUnits + LIST_CHROME_UNITS} + 1px), calc(var(--spacing) * 86.5))`;
 
   return (
     <TooltipProvider delay={0}>
@@ -961,7 +962,9 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
         ref={pickerContentRef}
         className={cn(
           "relative flex w-screen max-w-90 flex-row overflow-hidden",
-          props.docked ? "max-sm:h-56 max-sm:w-full max-sm:max-w-none" : "max-h-86.5",
+          props.docked
+            ? "max-sm:h-56 max-sm:w-full max-sm:max-w-none sm:max-w-104 md:max-w-112"
+            : "max-h-86.5 sm:max-w-112",
         )}
         // Docked, the popup sets the height; a minimum here would overflow short windows.
         style={
@@ -970,7 +973,13 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
             : isSearching
               ? { height: searchHeight }
               : {
-                  minHeight: `min(calc(var(--spacing) * ${tallestTabUnits + LIST_CHROME_UNITS} + 1px), calc(var(--spacing) * 86.5))`,
+                  minHeight: frameHeight,
+                  height:
+                    tallestTabUnits > 0 &&
+                    providerSetupEntries.length === 0 &&
+                    updateRequiredNotices.length === 0
+                      ? frameHeight
+                      : undefined,
                 }
         }
         data-model-picker-content="true"
@@ -1176,7 +1185,7 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
                     >
                       <div className="min-w-0 flex-1 text-left">
                         <div className="flex min-w-0 items-center gap-2">
-                          <div className="min-w-0 truncate text-sm font-normal leading-snug">
+                          <div className="min-w-0 truncate text-sm font-medium leading-snug">
                             {subProviderSection.name}
                           </div>
                           {unavailable ? (
@@ -1184,13 +1193,19 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
                               {gt("Unavailable", { $context: "backend cannot be used right now" })}
                             </Badge>
                           ) : null}
+                          {!unavailable ? (
+                            <span className="shrink-0 text-xs text-muted-foreground">
+                              {gt("{count, plural, one {{count} model} other {{count} models}}", {
+                                count: subProviderSection.models.length,
+                              })}
+                            </span>
+                          ) : null}
                         </div>
-                        <div className="mt-1 text-xs font-normal leading-snug text-muted-foreground">
-                          {subProviderSection.unavailableReason ??
-                            gt("{count, plural, one {{count} model} other {{count} models}}", {
-                              count: subProviderSection.models.length,
-                            })}
-                        </div>
+                        {unavailable ? (
+                          <div className="mt-1 text-xs leading-snug text-muted-foreground">
+                            {subProviderSection.unavailableReason}
+                          </div>
+                        ) : null}
                       </div>
                       {unavailable ? null : (
                         <ChevronRightIcon

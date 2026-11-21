@@ -287,6 +287,93 @@ it("opens on the active provider when every favorite belongs to a disabled provi
   await expect.element(page.getByRole("option", { name: /Codex model/ })).toBeVisible();
 });
 
+it("keeps the popup height while switching providers and selecting a custom model by keyboard", async () => {
+  const entries = deriveProviderInstanceEntries(
+    [
+      { id: "codex", label: "OpenAI work", driver: "codex", count: 2 },
+      { id: "claude", label: "Claude work", driver: "claudeAgent", count: 7 },
+    ].map(({ id, label, driver, count }) => ({
+      instanceId: ProviderInstanceId.make(id),
+      driver: ProviderDriverKind.make(driver),
+      displayName: label,
+      enabled: true,
+      installed: true,
+      version: null,
+      status: "ready" as const,
+      auth: { status: "authenticated" as const },
+      checkedAt: "2026-01-01T00:00:00.000Z",
+      models: Array.from({ length: count }, (_, index) => ({
+        slug: `${id}-${index}`,
+        name: id === "codex" ? `OpenAI model ${index}` : `Custom review ${index}`,
+        isCustom: id === "claude",
+        capabilities: {},
+      })),
+      slashCommands: [],
+      skills: [],
+    })),
+  );
+  const [codex, claude] = entries;
+  const options = new Map(entries.map((entry) => [entry.instanceId, entry.models]));
+
+  function Picker() {
+    const [selection, setSelection] = useState({ instanceId: codex!.instanceId, model: "codex-0" });
+    return (
+      <ProviderModelPicker
+        environmentId={null}
+        activeInstanceId={selection.instanceId}
+        model={selection.model}
+        lockedProvider={null}
+        instanceEntries={entries}
+        modelOptionsByInstance={options}
+        onInstanceModelChange={(instanceId, model) => setSelection({ instanceId, model })}
+      />
+    );
+  }
+
+  const { innerWidth, innerHeight } = window;
+  await page.viewport(1000, 740);
+  await using _viewport = {
+    [Symbol.asyncDispose]: () => page.viewport(innerWidth, innerHeight),
+  };
+  await using screen = await render(<Picker />);
+  await screen.getByRole("button", { name: "OpenAI model 0" }).click();
+  const search = page.getByRole("combobox");
+  const activeProvider = page.getByRole("button", { name: "OpenAI work", pressed: true });
+  const otherProvider = page.getByRole("button", { name: "Claude work" });
+  await expect.element(activeProvider.getByText("OpenAI work", { exact: true })).toBeVisible();
+  await expect
+    .element(page.getByRole("option", { name: /OpenAI model 0/, selected: true }))
+    .toBeVisible();
+  await expect.element(search).toHaveFocus();
+  const content = search.element().closest<HTMLElement>("[data-model-picker-content]")!;
+  const before = content.offsetHeight;
+  expect(before).toBeGreaterThan(0);
+
+  await userEvent.keyboard("{ArrowLeft}");
+  await expect.element(activeProvider).toHaveFocus();
+  await userEvent.keyboard("{ArrowDown}");
+  await expect.element(otherProvider).toHaveFocus();
+  await userEvent.keyboard("{Enter}");
+  await expect.element(otherProvider).toHaveAttribute("aria-pressed", "true");
+  await expect.element(search).toHaveFocus();
+  await expect.element(page.getByRole("option", { name: /Custom review 6/ })).toBeVisible();
+  expect(content.offsetHeight).toBe(before);
+
+  await search.fill("Custom review 6");
+  await expect.element(page.getByRole("option", { name: /Custom review 6/ })).toBeVisible();
+  await userEvent.keyboard("{Enter}");
+  await expect.element(search).not.toBeInTheDocument();
+  const chosenTrigger = screen.getByRole("button", { name: "Custom review 6" });
+  await expect.element(chosenTrigger).toHaveFocus();
+  await userEvent.keyboard("{Enter}");
+  await expect
+    .element(page.getByRole("button", { name: claude!.displayName, pressed: true }))
+    .toBeVisible();
+  await expect
+    .element(page.getByRole("option", { name: /Custom review 6/, selected: true }))
+    .toBeVisible();
+});
+
 it("keeps the touch keyboard down while choosing a provider", async () => {
   const entries = deriveProviderInstanceEntries(
     ["Codex", "Claude"].map((name) => ({
@@ -306,6 +393,11 @@ it("keeps the touch keyboard down while choosing a provider", async () => {
     })),
   );
   const [codex] = entries;
+  const { innerWidth, innerHeight } = window;
+  await page.viewport(375, 740);
+  await using _viewport = {
+    [Symbol.asyncDispose]: () => page.viewport(innerWidth, innerHeight),
+  };
   const matchMedia = window.matchMedia.bind(window);
   using _touch = vi.spyOn(window, "matchMedia").mockImplementation((query) =>
     query === "(pointer: coarse)"
@@ -338,6 +430,12 @@ it("keeps the touch keyboard down while choosing a provider", async () => {
   const search = page.getByPlaceholder("Search models...");
   const popup = search.element().closest('[data-slot="popover-popup"]');
   await vi.waitFor(() => expect(document.activeElement).toBe(popup));
+  const bounds = popup?.getBoundingClientRect();
+  expect(bounds?.left).toBeGreaterThanOrEqual(0);
+  expect(bounds?.right).toBeLessThanOrEqual(375);
+  await expect
+    .element(page.getByRole("button", { name: /^Claude/ }).getByText(/^Claude/))
+    .not.toBeVisible();
 
   await page.getByRole("button", { name: /^Claude/ }).click();
   await expect.element(page.getByRole("option", { name: /Claude model/ })).toBeVisible();

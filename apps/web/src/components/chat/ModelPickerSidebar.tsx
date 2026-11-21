@@ -1,6 +1,6 @@
 import { Toolbar } from "@base-ui/react/toolbar";
 import { type ProviderInstanceId } from "@t3tools/contracts";
-import { memo, useLayoutEffect, useRef, useState } from "react";
+import { memo } from "react";
 import { msg, T, useMessages } from "gt-react";
 import { StarIcon } from "lucide-react";
 import { ProviderInstanceIcon } from "./ProviderInstanceIcon";
@@ -46,6 +46,8 @@ function describeUnavailableInstance(
 
 const PICKER_TOOLTIP_SIDE = "left" as const;
 const PICKER_TOOLTIP_SIDE_OFFSET = 8;
+const PROVIDER_ROW_CLASS_NAME =
+  "relative isolate flex min-h-9 w-full cursor-pointer items-center justify-center gap-2 rounded-md text-left text-xs text-muted-foreground transition-colors [--picker-provider-background:var(--popover)] enabled:hover:bg-accent enabled:hover:text-accent-foreground enabled:hover:[--picker-provider-background:var(--accent)] focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring focus-visible:outline-none aria-pressed:bg-accent aria-pressed:font-medium aria-pressed:text-accent-foreground aria-pressed:[--picker-provider-background:var(--accent)] aria-pressed:after:absolute aria-pressed:after:inset-y-2 aria-pressed:after:end-0 aria-pressed:after:w-0.5 aria-pressed:after:rounded-full aria-pressed:after:bg-primary sm:justify-start sm:px-2";
 
 export const ModelPickerSidebar = memo(function ModelPickerSidebar(props: {
   selectedInstanceId: ProviderInstanceId | "favorites";
@@ -58,37 +60,11 @@ export const ModelPickerSidebar = memo(function ModelPickerSidebar(props: {
   getDisabledInstanceTooltip?: (entry: ProviderInstanceEntry) => string;
 }) {
   const m = useMessages();
-  const handleSelect = (instanceId: ProviderInstanceId | "favorites") => {
-    props.onSelectInstance(instanceId);
-  };
   const showFavorites = props.showFavorites ?? true;
-  const [hoveredInstanceId, setHoveredInstanceId] = useState<ProviderInstanceId | null>(null);
-  const sidebarContentRef = useRef<HTMLDivElement>(null);
-  const [selectedIndicatorTop, setSelectedIndicatorTop] = useState<number | null>(null);
-  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- reads the selected provider item's DOM offset to position the selection indicator
-  useLayoutEffect(() => {
-    const content = sidebarContentRef.current;
-    if (!content) {
-      return;
-    }
-    const selectedItem = Array.from(
-      content.querySelectorAll<HTMLElement>("[data-model-picker-provider]"),
-    ).find((item) => item.dataset.modelPickerProvider === props.selectedInstanceId);
-    if (!selectedItem) {
-      setSelectedIndicatorTop(null);
-      return;
-    }
-    setSelectedIndicatorTop(selectedItem.offsetTop + selectedItem.offsetHeight / 2 - 10);
-  }, [
-    // oxlint-disable-next-line react/exhaustive-effect-dependencies -- Adding, removing or reordering providers moves the selected item, so the indicator re-measures.
-    props.instanceEntries,
-    props.selectedInstanceId,
-    showFavorites,
-  ]);
 
   return (
     <Toolbar.Root
-      className="w-11 shrink-0 overflow-hidden bg-muted/30"
+      className="w-11 shrink-0 overflow-hidden bg-muted/30 sm:w-36"
       data-model-picker-sidebar="true"
       aria-label={m(msg("Providers"))}
       orientation="vertical"
@@ -102,14 +78,7 @@ export const ModelPickerSidebar = memo(function ModelPickerSidebar(props: {
       }}
     >
       <div className="h-full overflow-y-auto overscroll-contain [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-        <div ref={sidebarContentRef} className="relative flex min-h-full flex-col gap-1 p-1">
-          {selectedIndicatorTop !== null ? (
-            <div
-              data-model-picker-selected-indicator="true"
-              className="pointer-events-none absolute right-1 z-10 h-5 w-0.75 rounded-full bg-primary transition-[top] duration-200 ease-out"
-              style={{ top: selectedIndicatorTop }}
-            />
-          ) : null}
+        <div className="flex min-h-full flex-col gap-1 p-1">
           {showFavorites ? (
             <>
               <div className="relative w-full" data-model-picker-provider="favorites">
@@ -117,15 +86,16 @@ export const ModelPickerSidebar = memo(function ModelPickerSidebar(props: {
                   <TooltipTrigger
                     render={
                       <Toolbar.Button
-                        className={cn(
-                          "relative isolate flex w-full cursor-pointer aspect-square items-center justify-center rounded-md transition-colors hover:bg-foreground/10 focus-visible:bg-foreground/10 focus-visible:outline-none",
-                        )}
-                        onClick={() => handleSelect("favorites")}
+                        className={PROVIDER_ROW_CLASS_NAME}
+                        onClick={() => props.onSelectInstance("favorites")}
                         type="button"
                         aria-label={m(msg("Favorites"))}
                         aria-pressed={props.selectedInstanceId === "favorites"}
                       >
-                        <StarIcon className="size-5 fill-current shrink-0" aria-hidden />
+                        <StarIcon className="mx-0.5 size-5 shrink-0 fill-current" aria-hidden />
+                        <span className="hidden min-w-0 truncate sm:block">
+                          <T>Favorites</T>
+                        </span>
                       </Toolbar.Button>
                     }
                   />
@@ -150,7 +120,6 @@ export const ModelPickerSidebar = memo(function ModelPickerSidebar(props: {
             const isDisabled =
               (isUnavailable && !unavailableSelectionIsReachable) || isContextDisabled;
             const isSelected = props.selectedInstanceId === entry.instanceId;
-            const isHovered = hoveredInstanceId === entry.instanceId;
             const showInstanceBadge = shouldShowInstanceBadge(entry, props.instanceEntries);
 
             const tooltip = isUnavailable
@@ -162,19 +131,11 @@ export const ModelPickerSidebar = memo(function ModelPickerSidebar(props: {
             const button = (
               <Toolbar.Button
                 className={cn(
-                  "relative isolate flex w-full cursor-pointer aspect-square items-center justify-center rounded-md transition-colors hover:bg-foreground/10 focus-visible:bg-foreground/10 focus-visible:outline-none",
-                  isDisabled && "opacity-50 cursor-not-allowed hover:bg-transparent",
+                  PROVIDER_ROW_CLASS_NAME,
+                  isDisabled && "cursor-not-allowed opacity-50",
                 )}
                 data-provider-accent-color={entry.accentColor}
-                onClick={() => !isDisabled && handleSelect(entry.instanceId)}
-                onMouseEnter={() => setHoveredInstanceId(entry.instanceId)}
-                onMouseLeave={() =>
-                  setHoveredInstanceId((current) => (current === entry.instanceId ? null : current))
-                }
-                onFocus={() => setHoveredInstanceId(entry.instanceId)}
-                onBlur={() =>
-                  setHoveredInstanceId((current) => (current === entry.instanceId ? null : current))
-                }
+                onClick={() => !isDisabled && props.onSelectInstance(entry.instanceId)}
                 disabled={isDisabled}
                 focusableWhenDisabled={!isDisabled}
                 aria-pressed={isSelected}
@@ -190,15 +151,10 @@ export const ModelPickerSidebar = memo(function ModelPickerSidebar(props: {
                   showBadge={showInstanceBadge}
                   className="size-6 z-30"
                   iconClassName="size-5"
-                  indicatorBackground={
-                    isHovered && !isDisabled
-                      ? "var(--muted)"
-                      : isSelected
-                        ? "var(--background)"
-                        : "color-mix(in oklab, var(--muted) 30%, transparent)"
-                  }
+                  indicatorBackground="var(--picker-provider-background)"
                   {...(entry.accentColor ? { badgeClassName: "h-3 min-w-3 px-0.5 text-5xs" } : {})}
                 />
+                <span className="hidden min-w-0 truncate sm:block">{entry.displayName}</span>
               </Toolbar.Button>
             );
 
