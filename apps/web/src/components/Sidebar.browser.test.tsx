@@ -203,6 +203,47 @@ function threadShell(projectId: ProjectId, index: number): EnvironmentThreadShel
   });
 }
 
+it("opens a pending child request from the overview without routing to its parent", async () => {
+  const group = project("overview-test");
+  const parent = threadShell(group.id, 0);
+  const child = makeThreadFixture({
+    environmentId: group.environmentId,
+    projectId: group.id,
+    id: ThreadId.make("overview-child"),
+    title: "Approval for child work",
+    lineage: {
+      rootThreadId: parent.id,
+      parentThreadId: parent.id,
+      relationshipToParent: "subagent",
+    },
+    hasPendingApprovals: true,
+  });
+  const parentRef = scopeThreadRef(parent.environmentId, parent.id);
+  vi.mocked(useProjects).mockReturnValue([group]);
+  vi.mocked(useQuietThreadShells).mockReturnValue([parent, child]);
+  vi.mocked(useThreadRouteTarget).mockReturnValue({ kind: "server", threadRef: parentRef });
+  vi.mocked(useHandleNewThread).mockReturnValue({
+    activeDraftThread: null,
+    activeThread: null,
+    defaultProjectRef: scopeProjectRef(group.environmentId, group.id),
+    defaultProjectFallbackReady: true,
+    handleNewThread: vi.fn(),
+    routeDraftId: null,
+    routeThreadRef: parentRef,
+  });
+  await using screen = await render(
+    <SidebarProvider>
+      <Sidebar routeReveal={{ observedKey: null, pendingKey: null }} />
+    </SidebarProvider>,
+    { router: `/${parent.environmentId}/${parent.id}` },
+  );
+  const attention = screen.getByRole("region", { name: "Needs my attention" });
+  await userEvent.click(attention.getByRole("button", { name: /Needs approval/ }));
+  await vi.waitFor(() => {
+    expect(screen.router!.state.location.pathname).toBe(`/${child.environmentId}/${child.id}`);
+  });
+});
+
 describe("sidebar render isolation", () => {
   // regression: #33100 Cmd+J re-rendered every sidebar row, which took hundreds of ms with many threads
   it("does not re-render thread rows when a quick Mod shortcut opens and focuses the terminal", async () => {
