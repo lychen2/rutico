@@ -3,8 +3,9 @@ import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/model
 import { THREAD_STATUS_TEXT } from "@t3tools/client-runtime/state/thread-activity-announcement";
 import type { ScopedThreadRef } from "@t3tools/contracts";
 import { msg, useGT, useMessages } from "gt-react";
-import { ChevronDownIcon, ChevronRightIcon } from "lucide-react";
-import { useState } from "react";
+import { ChevronDownIcon } from "lucide-react";
+import { useLayoutEffect, useRef, useState } from "react";
+import type { ReactNode } from "react";
 import { cn } from "~/lib/utils";
 import { useNowMinute } from "../../hooks/useNowMinute";
 import {
@@ -14,6 +15,11 @@ import {
 import { useEnvironments } from "../../state/environments";
 import { formatRelativeElapsed } from "../../timestampFormat";
 import { useUiStateStore } from "../../uiStateStore";
+import {
+  createSidebarListMotion,
+  SIDEBAR_REDUCED_MOTION,
+  sidebarWorkbenchEase,
+} from "../Sidebar.motion";
 import { Button } from "../ui/button";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import type { SidebarProviderEntry } from "./SidebarThreadRow";
@@ -39,6 +45,71 @@ const statusMessages = {
 
 type Overview = ReturnType<typeof buildSidebarOverview>;
 type OverviewRow = Overview["active"][number]["root"] | Overview["attention"][number];
+
+function useOverviewListMotion(layoutKey: string, attentionExit = false) {
+  const controller = useRef<ReturnType<typeof createSidebarListMotion> | null>(null);
+  const previousLayoutKey = useRef(layoutKey);
+  const attach = (node: HTMLElement | null) => {
+    if (!node) return;
+    const motion = createSidebarListMotion(node, attentionExit);
+    controller.current = motion;
+    motion.update(false);
+    return () => {
+      motion.dispose();
+      controller.current = null;
+    };
+  };
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Only row order and disclosure changes need layout measurements.
+  useLayoutEffect(() => {
+    if (previousLayoutKey.current === layoutKey) return;
+    previousLayoutKey.current = layoutKey;
+    controller.current?.update(true);
+  }, [layoutKey]);
+  return attach;
+}
+
+function OverviewCount({ count, className }: { count: number; className: string }) {
+  const badge = useRef<HTMLSpanElement>(null);
+  const previousCount = useRef(count);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Bounce the badge once for a committed count change.
+  useLayoutEffect(() => {
+    const changed = previousCount.current !== count;
+    previousCount.current = count;
+    const node = badge.current;
+    if (!changed || !node) return;
+    const preference = window.matchMedia(SIDEBAR_REDUCED_MOTION);
+    if (preference.matches) return;
+    const animation = node.animate(
+      [{ transform: "scale(1)" }, { transform: "scale(1.25)" }, { transform: "scale(1)" }],
+      { duration: 300, easing: sidebarWorkbenchEase },
+    );
+    const stop = () => {
+      preference.removeEventListener("change", stop);
+      animation.cancel();
+    };
+    preference.addEventListener("change", stop);
+    animation.addEventListener("finish", stop, { once: true });
+    return stop;
+  }, [count]);
+  return (
+    <span ref={badge} className={className}>
+      {count}
+    </span>
+  );
+}
+
+function RunningSubtaskList({ layoutKey, children }: { layoutKey: string; children: ReactNode }) {
+  const attach = useOverviewListMotion(layoutKey);
+  return (
+    <ul
+      ref={attach}
+      aria-hidden={children === null || undefined}
+      className="relative ms-3 flex flex-col gap-px border-s border-sidebar-border ps-1"
+    >
+      {children}
+    </ul>
+  );
+}
 
 function OverviewProgress({ row }: { row: OverviewRow }) {
   const gt = useGT();
@@ -181,6 +252,21 @@ export function SidebarOverview({
   const activeLabel = gt("Running now");
   const attentionLabel = gt("Needs my attention");
   const shownAttention = showAllAttention ? attention : attention.slice(0, ATTENTION_PREVIEW_LIMIT);
+  const shownRunning = showAllRunning ? active : preview;
+  const runningLayoutKey = JSON.stringify(
+    shownRunning.map(({ root, children }) => [
+      root.key,
+      collapsedGroups.has(root.key) ? [] : children.map((row) => row.key),
+    ]),
+  );
+  const attentionLayoutKey = JSON.stringify(shownAttention.map((row) => row.key));
+  const hasMoreAttention = attention.length > ATTENTION_PREVIEW_LIMIT;
+  const attachRunning = useOverviewListMotion(runningLayoutKey);
+  const attachAttention = useOverviewListMotion(attentionLayoutKey, true);
+  const attachSections = useOverviewListMotion(
+    `${runningLayoutKey}:${attentionLayoutKey}:${incomplete}:${hiddenActive}:${hasMoreAttention}`,
+    true,
+  );
   const headingClass =
     "flex min-w-0 items-center gap-2 px-2 pt-2 pb-1 text-2xs text-sidebar-muted-foreground";
 
@@ -209,13 +295,19 @@ export function SidebarOverview({
       />
     );
   };
-  const renderActive = (groups: Overview["active"]) => (
-    <ul aria-label={activeLabel} className="space-y-px">
-      {groups.map(({ root, children, childCount: count }) => {
+  const renderActive = () => (
+    <ul
+      ref={attachRunning}
+      aria-label={activeLabel}
+      aria-hidden={shownRunning.length === 0 || undefined}
+      className="relative flex flex-col gap-px"
+    >
+      {shownRunning.map(({ root, children, childCount: count }) => {
         const expanded = !collapsedGroups.has(root.key);
+        const visibleChildren = expanded && children.length > 0 ? children : null;
         const title = root.thread.title || gt("Untitled thread");
         return (
-          <li key={root.key}>
+          <li key={root.key} data-sidebar-motion-key={root.key}>
             <div className="flex min-w-0 items-center">
               {children.length > 0 ? (
                 <button
@@ -232,24 +324,26 @@ export function SidebarOverview({
                   }
                   className="grid size-6 shrink-0 cursor-pointer place-items-center rounded-md text-sidebar-muted-foreground outline-none hover:bg-sidebar-row-hover focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring"
                 >
-                  {expanded ? (
-                    <ChevronDownIcon aria-hidden className="size-3" />
-                  ) : (
-                    <ChevronRightIcon aria-hidden className="size-3 rtl:rotate-180" />
-                  )}
+                  <ChevronDownIcon
+                    aria-hidden
+                    className={cn(
+                      "size-3 motion-safe:transition-transform motion-safe:duration-150",
+                      !expanded && "-rotate-90 rtl:rotate-90",
+                    )}
+                  />
                 </button>
               ) : null}
               {renderRow(root, "running", count)}
             </div>
-            {expanded && children.length > 0 ? (
-              <ul className="ms-3 space-y-px border-s border-sidebar-border ps-1">
-                {children.map((child) => (
-                  <li key={child.key} className="flex min-w-0">
-                    {renderRow(child, "running")}
-                  </li>
-                ))}
-              </ul>
-            ) : null}
+            <RunningSubtaskList
+              layoutKey={JSON.stringify(visibleChildren?.map((row) => row.key) ?? [])}
+            >
+              {visibleChildren?.map((child) => (
+                <li key={child.key} data-sidebar-motion-key={child.key} className="flex min-w-0">
+                  {renderRow(child, "running")}
+                </li>
+              )) ?? null}
+            </RunningSubtaskList>
           </li>
         );
       })}
@@ -258,7 +352,8 @@ export function SidebarOverview({
 
   return (
     <div
-      className="mb-2 space-y-1.5 border-b border-sidebar-border pb-2"
+      ref={attachSections}
+      className="relative mb-2 flex flex-col gap-1.5 border-b border-sidebar-border pb-2"
       data-thread-selection-safe
     >
       <section aria-label={activeLabel}>
@@ -278,14 +373,14 @@ export function SidebarOverview({
               )}
             </span>
           ) : null}
-          <span className="ms-auto shrink-0 tabular-nums">{active.length}</span>
+          <OverviewCount count={active.length} className="ms-auto shrink-0 tabular-nums" />
         </h2>
         {incomplete ? (
           <p role="status" className="px-2 text-2xs text-sidebar-muted-foreground">
             {gt("Some connections are still syncing. Status may be out of date.")}
           </p>
         ) : null}
-        {active.length > 0 ? renderActive(showAllRunning ? active : preview) : null}
+        {renderActive()}
         {hiddenActive ? (
           <Button
             variant="ghost"
@@ -303,26 +398,29 @@ export function SidebarOverview({
         ) : null}
       </section>
       {attention.length > 0 ? (
-        <section aria-label={attentionLabel}>
+        <section aria-label={attentionLabel} data-sidebar-motion-key="attention">
           <h2 className={headingClass}>
             <span>{attentionLabel}</span>
-            <span
+            <OverviewCount
+              count={attentionCount}
               className={cn(
                 "ms-auto rounded-full px-1.5 font-medium tabular-nums",
                 attentionCount > 0 && "bg-warning-surface text-warning-foreground",
               )}
-            >
-              {attentionCount}
-            </span>
+            />
           </h2>
-          <ul aria-label={attentionLabel} className="space-y-px">
+          <ul
+            ref={attachAttention}
+            aria-label={attentionLabel}
+            className="relative flex flex-col gap-px"
+          >
             {shownAttention.map((row) => (
-              <li key={row.key} className="flex min-w-0">
+              <li key={row.key} data-sidebar-motion-key={row.key} className="flex min-w-0">
                 {renderRow(row, "attention")}
               </li>
             ))}
           </ul>
-          {attention.length > ATTENTION_PREVIEW_LIMIT ? (
+          {hasMoreAttention ? (
             <Button
               variant="ghost"
               size="compact"

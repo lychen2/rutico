@@ -1,4 +1,10 @@
+export const SIDEBAR_REDUCED_MOTION = "(prefers-reduced-motion: reduce)";
+export const sidebarWorkbenchEase = "cubic-bezier(.2,.8,.2,1)";
+
 const motionTiming = { duration: 150, easing: "ease-out" };
+const attentionExitTiming = { duration: 350, easing: sidebarWorkbenchEase };
+const EXIT_ROW = "data-sidebar-motion-exit";
+const ROW_KEY = "data-sidebar-motion-key";
 const rowTravel = (height: number) => Math.min(height, 40);
 // Fades clone removed rows and animate clones and entries; intervening layout reads force reflows.
 const MAX_FADED_ROWS_PER_UPDATE = 40;
@@ -12,12 +18,10 @@ function progress(animation: Animation) {
 }
 
 /** Position the list so all direct children's offsetTop share an origin. */
-export function createSidebarListMotion(parent: HTMLUListElement) {
+export function createSidebarListMotion(parent: HTMLElement, attentionExit = false) {
   let positions: Map<HTMLElement, RowPosition> | null = null;
   let disposed = false;
-  const reducedMotion = parent.ownerDocument.defaultView?.matchMedia(
-    "(prefers-reduced-motion: reduce)",
-  );
+  const reducedMotion = parent.ownerDocument.defaultView?.matchMedia(SIDEBAR_REDUCED_MOTION);
   const running = new Map<HTMLElement, { animation: Animation; offset: number }>();
   const entering = new Map<HTMLElement, { animation: Animation; travel: number }>();
   const exiting = new Map<HTMLElement, Animation>();
@@ -40,12 +44,14 @@ export function createSidebarListMotion(parent: HTMLUListElement) {
   const fadeOut = (node: HTMLElement, position: RowPosition, travel: number) => {
     if (position.height === 0) return;
     const clone = node.cloneNode(true) as HTMLElement;
+    for (const exitingChild of clone.querySelectorAll(`[${EXIT_ROW}]`)) exitingChild.remove();
     for (const element of [clone, ...clone.querySelectorAll("*")]) {
       for (const attribute of Array.from(element.attributes)) {
         if (
           (attribute.name === "id" && element.namespaceURI !== "http://www.w3.org/2000/svg") ||
           attribute.name === "data-thread-item" ||
           attribute.name === "data-thread-selection-safe" ||
+          attribute.name === "data-sidebar-row" ||
           attribute.name === "data-testid"
         ) {
           element.removeAttribute(attribute.name);
@@ -53,6 +59,10 @@ export function createSidebarListMotion(parent: HTMLUListElement) {
       }
     }
     clone.setAttribute("aria-hidden", "true");
+    clone.setAttribute(
+      EXIT_ROW,
+      node.getAttribute(ROW_KEY) ?? node.getAttribute("data-thread-item") ?? "",
+    );
     clone.inert = true;
     Object.assign(clone.style, {
       position: "absolute",
@@ -72,10 +82,15 @@ export function createSidebarListMotion(parent: HTMLUListElement) {
     const entryProgress = entry ? progress(entry.animation) : 1;
     const animation = clone.animate(
       [
-        { opacity: entryProgress, transform: "translateY(0px)" },
-        { opacity: 0, transform: `translateY(${travel}px)` },
+        { opacity: entryProgress, transform: "translate(0, 0)" },
+        {
+          opacity: 0,
+          transform: attentionExit
+            ? `translateX(${parent.matches(":dir(rtl)") ? 16 : -16}px)`
+            : `translateY(${travel}px)`,
+        },
       ],
-      motionTiming,
+      attentionExit ? attentionExitTiming : motionTiming,
     );
     exiting.set(clone, animation);
     animation.addEventListener(
@@ -98,6 +113,7 @@ export function createSidebarListMotion(parent: HTMLUListElement) {
     positions = null;
     released = null;
   };
+  reducedMotion?.addEventListener("change", suspend);
   const move = (node: HTMLElement, offset: number) => {
     cancel(node);
     const entry = entering.get(node);
@@ -122,7 +138,7 @@ export function createSidebarListMotion(parent: HTMLUListElement) {
       if (disposed) return;
       // A hidden list (the closed narrow sheet stays mounted) reports zero
       // offsets, which would make the first pass after it opens animate every row.
-      if (parent.getClientRects().length === 0) {
+      if (reducedMotion?.matches || parent.getClientRects().length === 0) {
         suspend();
         return;
       }
@@ -148,11 +164,7 @@ export function createSidebarListMotion(parent: HTMLUListElement) {
           if (!positions.has(node) && position.height > 0) fadeCount++;
         }
       }
-      const shouldAnimate =
-        animate &&
-        positions !== null &&
-        !reducedMotion?.matches &&
-        fadeCount <= MAX_FADED_ROWS_PER_UPDATE;
+      const shouldAnimate = animate && positions !== null && fadeCount <= MAX_FADED_ROWS_PER_UPDATE;
       const movedDelta = new Map<HTMLElement, number>();
       const nextOrder = [...next.keys()];
       const oldOrder = positions === null ? [] : [...positions.keys()];
@@ -173,6 +185,18 @@ export function createSidebarListMotion(parent: HTMLUListElement) {
       else {
         for (const [node, position] of next) {
           const previousTop = positions!.get(node)?.top;
+          // Discard a previous ghost before a rapid reversal paints its live replacement.
+          if (previousTop === undefined && exiting.size > 0) {
+            const key = node.getAttribute(ROW_KEY) ?? node.getAttribute("data-thread-item");
+            if (key !== null) {
+              for (const [ghost, animation] of exiting) {
+                if (ghost.getAttribute(EXIT_ROW) !== key) continue;
+                animation.cancel();
+                ghost.remove();
+                exiting.delete(ghost);
+              }
+            }
+          }
           if (previousTop === undefined || previousTop === position.top) continue;
           movedDelta.set(node, previousTop + remainingOffset(node) - position.top);
         }
@@ -236,6 +260,7 @@ export function createSidebarListMotion(parent: HTMLUListElement) {
     },
     release() {
       suspend();
+      if (reducedMotion?.matches) return;
       const origin = parent.getBoundingClientRect().top;
       released = new Map(
         Array.from(parent.children)
@@ -245,6 +270,7 @@ export function createSidebarListMotion(parent: HTMLUListElement) {
     },
     suspend,
     dispose() {
+      reducedMotion?.removeEventListener("change", suspend);
       suspend();
       disposed = true;
     },

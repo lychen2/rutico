@@ -86,7 +86,7 @@ export function SidebarCategoryHeader({
         <ChevronDownIcon
           aria-hidden
           className={cn(
-            "size-3 shrink-0 text-sidebar-muted-foreground",
+            "size-3 shrink-0 text-sidebar-muted-foreground motion-safe:transition-transform motion-safe:duration-150",
             collapsed && "-rotate-90 rtl:rotate-90",
           )}
         />

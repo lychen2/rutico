@@ -33,9 +33,12 @@ import * as localApi from "../localApi";
 import type { Project } from "../types";
 import Sidebar from "./Sidebar";
 import { THREAD_JUMP_HINT_SHOW_DELAY_MS } from "./Sidebar.logic";
+import { SIDEBAR_REDUCED_MOTION } from "./Sidebar.motion";
 import { SIDEBAR_CATEGORIES_STORAGE_KEY } from "./sidebar/SidebarCategories";
+import { SidebarOverview } from "./sidebar/SidebarOverview";
 import { SortableThreadRow } from "./sidebar/SidebarThreadRow";
 import { SidebarProvider } from "./ui/sidebar";
+import { TooltipProvider } from "./ui/tooltip";
 
 vi.mock(import("../state/olderSettledShelf"), async (original) => {
   const actual = await original();
@@ -205,6 +208,19 @@ function threadShell(projectId: ProjectId, index: number): EnvironmentThreadShel
   });
 }
 
+function pauseSidebarAnimations() {
+  const animate = Element.prototype.animate;
+  return vi.spyOn(Element.prototype, "animate").mockImplementation(function (
+    this: Element,
+    frames,
+    options,
+  ) {
+    const animation = animate.call(this, frames, options);
+    animation.pause();
+    return animation;
+  });
+}
+
 it("expands the only running section and opens a pending remote child without routing to its parent", async () => {
   const group = project("overview-test");
   const parent = threadShell(group.id, 0);
@@ -236,6 +252,7 @@ it("expands the only running section and opens a pending remote child without ro
   });
   await using screen = await render(
     <SidebarProvider>
+      <style>{appCss}</style>
       <Sidebar routeReveal={{ observedKey: null, pendingKey: null }} />
     </SidebarProvider>,
     { router: `/${parent.environmentId}/${parent.id}` },
@@ -246,15 +263,105 @@ it("expands the only running section and opens a pending remote child without ro
   await expect
     .element(running.getByRole("button", { name: /Approval for child work/ }))
     .not.toBeInTheDocument();
+  using _animations = pauseSidebarAnimations();
   await userEvent.click(running.getByRole("button", { name: /Show all 5 running tasks/ }));
   await expect
     .element(running.getByRole("button", { name: /Approval for child work.*Needs approval/ }))
     .toBeVisible();
+  const childButton = running.getByRole("button", {
+    name: /Approval for child work.*Needs approval/,
+  });
+  const entry = childButton.element().closest("ul")?.closest("li")?.getAnimations()[0];
+  expect(entry?.effect?.getTiming()).toMatchObject({ duration: 150, iterations: 1 });
+  entry?.finish();
+  const subtasks = running.getByRole("button", { name: `Subtasks of ${parent.title}` });
+  await userEvent.click(subtasks);
+  await expect.element(subtasks).toHaveAttribute("aria-expanded", "false");
+  await expect.element(childButton).not.toBeInTheDocument();
+  const ghost = running.element().querySelector<HTMLElement>("[data-sidebar-motion-exit]");
+  expect(ghost?.inert).toBe(true);
+  expect(ghost?.textContent).toContain(child.title);
+  await userEvent.click(subtasks);
+  await expect.element(childButton).toBeVisible();
+  expect(ghost?.isConnected).toBe(false);
   const attention = screen.getByRole("region", { name: "Needs my attention" });
   await userEvent.click(attention.getByRole("button", { name: /Needs approval/ }));
   await vi.waitFor(() => {
     expect(screen.router!.state.location.pathname).toBe(`/${child.environmentId}/${child.id}`);
   });
+});
+
+it("bounces changed overview counts once and cancels Attention exits with reduced motion", async () => {
+  const matchMedia = window.matchMedia.bind(window);
+  const preference = matchMedia(SIDEBAR_REDUCED_MOTION);
+  using matches = vi.spyOn(preference, "matches", "get").mockReturnValue(false);
+  using _query = vi
+    .spyOn(window, "matchMedia")
+    .mockImplementation((query) =>
+      query === SIDEBAR_REDUCED_MOTION ? preference : matchMedia(query),
+    );
+  const group = project("overview-motion");
+  const threads = Array.from({ length: 6 }, (_, index) => ({
+    ...threadShell(group.id, index),
+    hasPendingApprovals: true,
+  }));
+  const view = (items: readonly EnvironmentThreadShell[]) => (
+    <TooltipProvider>
+      <SidebarOverview
+        threads={items}
+        activeKey={null}
+        now="2026-01-01T00:00:00.000Z"
+        providers={new Map()}
+        projectNames={new Map()}
+        onNavigate={vi.fn()}
+      />
+    </TooltipProvider>
+  );
+  await using screen = await render(view(threads), { router: false }); // This case drives live list updates without navigating.
+  using animations = pauseSidebarAnimations();
+  const attention = screen.getByRole("region", { name: "Needs my attention" });
+  const overflow = attention.getByRole("button", { name: /Thread 5/ });
+  await userEvent.click(attention.getByRole("button", { name: "Show 1 more" }));
+  await expect.element(overflow).toBeVisible();
+  await userEvent.click(attention.getByRole("button", { name: "Collapse" }));
+  await expect.element(overflow).not.toBeInTheDocument();
+
+  await screen.rerender(view(threads.slice(1)));
+  const badge = attention.getByText("5", { exact: true }).element();
+  const [bounce] = badge.getAnimations();
+  expect(bounce?.effect).toBeInstanceOf(KeyframeEffect);
+  if (!(bounce?.effect instanceof KeyframeEffect))
+    throw new Error("Expected the live badge bounce");
+  expect(bounce.effect.getTiming()).toMatchObject({ duration: 300, iterations: 1 });
+  expect(bounce.effect.getKeyframes().map((frame) => frame.transform)).toEqual([
+    "scale(1)",
+    "scale(1.25)",
+    "scale(1)",
+  ]);
+  const first = attention.getByRole("button", { name: /Thread 0/ });
+  await expect.element(first).not.toBeInTheDocument();
+  const ghosts = [
+    ...attention.element().querySelectorAll<HTMLElement>("[data-sidebar-motion-exit]"),
+  ];
+  const leaving = ghosts.find((ghost) => ghost.textContent?.includes("Thread 0"));
+  expect(leaving?.inert).toBe(true);
+  const [exit] = leaving?.getAnimations() ?? [];
+  expect(exit?.effect?.getTiming()).toMatchObject({ duration: 350, iterations: 1 });
+  expect(
+    exit?.effect instanceof KeyframeEffect && exit.effect.getKeyframes().at(-1)?.transform,
+  ).toBe("translateX(-16px)");
+
+  animations.mockClear();
+  await screen.rerender(view(threads.slice(1)));
+  expect(animations).not.toHaveBeenCalled();
+  matches.mockReturnValue(true);
+  preference.dispatchEvent(new Event("change"));
+  expect(leaving?.isConnected).toBe(false);
+  expect(bounce.playState).toBe("idle");
+  await screen.rerender(view([]));
+  await expect.element(attention).not.toBeInTheDocument();
+  expect(screen.container.querySelector("[data-sidebar-motion-exit]")).toBeNull();
+  expect(animations).not.toHaveBeenCalled();
 });
 
 describe("sidebar render isolation", () => {
@@ -471,20 +578,34 @@ it("restores category assignments and collapse state without moving the same ID 
     const create = page.getByRole("dialog", { name: "New category" });
     await userEvent.fill(create.getByRole("textbox", { name: "Category name" }), "Release work");
     await userEvent.click(create.getByRole("button", { name: "Create category" }));
-    const remoteRow = screen.getByText("Remote session").first();
+    const remoteRow = screen.getByRole("button", { name: /Remote session/ });
     await userEvent.click(remoteRow, { button: "right" });
     const move = page.getByRole("dialog", { name: "Move to category" });
     await userEvent.click(move.getByRole("button", { name: "Release work" }));
     await expect.element(move).not.toBeInTheDocument();
-    await userEvent.click(screen.getByRole("button", { name: "Release work", exact: true }));
+    using _animations = pauseSidebarAnimations();
+    const category = screen.getByRole("button", { name: "Release work", exact: true });
+    category.element().focus();
+    await userEvent.keyboard("{ArrowLeft}");
+    const exit = screen.container.querySelector<HTMLElement>("[data-sidebar-motion-exit][inert]");
+    expect(exit?.textContent).toContain("Remote session");
+    expect(exit?.querySelector("[data-sidebar-row]")).toBeNull();
+    expect(exit?.getAnimations()[0]?.effect?.getTiming()).toMatchObject({
+      duration: 150,
+      iterations: 1,
+    });
     await expect.element(remoteRow).not.toBeInTheDocument();
     await expect.element(screen.getByText(thread.title).first()).toBeVisible();
     const localRow = screen.getByText(thread.title).first().element().closest("[data-sidebar-row]");
     expect(localRow?.getAttribute("data-sidebar-parent")).toBe("category:uncategorized");
+    const movement = localRow?.closest("li")?.getAnimations()[0]?.effect;
+    expect(movement instanceof KeyframeEffect && movement.getKeyframes()[0]?.transform).toMatch(
+      /^translateY\([1-9]\d*px\)$/,
+    );
   }
   await using restored = await render(tree());
   const category = restored.getByRole("button", { name: /^Release work/ });
-  const remoteRow = restored.getByText("Remote session").first();
+  const remoteRow = restored.getByRole("button", { name: /Remote session/ });
   await expect.element(category).toHaveAttribute("aria-expanded", "false");
   await expect.element(remoteRow).not.toBeInTheDocument();
   await userEvent.click(category);

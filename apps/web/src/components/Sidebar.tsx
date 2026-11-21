@@ -1928,18 +1928,18 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
   const listMotionLayoutKey = [
     sidebarListItemsKey,
     orderedThreadKeys.join("\n"),
+    categoryFolders.map(({ id }) => id).join("\n"),
     visibleDraftSessionCount,
     routeDraftIdForRows ?? "",
   ].join("\0");
   const listMotionAnimate =
-    dragState === null && orderedThreadKeys.length + visibleDraftSessionCount > 0;
+    dragState === null &&
+    (orderedThreadKeys.length + visibleDraftSessionCount > 0 ||
+      categoryFolders.length > 0 ||
+      uncategorizedCollapsed);
   // Cache on both fields so layout-key changes trigger the effect even when animate is unchanged.
   const listMotionPass = { layoutKey: listMotionLayoutKey, animate: listMotionAnimate };
-  const shelfExpansionKey = [
-    snoozedShelfExpanded,
-    settledShelfExpanded,
-    ...categoryState.collapsed,
-  ].join(":");
+  const shelfExpansionKey = `${snoozedShelfExpanded}:${settledShelfExpanded}`;
   const previousShelfExpansionKeyRef = useRef(shelfExpansionKey);
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- records moved rows and updates list motion after each layout-affecting commit
   useLayoutEffect(() => {
