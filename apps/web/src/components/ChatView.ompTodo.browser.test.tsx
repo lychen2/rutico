@@ -5,8 +5,10 @@ import {
   ProviderDriverKind,
   ProviderInstanceId,
   ProviderThreadId,
+  TurnItemId,
   type OrchestrationV2PlanArtifact,
   type OrchestrationV2ProviderThread,
+  type OrchestrationV2TurnItem,
 } from "@t3tools/contracts";
 import { DEFAULT_CLIENT_SETTINGS } from "@t3tools/contracts/settings";
 import type * as Context from "effect/Context";
@@ -47,12 +49,12 @@ const driver = ProviderDriverKind.make("omp");
 const provider = { ...CODEX_PROVIDER, instanceId, driver };
 const modelSelection = { instanceId, model: "gpt-5.4" };
 
-it("updates the open Chinese checklist from native OMP plan events in the current composer", async () => {
-  const thread = threadWithHistory("omp-dashboard", 1, modelSelection);
-  const other = threadWithHistory("omp-dashboard-neighbor", 1, modelSelection);
+it("discloses only the current OMP checklist inline in the timeline footer", async () => {
+  const thread = threadWithHistory("omp-todo-footer", 1, modelSelection);
+  const other = threadWithHistory("omp-todo-neighbor", 1, modelSelection);
   const at = DateTime.makeUnsafe("2026-03-17T19:12:28.000Z");
   const providerThread: OrchestrationV2ProviderThread = {
-    id: ProviderThreadId.make("provider-thread-dashboard"),
+    id: ProviderThreadId.make("provider-thread-omp-todo"),
     driver,
     providerInstanceId: instanceId,
     providerSessionId: null,
@@ -85,24 +87,25 @@ it("updates the open Chinese checklist from native OMP plan events in the curren
   );
   await page.viewport(1280, 800);
   await router.load();
-  await using _app = await render(<AppRoot router={router} />, { router: false });
+  await using _app = await render(<AppRoot router={router} />, {
+    // AppRoot brings its own router.
+    router: false,
+  });
 
-  await expect
-    .element(page.getByText("暂无待办", { exact: true }), { timeout: 3000 })
-    .toBeVisible();
-  await expect
-    .element(page.getByText("已使用 24,600 token", { exact: true }), { timeout: 1500 })
-    .toBeVisible();
-  await expect
-    .element(page.getByText("已使用 25%", { exact: true }), { timeout: 1500 })
-    .toBeVisible();
+  const checklist = page.getByRole("region", { name: "待办清单" });
+  const trigger = checklist.getByRole("button", { name: /^待办清单/ });
+  const steps = checklist.getByRole("list");
+  const context = page.locator('[data-chat-composer-overlay="true"]');
+  await expect.element(context.getByText("已使用 24,600 token", { exact: true })).toBeVisible();
+  await expect.element(context.getByText("已使用 25%", { exact: true })).toBeVisible();
+  await expect.element(checklist).not.toBeInTheDocument();
 
   const plan: OrchestrationV2PlanArtifact = {
     kind: "todo_list",
     id: PlanId.make(`omp-todo:${thread.id}`),
     threadId: thread.id,
-    runId: null,
-    nodeId: NodeId.make("omp-todo-dashboard"),
+    runId: thread.runs[0]!.id,
+    nodeId: NodeId.make("omp-todo-node"),
     status: "active",
     steps: [
       { id: "first", text: "校对仪表盘\n检查桌面布局", status: "running" },
@@ -111,20 +114,58 @@ it("updates the open Chinese checklist from native OMP plan events in the curren
       { id: "dropped", text: "已放弃的任务\n[abandoned]", status: "pending" },
     ],
   };
+  const mirroredSnapshot = {
+    id: TurnItemId.make("omp-todo-update"),
+    type: "todo_list",
+    threadId: thread.id,
+    runId: plan.runId,
+    nodeId: plan.nodeId,
+    providerThreadId: providerThread.id,
+    providerTurnId: null,
+    nativeItemRef: null,
+    parentItemId: null,
+    ordinal: 2,
+    status: "completed",
+    title: null,
+    startedAt: at,
+    completedAt: at,
+    updatedAt: at,
+    planId: plan.id,
+    steps: [{ id: "old", text: "旧 OMP 待办快照", status: "running" }],
+  } satisfies OrchestrationV2TurnItem;
   await emitThreadEvent(thread.id, {
     type: "plan.updated",
-    payload: { ...plan, id: PlanId.make(`omp-todo:${other.id}`) },
+    payload: {
+      ...plan,
+      id: PlanId.make(`omp-todo:${other.id}`),
+      steps: [{ id: "neighbor", text: "相邻会话的待办快照", status: "running" }],
+    },
   });
   await emitThreadEvent(thread.id, { type: "plan.updated", payload: plan });
-  const trigger = page.getByRole("button", { name: /待办清单 已完成 0\/3 校对仪表盘/ });
-  await expect.element(trigger, { timeout: 1500 }).toBeVisible();
+  await emitThreadEvent(thread.id, { type: "turn-item.updated", payload: mirroredSnapshot });
+  await emitThreadEvent(thread.id, {
+    type: "turn-item.updated",
+    payload: {
+      ...mirroredSnapshot,
+      id: TurnItemId.make("different-todo-update"),
+      ordinal: 3,
+      planId: PlanId.make("other-provider-plan"),
+      steps: [{ id: "other", text: "其他提供方的任务", status: "running" }],
+    },
+  });
+  await expect.element(page.getByText(/其他提供方的任务/)).toBeVisible();
+  await expect.element(page.getByText(/旧 OMP 待办快照|相邻会话的待办快照/)).not.toBeInTheDocument();
+  await expect.element(trigger).toHaveAttribute("aria-expanded", "false");
+  await expect.element(trigger).toHaveTextContent(/校对仪表盘.*已完成 0\/3/);
+  expect(checklist.element().closest(".messages-timeline-scroll")).not.toBeNull();
+  await expect.element(steps).not.toBeInTheDocument();
   await trigger.click();
-  const checklist = page.getByRole("dialog", { name: "待办清单" });
-  await expect
-    .element(checklist.getByText("检查桌面布局", { exact: true }), { timeout: 1500 })
-    .toBeVisible();
-  await expect.element(checklist.getByText("等待验收", { exact: true })).toBeVisible();
-  await expect.element(checklist.getByText("已放弃的任务")).not.toBeInTheDocument();
+  await expect.element(trigger).toHaveAttribute("aria-expanded", "true");
+  await expect.element(steps.getByText("检查桌面布局", { exact: true })).toBeVisible();
+  await expect.element(steps.getByText("等待验收", { exact: true })).toBeVisible();
+  await expect.element(steps.getByText("已阻塞", { exact: true })).toBeVisible();
+  await expect.element(steps.getByText("待处理", { exact: true })).toBeVisible();
+  await expect.element(steps.getByText("已放弃的任务")).not.toBeInTheDocument();
 
   await emitThreadEvent(thread.id, {
     type: "plan.updated",
@@ -136,26 +177,30 @@ it("updates the open Chinese checklist from native OMP plan events in the curren
       })),
     },
   });
-  await expect.element(checklist.getByText("已完成 1/3", { exact: true })).toBeVisible();
-  await userEvent.keyboard("{Escape}");
-  await expect.element(checklist).not.toBeInTheDocument();
+  await expect.element(trigger).toHaveTextContent(/检查窄屏显示.*已完成 1\/3/);
+  await expect.element(trigger).toHaveAttribute("aria-expanded", "true");
+  await expect
+    .element(steps.getByRole("listitem").filter({ hasText: "检查窄屏显示" }).getByText("进行中"))
+    .toBeVisible();
+  await userEvent.keyboard("{Enter}");
+  await expect.element(trigger).toHaveAttribute("aria-expanded", "false");
+  await expect.element(steps).not.toBeInTheDocument();
 
   await page.viewport(360, 760);
-  const narrowTrigger = page.getByRole("button", { name: /待办清单 已完成 1\/3 检查窄屏显示/ });
-  await expect.element(narrowTrigger).toBeVisible();
-  await narrowTrigger.click();
-  await expect.element(checklist.getByText("进行中", { exact: true })).toBeVisible();
-  const popup = checklist.element().getBoundingClientRect();
-  expect(popup.left).toBeGreaterThanOrEqual(0);
-  expect(popup.right).toBeLessThanOrEqual(360);
-  expect(popup.bottom).toBeLessThanOrEqual(760);
+  await trigger.click();
+  await expect.element(steps).toBeVisible();
+  const bounds = checklist.element().getBoundingClientRect();
+  expect(bounds.left).toBeGreaterThanOrEqual(0);
+  expect(bounds.right).toBeLessThanOrEqual(360);
 
   await emitThreadEvent(thread.id, {
     type: "plan.updated",
     payload: { ...plan, status: "completed", steps: [] },
   });
-  await expect.element(page.getByText("暂无待办", { exact: true })).toBeVisible();
   await expect.element(checklist).not.toBeInTheDocument();
+  await expect.element(page.getByText(/旧 OMP 待办快照/)).not.toBeInTheDocument();
+  await page.viewport(1280, 800);
+  await expect.element(context.getByText("已使用 25%", { exact: true })).toBeVisible();
 });
 
 it("hides only known idle OMP chatter and retains meaningful extension status", () => {
