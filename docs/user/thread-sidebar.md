@@ -60,6 +60,10 @@ in a new thread's model picker to add or remove them. A regular click returns to
 single model. Choose a base branch and send. Each selection starts a separate thread
 and worktree while you stay in the new thread composer. This requires a Git project.
 
+On web and desktop, the sidebar shows running threads and threads waiting for your
+approval or answer above the project list. Select a thread there to open it without
+changing its project or moving it in the list.
+
 ## Pin and reorder threads
 
 Pin a thread from its menu to keep it above your active work.
@@ -284,6 +288,12 @@ Before archiving the parent, wait for its delegated tasks to finish or cancel th
 Subagent threads started by the agent can't take messages; message the parent
 thread instead. When such a subagent needs an approval or an answer, the parent
 thread asks for it.
+
+When OMP provides a to-do list, the last row of the timeline shows the current step
+and completed count. Expand the row to read the checklist without leaving the conversation.
+
+To reuse an output on web or desktop, open **Artifacts** in the thread details card,
+select the file, and attach it to the composer. It stays in the current draft until you send it.
 
 Expand a tool call in the conversation to see its full command and output.
 Summaries shorten shell wrappers and can still describe the latest call after it
