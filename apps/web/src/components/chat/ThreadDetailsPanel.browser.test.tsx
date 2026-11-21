@@ -116,6 +116,7 @@ function setup(input: {
   state.folder = input.folder;
   state.pullRequests = input.pullRequests ?? [];
   useRightPanelStore.setState({ threadPanelVisibilityByThreadKey: {} });
+  useRightPanelStore.getState().setThreadPanelOpen(threadRef, "inline", true);
   const anchor = document.createElement("div");
   document.body.append(anchor);
   return {
@@ -143,6 +144,7 @@ function Panel({ fixture }: { fixture: ReturnType<typeof setup> }) {
       }}
     >
       <ThreadDetailsPanel
+        onAttachArtifactFiles={noop}
         anchor={fixture.anchor}
         handle={fixture.handle}
         environmentId={threadRef.environmentId}
@@ -179,12 +181,14 @@ function Panel({ fixture }: { fixture: ReturnType<typeof setup> }) {
 }
 
 it("offers no git controls in a No project thread, but shows its linked pull request", async () => {
+  await page.viewport(1200, 800);
   using fixture = setup({
     workspaceRoot: SCRATCH_ROOT,
     folder: `${SCRATCH_ROOT}/thread`,
     pullRequests: [linkedPullRequest],
   });
   await using _screen = await render(<Panel fixture={fixture} />);
+  await page.getByRole("tab", { name: "Project" }).click();
   await expect.element(page.getByText("#27513")).toBeVisible();
   await expect
     .element(page.getByRole("button", { name: "Initialize Git" }))
@@ -192,24 +196,28 @@ it("offers no git controls in a No project thread, but shows its linked pull req
 });
 
 it("shows a linked pull request in a folder that is not a git repository", async () => {
+  await page.viewport(1200, 800);
   using fixture = setup({
     workspaceRoot: "/work/plain",
     folder: "/work/plain",
     pullRequests: [linkedPullRequest],
   });
   await using _screen = await render(<Panel fixture={fixture} />);
+  await page.getByRole("tab", { name: "Project" }).click();
   await expect.element(page.getByRole("region", { name: "Workspace" })).toBeVisible();
   await expect.element(page.getByText("#27513")).toBeVisible();
   await expect.element(page.getByRole("button", { name: "Initialize Git" })).toBeVisible();
 });
 
 it("offers no Initialize Git before the server config says where No project lives", async () => {
+  await page.viewport(1200, 800);
   using fixture = setup({
     workspaceRoot: SCRATCH_ROOT,
     folder: `${SCRATCH_ROOT}/thread`,
     configLoaded: false,
   });
   await using _screen = await render(<Panel fixture={fixture} />);
+  await page.getByRole("tab", { name: "Project" }).click();
   await expect.element(page.getByRole("region", { name: "Workspace" })).toBeVisible();
   await expect
     .element(page.getByRole("button", { name: "Initialize Git" }))

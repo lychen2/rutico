@@ -49,7 +49,7 @@ const driver = ProviderDriverKind.make("omp");
 const provider = { ...CODEX_PROVIDER, instanceId, driver };
 const modelSelection = { instanceId, model: "gpt-5.4" };
 
-it("discloses only the current OMP checklist inline in the timeline footer", async () => {
+it("keeps one current OMP checklist immediately above the composer, outside message history", async () => {
   const thread = threadWithHistory("omp-todo-footer", 1, modelSelection);
   const other = threadWithHistory("omp-todo-neighbor", 1, modelSelection);
   const at = DateTime.makeUnsafe("2026-03-17T19:12:28.000Z");
@@ -95,14 +95,12 @@ it("discloses only the current OMP checklist inline in the timeline footer", asy
   const checklist = page.getByRole("region", { name: "待办清单" });
   const trigger = checklist.getByRole("button", { name: /^待办清单/ });
   const steps = checklist.getByRole("list");
-  await expect
-    .element(page.getByText("已使用 24,600 token", { exact: true }).first())
-    .toBeVisible();
-  const context = page.elementLocator(
-    document.querySelector<HTMLElement>('[data-chat-composer-overlay="true"]')!,
-  );
-  await expect.element(context.getByText("已使用 24,600 token", { exact: true })).toBeVisible();
-  await expect.element(context.getByText("已使用 25%", { exact: true })).toBeVisible();
+  const status = page.getByRole("button", { name: /^(上下文|第.*轮)/ });
+  await expect.element(status).toBeVisible();
+  expect(status.element().closest("form")).toBeNull();
+  await status.click();
+  await expect.element(page.getByText(/24,600.*100,000|100,000.*24,600/)).toBeVisible();
+  await userEvent.keyboard("{Escape}");
   await expect.element(checklist).not.toBeInTheDocument();
 
   const plan: OrchestrationV2PlanArtifact = {
@@ -165,8 +163,9 @@ it("discloses only the current OMP checklist inline in the timeline footer", asy
     .not.toBeInTheDocument();
   await expect.element(trigger).toHaveAttribute("aria-expanded", "false");
   await expect.element(trigger.getByText(/校对仪表盘/)).toBeVisible();
-  await expect.element(trigger.getByText("已完成 0/3", { exact: true })).toBeVisible();
-  expect(checklist.element().closest(".messages-timeline-scroll")).not.toBeNull();
+  await expect.element(trigger.getByText("0/3", { exact: true })).toBeVisible();
+  expect(checklist.element().closest('[data-chat-composer-overlay="true"]')).not.toBeNull();
+  expect(checklist.element().closest(".messages-timeline-scroll")).toBeNull();
   await expect.element(steps).not.toBeInTheDocument();
   await trigger.click();
   await expect.element(trigger).toHaveAttribute("aria-expanded", "true");
@@ -187,7 +186,7 @@ it("discloses only the current OMP checklist inline in the timeline footer", asy
     },
   });
   await expect.element(trigger.getByText(/检查窄屏显示/)).toBeVisible();
-  await expect.element(trigger.getByText("已完成 1/3", { exact: true })).toBeVisible();
+  await expect.element(trigger.getByText("1/3", { exact: true })).toBeVisible();
   await expect.element(trigger).toHaveAttribute("aria-expanded", "true");
   await expect
     .element(steps.getByRole("listitem").filter({ hasText: "检查窄屏显示" }).getByText("进行中"))
@@ -210,7 +209,7 @@ it("discloses only the current OMP checklist inline in the timeline footer", asy
   await expect.element(checklist).not.toBeInTheDocument();
   await expect.element(page.getByText(/旧 OMP 待办快照/)).not.toBeInTheDocument();
   await page.viewport(1280, 800);
-  await expect.element(context.getByText("已使用 25%", { exact: true })).toBeVisible();
+  await expect.element(status).toBeVisible();
 });
 
 it("hides only known idle OMP chatter and retains meaningful extension status", () => {

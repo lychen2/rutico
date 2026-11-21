@@ -22,6 +22,8 @@ import type { ExpandedImagePreview } from "./ExpandedImagePreview";
 import { MessagesTimeline, type MessagesTimelineHistoryControls } from "./MessagesTimeline";
 import { ScrollToEndButton } from "./TimelineOverlays";
 import type { TimelineRow, TurnItemSource } from "./timelineRowContext";
+import { selectOmpTodo, ThreadOmpTodo, withoutOmpTodoSnapshots } from "./ThreadOmpTodo";
+
 import { useTimelineFollow } from "./useTimelineFollow";
 
 // The timeline needs an environment id to key its rows. No environment answers to this one, so a
@@ -60,7 +62,8 @@ export function ReadOnlyThreadTimeline(props: {
   const { resolvedTheme } = useTheme();
   // The rest is what ChatView derives from the same projection.
   const [projectQuestionHistory] = useState(() => createQuestionHistoryProjector());
-  const items = projectQuestionHistory(projection);
+  const items = withoutOmpTodoSnapshots(projectQuestionHistory(projection));
+  const todo = selectOmpTodo(projection);
   const entries = useIncrementalTimelineEntries(threadKey, {
     visibleTurnItems: items,
     optimisticMessages: NO_OPTIMISTIC_MESSAGES,
@@ -140,6 +143,7 @@ export function ReadOnlyThreadTimeline(props: {
           />
         ) : null}
       </div>
+      {todo.steps.length > 0 ? <ThreadOmpTodo key={threadKey} progress={todo} /> : null}
       {props.children({ scrollToEnd: () => follow.scrollToEnd(true) })}
     </>
   );

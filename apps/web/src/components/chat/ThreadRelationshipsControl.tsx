@@ -467,6 +467,7 @@ export function ThreadRelationshipsPanel(props: {
   readonly threadId: ThreadId;
   readonly showLineage: boolean;
   readonly showSideChats: boolean;
+  readonly emptyLabel?: string;
 }) {
   const gt = useGT();
   const m = useMessages();
@@ -669,7 +670,9 @@ export function ThreadRelationshipsPanel(props: {
   const runningSideChats = sideChats.filter(({ edge }) => edge.status === "running").length;
 
   if (!lineageVisible && !sideChatsVisible) {
-    return null;
+    return props.emptyLabel ? (
+      <p className="p-3 text-xs text-muted-foreground">{props.emptyLabel}</p>
+    ) : null;
   }
 
   // Idle children can be omitted from the shell; opening one loads its own detail.

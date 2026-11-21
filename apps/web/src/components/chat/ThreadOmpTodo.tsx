@@ -1,19 +1,21 @@
 import type { ThreadStructure } from "@t3tools/client-runtime/state/shell";
 import type { OrchestrationV2ProjectedTurnItem } from "@t3tools/contracts";
 import { useGT } from "gt-react";
-import { CheckIcon, ChevronDownIcon, CircleIcon, CirclePauseIcon, ListTodoIcon } from "lucide-react";
+import {
+  CheckIcon,
+  ChevronDownIcon,
+  CircleIcon,
+  CirclePauseIcon,
+  ListTodoIcon,
+} from "lucide-react";
 import { cn } from "~/lib/utils";
 import { Collapsible, CollapsiblePanel, CollapsibleTrigger } from "../ui/collapsible";
 
-export function withoutOmpTodoSnapshots(
-  rows: readonly OrchestrationV2ProjectedTurnItem[],
-  planId: string | undefined,
-) {
-  if (planId === undefined) return rows;
+export function withoutOmpTodoSnapshots(rows: readonly OrchestrationV2ProjectedTurnItem[]) {
   let retained: OrchestrationV2ProjectedTurnItem[] | undefined;
   for (let index = 0; index < rows.length; index += 1) {
     const row = rows[index]!;
-    if (row.item.type === "todo_list" && row.item.planId === planId) {
+    if (row.item.type === "todo_list" && row.item.planId === `omp-todo:${row.item.threadId}`) {
       retained ??= rows.slice(0, index);
     } else {
       retained?.push(row);
@@ -73,14 +75,20 @@ export function ThreadOmpTodo({ progress }: { readonly progress: OmpTodoProgress
   };
 
   return (
-    <section aria-label={label} className="chat-content-lane pb-2">
-      <Collapsible className="rounded-lg border border-border/60 bg-card/30">
-        <CollapsibleTrigger className="group flex min-h-9 w-full min-w-0 items-center gap-2 rounded-lg px-3 text-start text-xs hover:bg-muted/50 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring pointer-coarse:min-h-11">
-          <ListTodoIcon aria-hidden className="size-3.5 shrink-0 text-muted-foreground" />
-          <span className="min-w-0 flex-1 truncate">
-            <span className="font-medium">{label}</span>
-            {currentTitle ? <span className="text-muted-foreground"> · {currentTitle}</span> : null}
-          </span>
+    <section aria-label={label} className="relative z-20 mx-auto mb-2 w-fit max-w-full">
+      <Collapsible>
+        <CollapsibleTrigger
+          aria-label={[
+            label,
+            currentTitle,
+            gt("{completed}/{total} done", { completed, total: steps.length }),
+          ]
+            .filter(Boolean)
+            .join(" · ")}
+          className="group flex min-h-8 max-w-full items-center gap-2 rounded-full border border-border/70 bg-popover px-3 text-xs shadow-sm hover:bg-muted focus-visible:outline-2 focus-visible:outline-ring pointer-coarse:min-h-11"
+        >
+          <ListTodoIcon aria-hidden className="size-3.5 shrink-0 text-primary" />
+          <span className="min-w-0 max-w-64 truncate font-medium">{currentTitle ?? label}</span>
           {steps.length <= 8 ? (
             <span aria-hidden className="hidden shrink-0 gap-0.5 sm:flex">
               {steps.map(({ id, status }) => (
@@ -100,16 +108,16 @@ export function ThreadOmpTodo({ progress }: { readonly progress: OmpTodoProgress
               ))}
             </span>
           ) : null}
-          <span className="shrink-0 text-muted-foreground tabular-nums">
-            {gt("{completed}/{total} done", { completed, total: steps.length })}
+          <span className="shrink-0 font-medium tabular-nums">
+            {completed}/{steps.length}
           </span>
           <ChevronDownIcon
             aria-hidden
             className="size-3.5 shrink-0 text-muted-foreground transition-transform group-data-panel-open:rotate-180 motion-reduce:transition-none"
           />
         </CollapsibleTrigger>
-        <CollapsiblePanel>
-          <ol className="divide-y divide-border/60 border-t border-border/60 px-3">
+        <CollapsiblePanel className="absolute bottom-full left-1/2 mb-1 w-max max-w-[min(24rem,85vw)] -translate-x-1/2">
+          <ol className="max-h-[45dvh] divide-y divide-border/60 overflow-y-auto rounded-xl border bg-popover px-3 text-popover-foreground shadow-lg">
             {steps.map(({ id, title, status, details }) => {
               const Icon =
                 status === "completed"

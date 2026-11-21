@@ -6,7 +6,7 @@ import { expect, it, vi } from "vite-plus/test";
 import { page, userEvent } from "vite-plus/test/browser";
 
 import { render } from "../../../test/render";
-import { ThreadArtifactsPanel } from "./ThreadArtifactsPanel";
+import { ThreadArtifactCount, ThreadArtifactsPanel } from "./ThreadArtifactsPanel";
 
 const { list, mintUrl, previewUrl } = vi.hoisted(() => ({
   list: vi.fn(),
@@ -38,6 +38,7 @@ it("distinguishes an older server from a failed request and a successful empty l
   const registry = AtomRegistry.make();
   await using screen = await render(
     <RegistryContext.Provider value={registry}>
+      <ThreadArtifactCount environmentId={environmentId} threadId={threadId} />
       <ThreadArtifactsPanel
         environmentId={environmentId}
         threadId={threadId}
@@ -61,9 +62,11 @@ it("distinguishes an older server from a failed request and a successful empty l
 
   registry.set(data, AsyncResult.failure(Cause.fail(new Error("Disconnected"))));
   await expect.element(screen.getByRole("button", { name: "Retry" })).toBeVisible();
+  await expect.element(screen.getByText("0", { exact: true })).not.toBeInTheDocument();
 
   registry.set(data, AsyncResult.success({ artifacts: [] }));
   await expect.element(screen.getByText("No artifacts in this thread yet.")).toBeVisible();
+  await expect.element(screen.getByText("0", { exact: true })).toBeVisible();
 });
 
 it("adds the artifact's downloaded bytes to the draft as a named file", async () => {

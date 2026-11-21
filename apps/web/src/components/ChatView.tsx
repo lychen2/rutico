@@ -56,7 +56,11 @@ import { usePendingThreadRequests } from "./chat/usePendingThreadRequests";
 import { isScratchProject } from "@t3tools/client-runtime/state/projects";
 import { resolveWorktreeRepositorySelection } from "@t3tools/client-runtime/state/thread-repositories";
 import { visibleThreadPullRequests } from "@t3tools/shared/threadPullRequests";
-import type { UsageLimitSourceSnapshots } from "@t3tools/contracts";
+import {
+  isToolLifecycleItemType,
+  latestProviderTurnForAttempt,
+  type UsageLimitSourceSnapshots,
+} from "@t3tools/contracts";
 import { feedbackBannerItem } from "./chat/ComposerFeedback";
 import { freshSessionBannerItem } from "./chat/ComposerFreshSession";
 import { armFreshSession, disarmFreshSession, useFreshSessionArmed } from "./chat/freshSessionArms";
@@ -395,6 +399,7 @@ import { ChatTerminalDrawers } from "./chat/ChatTerminalDrawers";
 import { ChatRightPanel } from "./chat/ChatRightPanel";
 import { useDraftEnvironmentRouting } from "./chat/useDraftEnvironmentRouting";
 import { branchMismatchBannerItem, extensionStatusBannerItem } from "./chat/ThreadActivityBanners";
+import { ComposerThreadContext } from "./chat/ComposerThreadContext";
 import { selectOmpTodo, ThreadOmpTodo, withoutOmpTodoSnapshots } from "./chat/ThreadOmpTodo";
 import { ThreadNow } from "./chat/ThreadNow";
 import { threadRuntimeIsActive, type ThreadStructure } from "@t3tools/client-runtime/state/shell";
@@ -1625,7 +1630,7 @@ export default function ChatView(props: ChatViewProps) {
       ? activeProviderThread?.driver
       : providerStatuses.find((provider) => provider.instanceId === selectedInstanceId)?.driver;
   const isOmpThread = serverProjection !== null && selectedDriver === "omp";
-  const ompTodo = isOmpThread ? selectOmpTodo(serverProjection) : null;
+  const ompTodo = !embedded && serverProjection ? selectOmpTodo(serverProjection) : null;
 
   const timelineEntriesInput = {
     optimisticMessages: optimisticUserMessages,
@@ -1647,7 +1652,7 @@ export default function ChatView(props: ChatViewProps) {
     isServerThread && serverTimelineRows.length !== serverVisibleTurnItems.length;
   const serverTimelineEntries = useIncrementalTimelineEntries(activeThreadKey, {
     ...timelineEntriesInput,
-    visibleTurnItems: withoutOmpTodoSnapshots(serverTimelineRows, ompTodo?.planId),
+    visibleTurnItems: withoutOmpTodoSnapshots(serverTimelineRows),
   });
   const draftTimelineEntries = optimisticUserMessages.map(
     (message) =>
@@ -3290,16 +3295,34 @@ export default function ChatView(props: ChatViewProps) {
       .filter((part) => part !== null)
       .join(" · ") || null;
   const hasOmpTodo = ompTodo !== null && ompTodo.steps.length > 0;
-  // The timeline footer holds the current checklist and thread state, then upcoming messages.
+  const showSessionStatus =
+    isOmpThread && !isDraftHeroState && composerMounted && pendingUserInputs.length === 0;
+  const composerContextRun = showSessionStatus
+    ? (serverProjection.runs.find((run) => run.id === activeActivityRun?.runId) ?? null)
+    : null;
+  const composerContextStepCount =
+    composerContextRun === null
+      ? null
+      : serverVisibleTurnItems.reduce(
+          (count, { item }) =>
+            count +
+            Number(
+              item.runId === composerContextRun.id &&
+                item.nodeId === composerContextRun.rootNodeId &&
+                (item.type === "reasoning" ||
+                  isToolLifecycleItemType(item.type) ||
+                  item.type === "file_search" ||
+                  item.type === "dynamic_tool"),
+            ),
+          0,
+        );
   const timelineFooter =
-    !hasOmpTodo &&
     pendingHandoff === null &&
     !hasThreadNow &&
     threadStatusLine === null &&
     pendingGuestMessageCount === 0 &&
     !hasQueuedTurns ? null : (
       <>
-        {hasOmpTodo ? <ThreadOmpTodo key={routeThreadKey} progress={ompTodo} /> : null}
         {pendingHandoff === null ? null : (
           <div className="chat-content-lane">
             <HandoffRow
@@ -3593,7 +3616,6 @@ export default function ChatView(props: ChatViewProps) {
                   canOperateThread={canOperateThread}
                   threadDetailRef={routeThreadDetailRef}
                   entriesInput={timelineEntriesInput}
-                  ompTodoPlanId={ompTodo?.planId}
                   draftEntries={isServerThread ? null : draftTimelineEntries}
                   activeThreadKey={activeThreadKey}
                   syncing={threadSyncPhase !== null}
@@ -3724,6 +3746,7 @@ export default function ChatView(props: ChatViewProps) {
                   data-chat-composer-stack="true"
                   className="group/composer-stack pointer-events-auto relative z-10 mx-auto w-full max-w-(--chat-content-max-width)"
                 >
+                  {hasOmpTodo ? <ThreadOmpTodo key={routeThreadKey} progress={ompTodo} /> : null}
                   {isDraftHeroState ? (
                     <div className="absolute inset-x-0 bottom-full">
                       <div
@@ -3753,7 +3776,9 @@ export default function ChatView(props: ChatViewProps) {
                   >
                     <ChildThreadApprovals threadRef={activeThreadRef} />
                     <div className="relative">
-                      <ComposerSurface.Shell contextRow={showComposerContextStrip}>
+                      <ComposerSurface.Shell
+                        contextRow={showComposerContextStrip || showSessionStatus}
+                      >
                         <ComposerSurface.Host
                           inert={queuedRunEdit.isSaving}
                           aria-busy={queuedRunEdit.isSaving}
@@ -3845,13 +3870,6 @@ export default function ChatView(props: ChatViewProps) {
                                   isDraftHeroState || composerBannerItems.length === 0
                                     ? EMPTY_COMPOSER_BANNER_ITEMS
                                     : composerBannerItems
-                                }
-                                threadContextUsage={
-                                  isOmpThread && !isDraftHeroState
-                                    ? activeProviderThread?.driver === "omp"
-                                      ? activeContextWindow
-                                      : null
-                                    : undefined
                                 }
                                 resumeCompactionTokens={resumeCompactionTokens}
                                 keepFullHistory={keepFullHistory}
@@ -3948,6 +3966,24 @@ export default function ChatView(props: ChatViewProps) {
                             )}
                           </div>
                         </ComposerSurface.Host>
+                        {showSessionStatus ? (
+                          <ComposerThreadContext
+                            key={routeThreadKey}
+                            run={composerContextRun}
+                            stepCount={composerContextStepCount}
+                            turnUsage={
+                              composerContextRun && serverProjection
+                                ? (latestProviderTurnForAttempt(
+                                    serverProjection.providerTurns,
+                                    composerContextRun.activeAttemptId,
+                                  )?.turnTokenUsage ?? null)
+                                : null
+                            }
+                            usage={
+                              activeProviderThread?.driver === "omp" ? activeContextWindow : null
+                            }
+                          />
+                        ) : null}
                         <div className="min-h-0">
                           <div
                             data-terminal-open={terminalUiState.terminalOpen ? "true" : undefined}

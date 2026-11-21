@@ -1,4 +1,11 @@
-import { ArrowLeftIcon, ArrowRightIcon, ChartNoAxesColumnIcon, SettingsIcon } from "lucide-react";
+import {
+  ArchiveIcon,
+  ArrowLeftIcon,
+  ArrowRightIcon,
+  ChartNoAxesColumnIcon,
+  EllipsisIcon,
+  SettingsIcon,
+} from "lucide-react";
 import type { ReactNode } from "react";
 import { T, useGT } from "gt-react";
 import { memo } from "react";
@@ -24,6 +31,7 @@ import {
 } from "../SidebarStageBackdrop";
 import { Badge } from "../ui/badge";
 import { Button } from "../ui/button";
+import { Menu, MenuItem, MenuPopup, MenuTrigger } from "../ui/menu";
 import {
   SidebarFooter,
   SidebarMenu,
@@ -286,25 +294,42 @@ const SidebarUtilityMenu = memo(function SidebarUtilityMenu() {
             label={gt("Settings")}
             onClick={handleSettingsClick}
           />
-          {pullRequestsSupported ? (
-            <SidebarUtilityItem
-              icon={<PullRequestGlyph.pullRequest />}
-              label={gt("Pull requests")}
-              onClick={handlePullRequestsClick}
-            />
-          ) : null}
-          {issuesSupported ? (
-            <SidebarUtilityItem
-              icon={<IssueGlyph.issue />}
-              label={gt("Issues", { $context: "sidebar link to the list of issues" })}
-              onClick={handleIssuesClick}
-            />
-          ) : null}
           <SidebarUtilityItem
             icon={<ChartNoAxesColumnIcon />}
             label={gt("Usage")}
             onClick={handleUsageClick}
           />
+          <SidebarUtilityItem
+            icon={<ArchiveIcon />}
+            label={gt("Archived threads")}
+            onClick={() => {
+              closeMobileSidebar();
+              void navigate({ to: "/settings/archived" });
+            }}
+          />
+          {pullRequestsSupported || issuesSupported ? (
+            <SidebarMenuItem className="shrink-0">
+              <Menu>
+                <MenuTrigger render={<SidebarMenuButton aria-label={gt("More")} size="icon" />}>
+                  <EllipsisIcon />
+                </MenuTrigger>
+                <MenuPopup side="top" align="start">
+                  {pullRequestsSupported ? (
+                    <MenuItem onClick={handlePullRequestsClick}>
+                      <PullRequestGlyph.pullRequest />
+                      {gt("Pull requests")}
+                    </MenuItem>
+                  ) : null}
+                  {issuesSupported ? (
+                    <MenuItem onClick={handleIssuesClick}>
+                      <IssueGlyph.issue />
+                      {gt("Issues", { $context: "sidebar link to the list of issues" })}
+                    </MenuItem>
+                  ) : null}
+                </MenuPopup>
+              </Menu>
+            </SidebarMenuItem>
+          ) : null}
         </>
       )}
       <SidebarThreadUndoNotice />

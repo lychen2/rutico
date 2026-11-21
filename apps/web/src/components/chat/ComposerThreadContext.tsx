@@ -6,6 +6,7 @@ import { msg, useGT, useLocale, useMessages } from "gt-react";
 import { ChevronUpIcon } from "lucide-react";
 
 import { tickTextContent } from "~/lib/tickTextContent";
+import { Button } from "../ui/button";
 import { Popover, PopoverPopup, PopoverTitle, PopoverTrigger } from "../ui/popover";
 
 const runStatusLabels = {
@@ -61,8 +62,7 @@ export function ComposerThreadContext({
     <div className="relative px-2 pt-1">
       <Popover>
         <PopoverTrigger
-          type="button"
-          className="inline-flex min-h-7 max-w-full flex-wrap items-center gap-x-2 gap-y-0.5 rounded-md px-1.5 py-0.5 text-start text-xs text-muted-foreground tabular-nums hover:bg-accent hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring"
+          render={<Button variant="ghost" size="sm" className="max-w-full flex-wrap" />}
         >
           <span className="flex items-center gap-1.5 font-medium">
             <span
@@ -106,7 +106,7 @@ export function ComposerThreadContext({
           <p className="text-xs text-muted-foreground tabular-nums">
             {usage === null
               ? gt("Not reported")
-              : usage.maxTokens === null
+              : usage.maxTokens == null
                 ? gt("{usedTokens} tokens used", {
                     usedTokens: usage.usedTokens.toLocaleString(locale),
                   })

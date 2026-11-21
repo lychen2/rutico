@@ -30,6 +30,8 @@ export function ThreadDetailsCard({
   contentKey,
   onContextMenu,
   artifacts,
+  artifactCount,
+  subtasks,
   children,
 }: {
   threadRef: ScopedThreadRef;
@@ -38,6 +40,8 @@ export function ThreadDetailsCard({
   /** Changes when the set of rendered items changes, so cached heights are measured again. */
   contentKey: string;
   artifacts?: ReactNode;
+  artifactCount?: ReactNode;
+  subtasks?: ReactNode;
   onContextMenu?: MouseEventHandler<HTMLDivElement>;
   children: (density: "full" | "compact" | "essential") => ReactNode;
 }) {
@@ -48,7 +52,7 @@ export function ThreadDetailsCard({
   const [tabSelection, setTabSelection] = useState<{ threadKey: string; tab: string } | null>(null);
   const hasArtifactsTab = artifacts !== undefined && artifacts !== null;
   const tab =
-    hasArtifactsTab && tabSelection?.threadKey === threadKey ? tabSelection.tab : "project";
+    hasArtifactsTab && tabSelection?.threadKey === threadKey ? tabSelection.tab : "artifacts";
   const canvas = useChatCanvas();
   const preferredPlacement = canvas?.preferredDetailsCard ?? null;
   const placement = mobile ? null : (canvas?.detailsCardPlacement ?? null);
@@ -130,21 +134,26 @@ export function ThreadDetailsCard({
       <Tabs.Root
         value={tab}
         onValueChange={(next) => {
-          if (next === "project" || next === "artifacts") {
+          if (next === "project" || next === "artifacts" || next === "subtasks") {
             setTabSelection({ threadKey, tab: next });
           }
         }}
       >
-        <Tabs.List className="mx-2 mt-2 grid grid-cols-2 gap-1 rounded-lg bg-muted/70 p-1">
-          <Tabs.Tab value="project" className={detailTabClass}>
-            {gt("Project")}
-          </Tabs.Tab>
+        <Tabs.List className="mx-2 mt-2 grid grid-cols-3 gap-1 rounded-lg bg-muted/70 p-1">
           <Tabs.Tab value="artifacts" className={detailTabClass}>
             {gt("Artifacts")}
+            {artifactCount}
+          </Tabs.Tab>
+          <Tabs.Tab value="subtasks" className={detailTabClass}>
+            {gt("Subtasks")}
+          </Tabs.Tab>
+          <Tabs.Tab value="project" className={detailTabClass}>
+            {gt("Project")}
           </Tabs.Tab>
         </Tabs.List>
         <Tabs.Panel value="project">{content}</Tabs.Panel>
         <Tabs.Panel value="artifacts">{artifacts}</Tabs.Panel>
+        <Tabs.Panel value="subtasks">{subtasks}</Tabs.Panel>
       </Tabs.Root>
     ) : (
       content
@@ -257,4 +266,4 @@ export function ThreadDetailsCard({
 }
 
 const detailTabClass =
-  "min-w-0 cursor-pointer truncate rounded-md px-2 py-1 text-xs font-medium text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring data-active:bg-background data-active:text-foreground data-active:shadow-xs";
+  "min-w-0 cursor-pointer truncate rounded-md px-2 py-1 text-xs font-medium text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring data-active:bg-background data-active:text-foreground data-active:shadow-xs";

@@ -80,6 +80,7 @@ function Card({
           handle={fixture.handle}
           contentKey={String(rows)}
           artifacts={showArtifacts ? <p>Outputs for {threadRef.threadId}</p> : null}
+          subtasks={<p>Delegated work for {threadRef.threadId}</p>}
         >
           {(density) => (
             <>
@@ -118,7 +119,6 @@ it("shows the artifact tab inline and in the popup without carrying it to anothe
     <Card threadRef={threadB} inline fixture={fixture} showArtifacts />,
   );
   await act(() => useRightPanelStore.getState().setThreadPanelOpen(threadB, "inline", true));
-  await userEvent.click(page.getByRole("tab", { name: "Artifacts" }));
   await expect
     .element(page.getByRole("tabpanel", { name: "Artifacts" }))
     .toHaveTextContent("Outputs for thread-b");
@@ -129,13 +129,16 @@ it("shows the artifact tab inline and in the popup without carrying it to anothe
   );
   await act(() => useRightPanelStore.getState().setThreadPanelOpen(threadB, "popover", true));
   await expect.element(page.getByRole("dialog").getByText("Outputs for thread-b")).toBeVisible();
+  await userEvent.click(page.getByRole("tab", { name: "Subtasks" }));
+  await expect.element(page.getByText("Delegated work for thread-b")).toBeVisible();
 
   await screen.rerender(<Card threadRef={threadA} inline fixture={fixture} showArtifacts />);
   await act(() => useRightPanelStore.getState().setThreadPanelOpen(threadA, "inline", true));
   await expect
-    .element(page.getByRole("tabpanel", { name: "Project" }))
-    .toHaveTextContent("Details for thread-a");
-  await expect.element(page.getByText("Outputs for thread-a")).not.toBeInTheDocument();
+    .element(page.getByRole("tabpanel", { name: "Artifacts" }))
+    .toHaveTextContent("Outputs for thread-a");
+  await userEvent.click(page.getByRole("tab", { name: "Project" }));
+  await expect.element(page.getByText("Details for thread-a")).toBeVisible();
 });
 
 it("closes a popup left open when the card switches inline, and reopens from the flag", async () => {

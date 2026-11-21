@@ -52,6 +52,19 @@ function useThreadArtifacts(environmentId: EnvironmentId, threadId: ThreadId) {
   return { ...query, canReadFiles, isUnsupported, isPending: isPending || query.isPending };
 }
 
+export function ThreadArtifactCount({
+  environmentId,
+  threadId,
+}: {
+  environmentId: EnvironmentId;
+  threadId: ThreadId;
+}) {
+  const query = useThreadArtifacts(environmentId, threadId);
+  return query.isSuccess && query.data ? (
+    <span className="ms-1 tabular-nums">{query.data.artifacts.length}</span>
+  ) : null;
+}
+
 export function ThreadArtifactsPanel({
   environmentId,
   threadId,

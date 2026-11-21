@@ -22,7 +22,7 @@ import ProjectScriptsControl, {
 import { T, useGT } from "gt-react";
 import { useState, type ComponentProps } from "react";
 import { ThreadDetailsCard } from "./ThreadDetailsCard";
-import { ThreadArtifactsPanel } from "./ThreadArtifactsPanel";
+import { ThreadArtifactCount, ThreadArtifactsPanel } from "./ThreadArtifactsPanel";
 import { OpenInPicker } from "./OpenInPicker";
 import { ThreadDetailsSection } from "./ThreadDetailsSection";
 import { ThreadAutomationsPanel } from "./ThreadAutomationsPanel";
@@ -160,6 +160,11 @@ export function ThreadDetailsPanel(props: ThreadDetailsPanelProps) {
       threadRef={{ environmentId: props.environmentId, threadId: props.threadId }}
       anchor={props.anchor}
       handle={props.handle}
+      artifactCount={
+        props.isServerThread ? (
+          <ThreadArtifactCount environmentId={props.environmentId} threadId={props.threadId} />
+        ) : null
+      }
       artifacts={
         props.isServerThread ? (
           <ThreadArtifactsPanel
@@ -169,6 +174,15 @@ export function ThreadDetailsPanel(props: ThreadDetailsPanelProps) {
             onAttachFiles={props.onAttachArtifactFiles}
           />
         ) : null
+      }
+      subtasks={
+        <ThreadRelationshipsPanel
+          environmentId={props.environmentId}
+          threadId={props.threadId}
+          showLineage={visible.lineage}
+          showSideChats={visible.sideChats}
+          emptyLabel={gt("No subtasks in this conversation.")}
+        />
       }
       contentKey={THREAD_DETAILS_ITEMS.filter((item) => visible[item.id])
         .map((item) => item.id)
@@ -322,15 +336,6 @@ export function ThreadDetailsPanel(props: ThreadDetailsPanelProps) {
                 <ThreadAutomationsPanel
                   environmentId={props.environmentId}
                   threadId={props.threadId}
-                />
-              ) : null}
-
-              {density === "full" && !props.draftId && (visible.lineage || visible.sideChats) ? (
-                <ThreadRelationshipsPanel
-                  environmentId={props.environmentId}
-                  threadId={props.threadId}
-                  showLineage={visible.lineage}
-                  showSideChats={visible.sideChats}
                 />
               ) : null}
 

@@ -21,7 +21,6 @@ import { withoutOmpTodoSnapshots } from "./ThreadOmpTodo";
 export function ThreadTimeline({
   threadDetailRef,
   entriesInput,
-  ompTodoPlanId,
   draftEntries,
   activeThreadKey,
   syncing,
@@ -31,7 +30,6 @@ export function ThreadTimeline({
   /** Null until the thread's detail may load; see resolveThreadDetailRef. */
   threadDetailRef: ScopedThreadRef | null;
   entriesInput: Omit<TimelineEntriesInput, "visibleTurnItems">;
-  ompTodoPlanId?: string | undefined;
   /** A local draft's optimistic rows; null for a server thread. */
   draftEntries: ReadonlyArray<TimelineEntry> | null;
   activeThreadKey: string | null;
@@ -41,7 +39,7 @@ export function ThreadTimeline({
   const visibleTurnItems = useTimelineVisibleTurnItems(threadDetailRef);
   const serverEntries = useIncrementalTimelineEntries(activeThreadKey, {
     ...entriesInput,
-    visibleTurnItems: withoutOmpTodoSnapshots(visibleTurnItems, ompTodoPlanId),
+    visibleTurnItems: withoutOmpTodoSnapshots(visibleTurnItems),
   });
   const entries = draftEntries ?? serverEntries;
   const displayedEntries = resolveThreadSwitchTimeline({
