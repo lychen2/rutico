@@ -25,4 +25,28 @@ export const ompClient = defineProviderClient({
   driverKind: ProviderDriverKind.make("omp"),
   label: "OMP",
   settingsSchema: OmpSettings,
+  // https://omp.sh/favicon.svg, expressed in provider-icon coordinates.
+  icon: {
+    viewBox: "0 0 64 64",
+    fill: { light: "#0f0a14", dark: "#0f0a14" },
+    paths: [
+      {
+        d: "M12 0h40a12 12 0 0 1 12 12v40a12 12 0 0 1-12 12H12A12 12 0 0 1 0 52V12A12 12 0 0 1 12 0Z",
+      },
+      {
+        d: "M14 16h36v8H40v32h-8V24h-6v22h-8V24h-4z",
+        gradient: {
+          x1: 14,
+          y1: 16,
+          x2: 53.779,
+          y2: 51.801,
+          stops: [
+            { offset: 0, color: "#ed4abf" },
+            { offset: 0.5, color: "#9b4dff" },
+            { offset: 1, color: "#5ad8e6" },
+          ],
+        },
+      },
+    ],
+  },
 });

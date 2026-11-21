@@ -489,6 +489,7 @@ interface ActivePiTurn {
   messageOrdinal: number;
   readonly streamItems: Map<string, PiStreamItemState>;
   readonly toolArgs: Map<string, unknown>;
+  readonly toolPurposes: Map<string, string>;
   readonly toolStartedAt: Map<string, DateTime.Utc>;
   readonly commandOutputBytes: Map<string, number>;
   interrupted: boolean;
@@ -1533,8 +1534,15 @@ export const makePiAdapterV2 = Effect.fn("makePiAdapterV2")(function* (
           turn.toolArgs.set(toolCallId, event["args"]);
         }
         const args = event["args"] ?? turn.toolArgs.get(toolCallId);
-        const toolPurpose =
+        // OMP strips i from execution arguments and only sends intent on the start frame.
+        const receivedPurpose =
           recordString(event, "intent")?.trim() || recordString(args, "i")?.trim();
+        const toolPurpose = receivedPurpose || turn.toolPurposes.get(toolCallId);
+        if (phase === "end") {
+          turn.toolPurposes.delete(toolCallId);
+        } else if (receivedPurpose) {
+          turn.toolPurposes.set(toolCallId, receivedPurpose);
+        }
         const emittedAt = yield* DateTime.now;
         const startedAt = turn.toolStartedAt.get(toolCallId) ?? emittedAt;
         turn.toolStartedAt.set(toolCallId, startedAt);
@@ -3850,6 +3858,7 @@ export const makePiAdapterV2 = Effect.fn("makePiAdapterV2")(function* (
               messageOrdinal: 0,
               streamItems: new Map(),
               toolArgs: new Map(),
+              toolPurposes: new Map(),
               toolStartedAt: new Map(),
               commandOutputBytes: new Map(),
               interrupted: false,
