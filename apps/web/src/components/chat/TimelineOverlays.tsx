@@ -31,26 +31,25 @@ export function ScrollToEndButton(props: {
 }) {
   return (
     <div
-      className="chat-scroll-to-bottom pointer-events-none absolute z-30 flex justify-center py-1.5"
+      className="chat-scroll-to-bottom chat-composer-lane pointer-events-none absolute z-30 flex justify-center py-1.5"
       style={{ bottom: props.bottom }}
     >
-      <Button
-        data-scroll-to-end="true"
-        onPointerDown={(event) => event.preventDefault()}
-        onClick={props.onScrollToEnd}
-        className="pointer-events-auto"
-        size="xs"
-        variant="glass"
-      >
-        <ChevronDownIcon className="size-3.5" />
-        <T>Scroll to end</T>
-        {props.summary === null ? null : (
-          <span className="text-muted-foreground">
-            <span aria-hidden>· </span>
-            {props.summary}
+      <div className="flex w-full max-w-(--chat-content-max-width) justify-end">
+        <Button
+          data-scroll-to-end="true"
+          onPointerDown={(event) => event.preventDefault()}
+          onClick={props.onScrollToEnd}
+          className="pointer-events-auto"
+          size="icon-sm-pill"
+          variant="glass"
+        >
+          <ChevronDownIcon aria-hidden className="size-4" />
+          <span className="sr-only">
+            <T>Scroll to end</T>
+            {props.summary === null ? null : ` · ${props.summary}`}
           </span>
-        )}
-      </Button>
+        </Button>
+      </div>
     </div>
   );
 }

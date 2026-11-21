@@ -28,6 +28,7 @@ export function ComposerThreadContext({
   run,
   stepCount,
   turnUsage,
+  contextStatus,
 }: {
   readonly usage: ContextWindowSnapshot | null;
   readonly run: Pick<
@@ -36,6 +37,7 @@ export function ComposerThreadContext({
   > | null;
   readonly stepCount: number | null;
   readonly turnUsage: TurnTokenUsage | null;
+  readonly contextStatus?: string | undefined;
 }) {
   const gt = useGT();
   const locale = useLocale();
@@ -147,6 +149,9 @@ export function ComposerThreadContext({
                 ) : null}
               </dl>
             </>
+          ) : null}
+          {contextStatus ? (
+            <p className="mt-2 text-xs text-muted-foreground">{contextStatus}</p>
           ) : null}
         </PopoverPopup>
       </Popover>

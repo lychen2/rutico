@@ -8,7 +8,13 @@ import { ComposerThreadContext } from "./ComposerThreadContext";
 
 it("opens context details by keyboard and returns focus when dismissed", async () => {
   await using screen = await render(
-    <ComposerThreadContext usage={null} run={null} stepCount={null} turnUsage={null} />,
+    <ComposerThreadContext
+      usage={null}
+      run={null}
+      stepCount={null}
+      turnUsage={null}
+      contextStatus="mc: 131.7K (65%) · ⚠ historian failed"
+    />,
   );
   const trigger = screen.getByRole("button", { name: /Context/ });
   await userEvent.tab();
@@ -17,6 +23,7 @@ it("opens context details by keyboard and returns focus when dismissed", async (
 
   const details = page.getByRole("dialog", { name: "Context window" });
   await expect.element(details.getByText("Not reported")).toBeVisible();
+  await expect.element(details.getByText(/historian failed/)).toBeVisible();
   await userEvent.keyboard("{Escape}");
   await expect.element(details).not.toBeInTheDocument();
   await expect.element(trigger).toHaveFocus();

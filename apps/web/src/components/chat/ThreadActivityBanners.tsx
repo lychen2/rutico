@@ -44,7 +44,7 @@ export function extensionStatusBannerItem(
   const visible = showOmpDashboard
     ? statuses.filter(
         ({ key, text }) =>
-          !(key === "magic-context" && /^mc: [\d.]+[KMB]?(?: \(\d+%\))? · idle$/i.test(text)) &&
+          key !== "magic-context" &&
           !(key === "bansos" && /^(?:中继\s*[:：]\s*关闭|relay\s*:?\s*off)$/i.test(text)),
       )
     : statuses;

@@ -1630,6 +1630,7 @@ export default function ChatView(props: ChatViewProps) {
       ? activeProviderThread?.driver
       : providerStatuses.find((provider) => provider.instanceId === selectedInstanceId)?.driver;
   const isOmpThread = serverProjection !== null && selectedDriver === "omp";
+  const extensionStatuses = deriveProviderExtensionStatuses(serverProjection);
   const ompTodo = !embedded && serverProjection ? selectOmpTodo(serverProjection) : null;
 
   const timelineEntriesInput = {
@@ -2773,10 +2774,7 @@ export default function ChatView(props: ChatViewProps) {
           ]
         : [];
     const limitRecoveryItems = limitRecoveryBanner === null ? [] : [limitRecoveryBanner];
-    const extensionStatusBanner = extensionStatusBannerItem(
-      deriveProviderExtensionStatuses(serverProjection),
-      isOmpThread,
-    );
+    const extensionStatusBanner = extensionStatusBannerItem(extensionStatuses, isOmpThread);
     const extensionStatusItems = extensionStatusBanner === null ? [] : [extensionStatusBanner];
     const usageLimitsItems = usageLimitsBanner === null ? [] : [usageLimitsBanner];
     const projectCloneItems = projectCloneBannerItem === null ? [] : [projectCloneBannerItem];
@@ -3970,6 +3968,9 @@ export default function ChatView(props: ChatViewProps) {
                           <ComposerThreadContext
                             key={routeThreadKey}
                             run={composerContextRun}
+                            contextStatus={
+                              extensionStatuses.find(({ key }) => key === "magic-context")?.text
+                            }
                             stepCount={composerContextStepCount}
                             turnUsage={
                               composerContextRun && serverProjection

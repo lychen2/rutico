@@ -228,8 +228,13 @@ it("hides only known idle OMP chatter and retains meaningful extension status", 
   ];
   expect(extensionStatusBannerItem(idle, true)).toBeNull();
   expect(extensionStatusBannerItem(idle, false)).not.toBeNull();
+  expect(
+    extensionStatusBannerItem(
+      [{ key: "magic-context", text: "mc: 131.7K (65%) · ⚠ historian failed" }],
+      true,
+    ),
+  ).toBeNull();
   for (const status of [
-    { key: "magic-context", text: "mc: 241K (28%) · historian" },
     { key: "bansos", text: "中继: 连接失败" },
     { key: "unified-exec.sessions", text: "unified-exec：1 个会话正在运行" },
   ]) {
