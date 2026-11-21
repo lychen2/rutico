@@ -1,3 +1,4 @@
+import { Tabs } from "@base-ui/react/tabs";
 import { useGT } from "gt-react";
 import { workspaceAreaProps } from "../../lib/workspaceFocus";
 import {
@@ -11,6 +12,8 @@ import type { ScopedThreadRef } from "@t3tools/contracts";
 import { ScrollArea } from "../ui/scroll-area";
 import { cn } from "../../lib/utils";
 import { Popover, PopoverPopup, PopoverCreateHandle } from "../ui/popover";
+import { Sheet, SheetPopup, SheetTitle } from "../ui/sheet";
+import { useMediaQuery } from "../../hooks/useMediaQuery";
 import { selectThreadPanelOpen, useRightPanelStore } from "../../rightPanelStore";
 import { useChatCanvas } from "./ChatCanvasContext";
 import {
@@ -26,6 +29,7 @@ export function ThreadDetailsCard({
   handle,
   contentKey,
   onContextMenu,
+  artifacts,
   children,
 }: {
   threadRef: ScopedThreadRef;
@@ -33,14 +37,21 @@ export function ThreadDetailsCard({
   handle: ReturnType<typeof PopoverCreateHandle>;
   /** Changes when the set of rendered items changes, so cached heights are measured again. */
   contentKey: string;
+  artifacts?: ReactNode;
   onContextMenu?: MouseEventHandler<HTMLDivElement>;
   children: (density: "full" | "compact" | "essential") => ReactNode;
 }) {
   const gt = useGT();
   const detailsArea = workspaceAreaProps("details", 3, gt("Thread details"));
+  const mobile = useMediaQuery("max-sm");
+  const threadKey = `${threadRef.environmentId}:${threadRef.threadId}`;
+  const [tabSelection, setTabSelection] = useState<{ threadKey: string; tab: string } | null>(null);
+  const hasArtifactsTab = artifacts !== undefined && artifacts !== null;
+  const tab =
+    hasArtifactsTab && tabSelection?.threadKey === threadKey ? tabSelection.tab : "project";
   const canvas = useChatCanvas();
   const preferredPlacement = canvas?.preferredDetailsCard ?? null;
-  const placement = canvas?.detailsCardPlacement ?? null;
+  const placement = mobile ? null : (canvas?.detailsCardPlacement ?? null);
   const mode = placement ? "inline" : "popover";
   const topInset = canvas?.detailsCardTopInset ?? 0;
   const inlineOpen = useRightPanelStore((state) =>
@@ -49,7 +60,7 @@ export function ThreadDetailsCard({
   const popoverOpen = useRightPanelStore((state) =>
     selectThreadPanelOpen(state.threadPanelVisibilityByThreadKey, threadRef, "popover"),
   );
-  const measurementKey = `${threadRef.environmentId}:${threadRef.threadId}:${preferredPlacement?.width ?? "popup"}:${contentKey}`;
+  const measurementKey = `${threadKey}:${preferredPlacement?.width ?? "popup"}:${contentKey}:${tab}:${hasArtifactsTab}`;
   const [measurements, setMeasurements] = useState({
     key: measurementKey,
     heights: { full: 0, compact: 0 },
@@ -114,6 +125,51 @@ export function ThreadDetailsCard({
     environmentId,
     threadId,
   ]);
+  const renderContents = (content: ReactNode) =>
+    hasArtifactsTab ? (
+      <Tabs.Root
+        value={tab}
+        onValueChange={(next) => {
+          if (next === "project" || next === "artifacts") {
+            setTabSelection({ threadKey, tab: next });
+          }
+        }}
+      >
+        <Tabs.List className="mx-2 mt-2 grid grid-cols-2 gap-1 rounded-lg bg-muted/70 p-1">
+          <Tabs.Tab value="project" className={detailTabClass}>
+            {gt("Project")}
+          </Tabs.Tab>
+          <Tabs.Tab value="artifacts" className={detailTabClass}>
+            {gt("Artifacts")}
+          </Tabs.Tab>
+        </Tabs.List>
+        <Tabs.Panel value="project">{content}</Tabs.Panel>
+        <Tabs.Panel value="artifacts">{artifacts}</Tabs.Panel>
+      </Tabs.Root>
+    ) : (
+      content
+    );
+  if (mobile) {
+    return (
+      <Sheet
+        open={popoverOpen}
+        onOpenChange={(open) =>
+          useRightPanelStore.getState().setThreadPanelOpen(threadRef, "popover", open)
+        }
+      >
+        <SheetPopup side="right" className="w-full max-w-none">
+          <div className="px-4 py-3">
+            <SheetTitle>{gt("Thread details")}</SheetTitle>
+          </div>
+          <ScrollArea className="min-h-0 flex-1">
+            <div data-thread-details-card data-thread-details-panel="mobile">
+              {renderContents(children("full"))}
+            </div>
+          </ScrollArea>
+        </SheetPopup>
+      </Sheet>
+    );
+  }
   const card = (
     <div
       className={cn(
@@ -126,7 +182,7 @@ export function ThreadDetailsCard({
       data-thread-details-card
     >
       <ScrollArea scrollFade className="min-h-0">
-        <div ref={setContentElement}>{children(density)}</div>
+        <div ref={setContentElement}>{renderContents(children(density))}</div>
       </ScrollArea>
     </div>
   );
@@ -199,3 +255,6 @@ export function ThreadDetailsCard({
     </Popover>
   );
 }
+
+const detailTabClass =
+  "min-w-0 cursor-pointer truncate rounded-md px-2 py-1 text-xs font-medium text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring data-active:bg-background data-active:text-foreground data-active:shadow-xs";

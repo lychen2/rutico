@@ -78,6 +78,31 @@ export const AssetResource = Schema.Union([
 ]);
 export type AssetResource = typeof AssetResource.Type;
 
+export const ThreadArtifactKind = Schema.Literals(["image", "video", "page", "document"]);
+export type ThreadArtifactKind = typeof ThreadArtifactKind.Type;
+
+export const ThreadArtifact = Schema.Struct({
+  name: Schema.String,
+  kind: ThreadArtifactKind,
+  resource: AssetResource,
+  mimeType: Schema.String,
+  sizeBytes: NonNegativeInt,
+  modifiedAt: Schema.Number,
+});
+export type ThreadArtifact = typeof ThreadArtifact.Type;
+
+export const ThreadArtifactsListInput = Schema.Struct({ threadId: ThreadId });
+export const ThreadArtifactsListResult = Schema.Struct({ artifacts: Schema.Array(ThreadArtifact) });
+
+export class ThreadArtifactsListError extends Schema.TaggedError<ThreadArtifactsListError>()(
+  "ThreadArtifactsListError",
+  { threadId: ThreadId, cause: Schema.Defect() },
+) {
+  override get message() {
+    return "Failed to read thread artifacts.";
+  }
+}
+
 export const AssetCreateUrlInput = Schema.Struct({
   resource: AssetResource,
 });

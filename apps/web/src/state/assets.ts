@@ -4,6 +4,8 @@ import {
   createProjectFaviconUrlAtomFamily,
   projectFaviconResource,
 } from "@t3tools/client-runtime/state/assets";
+import { createEnvironmentRpcQueryAtomFamily } from "@t3tools/client-runtime/state/runtime";
+import { WS_METHODS } from "@t3tools/contracts";
 import { Atom } from "effect/reactivity";
 
 import { connectionAtomRuntime } from "../connection/runtime";
@@ -13,6 +15,7 @@ import { isElectron } from "../env";
 import { primaryEnvironmentIdAtom } from "./primaryEnvironment";
 import { environmentProjectClonesAtom } from "./projectClones";
 import { environmentSession } from "./session";
+import { environmentThreadDetails } from "./threads";
 
 const localMediaEnvironment = Atom.make((get) => {
   if (!isElectron) return null;
@@ -29,6 +32,23 @@ export const assetEnvironment = createAssetEnvironmentAtoms(
   connectionAtomRuntime,
   localMediaEnvironment,
 );
+
+export const threadArtifactsQuery = createEnvironmentRpcQueryAtomFamily(connectionAtomRuntime, {
+  label: "environment-data:assets:list-thread-artifacts",
+  tag: WS_METHODS.assetsListThreadArtifacts,
+  staleTimeMs: 0,
+  idleTtlMs: 0,
+  refreshTrigger: ({ environmentId, input: { threadId } }) => {
+    const threadRef = { environmentId, threadId };
+    const workspaceMutation = environmentThreadDetails.workspaceMutationIdAtom(threadRef);
+    const thread = environmentThreadDetails.quietThreadAtom(threadRef);
+    return Atom.make((get) => {
+      const mutation = get(workspaceMutation);
+      const latestRun = get(thread)?.projection.runs.at(-1);
+      return JSON.stringify([mutation, latestRun?.id, latestRun?.status]);
+    }).pipe(Atom.setIdleTTL(0));
+  },
+});
 
 export const projectFaviconUrlAtom = createProjectFaviconUrlAtomFamily({
   imageCache: projectFaviconCache,

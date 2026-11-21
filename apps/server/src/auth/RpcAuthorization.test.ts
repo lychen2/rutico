@@ -717,6 +717,45 @@ it.effect("separates host file URLs from readable attachment URLs", () =>
   }),
 );
 
+it.effect("requires both thread and host file access to list artifacts", () =>
+  Effect.gen(function* () {
+    const method = WS_METHODS.assetsListThreadArtifacts;
+    const group = WsRpcGroup.omit(
+      ...[...WsRpcGroup.requests.keys()].filter(
+        (tag): tag is Exclude<keyof typeof RPC_REQUIRED_SCOPES, typeof method> => tag !== method,
+      ),
+    );
+    let handled = 0;
+    const handler = group.toLayerHandler(method, () =>
+      Effect.sync(() => {
+        handled++;
+        return { artifacts: [] };
+      }),
+    );
+    const input = { threadId: ThreadId.make("artifact-thread") };
+    for (const scope of [AuthOrchestrationReadScope, AuthFilesystemReadScope]) {
+      const client = yield* RpcTest.makeClient(group).pipe(
+        Effect.provide(Layer.merge(handler, RpcAuthorization.layer([scope]))),
+      );
+      expect(yield* client[method](input).pipe(Effect.flip)).toMatchObject({
+        requiredPermission:
+          scope === AuthOrchestrationReadScope ? AuthFilesystemReadScope : AuthOrchestrationReadScope,
+      });
+    }
+    expect(handled).toBe(0);
+    const client = yield* RpcTest.makeClient(group).pipe(
+      Effect.provide(
+        Layer.merge(
+          handler,
+          RpcAuthorization.layer([AuthOrchestrationReadScope, AuthFilesystemReadScope]),
+        ),
+      ),
+    );
+    expect(yield* client[method](input)).toEqual({ artifacts: [] });
+    expect(handled).toBe(1);
+  }),
+);
+
 it.effect("denies manual cleanup before the handler without settings permission", () =>
   Effect.gen(function* () {
     const group = WsRpcGroup.omit(

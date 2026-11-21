@@ -1,7 +1,7 @@
 import { StrictMode } from "react";
 import { EnvironmentId, ThreadId, type ScopedThreadRef } from "@t3tools/contracts";
 import { expect, it } from "vite-plus/test";
-import { page } from "vite-plus/test/browser";
+import { page, userEvent } from "vite-plus/test/browser";
 import { act, render } from "../../../test/render";
 import { selectThreadPanelOpen, useRightPanelStore } from "../../rightPanelStore";
 import { PopoverCreateHandle } from "../ui/popover";
@@ -45,6 +45,7 @@ function Card({
   rows = 1,
   automationRows = 0,
   serverOverflowRows = 0,
+  showArtifacts = false,
 }: {
   threadRef: ScopedThreadRef;
   inline: boolean;
@@ -55,6 +56,7 @@ function Card({
   automationRows?: number;
   /** Rows of 100px that expanded server lists add, which density ignores. */
   serverOverflowRows?: number;
+  showArtifacts?: boolean;
 }) {
   return (
     // The web root renders in StrictMode, which re-runs ref callbacks on every mount.
@@ -77,6 +79,7 @@ function Card({
           anchor={fixture.anchor}
           handle={fixture.handle}
           contentKey={String(rows)}
+          artifacts={showArtifacts ? <p>Outputs for {threadRef.threadId}</p> : null}
         >
           {(density) => (
             <>
@@ -106,6 +109,30 @@ it("stays open once opened", async () => {
   await act(() => useRightPanelStore.getState().setThreadPanelOpen(threadB, "popover", true));
   await expect.element(page.getByText("Details for thread-b")).toBeVisible();
   expect(popoverOpen(threadB)).toBe(true);
+});
+
+it("shows the artifact tab inline and in the popup without carrying it to another thread", async () => {
+  using fixture = setup();
+  await using screen = await render(
+    <Card threadRef={threadB} inline fixture={fixture} showArtifacts />,
+  );
+  await act(() => useRightPanelStore.getState().setThreadPanelOpen(threadB, "inline", true));
+  await userEvent.click(page.getByRole("tab", { name: "Artifacts" }));
+  await expect
+    .element(page.getByRole("tabpanel", { name: "Artifacts" }))
+    .toHaveTextContent("Outputs for thread-b");
+  await expect.element(page.getByText("Details for thread-b")).not.toBeVisible();
+
+  await screen.rerender(<Card threadRef={threadB} inline={false} fixture={fixture} showArtifacts />);
+  await act(() => useRightPanelStore.getState().setThreadPanelOpen(threadB, "popover", true));
+  await expect.element(page.getByRole("dialog").getByText("Outputs for thread-b")).toBeVisible();
+
+  await screen.rerender(<Card threadRef={threadA} inline fixture={fixture} showArtifacts />);
+  await act(() => useRightPanelStore.getState().setThreadPanelOpen(threadA, "inline", true));
+  await expect
+    .element(page.getByRole("tabpanel", { name: "Project" }))
+    .toHaveTextContent("Details for thread-a");
+  await expect.element(page.getByText("Outputs for thread-a")).not.toBeVisible();
 });
 
 it("closes a popup left open when the card switches inline, and reopens from the flag", async () => {

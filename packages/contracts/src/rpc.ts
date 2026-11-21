@@ -129,6 +129,9 @@ import {
   AttachmentCreateUploadUrlResult,
   AttachmentDeleteInput,
   AttachmentUploadSigningKeyError,
+  ThreadArtifactsListError,
+  ThreadArtifactsListInput,
+  ThreadArtifactsListResult,
 } from "./assets.ts";
 import {
   PersistChatAttachmentsError,
@@ -489,6 +492,7 @@ export const WS_METHODS = {
   agentSessionsScan: "agentSessions.scan",
   agentSessionsImport: "agentSessions.import",
   assetsCreateUrl: "assets.createUrl",
+  assetsListThreadArtifacts: "assets.listThreadArtifacts",
   assetsPersistChatAttachments: "assets.persistChatAttachments",
   attachmentsCreateUploadUrl: "attachments.createUploadUrl",
   attachmentsDelete: "attachments.delete",
@@ -1720,6 +1724,12 @@ const WsAssetsCreateUrlRpc = Rpc.make(WS_METHODS.assetsCreateUrl, {
   error: Schema.Union([AssetAccessError, EnvironmentAuthorizationError]),
 });
 
+const WsAssetsListThreadArtifactsRpc = Rpc.make(WS_METHODS.assetsListThreadArtifacts, {
+  payload: ThreadArtifactsListInput,
+  success: ThreadArtifactsListResult,
+  error: Schema.Union([ThreadArtifactsListError, EnvironmentAuthorizationError]),
+});
+
 const WsAssetsPersistChatAttachmentsRpc = Rpc.make(WS_METHODS.assetsPersistChatAttachments, {
   payload: PersistChatAttachmentsInput,
   success: PersistChatAttachmentsResult,
@@ -2532,6 +2542,7 @@ export const WsRpcGroup = RpcGroup.make(
   WsAgentSessionsScanRpc,
   WsAgentSessionsImportRpc,
   WsAssetsCreateUrlRpc,
+  WsAssetsListThreadArtifactsRpc,
   WsAssetsPersistChatAttachmentsRpc,
   WsAttachmentsCreateUploadUrlRpc,
   WsAttachmentsDeleteRpc,
