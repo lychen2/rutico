@@ -112,6 +112,7 @@ it("stays open once opened", async () => {
 });
 
 it("shows the artifact tab inline and in the popup without carrying it to another thread", async () => {
+  await page.viewport(1200, 800);
   using fixture = setup();
   await using screen = await render(
     <Card threadRef={threadB} inline fixture={fixture} showArtifacts />,
@@ -121,9 +122,11 @@ it("shows the artifact tab inline and in the popup without carrying it to anothe
   await expect
     .element(page.getByRole("tabpanel", { name: "Artifacts" }))
     .toHaveTextContent("Outputs for thread-b");
-  await expect.element(page.getByText("Details for thread-b")).not.toBeVisible();
+  await expect.element(page.getByText("Details for thread-b")).not.toBeInTheDocument();
 
-  await screen.rerender(<Card threadRef={threadB} inline={false} fixture={fixture} showArtifacts />);
+  await screen.rerender(
+    <Card threadRef={threadB} inline={false} fixture={fixture} showArtifacts />,
+  );
   await act(() => useRightPanelStore.getState().setThreadPanelOpen(threadB, "popover", true));
   await expect.element(page.getByRole("dialog").getByText("Outputs for thread-b")).toBeVisible();
 
@@ -132,7 +135,7 @@ it("shows the artifact tab inline and in the popup without carrying it to anothe
   await expect
     .element(page.getByRole("tabpanel", { name: "Project" }))
     .toHaveTextContent("Details for thread-a");
-  await expect.element(page.getByText("Outputs for thread-a")).not.toBeVisible();
+  await expect.element(page.getByText("Outputs for thread-a")).not.toBeInTheDocument();
 });
 
 it("closes a popup left open when the card switches inline, and reopens from the flag", async () => {

@@ -15,7 +15,10 @@ vi.mock("~/state/assets", () => ({ threadArtifactsQuery: list }));
 vi.mock("~/state/filesystem", () => ({
   useFilesystemReadAccess: () => ({ canReadFiles: true, isPending: false }),
 }));
-vi.mock("~/assets/assetUrls", () => ({ useAssetUrlRefresh: () => mintUrl }));
+vi.mock("~/assets/assetUrls", () => ({
+  useAssetUrlState: vi.fn(),
+  useAssetUrlRefresh: () => mintUrl,
+}));
 
 it("adds the artifact's downloaded bytes to the draft as a named file", async () => {
   const threadId = ThreadId.make("artifact-thread");
