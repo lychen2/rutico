@@ -201,6 +201,15 @@ it("keeps one current OMP checklist immediately above the composer, outside mess
   const bounds = checklist.element().getBoundingClientRect();
   expect(bounds.left).toBeGreaterThanOrEqual(0);
   expect(bounds.right).toBeLessThanOrEqual(360);
+  await emitThreadEvent(thread.id, {
+    type: "plan.updated",
+    payload: {
+      ...plan,
+      steps: plan.steps.slice(0, 3).map((step) => ({ ...step, status: "completed" })),
+    },
+  });
+  await expect.element(trigger.getByText("已完成", { exact: true })).toBeVisible();
+  await expect.element(trigger.getByText("3/3", { exact: true })).toBeVisible();
 
   await emitThreadEvent(thread.id, {
     type: "plan.updated",

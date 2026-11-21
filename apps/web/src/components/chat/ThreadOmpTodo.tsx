@@ -8,8 +8,10 @@ import {
   CirclePauseIcon,
   ListTodoIcon,
 } from "lucide-react";
+import { useLayoutEffect, useRef } from "react";
 import { cn } from "~/lib/utils";
 import { Collapsible, CollapsiblePanel, CollapsibleTrigger } from "../ui/collapsible";
+import "./threadOmpTodo.css";
 
 export function withoutOmpTodoSnapshots(rows: readonly OrchestrationV2ProjectedTurnItem[]) {
   let retained: OrchestrationV2ProjectedTurnItem[] | undefined;
@@ -67,6 +69,30 @@ export function ThreadOmpTodo({ progress }: { readonly progress: OmpTodoProgress
   const gt = useGT();
   const { steps, completed, currentTitle } = progress;
   const label = gt("To-do list");
+  const title = currentTitle ?? gt("Completed");
+  const titleRef = useRef<HTMLSpanElement>(null);
+  const previous = useRef<{ title: string; width: number } | null>(null);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Animate intrinsic label width after a task change without delaying the visible text.
+  useLayoutEffect(() => {
+    const element = titleRef.current;
+    if (!element) return;
+    const width = element.getBoundingClientRect().width;
+    const before = previous.current;
+    previous.current = { title, width };
+    const preference = window.matchMedia("(prefers-reduced-motion: reduce)");
+    if (before === null || before.title === title || before.width === width || preference.matches)
+      return;
+    const animation = element.animate([{ width: `${before.width}px` }, { width: `${width}px` }], {
+      duration: 350,
+      easing: "cubic-bezier(.3,1.35,.45,1)",
+    });
+    const cancel = () => animation.cancel();
+    preference.addEventListener("change", cancel);
+    return () => {
+      preference.removeEventListener("change", cancel);
+      cancel();
+    };
+  }, [title]);
   const statusLabels = {
     completed: gt("Completed"),
     running: gt("In progress"),
@@ -80,15 +106,27 @@ export function ThreadOmpTodo({ progress }: { readonly progress: OmpTodoProgress
         <CollapsibleTrigger
           aria-label={[
             label,
-            currentTitle,
+            title,
             gt("{completed}/{total} done", { completed, total: steps.length }),
           ]
             .filter(Boolean)
             .join(" · ")}
           className="group flex min-h-8 max-w-full items-center gap-2 rounded-full border border-border/70 bg-popover px-3 text-xs shadow-sm hover:bg-muted focus-visible:outline-2 focus-visible:outline-ring pointer-coarse:min-h-11"
         >
-          <ListTodoIcon aria-hidden className="size-3.5 shrink-0 text-primary" />
-          <span className="min-w-0 max-w-64 truncate font-medium">{currentTitle ?? label}</span>
+          {completed === steps.length ? (
+            <CheckIcon
+              aria-hidden
+              data-todo-done-mark
+              className="size-3.5 shrink-0 text-popover-foreground"
+            />
+          ) : (
+            <ListTodoIcon aria-hidden className="size-3.5 shrink-0 text-popover-foreground" />
+          )}
+          <span ref={titleRef} className="min-w-0 max-w-64 truncate font-medium">
+            <span key={title} data-todo-step-label>
+              {title}
+            </span>
+          </span>
           {steps.length <= 8 ? (
             <span aria-hidden className="hidden shrink-0 gap-0.5 sm:flex">
               {steps.map(({ id, status }) => (

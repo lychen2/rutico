@@ -8,6 +8,7 @@ import { ChevronUpIcon } from "lucide-react";
 import { tickTextContent } from "~/lib/tickTextContent";
 import { Button } from "../ui/button";
 import { Popover, PopoverPopup, PopoverTitle, PopoverTrigger } from "../ui/popover";
+import "./composerStatusGlass.css";
 
 const runStatusLabels = {
   preparing: msg("Preparing"),
@@ -59,15 +60,13 @@ export function ComposerThreadContext({
       : null;
 
   return (
-    <div className="relative px-2 pt-1">
+    <div className="relative flex justify-center px-2 pt-1">
       <Popover>
-        <PopoverTrigger
-          render={<Button variant="ghost" size="sm" className="max-w-full flex-wrap" />}
-        >
+        <PopoverTrigger render={<Button variant="ghost" size="sm" data-composer-status-glass />}>
           <span className="flex items-center gap-1.5 font-medium">
             <span
               aria-hidden
-              className="grid size-3 shrink-0 place-items-center rounded-full border border-muted-foreground/45 text-primary"
+              className="grid size-3 shrink-0 place-items-center rounded-full border border-current/50"
               style={
                 percent === null
                   ? undefined

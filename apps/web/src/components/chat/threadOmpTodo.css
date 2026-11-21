@@ -1,0 +1,33 @@
+@media (prefers-reduced-motion: no-preference) {
+  [data-todo-step-label] {
+    display: inline-block;
+    animation: todo-step-enter 300ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+  }
+  [data-todo-done-mark] {
+    animation: todo-done-enter 320ms ease-out both;
+  }
+  [data-todo-done-mark] path {
+    stroke-dasharray: 24;
+    animation: todo-check-draw 360ms 80ms ease-out both;
+  }
+}
+@keyframes todo-step-enter {
+  from {
+    opacity: 0;
+    transform: translateY(5px);
+  }
+}
+@keyframes todo-done-enter {
+  from {
+    opacity: 0;
+    transform: scale(0.55);
+  }
+}
+@keyframes todo-check-draw {
+  from {
+    stroke-dashoffset: 24;
+  }
+  to {
+    stroke-dashoffset: 0;
+  }
+}
