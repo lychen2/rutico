@@ -12,6 +12,7 @@ import { appAtomRegistry } from "../../rpc/atomRegistry";
 import { environmentPresentations } from "../../state/presentation";
 import { environmentSnapshotAtom } from "../../state/shell";
 import { threadFamilies } from "../../state/threads";
+import { BUILT_IN_CATEGORY_IDS, UNCATEGORIZED } from "./SidebarCategoryRules";
 
 const Category = Schema.Struct({ id: Schema.String, name: Schema.String });
 const SidebarCategories = Schema.Struct({
@@ -24,7 +25,6 @@ type SidebarCategories = typeof SidebarCategories.Type;
 export type SidebarCategory = typeof Category.Type;
 
 export const SIDEBAR_CATEGORIES_STORAGE_KEY = "t3code:sidebar-categories:v1";
-export const UNCATEGORIZED = "uncategorized";
 const EMPTY_CATEGORIES: SidebarCategories = { categories: [], assignments: {}, collapsed: [] };
 
 const missingAssignedThreads = Atom.family((assignmentKeys: string) => {
@@ -62,7 +62,11 @@ export function useSidebarCategories() {
     SidebarCategories,
   );
   const missing = useAtomValue(
-    missingAssignedThreads(JSON.stringify(Object.keys(state.assignments))),
+    missingAssignedThreads(
+      JSON.stringify(
+        Object.keys(state.assignments).filter((key) => state.assignments[key] !== UNCATEGORIZED),
+      ),
+    ),
   );
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- mounts assigned older settled rows omitted from the base shell, independently of the unclassified shelf
   useEffect(() => {
@@ -81,22 +85,29 @@ export function useSidebarCategories() {
     setState((current) => ({ ...current, categories: [...current.categories, { id, name }] }));
     return readSaved().categories.some((category) => category.id === id);
   };
-  const moveToCategory = (keys: readonly string[], id: string) => {
+  const moveToCategory = (keys: readonly string[], id: string | null) => {
     setState((current) => {
-      if (id !== UNCATEGORIZED && !current.categories.some((category) => category.id === id)) {
+      if (
+        id !== null &&
+        id !== UNCATEGORIZED &&
+        !BUILT_IN_CATEGORY_IDS.some((categoryId) => categoryId === id) &&
+        !current.categories.some((category) => category.id === id)
+      ) {
         return current;
       }
       const assignments = { ...current.assignments };
       for (const key of keys) {
-        if (id === UNCATEGORIZED) delete assignments[key];
+        if (id === null) delete assignments[key];
         else assignments[key] = id;
       }
-      return { ...current, assignments, collapsed: current.collapsed.filter((key) => key !== id) };
+      const collapsed =
+        id === null ? current.collapsed : current.collapsed.filter((key) => key !== id);
+      return { ...current, assignments, collapsed };
     });
     const saved = readSaved();
     return (
-      !saved.collapsed.includes(id) &&
-      keys.every((key) => (saved.assignments[key] ?? UNCATEGORIZED) === id)
+      (id === null || !saved.collapsed.includes(id)) &&
+      keys.every((key) => (saved.assignments[key] ?? null) === id)
     );
   };
   const toggleCategory = (id: string) => {

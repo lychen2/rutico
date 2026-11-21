@@ -16,7 +16,41 @@ import {
   DialogTitle,
 } from "../ui/dialog";
 import { Input } from "../ui/input";
-import { UNCATEGORIZED, type SidebarCategory } from "./SidebarCategories";
+import type { SidebarCategory } from "./SidebarCategories";
+import { BUILT_IN_CATEGORY_IDS, UNCATEGORIZED } from "./SidebarCategoryRules";
+
+export type SidebarCategoryOption = SidebarCategory & { readonly builtIn?: true };
+
+const BUILT_IN_CATEGORY_LABELS = {
+  wechat: msg("WeChat Official Accounts"),
+  "douyin-real": msg("Douyin · Main account"),
+  "douyin-ai": msg("Douyin · Yigen AI"),
+  "douyin-other": msg("Douyin · Other"),
+  xiaohongshu: msg("Xiaohongshu"),
+  x: msg("X", { $context: "social media platform, formerly Twitter" }),
+  xiaodao: msg("Xiaodao Economics"),
+  video: msg("Video · Animation · Music"),
+  "content-other": msg("Other content"),
+  company: msg("Company operations"),
+  client: msg("Client delivery"),
+  product: msg("Products and websites"),
+  invest: msg("Investment research"),
+  t3: msg("T3 features and maintenance"),
+  models: msg("Models and accounts"),
+  automation: msg("Automation and knowledge bases"),
+  devices: msg("Computers and devices"),
+  "tools-other": msg("Other tools"),
+};
+
+export function useSidebarCategoryOptions(custom: readonly SidebarCategory[]) {
+  const m = useMessages();
+  const builtIn = BUILT_IN_CATEGORY_IDS.map((id): SidebarCategoryOption => ({
+    id,
+    name: m(BUILT_IN_CATEGORY_LABELS[id]),
+    builtIn: true,
+  }));
+  return [...custom, ...builtIn];
+}
 
 const FOLDER_DOT_CLASS_NAME = {
   attention: "bg-info",
@@ -100,6 +134,7 @@ export type SidebarCategoryAction = { kind: "create" } | { kind: "move"; keys: r
 export function SidebarCategoryDialog({
   action,
   categories,
+  categoryByThreadKey,
   assignments,
   onClose,
   onCreate,
@@ -107,10 +142,11 @@ export function SidebarCategoryDialog({
 }: {
   action: SidebarCategoryAction | null;
   categories: readonly SidebarCategory[];
+  categoryByThreadKey: ReadonlyMap<string, string>;
   assignments: Readonly<Record<string, string>>;
   onClose: () => void;
   onCreate: (name: string) => boolean;
-  onMove: (keys: readonly string[], id: string) => boolean;
+  onMove: (keys: readonly string[], id: string | null) => boolean;
 }) {
   const gt = useGT();
   const [name, setName] = useState("");
@@ -163,7 +199,7 @@ export function SidebarCategoryDialog({
             {[...categories, { id: UNCATEGORIZED, name: gt("Uncategorized") }].map(
               ({ id, name }) => {
                 const selected = action.keys.every(
-                  (key) => (assignments[key] ?? UNCATEGORIZED) === id,
+                  (key) => (categoryByThreadKey.get(key) ?? UNCATEGORIZED) === id,
                 );
                 return (
                   <Button
@@ -178,6 +214,15 @@ export function SidebarCategoryDialog({
                 );
               },
             )}
+            {action.keys.some((key) => assignments[key] !== undefined) ? (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => save(() => onMove(action.keys, null))}
+              >
+                {gt("Restore automatic categorization")}
+              </Button>
+            ) : null}
           </div>
         ) : null}
         {failed ? (

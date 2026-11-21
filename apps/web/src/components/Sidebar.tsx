@@ -166,7 +166,7 @@ import {
   resolveActiveThreadRouteRef,
   resolveThreadRouteTarget,
 } from "../threadRoutes";
-import type { SidebarThreadSummary } from "../types";
+import type { Project, SidebarThreadSummary } from "../types";
 import { isScratchProject } from "@t3tools/client-runtime/state/projects";
 import { cn } from "~/lib/utils";
 import { ProjectEnvironmentBadge } from "./ProjectEnvironmentBadge";
@@ -267,15 +267,14 @@ import {
   type SidebarSweepAction,
 } from "./sidebar/SidebarThreadRow";
 import { SidebarDraftBlock, useSidebarDrafts } from "./sidebar/SidebarDraftBlock";
-import {
-  UNCATEGORIZED,
-  useSidebarCategories,
-  type SidebarCategory,
-} from "./sidebar/SidebarCategories";
+import { useSidebarCategories } from "./sidebar/SidebarCategories";
+import { classifyThread, UNCATEGORIZED } from "./sidebar/SidebarCategoryRules";
 import {
   SidebarCategoryDialog,
   SidebarCategoryHeader,
   sidebarCategoryRowId,
+  useSidebarCategoryOptions,
+  type SidebarCategoryOption,
   type SidebarCategoryAction,
 } from "./sidebar/SidebarCategoryNavigation";
 import {
@@ -418,7 +417,9 @@ function useSidebarThreads(input: {
   readonly delegatedUnderParent: ReadonlySet<string>;
   readonly routeRowThreadKey: string | null;
   readonly compactRows: boolean;
-  readonly categories: readonly SidebarCategory[];
+  readonly categories: readonly SidebarCategoryOption[];
+  readonly projectByKey: ReadonlyMap<string, Project>;
+  readonly projectDisplayNameByKey: ReadonlyMap<string, string>;
   readonly assignments: Readonly<Record<string, string>>;
   readonly collapsedCategories: readonly string[];
 }) {
@@ -433,6 +434,8 @@ function useSidebarThreads(input: {
     routeRowThreadKey,
     compactRows,
     categories,
+    projectByKey,
+    projectDisplayNameByKey,
     assignments,
     collapsedCategories,
   } = input;
@@ -490,13 +493,20 @@ function useSidebarThreads(input: {
     for (const thread of list) {
       const key = threadShellKey(thread);
       sectionByThreadKey.set(key, section);
-      const id = assignments[key];
-      const folder = id === undefined ? undefined : categoryThreads.get(id);
+      const projectKey = `${thread.environmentId}:${thread.projectId}`;
+      const id =
+        assignments[key] ??
+        classifyThread({
+          title: thread.title,
+          projectName:
+            projectDisplayNameByKey.get(projectKey) ?? projectByKey.get(projectKey)?.title,
+        });
+      const folder = categoryThreads.get(id);
       if (folder === undefined) {
         uncategorized[section].push(thread);
       } else {
         folder.push(thread);
-        categoryByThreadKey.set(key, id!);
+        categoryByThreadKey.set(key, id);
       }
     }
   }
@@ -506,11 +516,20 @@ function useSidebarThreads(input: {
     expanded: settledShelfExpanded,
     visibleCount: settledVisibleCount,
   });
-  const listedSettledThreads = uncategorized.settled.filter(olderSettledShelf.isListed);
-  useOlderSettledShelfGrowth(olderSettledShelf, listedSettledThreads);
+  // Automatically filed rows still count toward a page, so matching titles do not drain the archive.
+  const pagedSettledThreads = settledThreads.filter((thread) => {
+    const key = threadShellKey(thread);
+    return (
+      (assignments[key] === undefined || !categoryByThreadKey.has(key)) &&
+      olderSettledShelf.isListed(thread)
+    );
+  });
+  useOlderSettledShelfGrowth(olderSettledShelf, pagedSettledThreads);
   const settledCount =
     uncategorized.settled.length + olderSettledShelf.unloadedCount(partition.visibleThreads);
-  const visibleSettledThreads = listedSettledThreads.slice(0, settledVisibleCount);
+  const visibleSettledThreads = pagedSettledThreads
+    .filter((thread) => !categoryByThreadKey.has(threadShellKey(thread)))
+    .slice(0, settledVisibleCount);
   if (
     routeRowThreadKey !== null &&
     !visibleSettledThreads.some((thread) => threadShellKey(thread) === routeRowThreadKey)
@@ -531,18 +550,21 @@ function useSidebarThreads(input: {
   const visibleSnoozedThreads = snoozedShelfExpanded
     ? uncategorizedVisible(uncategorized.snoozed)
     : routeThreadOnly(uncategorized.snoozed, routeRowThreadKey);
-  const categoryFolders = categories.map(({ id, name }) => {
+  const categoryFolders = categories.flatMap(({ id, name, builtIn }) => {
     const threads = categoryThreads.get(id)!;
+    if (builtIn && threads.length === 0) return [];
     const collapsed = collapsedCategories.includes(id);
-    return {
-      id,
-      name,
-      collapsed,
-      threads: collapsed ? routeThreadOnly(threads, routeRowThreadKey) : threads,
-      hiddenThreads: collapsed
-        ? threads.filter((thread) => threadShellKey(thread) !== routeRowThreadKey)
-        : EMPTY_THREADS,
-    };
+    return [
+      {
+        id,
+        name,
+        collapsed,
+        threads: collapsed ? routeThreadOnly(threads, routeRowThreadKey) : threads,
+        hiddenThreads: collapsed
+          ? threads.filter((thread) => threadShellKey(thread) !== routeRowThreadKey)
+          : EMPTY_THREADS,
+      },
+    ];
   });
   const orderedThreads = [
     ...categoryFolders.flatMap((folder) => folder.threads),
@@ -1221,6 +1243,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
     moveToCategory,
     toggleCategory,
   } = useSidebarCategories();
+  const categoryOptions = useSidebarCategoryOptions(categoryState.categories);
   const [categoryAction, setCategoryAction] = useState<SidebarCategoryAction | null>(null);
   const {
     draggableThreadKeys,
@@ -1267,7 +1290,9 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
     delegatedUnderParent,
     routeRowThreadKey,
     compactRows: boringSidebarEnabled,
-    categories: categoryState.categories,
+    categories: categoryOptions,
+    projectByKey,
+    projectDisplayNameByKey,
     assignments: categoryState.assignments,
     collapsedCategories: categoryState.collapsed,
   });
@@ -3692,7 +3717,8 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
       <SidebarChromeFooter />
       <SidebarCategoryDialog
         action={categoryAction}
-        categories={categoryState.categories}
+        categories={categoryOptions}
+        categoryByThreadKey={categoryByThreadKey}
         assignments={categoryState.assignments}
         onClose={() => setCategoryAction(null)}
         onCreate={createCategory}
