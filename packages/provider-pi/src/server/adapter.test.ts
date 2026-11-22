@@ -6873,33 +6873,93 @@ describe("PiAdapterV2", () => {
         totalTokens: 1080,
         reasoningTokens: 25,
       };
-      const secondUsage = {
-        input: 200,
-        cacheRead: 800,
-        cacheWrite: 0,
-        output: 30,
-        reasoningTokens: 5,
-      };
-      for (const usage of [firstUsage, secondUsage]) {
-        yield* fake.emit({ type: "message_start", message: { role: "assistant" } });
-        yield* fake.emit({ type: "message_end", message: { role: "assistant", usage } });
-        if (usage === firstUsage) {
-          const live = yield* takeEvent(
-            (event) =>
-              event.type === "provider_turn.updated" &&
-              event.providerTurn.turnTokenUsage?.reasoningTokens === 25,
-          );
-          if (live.type !== "provider_turn.updated") return assert.fail("Expected live usage");
-          assert.equal(live.providerTurn.status, "running");
-          assert.equal(live.providerTurn.tokenUsage?.usedTokens, 1080);
-          assert.deepEqual(live.providerTurn.turnTokenUsage, {
-            usageScope: "main_agent",
-            usageStatus: "partial",
-            hasSubagents: false,
-            reasoningTokens: 25,
-          });
-        }
-      }
+      yield* fake.emit({ type: "message_start", message: { role: "assistant" } });
+      yield* fake.emit({ type: "message_end", message: { role: "assistant", usage: firstUsage } });
+      const first = yield* takeEvent(
+        (event) =>
+          event.type === "provider_turn.updated" &&
+          event.providerTurn.tokenUsage?.usedTokens === 1080,
+      );
+      if (first.type !== "provider_turn.updated") return assert.fail("Expected live usage");
+      const partial = {
+        usageScope: "main_agent",
+        usageStatus: "partial",
+        hasSubagents: false,
+      } as const;
+
+      yield* fake.emit({ type: "message_start", message: { role: "assistant" } });
+      let contentIndex = 0;
+      const reportSnapshot = Effect.fnUntraced(function* (frame: Record<string, unknown>) {
+        yield* fake.emit({
+          type: "message_update",
+          assistantMessageEvent: {
+            type: "text_end",
+            contentIndex: contentIndex++,
+            content: "Working",
+          },
+          ...frame,
+        });
+        const updates: OrchestrationV2ProviderTurn[] = [];
+        yield* takeEvent((event) => {
+          if (event.type === "provider_turn.updated") updates.push(event.providerTurn);
+          return event.type === "message.updated" && event.message.role === "assistant";
+        });
+        return updates;
+      });
+      const secondUsage = { input: 200, cacheRead: 800, cacheWrite: 0, output: 30, reasoning: 5 };
+      const [streamed] = yield* reportSnapshot({
+        usage: { ...secondUsage, output: 10, totalTokens: 1010 },
+      });
+      assert.equal(streamed?.status, "running");
+      assert.equal(streamed?.tokenUsage?.usedTokens, 1010);
+      assert.deepEqual(streamed?.turnTokenUsage, {
+        ...partial,
+        inputTokens: 2000,
+        cachedInputTokens: 1700,
+        cacheCreationTokens: 10,
+        outputTokens: 90,
+        reasoningTokens: 30,
+      });
+      assert.deepEqual(first.providerTurn.turnTokenUsage, {
+        ...partial,
+        inputTokens: 1000,
+        cachedInputTokens: 900,
+        cacheCreationTokens: 10,
+        outputTokens: 80,
+        reasoningTokens: 25,
+      });
+      assert.isEmpty(yield* reportSnapshot({}));
+      assert.isEmpty(
+        yield* reportSnapshot({
+          message: {
+            role: "assistant",
+            usage: { input: 0, cacheRead: 0, cacheWrite: 0, output: 0, totalTokens: 0 },
+          },
+        }),
+      );
+      const [sparse] = yield* reportSnapshot({
+        message: { role: "assistant", usage: { cacheWrite: 0, output: 20, reasoningTokens: 5 } },
+      });
+      assert.deepEqual(sparse?.turnTokenUsage, {
+        ...partial,
+        cacheCreationTokens: 10,
+        outputTokens: 100,
+        reasoningTokens: 30,
+      });
+
+      const [latest] = yield* reportSnapshot({
+        message: { role: "assistant", usage: secondUsage },
+      });
+      assert.deepEqual(latest?.turnTokenUsage, {
+        ...partial,
+        inputTokens: 2000,
+        cachedInputTokens: 1700,
+        cacheCreationTokens: 10,
+        outputTokens: 110,
+        reasoningTokens: 30,
+      });
+      assert.isEmpty(yield* reportSnapshot({ usage: secondUsage }));
+      yield* fake.emit({ type: "message_end", message: { role: "assistant", usage: secondUsage } });
       fake.queueStats({ contextUsage: { tokens: 1500 }, tokens: { output: 1000 } });
       yield* fake.emit({ type: "agent_settled" });
       const update = yield* takeEvent(

@@ -1204,45 +1204,104 @@ export const makePiAdapterV2 = Effect.fn("makePiAdapterV2")(function* (
           Effect.orElseSucceed(() => undefined),
         );
 
-      /**
-       * Pi attaches the current message's cumulative usage to every streaming update (0.84.2+).
-       */
+      const addReportedTokens = (previous: number | undefined, current: number | undefined) =>
+        previous === undefined || current === undefined ? undefined : previous + current;
+
       const reportLiveUsage =
         /* Provider events include streaming deltas; avoid a span for each update. */
-        Effect.fnUntraced(function* (turn: ActivePiTurn, usage: unknown, reasoningChanged = false) {
+        Effect.fnUntraced(function* (turn: ActivePiTurn, usage: unknown, messageEnded = false) {
+          if (usage === undefined) return;
           const usedTokens = nonNegativeInteger(usage, "totalTokens");
+          const input = nonNegativeInteger(usage, "input");
+          const cacheRead = nonNegativeInteger(usage, "cacheRead");
+          const cacheWrite = nonNegativeInteger(usage, "cacheWrite");
+          const output = nonNegativeInteger(usage, "output");
+          const reasoning =
+            nonNegativeInteger(usage, "reasoningTokens") ?? nonNegativeInteger(usage, "reasoning");
+          // Native messages can start with zero-filled usage before the provider reports counts.
+          if (
+            !messageEnded &&
+            (usedTokens ?? 0) === 0 &&
+            (input ?? 0) === 0 &&
+            (cacheRead ?? 0) === 0 &&
+            (cacheWrite ?? 0) === 0 &&
+            (output ?? 0) === 0 &&
+            reasoning === undefined
+          ) {
+            return;
+          }
+
+          // Native input excludes both cache counters; T3 input includes them.
+          const inputTotal = addReportedTokens(
+            turn.inputTokens,
+            input === undefined || cacheRead === undefined || cacheWrite === undefined
+              ? undefined
+              : input + cacheRead + cacheWrite,
+          );
+          const cacheReadTotal = addReportedTokens(turn.cacheReadTokens, cacheRead);
+          const cacheWriteTotal = addReportedTokens(turn.cacheWriteTokens, cacheWrite);
+          const outputTotal = addReportedTokens(turn.outputTokens, output);
+          const reasoningTokens =
+            reasoning === undefined
+              ? turn.reasoningTokens
+              : (turn.reasoningTokens ?? 0) + reasoning;
+          const coversAllMessages = turn.usageMessages + 1 >= turn.messageOrdinal;
+          // Each live update replaces the current message's snapshot; only its end commits it.
+          if (messageEnded) {
+            turn.usageMessages++;
+            turn.inputTokens = inputTotal;
+            turn.cacheReadTokens = cacheReadTotal;
+            turn.cacheWriteTokens = cacheWriteTotal;
+            turn.outputTokens = outputTotal;
+            turn.reasoningTokens = reasoningTokens;
+          }
+
+          const inputTokens = coversAllMessages ? inputTotal : undefined;
+          const cachedInputTokens = coversAllMessages ? cacheReadTotal : undefined;
+          const cacheCreationTokens = coversAllMessages ? cacheWriteTotal : undefined;
+          const outputTokens = coversAllMessages ? outputTotal : undefined;
+          const previous = turn.providerTurn.turnTokenUsage;
+          const usageChanged =
+            inputTokens !== previous?.inputTokens ||
+            cachedInputTokens !== previous?.cachedInputTokens ||
+            cacheCreationTokens !== previous?.cacheCreationTokens ||
+            outputTokens !== previous?.outputTokens ||
+            reasoningTokens !== previous?.reasoningTokens ||
+            (previous !== undefined && turn.hasSubagents !== previous.hasSubagents);
           const contextChanged =
             usedTokens !== undefined && usedTokens > 0 && usedTokens !== turn.lastLiveUsedTokens;
-          if (!contextChanged && !reasoningChanged) return;
-          if (contextChanged) {
-            turn.lastLiveUsedTokens = usedTokens;
-            const inputTokens = nonNegativeInteger(usage, "input");
-            const cachedInputTokens = nonNegativeInteger(usage, "cacheRead");
-            const outputTokens = nonNegativeInteger(usage, "output");
-            const updatedAt = yield* DateTime.now;
-            turn.providerTurn = {
-              ...turn.providerTurn,
-              tokenUsage: {
-                usedTokens,
-                ...(contextWindow === null ? {} : { maxTokens: contextWindow }),
-                ...(inputTokens === undefined ? {} : { inputTokens }),
-                ...(cachedInputTokens === undefined ? {} : { cachedInputTokens }),
-                ...(outputTokens === undefined ? {} : { outputTokens }),
-                updatedAt: DateTime.formatIso(updatedAt),
-              },
-            };
-          }
-          if (reasoningChanged && turn.reasoningTokens !== undefined) {
-            turn.providerTurn = {
-              ...turn.providerTurn,
-              turnTokenUsage: {
-                usageScope: "main_agent",
-                usageStatus: "partial",
-                hasSubagents: turn.hasSubagents,
-                reasoningTokens: turn.reasoningTokens,
-              },
-            };
-          }
+          if (!contextChanged && !usageChanged) return;
+
+          turn.providerTurn = {
+            ...turn.providerTurn,
+            ...(contextChanged
+              ? {
+                  tokenUsage: {
+                    usedTokens,
+                    ...(contextWindow === null ? {} : { maxTokens: contextWindow }),
+                    ...(input === undefined ? {} : { inputTokens: input }),
+                    ...(cacheRead === undefined ? {} : { cachedInputTokens: cacheRead }),
+                    ...(output === undefined ? {} : { outputTokens: output }),
+                    updatedAt: DateTime.formatIso(yield* DateTime.now),
+                  },
+                }
+              : {}),
+            ...(usageChanged
+              ? {
+                  turnTokenUsage: {
+                    usageScope: "main_agent",
+                    usageStatus: "partial",
+                    hasSubagents: turn.hasSubagents,
+                    ...(inputTokens === undefined ? {} : { inputTokens }),
+                    ...(cachedInputTokens === undefined ? {} : { cachedInputTokens }),
+                    ...(cacheCreationTokens === undefined ? {} : { cacheCreationTokens }),
+                    ...(outputTokens === undefined ? {} : { outputTokens }),
+                    ...(reasoningTokens === undefined ? {} : { reasoningTokens }),
+                  },
+                }
+              : {}),
+          };
+          if (contextChanged) turn.lastLiveUsedTokens = usedTokens;
           yield* emit({
             type: "provider_turn.updated",
             driver: driverKind,
@@ -2493,7 +2552,7 @@ export const makePiAdapterV2 = Effect.fn("makePiAdapterV2")(function* (
             status,
             completedAt,
             ...(tokenUsage === undefined ? {} : { tokenUsage }),
-            ...(turnTokenUsage === undefined ? {} : { turnTokenUsage }),
+            turnTokenUsage,
             ...(outputTiming === undefined ? {} : { modelOutputTiming: outputTiming }),
             ...(turn.reportedModel === undefined ? {} : { model: turn.reportedModel }),
           },
@@ -2803,6 +2862,7 @@ export const makePiAdapterV2 = Effect.fn("makePiAdapterV2")(function* (
               closeModelOutputSegment(turn);
               turn.sawAgentActivity = true;
               turn.messageOrdinal += 1;
+              yield* reportLiveUsage(turn, recordField(event["message"], "usage"));
             }
             const readSteer = role === "user" ? turn?.unreadSteers.shift() : undefined;
             if (turn !== null && readSteer !== undefined) {
@@ -2819,7 +2879,7 @@ export const makePiAdapterV2 = Effect.fn("makePiAdapterV2")(function* (
               yield* emitProviderRetry(turn, turn.activeProviderRetry, "completed", recoveredAt);
               turn.activeProviderRetry = null;
             }
-            yield* reportLiveUsage(turn, event["usage"]);
+            yield* reportLiveUsage(turn, event["usage"] ?? recordField(event["message"], "usage"));
             const delta = event["assistantMessageEvent"];
             const deltaType = recordString(delta, "type");
             const contentIndex = recordNumber(delta, "contentIndex") ?? 0;
@@ -2867,40 +2927,7 @@ export const makePiAdapterV2 = Effect.fn("makePiAdapterV2")(function* (
             closeModelOutputSegment(turn);
             yield* publishModelOutputTiming(turn);
             yield* completeOpenStreamItems(turn);
-            const usage = recordField(message, "usage");
-            if (usage !== undefined) {
-              turn.usageMessages++;
-              const input = nonNegativeInteger(usage, "input");
-              const cacheRead = nonNegativeInteger(usage, "cacheRead");
-              const cacheWrite = nonNegativeInteger(usage, "cacheWrite");
-              const output = nonNegativeInteger(usage, "output");
-              const reasoning =
-                nonNegativeInteger(usage, "reasoningTokens") ??
-                nonNegativeInteger(usage, "reasoning");
-              // Native input excludes both cache counters; T3 input includes them.
-              turn.inputTokens =
-                input === undefined ||
-                cacheRead === undefined ||
-                cacheWrite === undefined ||
-                turn.inputTokens === undefined
-                  ? undefined
-                  : turn.inputTokens + input + cacheRead + cacheWrite;
-              turn.cacheReadTokens =
-                cacheRead === undefined || turn.cacheReadTokens === undefined
-                  ? undefined
-                  : turn.cacheReadTokens + cacheRead;
-              turn.cacheWriteTokens =
-                cacheWrite === undefined || turn.cacheWriteTokens === undefined
-                  ? undefined
-                  : turn.cacheWriteTokens + cacheWrite;
-              turn.outputTokens =
-                output === undefined || turn.outputTokens === undefined
-                  ? undefined
-                  : turn.outputTokens + output;
-              if (reasoning !== undefined)
-                turn.reasoningTokens = (turn.reasoningTokens ?? 0) + reasoning;
-              yield* reportLiveUsage(turn, usage, reasoning !== undefined);
-            }
+            yield* reportLiveUsage(turn, recordField(message, "usage"), true);
             const reportedProvider = recordString(message, "provider");
             const reportedModelId = recordString(message, "model");
             if (reportedProvider && reportedModelId) {
