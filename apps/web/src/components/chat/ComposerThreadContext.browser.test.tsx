@@ -147,7 +147,7 @@ it("keeps round token and cache totals separate from the current context window"
     />,
   );
   const historyTrigger = screen.getByRole("button", { name: /Round 7/ });
-  await expect.element(historyTrigger.getByText(/chars\/s|tok\/s/)).not.toBeInTheDocument();
+  await expect.element(historyTrigger.getByText(/tokens\/s/)).not.toBeInTheDocument();
   await userEvent.click(historyTrigger);
   await expect.element(details.getByText("Reasoning", { exact: true })).toBeVisible();
   await expect.element(details.getByText("1 · Σ 9s", { exact: true })).toBeVisible();
@@ -185,7 +185,7 @@ it("keeps round token and cache totals separate from the current context window"
   );
   await expect.element(details.getByText("Time to first output")).toBeVisible();
   await expect.element(details.getByText("2.5s", { exact: true })).toBeVisible();
-  await expect.element(liveTrigger.getByText(/chars\/s|tok\/s/)).not.toBeInTheDocument();
+  await expect.element(liveTrigger.getByText(/tokens\/s/)).not.toBeInTheDocument();
 
   const measuredOutput = { ...firstOutput, sampledDurationMs: 1500, sampledCharacters: 15 };
   await screen.rerender(
@@ -212,8 +212,7 @@ it("keeps round token and cache totals separate from the current context window"
     <ComposerThreadContext
       key="live"
       usage={null}
-      run={run}
-      modelOutputTiming={measuredOutput}
+      run={{ ...run, completedAt: DateTime.makeUnsafe(DateTime.toEpochMillis(startedAt) + 500) }}
       stepCount={null}
       turnUsage={{
         usageScope: "main_agent",
@@ -223,8 +222,7 @@ it("keeps round token and cache totals separate from the current context window"
       }}
     />,
   );
-  await expect.element(details.getByText("5 tokens/s", { exact: true })).toBeVisible();
-  await expect.element(details.getByText("14s", { exact: true })).toBeVisible();
+  await expect.element(details.getByText("140 tokens/s", { exact: true })).toBeVisible();
 
   await screen.rerender(
     <ComposerThreadContext

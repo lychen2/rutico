@@ -85,7 +85,7 @@ export function ComposerThreadContext({
   const rateRef = tickTextContent(
     (nowMs) => {
       const elapsed = startMs === null ? 0 : (endMs ?? nowMs) - startMs;
-      if (output === undefined || elapsed < 1000 || (endMs === null && !running)) return "–";
+      if (output === undefined || elapsed <= 0 || (endMs === null && !running)) return "–";
       return `${((output * 1000) / elapsed).toLocaleString(locale, { maximumFractionDigits: 1 })} tokens/s`;
     },
     running && output !== undefined && startMs !== null,
