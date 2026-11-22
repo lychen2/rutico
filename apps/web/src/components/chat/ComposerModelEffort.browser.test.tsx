@@ -224,10 +224,13 @@ it("stacks providers, models, effort and permissions without clipping the provid
         ),
     };
   };
-  const track = popup.querySelector<HTMLElement>(".composer-effort-studio-track")!;
-  const lens = track.querySelector<HTMLElement>(".composer-effort-studio-lens")!;
-  expect(getComputedStyle(track).backgroundImage).not.toBe("none");
-  expect(getComputedStyle(lens).transitionDuration).toBe("0.22s");
+  const track = popup.querySelector<HTMLElement>("[data-cosmic-track]")!;
+  const canvas = track.querySelector("canvas")!;
+  await vi.waitFor(() => {
+    expect(canvas.dataset.renderState).toBe("active");
+    expect(canvas.getContext("2d")?.getImageData(30, 20, 1, 1).data[3]).toBe(255);
+  });
+  await vi.waitFor(() => expect(canvas.dataset.renderState).toBe("sleeping"), { timeout: 4_000 });
   await vi.waitFor(() =>
     expect(geometry()).toEqual({
       width: 380,
@@ -261,14 +264,15 @@ it("stacks providers, models, effort and permissions without clipping the provid
   await expect.element(levels.getByRole("radio", { name: "Medium" })).toHaveFocus();
   await userEvent.keyboard("{ArrowRight}{Space}");
   await expect.element(levels.getByRole("radio", { name: "High", checked: true })).toHaveFocus();
+  await vi.waitFor(() => expect(canvas.dataset.renderState).toBe("active"));
+  const highStory = popup.querySelector("[data-cosmic-story]")?.textContent;
   const session = cdp();
   try {
     await session.send("Emulation.setEmulatedMedia", {
       features: [{ name: "prefers-reduced-motion", value: "reduce" }],
     });
-    expect(getComputedStyle(lens).transitionDuration).toBe("0s");
     expect(getComputedStyle(popup).transitionDuration).toBe("0s");
-    const high = lens.getBoundingClientRect().left;
+    await vi.waitFor(() => expect(canvas.dataset.renderState).toBe("sleeping"));
     await session.send("Emulation.setTouchEmulationEnabled", { enabled: true });
     const bounds = track.getBoundingClientRect();
     const frame = window.frameElement?.getBoundingClientRect();
@@ -284,16 +288,21 @@ it("stacks providers, models, effort and permissions without clipping the provid
     });
     await session.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
     await expect.element(levels.getByRole("radio", { name: /Low/, checked: true })).toBeVisible();
-    expect(lens.getBoundingClientRect().left).toBeLessThan(high);
+    expect(popup.querySelector("[data-cosmic-story]")?.textContent).not.toBe(highStory);
   } finally {
     await session.send("Emulation.setTouchEmulationEnabled", { enabled: false });
     await session.send("Emulation.setEmulatedMedia", { features: [] });
   }
+  const supervisedColor = getComputedStyle(permission.element()).backgroundColor;
   await permission.click();
   await page.getByRole("menuitemradio", { name: /Full access/ }).click();
   await expect
     .element(page.getByRole("button", { name: "Permissions: Full access" }))
     .toBeVisible();
+  expect(
+    getComputedStyle(page.getByRole("button", { name: "Permissions: Full access" }).element())
+      .backgroundColor,
+  ).not.toBe(supervisedColor);
   await page.viewport(360, 520);
   await vi.waitFor(() => {
     const bounds = popup.getBoundingClientRect();

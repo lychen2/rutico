@@ -9,14 +9,7 @@ import type { EffortDisplay } from "@t3tools/contracts/settings";
 import { getProviderOptionCurrentLabel } from "@t3tools/shared/model";
 import { msg, T, useGT, useMessages } from "gt-react";
 import { ChevronRightIcon, ChevronUpIcon, WorkflowIcon } from "lucide-react";
-import {
-  type KeyboardEvent,
-  type PointerEvent,
-  type ReactNode,
-  use,
-  useRef,
-  useState,
-} from "react";
+import { type KeyboardEvent, type ReactNode, use, useRef, useState } from "react";
 
 import { m, type MessageResolver } from "~/i18n/messages";
 import { cn } from "~/lib/utils";
@@ -33,6 +26,7 @@ import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import type { ComposerControlSize } from "./ComposerControl";
 import { ComposerPermissionsSection, type RuntimeModeOption } from "./ComposerFooterControls";
 import { composerFloatingLayerProps, focusCheckedPermission } from "./composerEventScope";
+import { CosmicEffortSlider } from "./CosmicEffortSlider";
 import { EffortGlyph, FastBolt, resolveEffortGlyph } from "./EffortGlyph";
 import { DockedPickerContext } from "./ProviderModelPicker";
 import {
@@ -333,67 +327,16 @@ function EffortStudio(props: {
   const messages = useMessages();
   const { choices, locked } = props;
   const selectedIndex = choices.findIndex((choice) => choice.id === props.value);
-  const steps = choices.length - 1;
-  const [dragProgress, setDragProgress] = useState<number | null>(null);
-  const lastDragIndex = useRef<number | null>(null);
-  const progress = dragProgress ?? (steps > 0 ? Math.max(0, selectedIndex) / steps : 0);
-  const lensCenter = `calc(25px + (100% - 50px) * ${progress})`;
-
-  const updateDrag = (event: PointerEvent<HTMLDivElement>) => {
-    const bounds = event.currentTarget.getBoundingClientRect();
-    const inset = event.currentTarget.clientHeight / 2;
-    const fraction = (event.clientX - bounds.left - inset) / Math.max(1, bounds.width - 2 * inset);
-    const next = Math.max(0, Math.min(1, fraction));
-    setDragProgress(next);
-    const index = Math.round(next * steps);
-    if (lastDragIndex.current === index) return;
-    lastDragIndex.current = index;
-    const choice = choices[index];
-    if (choice && choice.id !== props.value) props.onPick(choice.id);
-  };
-
   return (
-    <div className="composer-effort-studio">
-      <div className="flex min-w-0 items-center gap-1.5 pb-1.5 text-xs font-medium">
-        <span aria-hidden="true" className="composer-effort-studio-dot" />
-        <span className="truncate">{props.label}</span>
-        {selectedIndex >= 0 ? (
-          <span className="min-w-0 truncate">· {choices[selectedIndex]?.label}</span>
-        ) : null}
-      </div>
+    <CosmicEffortSlider
+      label={props.label}
+      options={choices}
+      value={props.value}
+      disabled={locked}
+      onChange={props.onPick}
+    >
       {locked ? (
         <p className="pb-1.5 text-xs text-muted-foreground">{messages(ULTRATHINK_IN_BODY_NOTE)}</p>
-      ) : null}
-      {steps > 0 ? (
-        <div className="composer-effort-studio-well">
-          <div
-            aria-hidden="true"
-            className="composer-effort-studio-track"
-            data-dragging={dragProgress !== null || undefined}
-            data-locked={locked || undefined}
-            onPointerDown={(event) => {
-              if (locked || !event.isPrimary || event.button !== 0) return;
-              event.currentTarget.setPointerCapture(event.pointerId);
-              lastDragIndex.current = selectedIndex;
-              updateDrag(event);
-            }}
-            onPointerMove={(event) => {
-              if (!locked && event.currentTarget.hasPointerCapture(event.pointerId))
-                updateDrag(event);
-            }}
-            onPointerUp={(event) => {
-              if (!locked && event.currentTarget.hasPointerCapture(event.pointerId))
-                updateDrag(event);
-            }}
-            onLostPointerCapture={() => {
-              lastDragIndex.current = null;
-              setDragProgress(null);
-            }}
-          >
-            <span className="composer-effort-studio-shade" style={{ left: lensCenter }} />
-            <span className="composer-effort-studio-lens" style={{ left: lensCenter }} />
-          </div>
-        </div>
       ) : null}
       <div role="radiogroup" aria-label={props.label} className="flex" dir="ltr">
         {choices.map((choice, index) => (
@@ -409,7 +352,7 @@ function EffortStudio(props: {
           />
         ))}
       </div>
-    </div>
+    </CosmicEffortSlider>
   );
 }
 
@@ -751,8 +694,9 @@ function PermissionsMenu(props: {
             ref={triggerRef}
             type="button"
             data-composer-permissions-trigger
+            data-permission-mode={current.mode}
             aria-label={gt("Permissions: {mode}", { mode: current.label })}
-            className="ms-auto flex h-7 cursor-pointer items-center gap-1.5 rounded-md px-2 text-muted-foreground text-xs outline-none hover:bg-foreground/[0.09] hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset data-popup-open:bg-foreground/[0.09] data-popup-open:text-foreground"
+            className="ms-auto flex h-7 cursor-pointer items-center gap-1.5 rounded-full px-2 text-xs outline-none hover:brightness-110 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset data-popup-open:brightness-110"
           />
         }
       >
