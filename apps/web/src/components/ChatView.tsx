@@ -1628,7 +1628,7 @@ export default function ChatView(props: ChatViewProps) {
       : providerStatuses.find((provider) => provider.instanceId === selectedInstanceId)?.driver;
   const isOmpThread = serverProjection !== null && selectedDriver === "omp";
   const extensionStatuses = deriveProviderExtensionStatuses(serverProjection);
-  const ompTodo = !embedded && serverProjection ? selectOmpTodo(serverProjection) : null;
+  const ompTodo = serverProjection ? selectOmpTodo(serverProjection) : null;
 
   const timelineEntriesInput = {
     optimisticMessages: optimisticUserMessages,
@@ -3308,12 +3308,20 @@ export default function ChatView(props: ChatViewProps) {
         )
       : null;
   const timelineFooter =
+    !hasOmpTodo &&
     pendingHandoff === null &&
     !hasThreadNow &&
     threadStatusLine === null &&
     pendingGuestMessageCount === 0 &&
     !hasQueuedTurns ? null : (
       <>
+        {hasOmpTodo ? (
+          <ThreadOmpTodo
+            key={`todo:${routeThreadKey}`}
+            threadKey={routeThreadKey}
+            progress={ompTodo}
+          />
+        ) : null}
         {pendingHandoff === null ? null : (
           <div className="chat-content-lane">
             <HandoffRow
@@ -3705,7 +3713,7 @@ export default function ChatView(props: ChatViewProps) {
                 />
               </WorkspaceMutationIdContext>
 
-              {showScrollToBottom && !isThreadFindActive && !hasOmpTodo && (
+              {showScrollToBottom && !isThreadFindActive && (
                 <ScrollToEndButton
                   bottom={scrollToEndClearance + 4}
                   summary={scrollToEndSummary}
@@ -3737,17 +3745,6 @@ export default function ChatView(props: ChatViewProps) {
                   data-chat-composer-stack="true"
                   className="group/composer-stack pointer-events-auto relative z-10 mx-auto w-full max-w-(--chat-content-max-width)"
                 >
-                  {hasOmpTodo ? (
-                    <div className="relative mb-2 px-11">
-                      <ThreadOmpTodo key={routeThreadKey} progress={ompTodo} />
-                      {showScrollToBottom && !isThreadFindActive && (
-                        <ScrollToEndButton
-                          summary={scrollToEndSummary}
-                          onScrollToEnd={() => scrollToEnd(true)}
-                        />
-                      )}
-                    </div>
-                  ) : null}
                   {isDraftHeroState ? (
                     <div className="absolute inset-x-0 bottom-full">
                       <div

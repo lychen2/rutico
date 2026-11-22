@@ -79,6 +79,7 @@ export function ReadOnlyThreadTimeline(props: {
   const workStartedAt =
     deriveActiveWorkStartedAt(activityRun, runtime, null) ?? runlessWorkStartedAt;
   const runningRunId = runtime?.activeRunId ?? null;
+  const footer = props.renderFooter?.(items) ?? null;
   const follow = useTimelineFollow({
     legendListRef: listRef,
     composerTimelineInset: 0,
@@ -132,7 +133,16 @@ export function ReadOnlyThreadTimeline(props: {
             onIsAtEndChange={follow.onIsAtEndChangeStable}
             onViewportAttach={follow.attachTimelineViewport}
             onFooterGrow={follow.onTimelineFooterGrowStable}
-            footer={props.renderFooter?.(items) ?? null}
+            footer={
+              todo.steps.length === 0 ? (
+                footer
+              ) : (
+                <>
+                  <ThreadOmpTodo key={threadKey} threadKey={threadKey} progress={todo} />
+                  {footer}
+                </>
+              )
+            }
           />
         </SideThreadsOpenContext>
         {follow.showScrollToBottom ? (
@@ -143,7 +153,6 @@ export function ReadOnlyThreadTimeline(props: {
           />
         ) : null}
       </div>
-      {todo.steps.length > 0 ? <ThreadOmpTodo key={threadKey} progress={todo} /> : null}
       {props.children({ scrollToEnd: () => follow.scrollToEnd(true) })}
     </>
   );

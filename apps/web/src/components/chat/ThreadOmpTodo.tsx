@@ -1,16 +1,9 @@
 import type { ThreadStructure } from "@t3tools/client-runtime/state/shell";
 import type { OrchestrationV2ProjectedTurnItem } from "@t3tools/contracts";
 import { useGT } from "gt-react";
-import {
-  CheckIcon,
-  ChevronDownIcon,
-  CircleIcon,
-  CirclePauseIcon,
-  ListTodoIcon,
-} from "lucide-react";
-import { useLayoutEffect, useRef } from "react";
-import { cn } from "~/lib/utils";
-import { Collapsible, CollapsiblePanel, CollapsibleTrigger } from "../ui/collapsible";
+import { CheckIcon, ChevronDownIcon } from "lucide-react";
+import { useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode } from "react";
+import { observeVisibleAnimation } from "~/lib/visibleAnimation";
 import "./threadOmpTodo.css";
 
 export function withoutOmpTodoSnapshots(rows: readonly OrchestrationV2ProjectedTurnItem[]) {
@@ -36,17 +29,19 @@ interface OmpTodoStep {
 interface OmpTodoProgress {
   readonly steps: readonly OmpTodoStep[];
   readonly completed: number;
-  readonly currentTitle: string | undefined;
+  readonly current: OmpTodoStep | undefined;
 }
 
 export function selectOmpTodo(projection: Pick<ThreadStructure, "thread" | "plans">) {
   // Each OMP update replaces the thread's sole snapshot, even when it clears the list.
   const planId = `omp-todo:${projection.thread.id}`;
-  const plan = projection.plans.find((plan) => plan.id === planId);
+  const plan = projection.plans.find(
+    (plan) => plan.id === planId && plan.threadId === projection.thread.id,
+  );
   const steps: OmpTodoStep[] = [];
   let completed = 0;
-  let runningTitle: string | undefined;
-  let incompleteTitle: string | undefined;
+  let running: OmpTodoStep | undefined;
+  let incomplete: OmpTodoStep | undefined;
   if (plan?.kind === "todo_list" && plan.status !== "superseded") {
     for (const step of plan.steps) {
       // The adapter encodes blocked and abandoned on the first detail line.
@@ -56,137 +51,243 @@ export function selectOmpTodo(projection: Pick<ThreadStructure, "thread" | "plan
       const details = [blocked ? note?.slice("[blocked]".length).trimStart() : note, ...rest]
         .filter(Boolean)
         .join("\n");
-      if (step.status === "completed") completed += 1;
-      else incompleteTitle ??= title;
-      if (step.status === "running") runningTitle ??= title;
-      steps.push({ id: step.id, title, status: blocked ? "blocked" : step.status, details });
+      const entry = {
+        id: step.id,
+        title,
+        status: blocked ? ("blocked" as const) : step.status,
+        details,
+      };
+      if (entry.status === "completed") completed += 1;
+      else incomplete ??= entry;
+      if (entry.status === "running") running ??= entry;
+      steps.push(entry);
     }
   }
-  return { planId, steps, completed, currentTitle: runningTitle ?? incompleteTitle };
+  return { steps, completed, current: running ?? incomplete };
 }
 
-export function ThreadOmpTodo({ progress }: { readonly progress: OmpTodoProgress }) {
-  const gt = useGT();
-  const { steps, completed, currentTitle } = progress;
-  const label = gt("To-do list");
-  const title = currentTitle ?? gt("Completed");
-  const titleRef = useRef<HTMLSpanElement>(null);
-  const previous = useRef<{ title: string; width: number } | null>(null);
-  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Animate intrinsic label width after a task change without delaying the visible text.
+function rememberExpanded(storageKey: string, expanded: boolean) {
+  try {
+    localStorage.setItem(storageKey, String(expanded));
+  } catch {
+    // Storage can be disabled.
+  }
+}
+
+function TodoMark({ mode, spinning }: { mode: string; spinning: boolean }) {
+  return (
+    <span data-omp-todo-mark data-mode={mode} aria-hidden>
+      {mode === "done" ? (
+        <CheckIcon size={10} strokeWidth={2.5} />
+      ) : spinning ? (
+        <svg
+          ref={observeVisibleAnimation}
+          className="motion-safe:visible-animate-spin"
+          viewBox="0 0 16 16"
+        >
+          <circle
+            cx="8"
+            cy="8"
+            r="6"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.6"
+            strokeOpacity=".2"
+          />
+          <path d="M8 2a6 6 0 0 1 6 6" fill="none" stroke="currentColor" strokeWidth="1.6" />
+        </svg>
+      ) : null}
+    </span>
+  );
+}
+
+function TodoStepRow({
+  active,
+  completed,
+  visible,
+  children,
+}: {
+  active: boolean;
+  completed: boolean;
+  visible: boolean;
+  children: ReactNode;
+}) {
+  const ref = useRef<HTMLLIElement>(null);
+  const previous = useRef(completed);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Draw newly completed checks, not historical ones.
   useLayoutEffect(() => {
-    const element = titleRef.current;
-    if (!element) return;
-    const width = element.getBoundingClientRect().width;
-    const before = previous.current;
-    previous.current = { title, width };
-    const preference = window.matchMedia("(prefers-reduced-motion: reduce)");
-    if (before === null || before.title === title || before.width === width || preference.matches)
+    const changed = previous.current !== completed;
+    previous.current = completed;
+    if (
+      !changed ||
+      !completed ||
+      !visible ||
+      window.matchMedia("(prefers-reduced-motion: reduce)").matches
+    )
       return;
-    const animation = element.animate([{ width: `${before.width}px` }, { width: `${width}px` }], {
-      duration: 350,
-      easing: "cubic-bezier(.3,1.35,.45,1)",
-    });
-    const cancel = () => animation.cancel();
-    preference.addEventListener("change", cancel);
-    return () => {
-      preference.removeEventListener("change", cancel);
-      cancel();
-    };
-  }, [title]);
+    const mark = ref.current?.querySelector("[data-omp-todo-mark] svg");
+    const animation = mark?.animate(
+      [
+        { strokeDasharray: "24", strokeDashoffset: "24" },
+        { strokeDasharray: "24", strokeDashoffset: "0" },
+      ],
+      { duration: 350, easing: "ease" },
+    );
+    return () => animation?.cancel();
+  }, [completed, visible]);
+  return (
+    <li ref={ref} aria-current={active ? "step" : undefined}>
+      {children}
+    </li>
+  );
+}
+
+export function ThreadOmpTodo({
+  threadKey,
+  progress,
+}: {
+  readonly threadKey: string;
+  readonly progress: OmpTodoProgress;
+}) {
+  const gt = useGT();
+  const { steps, completed, current } = progress;
+  const done = completed === steps.length;
+  const live = current?.status === "running";
+  const mode = done ? "done" : live ? "run" : current?.status === "blocked" ? "need" : "idle";
+  const storageKey = `t3code:task-trail-expanded:v1:${threadKey}`;
+  const [expanded, setExpanded] = useState(() => {
+    try {
+      const saved = localStorage.getItem(storageKey);
+      return saved === "true" || (saved !== "false" && !done);
+    } catch {
+      return !done;
+    }
+  });
+  const listId = useId();
+  const label = gt("To-do list");
   const statusLabels = {
     completed: gt("Completed"),
     running: gt("In progress"),
     blocked: gt("Blocked"),
     pending: gt("Pending"),
   };
+  const status = current ? statusLabels[current.status] : statusLabels.completed;
+  const title =
+    current?.title ?? gt("{completed}/{total} done", { completed, total: steps.length });
+  const titleRef = useRef<HTMLSpanElement>(null);
+  const previousTitle = useRef(title);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Animate the changed step title once after DOM commit.
+  useLayoutEffect(() => {
+    const changed = previousTitle.current !== title;
+    previousTitle.current = title;
+    if (
+      !changed ||
+      !titleRef.current ||
+      window.matchMedia("(prefers-reduced-motion: reduce)").matches
+    )
+      return;
+    const animation = titleRef.current.animate(
+      [
+        { opacity: 0, transform: "translateY(9px)" },
+        { opacity: 1, transform: "translateY(0)" },
+      ],
+      { duration: 350, easing: "ease-out" },
+    );
+    return () => animation.cancel();
+  }, [title]);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Keep the completed list visible briefly and cancel if work resumes.
+  useEffect(() => {
+    if (!done) return;
+    const timer = window.setTimeout(() => {
+      setExpanded(false);
+      rememberExpanded(storageKey, false);
+    }, 900);
+    return () => window.clearTimeout(timer);
+  }, [done, storageKey]);
 
   return (
-    <section aria-label={label} className="relative z-20 mx-auto w-fit max-w-full">
-      <Collapsible>
-        <CollapsibleTrigger
-          aria-label={[
-            label,
-            title,
-            gt("{completed}/{total} done", { completed, total: steps.length }),
-          ]
-            .filter(Boolean)
-            .join(" · ")}
-          className="group flex min-h-8 max-w-full items-center gap-2 rounded-full border border-border/70 bg-popover px-3 text-xs shadow-sm hover:bg-muted focus-visible:outline-2 focus-visible:outline-ring pointer-coarse:min-h-11"
+    <div className="chat-content-lane pb-3">
+      <section aria-label={label} data-omp-todo data-mode={mode}>
+        <button
+          type="button"
+          data-omp-todo-bar
+          aria-label={`${label} · ${title} · ${status} · ${completed}/${steps.length}`}
+          aria-expanded={expanded}
+          aria-controls={listId}
+          onClick={() => {
+            setExpanded(!expanded);
+            rememberExpanded(storageKey, !expanded);
+          }}
         >
-          {completed === steps.length ? (
-            <CheckIcon
-              aria-hidden
-              data-todo-done-mark
-              className="size-3.5 shrink-0 text-popover-foreground"
-            />
-          ) : (
-            <ListTodoIcon aria-hidden className="size-3.5 shrink-0 text-popover-foreground" />
-          )}
-          <span ref={titleRef} className="min-w-0 max-w-64 truncate font-medium">
-            <span key={title} data-todo-step-label>
+          <TodoMark mode={mode} spinning={live && !expanded} />
+          <span data-omp-todo-title>
+            <span ref={titleRef} dir="auto">
               {title}
             </span>
           </span>
-          {steps.length <= 8 ? (
-            <span aria-hidden className="hidden shrink-0 gap-0.5 sm:flex">
-              {steps.map(({ id, status }) => (
-                <span
-                  key={id}
-                  className={cn(
-                    "h-1 w-1.5 rounded-full",
-                    status === "completed"
-                      ? "bg-success"
-                      : status === "running"
-                        ? "bg-primary"
-                        : status === "blocked"
-                          ? "bg-warning"
-                          : "bg-border",
-                  )}
-                />
-              ))}
-            </span>
-          ) : null}
-          <span className="shrink-0 font-medium tabular-nums">
+          <span data-omp-todo-pill>{status}</span>
+          <span data-omp-todo-segments aria-hidden>
+            {steps.map((step) => (
+              <i
+                key={step.id}
+                data-mode={
+                  step.status === "completed" ? "done" : step === current ? mode : "pending"
+                }
+              />
+            ))}
+          </span>
+          <span data-omp-todo-count>
             {completed}/{steps.length}
           </span>
-          <ChevronDownIcon
-            aria-hidden
-            className="size-3.5 shrink-0 text-muted-foreground transition-transform group-data-panel-open:rotate-180 motion-reduce:transition-none"
-          />
-        </CollapsibleTrigger>
-        <CollapsiblePanel className="absolute bottom-full left-1/2 mb-1 w-max max-w-[min(24rem,85vw)] -translate-x-1/2">
-          <ol className="max-h-[45dvh] divide-y divide-border/60 overflow-y-auto rounded-xl border bg-popover px-3 text-popover-foreground shadow-lg">
-            {steps.map(({ id, title, status, details }) => {
-              const Icon =
-                status === "completed"
-                  ? CheckIcon
-                  : status === "blocked"
-                    ? CirclePauseIcon
-                    : CircleIcon;
-              return (
-                <li key={id} className="flex items-start gap-2 py-2 text-xs">
-                  <Icon
-                    aria-hidden
-                    className={cn(
-                      "mt-0.5 size-3.5 shrink-0",
-                      status === "running" ? "fill-current text-primary" : "text-muted-foreground",
-                    )}
-                  />
-                  <div className="flex min-w-0 flex-1 flex-col gap-x-2 sm:flex-row sm:justify-between">
-                    <div className="min-w-0 wrap-anywhere">
-                      <p className="font-medium">{title}</p>
-                      {details ? (
-                        <p className="whitespace-pre-wrap text-muted-foreground">{details}</p>
-                      ) : null}
-                    </div>
-                    <span className="shrink-0 text-muted-foreground">{statusLabels[status]}</span>
+          <ChevronDownIcon size={13} aria-hidden data-omp-todo-chevron />
+        </button>
+        <div
+          id={listId}
+          data-omp-todo-body
+          data-expanded={expanded}
+          inert={!expanded}
+          aria-hidden={!expanded}
+        >
+          <div>
+            <ol data-omp-todo-list>
+              {steps.map((step) => (
+                <TodoStepRow
+                  key={step.id}
+                  active={step === current}
+                  completed={step.status === "completed"}
+                  visible={expanded}
+                >
+                  <div data-omp-todo-step>
+                    <TodoMark
+                      mode={
+                        step.status === "completed"
+                          ? "done"
+                          : step.status === "blocked"
+                            ? "need"
+                            : step === current
+                              ? mode
+                              : "pending"
+                      }
+                      spinning={step === current && live && expanded}
+                    />
+                    <span data-omp-todo-step-title dir="auto">
+                      {step.title}
+                    </span>
+                    <span data-omp-todo-status data-blocked={step.status === "blocked"}>
+                      {statusLabels[step.status]}
+                    </span>
                   </div>
-                </li>
-              );
-            })}
-          </ol>
-        </CollapsiblePanel>
-      </Collapsible>
-    </section>
+                  {step.details ? (
+                    <p data-omp-todo-details dir="auto">
+                      {step.details}
+                    </p>
+                  ) : null}
+                </TodoStepRow>
+              ))}
+            </ol>
+          </div>
+        </div>
+      </section>
+    </div>
   );
 }

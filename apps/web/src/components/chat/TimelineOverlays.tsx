@@ -20,9 +20,8 @@ export function WorkspaceFileDropOverlay() {
   );
 }
 
-/** Without a separate timeline clearance the button shares the todo row's centerline. */
 export function ScrollToEndButton(props: {
-  readonly bottom?: number;
+  readonly bottom: number;
   readonly summary: string | null;
   readonly onScrollToEnd: () => void;
 }) {
@@ -42,9 +41,6 @@ export function ScrollToEndButton(props: {
       </span>
     </Button>
   );
-  if (props.bottom === undefined) {
-    return <div className="absolute inset-y-0 end-0 flex items-center">{button}</div>;
-  }
   return (
     <div
       className="chat-scroll-to-bottom chat-composer-lane pointer-events-none absolute z-30 flex justify-center py-1.5"

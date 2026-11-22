@@ -25,19 +25,6 @@ it("keeps the jump button on the right of the composer lane at both widths", asy
     expect(Math.abs(bounds.right - lane.right)).toBeLessThan(1);
     expect(bounds.left).toBeGreaterThan(lane.left + lane.width / 2);
   }
-  await screen.rerender(
-    <div className="relative mx-auto flex h-11 max-w-xl items-center justify-center">
-      <span data-testid="todo">Todo</span>
-      <ScrollToEndButton summary="2 tasks" onScrollToEnd={jump} />
-    </div>,
-  );
-  for (const width of [360, 1280]) {
-    await page.viewport(width, 800);
-    const todo = screen.getByTestId("todo").element().getBoundingClientRect();
-    const inline = button.element().getBoundingClientRect();
-    expect(Math.abs(inline.top + inline.height / 2 - todo.top - todo.height / 2)).toBeLessThan(1);
-    expect(inline.left).toBeGreaterThan(todo.right);
-  }
   await button.click();
   expect(jump).toHaveBeenCalledOnce();
 });

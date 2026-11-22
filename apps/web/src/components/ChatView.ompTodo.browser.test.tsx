@@ -26,6 +26,7 @@ import {
   ENVIRONMENT_ID,
   emitThreadEvent,
   installFakeEnvironment,
+  isThreadSubscribed,
   threadWithHistory,
   type FakeDriver,
 } from "../../test/fakeEnvironment";
@@ -49,7 +50,7 @@ const driver = ProviderDriverKind.make("omp");
 const provider = { ...CODEX_PROVIDER, instanceId, driver };
 const modelSelection = { instanceId, model: "gpt-5.4" };
 
-it("keeps one current OMP checklist immediately above the composer, outside message history", async () => {
+it("keeps one current OMP checklist in the timeline footer and isolates disclosure by thread", async () => {
   const thread = threadWithHistory("omp-todo-footer", 1, modelSelection);
   const other = threadWithHistory("omp-todo-neighbor", 1, modelSelection);
   const at = DateTime.makeUnsafe("2026-03-17T19:12:28.000Z");
@@ -156,44 +157,70 @@ it("keeps one current OMP checklist immediately above the composer, outside mess
       steps: [{ id: "other", text: "其他提供方的任务", status: "running" }],
     },
   });
-  await page.getByText(/^工作了/).click();
+  const fold = page.getByRole("button", { name: /^工作了/ });
+  await expect.element(fold).toHaveAttribute("aria-expanded", "false");
+  await fold.click();
+  await expect.element(fold).toHaveAttribute("aria-expanded", "true");
   await expect.element(page.getByText(/其他提供方的任务/)).toBeVisible();
+  await userEvent.keyboard("{Enter}");
+  await expect.element(fold).toHaveAttribute("aria-expanded", "false");
+  await expect.element(page.getByText(/其他提供方的任务/)).not.toBeInTheDocument();
   await expect
     .element(page.getByText(/旧 OMP 待办快照|相邻会话的待办快照/))
     .not.toBeInTheDocument();
-  await expect.element(trigger).toHaveAttribute("aria-expanded", "false");
+  await expect.element(trigger).toHaveAttribute("aria-expanded", "true");
   await expect.element(trigger.getByText(/校对仪表盘/)).toBeVisible();
   await expect.element(trigger.getByText("0/3", { exact: true })).toBeVisible();
-  expect(checklist.element().closest('[data-chat-composer-overlay="true"]')).not.toBeNull();
-  expect(checklist.element().closest(".messages-timeline-scroll")).toBeNull();
-  await expect.element(steps).not.toBeInTheDocument();
-  await trigger.click();
-  await expect.element(trigger).toHaveAttribute("aria-expanded", "true");
+  expect(checklist.element().closest('[data-chat-composer-overlay="true"]')).toBeNull();
+  expect(checklist.element().closest(".messages-timeline-scroll")).not.toBeNull();
+  await expect.element(steps).toBeVisible();
   await expect.element(steps.getByText("检查桌面布局", { exact: true })).toBeVisible();
   await expect.element(steps.getByText("等待验收", { exact: true })).toBeVisible();
   await expect.element(steps.getByText("已阻塞", { exact: true })).toBeVisible();
   await expect.element(steps.getByText("待处理", { exact: true })).toBeVisible();
   await expect.element(steps.getByText("已放弃的任务")).not.toBeInTheDocument();
 
-  await emitThreadEvent(thread.id, {
-    type: "plan.updated",
-    payload: {
-      ...plan,
-      steps: plan.steps.map((step, index) => ({
-        ...step,
-        status: index === 0 ? "completed" : index === 1 ? "running" : step.status,
-      })),
-    },
-  });
+  const updatedPlan: OrchestrationV2PlanArtifact = {
+    ...plan,
+    steps: plan.steps.map((step, index) => ({
+      ...step,
+      status: index === 0 ? "completed" : index === 1 ? "running" : step.status,
+    })),
+  };
+  await emitThreadEvent(thread.id, { type: "plan.updated", payload: updatedPlan });
   await expect.element(trigger.getByText(/检查窄屏显示/)).toBeVisible();
   await expect.element(trigger.getByText("1/3", { exact: true })).toBeVisible();
   await expect.element(trigger).toHaveAttribute("aria-expanded", "true");
   await expect
     .element(steps.getByRole("listitem").filter({ hasText: "检查窄屏显示" }).getByText("进行中"))
     .toBeVisible();
+  trigger.element().focus();
   await userEvent.keyboard("{Enter}");
   await expect.element(trigger).toHaveAttribute("aria-expanded", "false");
   await expect.element(steps).not.toBeInTheDocument();
+
+  await router.navigate({ to: `/${ENVIRONMENT_ID}/${other.id}` });
+  await vi.waitFor(() => expect(isThreadSubscribed(other.id)).toBe(true));
+  await emitThreadEvent(other.id, {
+    type: "plan.updated",
+    payload: {
+      ...plan,
+      id: PlanId.make(`omp-todo:${other.id}`),
+      threadId: other.id,
+      runId: other.runs[0]!.id,
+      steps: [{ id: "neighbor", text: "仅相邻会话可见的任务", status: "running" }],
+    },
+  });
+  await expect.element(trigger).toHaveAttribute("aria-expanded", "true");
+  await expect.element(trigger.getByText("仅相邻会话可见的任务")).toBeVisible();
+  await expect.element(page.getByText(/检查窄屏显示/)).not.toBeInTheDocument();
+  await router.navigate({ to: `/${ENVIRONMENT_ID}/${thread.id}` });
+  // The fake socket's snapshots come from the initial fixtures, not its live event stream.
+  await vi.waitFor(() => expect(isThreadSubscribed(thread.id)).toBe(true));
+  await emitThreadEvent(thread.id, { type: "plan.updated", payload: updatedPlan });
+  await expect.element(trigger.getByText(/检查窄屏显示/)).toBeVisible();
+  await expect.element(trigger).toHaveAttribute("aria-expanded", "false");
+  await expect.element(page.getByText("仅相邻会话可见的任务")).not.toBeInTheDocument();
 
   await page.viewport(360, 760);
   await trigger.click();
@@ -210,6 +237,10 @@ it("keeps one current OMP checklist immediately above the composer, outside mess
   });
   await expect.element(trigger.getByText("已完成", { exact: true })).toBeVisible();
   await expect.element(trigger.getByText("3/3", { exact: true })).toBeVisible();
+  await expect.element(trigger).toHaveAttribute("aria-expanded", "false");
+  await expect.element(steps).not.toBeInTheDocument();
+  await trigger.click();
+  await expect.element(steps.getByText("检查窄屏显示")).toBeVisible();
 
   await emitThreadEvent(thread.id, {
     type: "plan.updated",
