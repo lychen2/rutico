@@ -15,7 +15,7 @@
   padding: 2px 4px;
   max-width: 100%;
   border-radius: 999px;
-  background: var(--card);
+  background: oklch(from var(--chat-composer-glass-surface, var(--card)) l calc(c * 0.7) h);
 }
 [data-v9-stats-trig] {
   display: inline-flex;
