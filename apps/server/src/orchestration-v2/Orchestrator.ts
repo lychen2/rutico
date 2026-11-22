@@ -28,6 +28,7 @@ import {
   CommandId,
   type GuestMessageId,
   isCompactionCommandMessage,
+  isDeliveredProviderTurn,
   isOrchestrationV2WorkActive,
   isProviderNativeSubagentThread,
   MessageId,
@@ -1605,7 +1606,9 @@ function lastDeliveredRunForProviderThread(
       isHandoffSourceRun(run) &&
       run.providerThreadId === providerThreadId &&
       (run.status === "completed" ||
-        projection.providerTurns.some((turn) => turn.runAttemptId === run.activeAttemptId)),
+        projection.providerTurns.some(
+          (turn) => turn.runAttemptId === run.activeAttemptId && isDeliveredProviderTurn(turn),
+        )),
   );
 }
 
@@ -14541,9 +14544,10 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
               targetCheckpoint.appRunOrdinal ?? 0,
             ) !== null,
         );
-      // Missing snapshots otherwise support conversation rewind only.
+      // Missing or failed snapshots otherwise support conversation rewind only.
       if (
         targetCheckpoint.status !== "ready" &&
+        !(targetCheckpoint.status === "error" && command.restoreFiles === false) &&
         !(
           targetCheckpoint.status === "missing" &&
           (command.restoreFiles === false || restoresRepositories)

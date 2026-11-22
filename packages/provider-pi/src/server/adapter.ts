@@ -498,6 +498,11 @@ function compactionTitle(status: PiCompactionStatus): string {
   }
 }
 
+type PiMessageTokenUsage = Pick<
+  OrchestrationV2ProviderTurnTokenUsage,
+  "inputTokens" | "cachedInputTokens" | "outputTokens"
+>;
+
 interface ActivePiTurn {
   readonly turnInput: ProviderAdapter.ProviderAdapterV2TurnInput;
   providerTurn: OrchestrationV2ProviderTurn;
@@ -525,6 +530,7 @@ interface ActivePiTurn {
   outputTokens: number | undefined;
   reasoningTokens: number | undefined;
   hasSubagents: boolean;
+  lastMessageUsage: PiMessageTokenUsage | undefined;
   settleProbeGeneration: number;
   /** An extension may start compaction immediately after Pi emits agent_settled. */
   settleWhenIdle: boolean;
@@ -1085,6 +1091,25 @@ export const makePiAdapterV2 = Effect.fn("makePiAdapterV2")(function* (
         return value === undefined ? undefined : Math.max(0, Math.trunc(value));
       };
 
+      // Pi counts uncached input, cache reads and cache writes separately; input includes all three.
+      const piMessageTokenUsage = (usage: unknown): PiMessageTokenUsage => {
+        const uncachedInputTokens = nonNegativeInteger(usage, "input");
+        const cachedInputTokens = nonNegativeInteger(usage, "cacheRead");
+        const outputTokens = nonNegativeInteger(usage, "output");
+        return {
+          ...(uncachedInputTokens === undefined
+            ? {}
+            : {
+                inputTokens:
+                  uncachedInputTokens +
+                  (cachedInputTokens ?? 0) +
+                  (nonNegativeInteger(usage, "cacheWrite") ?? 0),
+              }),
+          ...(cachedInputTokens === undefined ? {} : { cachedInputTokens }),
+          ...(outputTokens === undefined ? {} : { outputTokens }),
+        };
+      };
+
       const rememberModelContextWindow = (model: unknown): number | null => {
         const provider = recordString(model, "provider");
         const id = recordString(model, "id");
@@ -1175,6 +1200,7 @@ export const makePiAdapterV2 = Effect.fn("makePiAdapterV2")(function* (
       const tokenUsageFromStats = (
         stats: unknown,
         fallbackUsedTokens: number | null,
+        messageUsage: PiMessageTokenUsage | undefined,
         updatedAt: DateTime.Utc,
       ): OrchestrationV2ProviderTurnTokenUsage | undefined => {
         const contextUsage = recordField(stats, "contextUsage");
@@ -1183,24 +1209,20 @@ export const makePiAdapterV2 = Effect.fn("makePiAdapterV2")(function* (
         const usedTokens =
           nonNegativeInteger(contextUsage, "tokens") ?? fallbackUsedTokens ?? undefined;
         if (usedTokens === undefined) return undefined;
-
-        const totals = recordField(stats, "tokens");
-        const inputTokens = nonNegativeInteger(totals, "input");
-        const cachedInputTokens = nonNegativeInteger(totals, "cacheRead");
-        const outputTokens = nonNegativeInteger(totals, "output");
-        return {
-          usedTokens,
-          ...(maxTokens === null ? {} : { maxTokens }),
-          ...(inputTokens === undefined ? {} : { inputTokens }),
-          ...(cachedInputTokens === undefined ? {} : { cachedInputTokens }),
-          ...(outputTokens === undefined ? {} : { outputTokens }),
-          updatedAt: DateTime.formatIso(updatedAt),
-        };
+        // Stats `tokens` are whole-session totals; the breakdown comes from the turn's last message.
+        return { usedTokens, maxTokens, ...messageUsage, updatedAt: DateTime.formatIso(updatedAt) };
       };
 
-      const readTokenUsage = (fallbackUsedTokens: number | null, updatedAt: DateTime.Utc) =>
+      const readTokenUsage = (turn: ActivePiTurn, updatedAt: DateTime.Utc) =>
         request({ type: "get_session_stats" }, 2_000).pipe(
-          Effect.map((stats) => tokenUsageFromStats(stats, fallbackUsedTokens, updatedAt)),
+          Effect.map((stats) =>
+            tokenUsageFromStats(
+              stats,
+              turn.latestCompactionAfterTokens,
+              turn.lastMessageUsage,
+              updatedAt,
+            ),
+          ),
           Effect.orElseSucceed(() => undefined),
         );
 
@@ -1229,6 +1251,13 @@ export const makePiAdapterV2 = Effect.fn("makePiAdapterV2")(function* (
             reasoning === undefined
           ) {
             return;
+          }
+          if (
+            (usedTokens !== undefined && usedTokens > 0) ||
+            (messageEnded &&
+              (input ?? 0) + (cacheRead ?? 0) + (cacheWrite ?? 0) + (output ?? 0) > 0)
+          ) {
+            turn.lastMessageUsage = piMessageTokenUsage(usage);
           }
 
           // Native input excludes both cache counters; T3 input includes them.
@@ -1279,9 +1308,7 @@ export const makePiAdapterV2 = Effect.fn("makePiAdapterV2")(function* (
                   tokenUsage: {
                     usedTokens,
                     ...(contextWindow === null ? {} : { maxTokens: contextWindow }),
-                    ...(input === undefined ? {} : { inputTokens: input }),
-                    ...(cacheRead === undefined ? {} : { cachedInputTokens: cacheRead }),
-                    ...(output === undefined ? {} : { outputTokens: output }),
+                    ...turn.lastMessageUsage,
                     updatedAt: DateTime.formatIso(yield* DateTime.now),
                   },
                 }
@@ -2501,9 +2528,7 @@ export const makePiAdapterV2 = Effect.fn("makePiAdapterV2")(function* (
         }
         const treeRefs =
           turn.stopTreeRefs !== undefined ? turn.stopTreeRefs : yield* captureTurnTreeRefs();
-        const tokenUsage = readUsage
-          ? yield* readTokenUsage(turn.latestCompactionAfterTokens, completedAt)
-          : undefined;
+        const tokenUsage = readUsage ? yield* readTokenUsage(turn, completedAt) : undefined;
         const failure = interrupted ? null : (turn.rejectedPromptFailure ?? turn.failure);
         const status = interrupted ? "interrupted" : failure !== null ? "failed" : "completed";
         const coversAllMessages = turn.usageMessages >= turn.messageOrdinal;
@@ -4096,6 +4121,7 @@ export const makePiAdapterV2 = Effect.fn("makePiAdapterV2")(function* (
               outputTokens: 0,
               reasoningTokens: undefined,
               hasSubagents: false,
+              lastMessageUsage: undefined,
               settleProbeGeneration: 0,
               settleWhenIdle: false,
               compactionCancelled: false,
