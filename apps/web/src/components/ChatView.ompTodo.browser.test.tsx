@@ -95,7 +95,7 @@ it("keeps one current OMP checklist immediately above the composer, outside mess
   const checklist = page.getByRole("region", { name: "待办清单" });
   const trigger = checklist.getByRole("button", { name: /^待办清单/ });
   const steps = checklist.getByRole("list");
-  const status = page.getByRole("button", { name: /^(上下文|第.*轮)/ });
+  const status = page.getByRole("button", { name: /上下文 25%/ });
   await expect.element(status).toBeVisible();
   expect(status.element().closest("form")).toBeNull();
   await status.click();
