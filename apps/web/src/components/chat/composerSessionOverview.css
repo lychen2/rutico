@@ -15,6 +15,7 @@
   padding: 2px 4px;
   max-width: 100%;
   border-radius: 999px;
+  background: var(--card);
 }
 [data-v9-stats-trig] {
   display: inline-flex;
