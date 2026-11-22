@@ -1881,7 +1881,7 @@ function TurnFoldTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "turn-
           </span>
           <ChevronRightIcon
             aria-hidden
-            className="size-3.5 shrink-0 transition-transform duration-200 group-aria-expanded/fold:rotate-90 motion-reduce:transition-none rtl:-scale-x-100 rtl:group-aria-expanded/fold:-rotate-90"
+            className="size-3.5 shrink-0 transition-transform duration-200 ease-(--ease-spring-snappy) group-aria-expanded/fold:rotate-90 motion-reduce:transition-none rtl:-scale-x-100 rtl:group-aria-expanded/fold:-rotate-90"
           />
         </button>
         <TimelineRowTimestamp
@@ -1914,7 +1914,7 @@ function AttemptFoldTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "at
       >
         <ChevronRightIcon
           aria-hidden
-          className="size-3.5 shrink-0 text-muted-foreground transition-transform duration-200 group-aria-expanded/fold:rotate-90 motion-reduce:transition-none rtl:-scale-x-100 rtl:group-aria-expanded/fold:-rotate-90"
+          className="size-3.5 shrink-0 text-muted-foreground transition-transform duration-200 ease-(--ease-spring-snappy) group-aria-expanded/fold:rotate-90 motion-reduce:transition-none rtl:-scale-x-100 rtl:group-aria-expanded/fold:-rotate-90"
         />
         <span className="text-xs font-medium text-foreground/80">
           {row.label}

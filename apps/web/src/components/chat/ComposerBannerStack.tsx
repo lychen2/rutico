@@ -28,8 +28,7 @@ export interface ComposerBannerStackItem {
 
 const GROUPS = ["environment", "attention"] as const;
 
-const FADE_IN =
-  "transition-opacity duration-150 ease-out starting:opacity-0 motion-reduce:transition-none";
+const FADE_IN = "t3-banner-reveal motion-reduce:transition-none";
 
 /**
  * Notices about sending from this composer, each its own attached card. Consecutive cards join

@@ -202,8 +202,8 @@ export function TimelineMinimap({
                 <span
                   aria-hidden="true"
                   className={cn(
-                    "pointer-events-none absolute left-0 h-0.5 w-6 origin-left -translate-y-1/2 rounded-full transition-transform duration-150 after:absolute after:inset-0 after:rounded-full after:bg-foreground/55 after:opacity-0 after:transition-opacity after:duration-150 data-[in-view=true]:after:opacity-100",
-                    activeDistance === 0 ? "bg-muted-foreground/60" : "bg-muted-foreground/25",
+                    "pointer-events-none absolute left-0 h-0.5 w-6 origin-left -translate-y-1/2 rounded-full transition-transform duration-200 ease-(--ease-spring-snappy) motion-reduce:transition-none after:absolute after:inset-0 after:rounded-full after:bg-foreground/65 after:opacity-0 after:transition-opacity after:duration-150 data-[in-view=true]:after:opacity-100",
+                    activeDistance === 0 ? "bg-muted-foreground/75" : "bg-muted-foreground/25",
                     activeDistance === 0
                       ? "scale-x-100"
                       : activeDistance === 1
@@ -229,10 +229,10 @@ export function TimelineMinimap({
             {activeItem ? (
               // Display-only: it overlaps the message column, and the strip keeps tracking beneath it.
               <span
-                className="pointer-events-none absolute left-8 w-80 -translate-y-1/2"
+                className="pointer-events-none absolute left-8 w-80 -translate-y-1/2 transition-[top] duration-120 ease-out motion-reduce:transition-none"
                 style={{ top: `${activeTopPercent}%` }}
               >
-                <span className="dropdown-glass block rounded-xl p-3 text-left text-popover-foreground shadow-xl shadow-black/25">
+                <span className="t3-minimap-card-enter dropdown-glass block rounded-xl p-3 text-left text-popover-foreground shadow-xl shadow-black/25">
                   <span className="block max-w-full overflow-hidden text-ellipsis whitespace-nowrap text-sm font-medium leading-5">
                     {activeItem.userText ?? <T>User message</T>}
                   </span>

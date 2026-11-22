@@ -569,7 +569,19 @@ const TOP_STATUS_ICONS = {
 
 function TopStatusIcon(props: { icon: keyof typeof TOP_STATUS_ICONS; className: string }) {
   const Icon = TOP_STATUS_ICONS[props.icon];
-  return <Icon aria-hidden className={cn("shrink-0", props.className)} />;
+  const animateStatus =
+    props.icon === "done" ||
+    props.icon === "approval" ||
+    props.icon === "input" ||
+    props.icon === "woke" ||
+    props.icon === "failed";
+  return (
+    <Icon
+      key={props.icon}
+      aria-hidden
+      className={cn("shrink-0", animateStatus && "t3-sidebar-status-pop", props.className)}
+    />
+  );
 }
 
 type SidebarThreadRowProps = {
@@ -1008,7 +1020,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
   };
 
   const rowSurfaceClassName = cn(
-    "group/sidebar-row relative w-full cursor-pointer overflow-hidden rounded-md text-left outline-none select-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
+    "group/sidebar-row relative w-full cursor-pointer overflow-hidden rounded-md text-left outline-none select-none transition-[background-color,color,opacity,box-shadow] duration-150 ease-out motion-reduce:transition-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
     variantAction === "unsettle" &&
       !props.isActive &&
       "[&:not(:hover):not(:focus-within)_*:not(.live-activity-focus_*)]:text-secondary-label",
@@ -1465,7 +1477,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
                         onClick={handleUnsnoozeClick}
                         onPointerDown={handleActionPointerDown}
                         className={cn(
-                          "pointer-events-none absolute inset-y-0 right-0 -mr-1 inline-flex cursor-pointer items-center gap-1 rounded-md bg-transparent px-1.5 text-xs text-muted-foreground opacity-0 transition-opacity hover:text-foreground focus-visible:pointer-events-auto focus-visible:opacity-100 group-any-hover/sidebar-row:pointer-events-auto group-any-hover/sidebar-row:opacity-100",
+                          "pointer-events-none absolute inset-y-0 right-0 -mr-1 inline-flex translate-x-1 cursor-pointer items-center gap-1 rounded-md bg-transparent px-1.5 text-xs text-muted-foreground opacity-0 transition-[opacity,transform,color] duration-150 ease-out motion-reduce:translate-x-0 motion-reduce:transition-none hover:text-foreground focus-visible:pointer-events-auto focus-visible:translate-x-0 focus-visible:opacity-100 group-any-hover/sidebar-row:pointer-events-auto group-any-hover/sidebar-row:translate-x-0 group-any-hover/sidebar-row:opacity-100",
                           isWoke && "group-any-hover/sidebar-row:static",
                         )}
                       >
@@ -1482,7 +1494,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
                             onClick={handleUnsettleClick}
                             onPointerDown={handleActionPointerDown}
                             className={cn(
-                              "pointer-events-none absolute inset-y-0 right-0 -mr-1 inline-flex cursor-pointer items-center gap-1 rounded-md bg-transparent px-1.5 text-xs text-muted-foreground opacity-0 transition-opacity hover:text-foreground focus-visible:pointer-events-auto focus-visible:opacity-100 group-any-hover/sidebar-row:pointer-events-auto group-any-hover/sidebar-row:opacity-100",
+                              "pointer-events-none absolute inset-y-0 right-0 -mr-1 inline-flex translate-x-1 cursor-pointer items-center gap-1 rounded-md bg-transparent px-1.5 text-xs text-muted-foreground opacity-0 transition-[opacity,transform,color] duration-150 ease-out motion-reduce:translate-x-0 motion-reduce:transition-none hover:text-foreground focus-visible:pointer-events-auto focus-visible:translate-x-0 focus-visible:opacity-100 group-any-hover/sidebar-row:pointer-events-auto group-any-hover/sidebar-row:translate-x-0 group-any-hover/sidebar-row:opacity-100",
                               isWoke && "group-any-hover/sidebar-row:static",
                             )}
                           />
@@ -1504,7 +1516,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
                             onClick={handleSettleClick}
                             onPointerDown={handleActionPointerDown}
                             className={cn(
-                              "pointer-events-none absolute inset-y-0 right-0 -mr-2 inline-flex cursor-pointer items-center gap-1 rounded-md bg-transparent px-2 text-xs text-muted-foreground opacity-0 transition-opacity hover:text-foreground focus-visible:pointer-events-auto focus-visible:opacity-100 group-any-hover/sidebar-row:pointer-events-auto group-any-hover/sidebar-row:opacity-100",
+                              "pointer-events-none absolute inset-y-0 right-0 -mr-2 inline-flex translate-x-1 cursor-pointer items-center gap-1 rounded-md bg-transparent px-2 text-xs text-muted-foreground opacity-0 transition-[opacity,transform,color] duration-150 ease-out motion-reduce:translate-x-0 motion-reduce:transition-none hover:text-foreground focus-visible:pointer-events-auto focus-visible:translate-x-0 focus-visible:opacity-100 group-any-hover/sidebar-row:pointer-events-auto group-any-hover/sidebar-row:translate-x-0 group-any-hover/sidebar-row:opacity-100",
                               isWoke && "group-any-hover/sidebar-row:static",
                             )}
                           />
@@ -1667,8 +1679,8 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
                       className={cn(
                         // Mouse clicks leave Settle focused; focus-within would pin controls over
                         // the status label after the pointer leaves. Use focus-visible instead.
-                        "pointer-events-none absolute inset-y-0 right-0 flex items-stretch opacity-0 has-[:focus-visible]:pointer-events-auto has-[:focus-visible]:static has-[:focus-visible]:opacity-100 group-any-hover/sidebar-row:pointer-events-auto group-any-hover/sidebar-row:static group-any-hover/sidebar-row:opacity-100",
-                        snoozeMenuOpen && "pointer-events-auto static opacity-100",
+                        "pointer-events-none absolute inset-y-0 right-0 flex translate-x-1 items-stretch opacity-0 transition-[opacity,transform] duration-160 ease-(--ease-spring-snappy) motion-reduce:translate-x-0 motion-reduce:transition-none has-[:focus-visible]:pointer-events-auto has-[:focus-visible]:static has-[:focus-visible]:translate-x-0 has-[:focus-visible]:opacity-100 group-any-hover/sidebar-row:pointer-events-auto group-any-hover/sidebar-row:static group-any-hover/sidebar-row:translate-x-0 group-any-hover/sidebar-row:opacity-100",
+                        snoozeMenuOpen && "pointer-events-auto static translate-x-0 opacity-100",
                       )}
                     >
                       {hasUnsentDraft ? (

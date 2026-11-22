@@ -190,10 +190,14 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
   --text-5xs: 0.4375rem;
   --text-5xs--line-height: 1;
   /* Motion. drawer is the decelerating curve for surfaces that slide or pop in
-     (composer context, pills). */
+     (composer context, pills). Spring curves add subtle tactile overshoot for
+     popovers, menus, dialogs, and micro-interactions. */
   --inset-shadow-control-highlight: 0 1px rgb(255 255 255 / 16%);
   --inset-shadow-control-pressed: 0 1px rgb(0 0 0 / 8%);
   --ease-drawer: cubic-bezier(0.32, 0.72, 0, 1);
+  --ease-spring-snappy: cubic-bezier(0.22, 1.24, 0.36, 1);
+  --ease-spring-gentle: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-exit: cubic-bezier(0.4, 0, 1, 1);
   /* The composer's elevation: a soft drop pulled in under the surface, shared
      by the composer, its context strip and attached banners. */
   --shadow-composer: 0 1px 2px rgb(0 0 0 / 5%);
@@ -566,14 +570,21 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
   @media (prefers-reduced-motion: no-preference) and (forced-colors: none) {
     color: transparent;
     background-image:
-      linear-gradient(to right, transparent, var(--contrast-foreground), transparent),
+      linear-gradient(
+        to right,
+        transparent 0%,
+        color-mix(in srgb, var(--contrast-foreground) 65%, transparent) 30%,
+        var(--contrast-foreground) 50%,
+        color-mix(in srgb, var(--contrast-foreground) 65%, transparent) 70%,
+        transparent 100%
+      ),
       linear-gradient(var(--contrast-secondary-label), var(--contrast-secondary-label));
     background-size:
-      4.5rem 100%,
+      5rem 100%,
       100% 100%;
     background-repeat: no-repeat;
     background-clip: text;
-    animation: live-tool-shine 2.2s steps(30) infinite;
+    animation: live-tool-shine 1.85s cubic-bezier(0.35, 0, 0.65, 1) infinite;
     animation-play-state: var(--visible-animation-state, paused);
   }
 }
@@ -632,7 +643,7 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
     transparent 100%
   );
   mask-repeat: no-repeat;
-  animation: live-activity-focus 2.2s steps(30) infinite;
+  animation: live-activity-focus 1.85s cubic-bezier(0.35, 0, 0.65, 1) infinite;
   animation-play-state: var(--visible-animation-state, paused);
   will-change: var(--visible-animation-will-change, auto);
 
@@ -645,7 +656,7 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
 
 @utility live-activity-focus-counter {
   width: 100%;
-  animation: live-activity-focus-counter 2.2s steps(30) infinite;
+  animation: live-activity-focus-counter 1.85s cubic-bezier(0.35, 0, 0.65, 1) infinite;
   animation-play-state: var(--visible-animation-state, paused);
   will-change: var(--visible-animation-will-change, auto);
 
@@ -2654,4 +2665,224 @@ code {
 
 .messages-timeline-scroll:focus-visible {
   outline: none;
+}
+
+/* ==========================================================================
+   Luxury Motion & Tactile Micro-Interactions
+   Compositor-friendly (@starting-style, transform, opacity, scale) with
+   automatic opt-out under prefers-reduced-motion: reduce.
+   ========================================================================== */
+
+@keyframes t3-icon-pop {
+  0% {
+    opacity: 0;
+    transform: scale(0.6);
+  }
+  65% {
+    opacity: 1;
+    transform: scale(1.1);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes t3-stop-pulse {
+  0% {
+    opacity: 0.55;
+    transform: scale(0.95);
+  }
+  70% {
+    opacity: 0;
+    transform: scale(1.42);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(1.42);
+  }
+}
+
+@keyframes t3-dropzone-breathe {
+  0%,
+  100% {
+    border-color: color-mix(in srgb, var(--primary) 50%, transparent);
+    background-color: color-mix(in srgb, var(--primary) 3.5%, transparent);
+  }
+  50% {
+    border-color: color-mix(in srgb, var(--primary) 85%, transparent);
+    background-color: color-mix(in srgb, var(--primary) 6.5%, transparent);
+  }
+}
+
+@keyframes t3-question-step-enter {
+  from {
+    opacity: 0;
+    transform: translateX(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes t3-command-view-enter {
+  from {
+    opacity: 0;
+    transform: translateY(4px) scale(0.992);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes t3-draft-hero-enter {
+  from {
+    opacity: 0;
+    transform: translateY(10px) scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .t3-icon-pop {
+    animation: t3-icon-pop 240ms var(--ease-spring-snappy) both;
+  }
+
+  .t3-stop-pulse-ring {
+    animation: t3-stop-pulse 1.9s cubic-bezier(0.22, 1, 0.36, 1) infinite;
+  }
+
+  .t3-dropzone-overlay {
+    animation: t3-dropzone-breathe 2s ease-in-out infinite;
+    transition:
+      opacity 180ms ease-out,
+      transform 220ms var(--ease-spring-gentle);
+
+    @starting-style {
+      opacity: 0;
+      transform: scale(0.985);
+    }
+  }
+
+  .t3-dropzone-pill {
+    transition:
+      opacity 200ms ease-out,
+      transform 280ms var(--ease-spring-snappy);
+
+    @starting-style {
+      opacity: 0;
+      transform: translateY(8px) scale(0.92);
+    }
+  }
+
+  .t3-drawer-reveal {
+    transition:
+      opacity 180ms ease-out,
+      transform 240ms var(--ease-spring-gentle);
+
+    @starting-style {
+      opacity: 0;
+      transform: translateY(8px) scale(0.985);
+    }
+  }
+
+  .t3-banner-reveal {
+    transition:
+      opacity 180ms ease-out,
+      transform 220ms var(--ease-spring-gentle);
+
+    @starting-style {
+      opacity: 0;
+      transform: translateY(6px) scale(0.99);
+    }
+  }
+
+  .t3-question-step-enter {
+    animation: t3-question-step-enter 220ms var(--ease-spring-gentle) both;
+  }
+
+  .t3-scroll-end-enter {
+    transition:
+      opacity 180ms ease-out,
+      transform 260ms var(--ease-spring-snappy);
+
+    @starting-style {
+      opacity: 0;
+      transform: translateY(10px) scale(0.88);
+    }
+  }
+
+  .t3-minimap-card-enter {
+    transition:
+      opacity 140ms ease-out,
+      transform 200ms var(--ease-spring-snappy);
+
+    @starting-style {
+      opacity: 0;
+      transform: translateX(-6px) scale(0.96);
+    }
+  }
+
+  .t3-draft-hero-title {
+    animation: t3-draft-hero-enter 340ms var(--ease-spring-gentle) both;
+  }
+
+  .t3-draft-hero-subtitle {
+    animation: t3-draft-hero-enter 380ms var(--ease-spring-gentle) 55ms both;
+  }
+
+  .t3-command-view-enter {
+    animation: t3-command-view-enter 180ms var(--ease-spring-gentle) both;
+  }
+
+  .t3-panel-tab-enter {
+    transition:
+      opacity 160ms ease-out,
+      transform 220ms var(--ease-spring-snappy),
+      background-color 140ms ease-out,
+      color 140ms ease-out;
+
+    @starting-style {
+      opacity: 0;
+      transform: scale(0.92);
+    }
+  }
+
+  .t3-terminal-drawer-enter {
+    transition:
+      opacity 180ms ease-out,
+      transform 240ms var(--ease-spring-gentle);
+
+    @starting-style {
+      opacity: 0;
+      transform: translateY(14px);
+    }
+  }
+
+  .t3-sidebar-status-pop {
+    animation: t3-icon-pop 280ms var(--ease-spring-snappy) both;
+  }
+}
+
+/* Composer focus aura: subtle luminance and crisp ring when editing. */
+[data-chat-composer-main-surface="true"]::after {
+  transition:
+    border-color 200ms ease-out,
+    box-shadow 220ms ease-out;
+}
+
+[data-chat-composer-main-surface="true"]:focus-within::after {
+  border-color: color-mix(in srgb, var(--ring) 42%, var(--chat-composer-outline));
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--ring) 10%, transparent);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-chat-composer-main-surface="true"]::after {
+    transition: none;
+  }
 }

@@ -68,29 +68,31 @@ export function CommandPaletteContent({
   return (
     <div className="contents" data-testid={testId}>
       <Command {...commandProps}>
-        <div className="relative">
-          <CommandInput
-            autoFocus={false}
-            {...inputProps}
-            ref={(input) => {
-              if (!input) return;
-              restorePendingSelection(input, pendingSelectionRef);
-              claimFocusInOpenDialog(input);
-            }}
-          />
-          {inputAccessory}
+        <div className="t3-command-view-enter flex min-h-0 flex-1 flex-col">
+          <div className="relative">
+            <CommandInput
+              autoFocus={false}
+              {...inputProps}
+              ref={(input) => {
+                if (!input) return;
+                restorePendingSelection(input, pendingSelectionRef);
+                claimFocusInOpenDialog(input);
+              }}
+            />
+            {inputAccessory}
+          </div>
+          <CommandPanel
+            className={
+              panelSize === "fill"
+                ? "flex min-h-0 flex-1 flex-col"
+                : panelSize === "tall-list"
+                  ? "max-h-[min(34rem,76vh)]"
+                  : "flex max-h-[min(28rem,70vh)] min-h-0 flex-col"
+            }
+          >
+            {children}
+          </CommandPanel>
         </div>
-        <CommandPanel
-          className={
-            panelSize === "fill"
-              ? "flex min-h-0 flex-1 flex-col"
-              : panelSize === "tall-list"
-                ? "max-h-[min(34rem,76vh)]"
-                : "flex max-h-[min(28rem,70vh)] min-h-0 flex-col"
-          }
-        >
-          {children}
-        </CommandPanel>
         <CommandFooter className="max-sm:flex-col max-sm:items-start">
           <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1.5">
             <KbdGroup>

@@ -360,11 +360,13 @@ export function DraftHeroHeadline({
   return (
     <div className="mx-auto flex w-full max-w-5xl flex-col items-center">
       {hasResolvedProject && !isScratchDraft ? (
-        <DraftHeroProjectHeading projectName={activeProjectTitle ?? gt("Choose a project")}>
-          {projectSelector}
-        </DraftHeroProjectHeading>
+        <div className="t3-draft-hero-title w-full">
+          <DraftHeroProjectHeading projectName={activeProjectTitle ?? gt("Choose a project")}>
+            {projectSelector}
+          </DraftHeroProjectHeading>
+        </div>
       ) : (
-        <h1 className="w-full text-center font-normal text-2xl text-foreground tracking-tight sm:text-3xl">
+        <h1 className="t3-draft-hero-title w-full text-center font-normal text-2xl text-foreground tracking-tight sm:text-3xl">
           {isScratchDraft ? (
             <T>What should we work on?</T>
           ) : canChooseProject ? (
@@ -377,7 +379,7 @@ export function DraftHeroHeadline({
         </h1>
       )}
       {scratchWorkspaceRoot === null ? null : (
-        <p className="mt-2 flex h-6 w-full items-center justify-center text-sm">
+        <p className="t3-draft-hero-subtitle mt-2 flex h-6 w-full items-center justify-center text-sm">
           {isScratchDraft ? projectSelector : orStartWithoutProject}
         </p>
       )}

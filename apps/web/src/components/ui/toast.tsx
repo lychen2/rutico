@@ -167,7 +167,11 @@ function CopyErrorButton({ text }: { text: string }) {
           />
         }
       >
-        {isCopied ? <CheckIcon className="size-3 text-success" /> : <CopyIcon className="size-3" />}
+        {isCopied ? (
+          <CheckIcon key="copied" className="t3-icon-pop size-3 text-success" />
+        ) : (
+          <CopyIcon key="copy" className="size-3" />
+        )}
       </TooltipTrigger>
       <TooltipPopup side="top">{label}</TooltipPopup>
     </Tooltip>

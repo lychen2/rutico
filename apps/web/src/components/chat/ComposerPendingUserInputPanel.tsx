@@ -263,7 +263,10 @@ const ComposerPendingUserInputCard = memo(function ComposerPendingUserInputCard(
       </CollapsibleTrigger>
       <CollapsiblePanel>
         <ComposerBanner.Scroll>
-          <ComposerBanner.Body className="ps-6 pe-4 pb-1 wrap-anywhere sm:ps-5.5">
+          <ComposerBanner.Body
+            key={activeQuestion.id}
+            className="t3-question-step-enter ps-6 pe-4 pb-1 wrap-anywhere sm:ps-5.5"
+          >
             <ChatMarkdown
               text={activeQuestion.question}
               cwd={cwd}
@@ -282,8 +285,10 @@ const ComposerPendingUserInputCard = memo(function ComposerPendingUserInputCard(
                   isOptimisticallySelected || draftSelectedOptions?.[index] === true;
                 const className = cn(
                   questionTextAlign,
-                  "group flex w-full items-start gap-2.5 rounded-md bg-transparent py-1.5 ps-2 sm:ps-1.5 outline-none transition-colors duration-150 focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-primary/25",
-                  isSelected ? "text-foreground" : "text-foreground/70 hover:bg-muted/30",
+                  "group flex w-full items-start gap-2.5 rounded-md bg-transparent py-1.5 ps-2 sm:ps-1.5 outline-none transition-[background-color,color,scale] duration-150 ease-out active:scale-[0.995] motion-reduce:transition-none motion-reduce:active:scale-100 focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-primary/25",
+                  isSelected
+                    ? "bg-primary/[0.06] text-foreground"
+                    : "text-foreground/70 hover:bg-muted/35 hover:text-foreground/90",
                   (disabled || isResponding) && "opacity-50 cursor-not-allowed",
                   !disabled && !isResponding && "cursor-pointer",
                 );
@@ -363,7 +368,7 @@ function OptionRadio({ checked }: { checked: boolean }) {
       )}
     >
       {checked ? (
-        <span className="-inset-px absolute flex items-center justify-center rounded-full bg-primary before:size-2 before:rounded-full before:bg-primary-foreground sm:before:size-1.5" />
+        <span className="t3-icon-pop -inset-px absolute flex items-center justify-center rounded-full bg-primary before:size-2 before:rounded-full before:bg-primary-foreground sm:before:size-1.5" />
       ) : null}
     </span>
   );

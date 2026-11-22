@@ -1139,7 +1139,7 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
 }
 
 const ACTIONS_REVEAL_CLASS_NAME =
-  "items-center text-xs tabular-nums opacity-0 transition-opacity duration-200 pointer-coarse:opacity-100 focus-within:opacity-100 group-hover:opacity-100";
+  "items-center text-xs tabular-nums opacity-0 transition-opacity duration-180 ease-out motion-reduce:transition-none pointer-coarse:opacity-100 focus-within:opacity-100 group-hover:opacity-100";
 
 function UserMessageIntentMarker({
   intent,

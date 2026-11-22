@@ -6,12 +6,12 @@ import { Button } from "../ui/button";
 export function WorkspaceFileDropOverlay() {
   return (
     <div
-      className="pointer-events-none absolute inset-2 z-40 flex items-center justify-center rounded-2xl border-2 border-dashed border-primary/60 bg-primary/[0.035]"
+      className="t3-dropzone-overlay pointer-events-none absolute inset-2 z-40 flex items-center justify-center rounded-2xl border-2 border-dashed border-primary/60 bg-primary/[0.035] backdrop-blur-xs"
       data-chat-workspace-drop-overlay="true"
     >
       <div
         role="status"
-        className="flex items-center gap-2 rounded-full border border-primary/25 bg-background/95 px-4 py-2.5 text-sm font-medium text-foreground shadow-lg"
+        className="t3-dropzone-pill dropdown-glass flex items-center gap-2 rounded-full border border-primary/30 px-4 py-2.5 text-sm font-medium text-foreground shadow-xl shadow-black/15"
       >
         <PaperclipIcon className="size-4 text-primary" aria-hidden="true" />
         <T>Drop files to attach</T>
@@ -26,20 +26,22 @@ export function ScrollToEndButton(props: {
   readonly onScrollToEnd: () => void;
 }) {
   const button = (
-    <Button
-      data-scroll-to-end="true"
-      onPointerDown={(event) => event.preventDefault()}
-      onClick={props.onScrollToEnd}
-      className="pointer-events-auto"
-      size="icon-sm-pill"
-      variant="glass"
-    >
-      <ChevronDownIcon aria-hidden className="size-4" />
-      <span className="sr-only">
-        <T>Scroll to end</T>
-        {props.summary === null ? null : ` · ${props.summary}`}
-      </span>
-    </Button>
+    <span className="t3-scroll-end-enter inline-flex">
+      <Button
+        data-scroll-to-end="true"
+        onPointerDown={(event) => event.preventDefault()}
+        onClick={props.onScrollToEnd}
+        className="pointer-events-auto"
+        size="icon-sm-pill"
+        variant="glass"
+      >
+        <ChevronDownIcon aria-hidden className="size-4" />
+        <span className="sr-only">
+          <T>Scroll to end</T>
+          {props.summary === null ? null : ` · ${props.summary}`}
+        </span>
+      </Button>
+    </span>
   );
   return (
     <div

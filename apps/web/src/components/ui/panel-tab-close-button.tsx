@@ -22,10 +22,10 @@ export function PanelTabCloseButton({
       aria-label={label}
       onClick={onClick}
     >
-      <span className="relative flex size-3 items-center justify-center group-hover/tab:hidden group-focus-visible/close:hidden">
+      <span className="relative flex size-3 items-center justify-center transition-[opacity,scale] duration-150 ease-out group-hover/tab:scale-75 group-hover/tab:opacity-0 group-focus-visible/close:scale-75 group-focus-visible/close:opacity-0 motion-reduce:transition-none">
         {children}
       </span>
-      <X className="hidden size-3 group-hover/tab:block group-focus-visible/close:block" />
+      <X className="pointer-events-none absolute size-3 scale-75 opacity-0 transition-[opacity,scale] duration-150 ease-(--ease-spring-snappy) group-hover/tab:scale-100 group-hover/tab:opacity-100 group-focus-visible/close:scale-100 group-focus-visible/close:opacity-100 motion-reduce:transition-none" />
     </button>
   );
 

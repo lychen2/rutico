@@ -160,7 +160,7 @@ function StopGenerationButton({
           <button
             type="button"
             className={cn(
-              "flex shrink-0 cursor-pointer items-center justify-center rounded-full bg-destructive/90 text-white shadow-xs shadow-destructive/24 inset-shadow-control-highlight transition-colors duration-150 hover:bg-destructive active:inset-shadow-control-pressed active:shadow-none disabled:cursor-default disabled:opacity-64 disabled:hover:bg-destructive/90 [&_svg]:pointer-events-none",
+              "relative flex shrink-0 cursor-pointer items-center justify-center rounded-full bg-destructive/90 text-white shadow-xs shadow-destructive/24 inset-shadow-control-highlight transition-[background-color,scale,box-shadow] duration-150 ease-(--ease-spring-snappy) hover:scale-105 hover:bg-destructive active:scale-95 active:inset-shadow-control-pressed active:shadow-none disabled:cursor-default disabled:opacity-64 disabled:hover:scale-100 disabled:hover:bg-destructive/90 motion-reduce:transition-none motion-reduce:hover:scale-100 [&_svg]:pointer-events-none",
               insidePendingAction ? "size-8 sm:size-7" : "size-8 sm:h-8 sm:w-8",
             )}
             onPointerDown={preserveComposerFocusOnPointerDown ? preventPointerFocus : undefined}
@@ -174,7 +174,20 @@ function StopGenerationButton({
           />
         }
       >
-        <svg width="12" height="12" viewBox="0 0 12 12" fill="currentColor" aria-hidden="true">
+        {stopPhase !== "pending" ? (
+          <span
+            aria-hidden="true"
+            className="t3-stop-pulse-ring pointer-events-none absolute inset-0 rounded-full ring-2 ring-destructive/55"
+          />
+        ) : null}
+        <svg
+          width="12"
+          height="12"
+          viewBox="0 0 12 12"
+          fill="currentColor"
+          aria-hidden="true"
+          className="t3-icon-pop"
+        >
           <rect x="2" y="2" width="8" height="8" rx="1.5" />
         </svg>
       </TooltipTrigger>
@@ -434,7 +447,7 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
     <button
       type={showResume ? "button" : "submit"}
       className={cn(
-        "relative isolate flex h-9 w-9 items-center justify-center overflow-hidden rounded-full shadow-xs transition-all duration-150 enabled:cursor-pointer enabled:inset-shadow-control-highlight hover:scale-105 active:inset-shadow-control-pressed active:shadow-none disabled:pointer-events-none disabled:shadow-none disabled:hover:scale-100 sm:h-8 sm:w-8 [&_svg]:pointer-events-none",
+        "group/send relative isolate flex h-9 w-9 items-center justify-center overflow-hidden rounded-full shadow-xs transition-[scale,background-color,color,box-shadow,filter] duration-180 ease-(--ease-spring-snappy) enabled:cursor-pointer enabled:inset-shadow-control-highlight hover:scale-106 active:scale-94 active:inset-shadow-control-pressed active:shadow-none disabled:pointer-events-none disabled:shadow-none disabled:hover:scale-100 motion-reduce:transition-none motion-reduce:hover:scale-100 motion-reduce:active:scale-100 sm:h-8 sm:w-8 [&_svg]:pointer-events-none",
         stageBackdropVariant
           ? "bg-transparent text-white enabled:shadow-black/24 enabled:hover:brightness-110 disabled:opacity-64"
           : "bg-message-action text-message-action-foreground enabled:shadow-message-action/24 hover:bg-message-action-hover disabled:bg-foreground/12 disabled:text-muted-foreground",
@@ -462,17 +475,27 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
         </span>
       ) : null}
       {isSendBusy ? (
-        <Spinner size="sm" aria-hidden="true" />
+        <span key="busy" className="t3-icon-pop inline-flex">
+          <Spinner size="sm" aria-hidden="true" />
+        </span>
       ) : showResume ? (
-        <PlayIcon className="size-4 fill-current" aria-hidden="true" />
+        <PlayIcon key="resume" className="t3-icon-pop size-4 fill-current" aria-hidden="true" />
       ) : isEditingQueuedMessage ? (
-        <CheckIcon className="size-4" aria-hidden="true" />
+        <CheckIcon key="edit" className="t3-icon-pop size-4" aria-hidden="true" />
       ) : isRunning && isQueuing ? (
-        <ListPlusIcon className="size-4" aria-hidden="true" />
+        <ListPlusIcon key="queue" className="t3-icon-pop size-4" aria-hidden="true" />
       ) : isRunning ? (
-        <CornerUpRightIcon className="size-4" aria-hidden="true" />
+        <CornerUpRightIcon key="steer" className="t3-icon-pop size-4" aria-hidden="true" />
       ) : (
-        <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
+        <svg
+          key="submit"
+          width="14"
+          height="14"
+          viewBox="0 0 14 14"
+          fill="none"
+          aria-hidden="true"
+          className="t3-icon-pop transition-transform duration-180 ease-(--ease-spring-snappy) group-enabled/send:group-hover/send:-translate-y-0.5 motion-reduce:transition-none"
+        >
           <path
             d="M7 11.5V2.5M7 2.5L3 6.5M7 2.5L11 6.5"
             stroke="currentColor"
