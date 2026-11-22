@@ -150,6 +150,14 @@ Click a category name to collapse or expand it. The client saves its categories,
 collapse state across reloads without changing any thread's project, working directory, or environment.
 Search threads across categories, including collapsed ones.
 
+Open **Category settings**, choose a preset, and enable **Automatically categorize from titles**
+to group threads as their titles arrive. An explicit assignment takes precedence over a title match.
+The **By project** preset groups threads by project instead.
+
+For unclassified titles, choose **Suggest categories**, select an environment and model, and request
+suggestions. The model receives titles and category names, not conversation text. You can change a
+destination or uncheck a title before confirming. Closing the review leaves every thread in place.
+
 ## Settle finished work
 
 Choose **Settle thread** from its menu to move finished work out of the active list
