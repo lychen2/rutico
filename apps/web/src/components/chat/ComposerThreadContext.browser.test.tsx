@@ -1,7 +1,7 @@
 import { deriveLatestContextWindowSnapshot } from "@t3tools/client-runtime/state/context-window";
 import { MessageId, ProviderTurnId, NodeId, RunId, ThreadId, TurnItemId } from "@t3tools/contracts";
 import * as DateTime from "effect/DateTime";
-import { expect, it } from "vite-plus/test";
+import { expect, it, vi } from "vite-plus/test";
 import { page, userEvent } from "vite-plus/test/browser";
 
 import { render } from "../../../test/render";
@@ -18,12 +18,13 @@ it("opens context details by keyboard and returns focus when dismissed", async (
       contextStatus="mc: 131.7K (65%) · ⚠ historian failed"
     />,
   );
-  const trigger = screen.getByRole("button", { name: /Context/ });
+  const trigger = screen.getByRole("button", { name: /Context 65%/ });
+  await userEvent.tab();
   await userEvent.tab();
   await expect.element(trigger).toHaveFocus();
   await userEvent.keyboard("{Enter}");
 
-  const details = page.getByRole("dialog", { name: "Overview" });
+  const details = page.getByRole("dialog", { name: "Round token usage" });
   await expect.element(details.getByText("≈131.7K tokens used · 65%")).toBeVisible();
   await details.getByText("Diagnostics").click();
   await expect.element(details.getByText(/historian failed/)).toBeVisible();
@@ -103,7 +104,11 @@ it("keeps round token and cache totals separate from the current context window"
   );
 
   const trigger = screen.getByRole("button", { name: /Round 7/ });
-  for (const value of ["2 steps", "1,200 tokens", "Cache 75%"]) {
+  const tokensTrigger = screen.getByRole("button", { name: /Cache 75%/ });
+  for (const value of ["1,200 tokens", "Cache 75%", "Context 21%"]) {
+    await expect.element(tokensTrigger.getByText(value, { exact: true })).toBeVisible();
+  }
+  for (const value of ["2 steps", "14.3 tokens/s"]) {
     await expect.element(trigger.getByText(value, { exact: true })).toBeVisible();
   }
   await userEvent.click(trigger);
@@ -113,10 +118,13 @@ it("keeps round token and cache totals separate from the current context window"
   await expect.element(details.getByText("Not reported", { exact: true }).first()).toBeVisible();
   await expect.element(details.getByText("14s")).toBeVisible();
   await expect.element(details.getByText("Completed")).toBeVisible();
-  await expect.element(details.getByText("42,000 of 200,000 tokens · 21%")).toBeVisible();
-  await expect.element(details.getByText("Round token usage")).toBeVisible();
-  await expect.element(details.getByText("750", { exact: true })).toBeVisible();
-  await expect.element(details.getByText("100", { exact: true })).toBeVisible();
+  await userEvent.keyboard("{Escape}");
+  await userEvent.click(tokensTrigger);
+  const tokensDialog = page.getByRole("dialog", { name: "Round token usage" });
+  await expect.element(tokensDialog.getByText("42,000 of 200,000 tokens · 21%")).toBeVisible();
+  await expect.element(tokensDialog.getByText("Round token usage")).toBeVisible();
+  await expect.element(tokensDialog.getByText("750", { exact: true })).toBeVisible();
+  await expect.element(tokensDialog.getByText("100", { exact: true })).toBeVisible();
 
   await screen.rerender(
     <ComposerThreadContext
@@ -145,6 +153,7 @@ it("keeps round token and cache totals separate from the current context window"
   await expect.element(details.getByText("1 · Σ 9s", { exact: true })).toBeVisible();
   await expect.element(details.getByText("1 · Σ 3s", { exact: true })).toBeVisible();
 
+  using _now = vi.spyOn(Date, "now").mockReturnValue(DateTime.toEpochMillis(startedAt) + 5000);
   const liveRun = { ...run, status: "running", completedAt: null } as const;
   await screen.rerender(
     <ComposerThreadContext
@@ -156,6 +165,10 @@ it("keeps round token and cache totals separate from the current context window"
     />,
   );
   const liveTrigger = screen.getByRole("button", { name: /Round 7/ });
+  await expect.element(liveTrigger.getByText("Time to first output –")).toBeVisible();
+  for (const value of ["Cache read –", "Context –"]) {
+    await expect.element(screen.getByText(value, { exact: true })).toBeVisible();
+  }
   await userEvent.click(liveTrigger);
   await expect.element(details.getByText("Not reported").first()).toBeVisible();
   const firstOutputAtMs = DateTime.toEpochMillis(startedAt) + 2500;
@@ -182,12 +195,17 @@ it("keeps round token and cache totals separate from the current context window"
       run={liveRun}
       modelOutputTiming={measuredOutput}
       stepCount={null}
-      turnUsage={null}
+      turnUsage={{
+        usageScope: "main_agent",
+        usageStatus: "partial",
+        hasSubagents: false,
+        outputTokens: 70,
+      }}
     />,
   );
-  await expect.element(liveTrigger.getByText("Model output speed 10 chars/s")).toBeVisible();
+  await expect.element(liveTrigger.getByText("14 tokens/s")).toBeVisible();
   await expect.element(liveTrigger.getByText("Time to first output 2.5s")).toBeVisible();
-  await expect.element(details.getByText("10 chars/s", { exact: true })).toBeVisible();
+  await expect.element(details.getByText("14 tokens/s", { exact: true })).toBeVisible();
   await expect.element(details.getByText("2.5s", { exact: true })).toBeVisible();
 
   await screen.rerender(
@@ -197,10 +215,15 @@ it("keeps round token and cache totals separate from the current context window"
       run={run}
       modelOutputTiming={measuredOutput}
       stepCount={null}
-      turnUsage={null}
+      turnUsage={{
+        usageScope: "main_agent",
+        usageStatus: "partial",
+        hasSubagents: false,
+        outputTokens: 70,
+      }}
     />,
   );
-  await expect.element(details.getByText("10 chars/s", { exact: true })).toBeVisible();
+  await expect.element(details.getByText("5 tokens/s", { exact: true })).toBeVisible();
   await expect.element(details.getByText("14s", { exact: true })).toBeVisible();
 
   await screen.rerender(
@@ -212,6 +235,7 @@ it("keeps round token and cache totals separate from the current context window"
         ordinal: 1,
         status: "starting",
         startedAt: null,
+        workStartedAt: null,
         completedAt: null,
       }}
       activity={currentRoundActivity(run, [], [], providerTurnId)}
