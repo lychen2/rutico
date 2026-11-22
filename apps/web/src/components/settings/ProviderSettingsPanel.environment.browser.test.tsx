@@ -260,6 +260,33 @@ describe("EnvironmentProviderSettings routing", () => {
     expect(state.updateSettings).not.toHaveBeenCalled();
   });
 
+  it("does not recreate the removed default OMP row beside the configured OMP account", async () => {
+    await setup();
+    const driver = ProviderDriverKind.make("omp");
+    const defaultId = ProviderInstanceId.make("omp");
+    const activeId = ProviderInstanceId.make("OMP");
+    state.settings = {
+      ...DEFAULT_UNIFIED_SETTINGS,
+      providerInstances: {
+        [defaultId]: { driver, enabled: false },
+        [activeId]: { driver, enabled: true },
+      },
+    };
+    await using screen = await render(panel());
+    const ompRows = screen.getByRole("button", { name: "Select OMP", exact: true });
+    await expect.element(ompRows.nth(1)).toBeInTheDocument();
+
+    state.settings = {
+      ...state.settings,
+      providerInstances: { [activeId]: { driver, enabled: true } },
+    };
+    await screen.rerender(panel());
+    await expect.element(ompRows.nth(1)).not.toBeInTheDocument();
+    await expect
+      .element(screen.getByRole("switch", { name: "Enable OMP", exact: true }))
+      .toBeChecked();
+  });
+
   it("updates one provider instance without sending a stale whole map", async () => {
     await setup();
     state.settings = {
