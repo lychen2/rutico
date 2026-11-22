@@ -5,6 +5,7 @@ import {
   type ModelSelection,
 } from "@t3tools/contracts";
 import { compileResolvedKeybindingsConfig } from "@t3tools/shared/keybindings";
+import { createModelCapabilities } from "@t3tools/shared/model";
 import { useState } from "react";
 import { expect, it, vi } from "vite-plus/test";
 import { page, userEvent } from "vite-plus/test/browser";
@@ -440,4 +441,104 @@ it("keeps the touch keyboard down while choosing a provider", async () => {
   await page.getByRole("button", { name: /^Claude/ }).click();
   await expect.element(page.getByRole("option", { name: /Claude model/ })).toBeVisible();
   await expect.element(search).not.toHaveFocus();
+});
+
+it("keeps a docked list fixed while scrolling and shows only the row's levels and quota", async () => {
+  const workId = ProviderInstanceId.make("codex-work");
+  const personalId = ProviderInstanceId.make("codex-personal");
+  const checkedAt = "2026-11-20T12:00:00.000Z";
+  vi.setSystemTime(new Date(checkedAt));
+  using _clock = { [Symbol.dispose]: () => vi.useRealTimers() };
+  const native = {
+    driver: ProviderDriverKind.make("codex"),
+    enabled: true,
+    installed: true,
+    version: null,
+    status: "ready" as const,
+    auth: { status: "authenticated" as const },
+    checkedAt,
+    slashCommands: [],
+    skills: [],
+  };
+  const entries = deriveProviderInstanceEntries([
+    {
+      ...native,
+      instanceId: workId,
+      displayName: "Work Codex",
+      usageLimits: {
+        checkedAt,
+        windows: [{ id: "secondary", kind: "weekly", label: "Weekly", usedPercent: 87 }],
+      },
+      models: Array.from({ length: 7 }, (_, index) => ({
+        slug: `work-${index}`,
+        name: `Work model ${index}`,
+        isCustom: false,
+        capabilities:
+          index === 0
+            ? createModelCapabilities({
+                optionDescriptors: [
+                  {
+                    id: "thought_level",
+                    label: "Thinking",
+                    role: "reasoning",
+                    type: "select",
+                    options: [
+                      { id: "low", label: "Low" },
+                      { id: "high", label: "High" },
+                      { id: "ultrathink", label: "Ultrathink" },
+                    ],
+                    promptInjectedValues: ["ultrathink"],
+                  },
+                ],
+              })
+            : {},
+      })),
+    },
+    {
+      ...native,
+      instanceId: personalId,
+      displayName: "Personal Codex",
+      models: [{ slug: "personal", name: "Personal model", isCustom: false, capabilities: {} }],
+    },
+  ]);
+  const { innerWidth, innerHeight } = window;
+  await page.viewport(1000, 740);
+  await using _viewport = {
+    [Symbol.asyncDispose]: () => page.viewport(innerWidth, innerHeight),
+  };
+  await using screen = await render(
+    <ProviderModelPicker
+      environmentId={null}
+      activeInstanceId={workId}
+      model="work-0"
+      lockedProvider={null}
+      instanceEntries={entries}
+      modelOptionsByInstance={new Map(entries.map((entry) => [entry.instanceId, entry.models]))}
+      effortColumn={<div />}
+      onInstanceModelChange={vi.fn()}
+    />,
+  );
+  await screen.getByRole("button", { name: "Work model 0" }).click();
+  const workRow = page.getByRole("option", { name: /Work model 0/ });
+  await expect.element(workRow.getByText(/2 levels.*13% left/)).toBeVisible();
+  const search = page.getByRole("combobox");
+  const list = search
+    .element()
+    .closest("[data-model-picker-content]")!
+    .querySelector<HTMLElement>("[data-model-picker-list]")!;
+  const scroller = list.querySelector<HTMLElement>(".scrollbar-gutter-stable")!;
+  expect(list.clientHeight).toBe(146);
+  await expect.element(search).toHaveFocus();
+  await userEvent.keyboard("{ArrowDown}{ArrowDown}{ArrowDown}{ArrowDown}{ArrowDown}");
+  await vi.waitFor(() => expect(scroller.scrollTop).toBeGreaterThan(0));
+
+  await page.getByRole("button", { name: "Personal Codex", exact: true }).click();
+  const personalRow = page.getByRole("option", { name: /Personal model/ });
+  await expect.element(personalRow).toBeVisible();
+  expect(list.clientHeight).toBe(146);
+  await expect.element(personalRow.getByText(/levels|% left/)).not.toBeInTheDocument();
+
+  await search.fill("Work model 0");
+  await expect.element(workRow.getByText(/2 levels.*13% left/)).toBeVisible();
+  expect(list.clientHeight).toBe(146);
 });

@@ -47,11 +47,17 @@
     display: none;
   }
 }
-[data-session-overview] {
-  width: 100%;
-  border-radius: inherit;
-  background: var(--popover);
-  color: var(--popover-foreground);
+[data-session-stats-popup] {
+  /* Keep the shared glass-off setting; cap the dark-theme blur at Stardust's 12px. */
+  -webkit-backdrop-filter: blur(min(var(--glass-blur), 12px)) saturate(var(--glass-saturation));
+  backdrop-filter: blur(min(var(--glass-blur), 12px)) saturate(var(--glass-saturation));
+}
+@media (prefers-reduced-transparency: reduce) {
+  [data-session-stats-popup] {
+    background: var(--popover);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
 }
 [data-context-meter] {
   display: block;

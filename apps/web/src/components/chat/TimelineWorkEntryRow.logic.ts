@@ -163,6 +163,7 @@ export function workEntryIconName(workEntry: TimelineWorkEntry): WorkEntryIconNa
       case "monitor":
         return "eye";
       case "background_task":
+      case "thread_wait":
         return "zap";
       case "system":
         return "t3-code";

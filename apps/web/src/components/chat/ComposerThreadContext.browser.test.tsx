@@ -5,6 +5,7 @@ import { expect, it, vi } from "vite-plus/test";
 import { page, userEvent } from "vite-plus/test/browser";
 
 import { render } from "../../../test/render";
+import appCss from "../../index.css?inline";
 import { ComposerThreadContext } from "./ComposerThreadContext";
 import { currentRoundActivity } from "./currentRoundActivity";
 
@@ -34,6 +35,11 @@ it("opens context details by keyboard and returns focus when dismissed", async (
 });
 
 it("keeps round token and cache totals separate from the current context window", async () => {
+  using stack = new DisposableStack();
+  const style = document.createElement("style");
+  style.textContent = `${appCss}\n:root { --glass-blur: 16px; }`;
+  document.head.append(style);
+  stack.defer(() => style.remove());
   const startedAt = DateTime.makeUnsafe("2026-11-20T12:00:00Z");
   const runId = RunId.make("run-7");
   const providerTurnId = ProviderTurnId.make("turn-7");
@@ -118,6 +124,9 @@ it("keeps round token and cache totals separate from the current context window"
   await expect.element(details.getByText("Not reported", { exact: true }).first()).toBeVisible();
   await expect.element(details.getByText("14s")).toBeVisible();
   await expect.element(details.getByText("Completed")).toBeVisible();
+  const overviewStyles = getComputedStyle(details.element());
+  expect(overviewStyles.backdropFilter).toContain("blur(12px)");
+  expect(overviewStyles.transitionProperty).not.toMatch(/all|filter/);
   await userEvent.keyboard("{Escape}");
   await userEvent.click(tokensTrigger);
   const tokensDialog = page.getByRole("dialog", { name: "Round token usage" });
@@ -125,6 +134,9 @@ it("keeps round token and cache totals separate from the current context window"
   await expect.element(tokensDialog.getByText("Round token usage")).toBeVisible();
   await expect.element(tokensDialog.getByText("750", { exact: true })).toBeVisible();
   await expect.element(tokensDialog.getByText("100", { exact: true })).toBeVisible();
+  const tokenStyles = getComputedStyle(tokensDialog.element());
+  expect(tokenStyles.backdropFilter).toContain("blur(12px)");
+  expect(tokenStyles.transitionProperty).not.toMatch(/all|filter/);
 
   await screen.rerender(
     <ComposerThreadContext
@@ -233,7 +245,6 @@ it("keeps round token and cache totals separate from the current context window"
         ordinal: 1,
         status: "starting",
         startedAt: null,
-        workStartedAt: null,
         completedAt: null,
       }}
       activity={currentRoundActivity(run, [], [], providerTurnId)}

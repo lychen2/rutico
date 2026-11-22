@@ -686,6 +686,12 @@ export const SETTINGS_SEARCH_ITEMS = [
     searchTerms: [msg("test voice speech model transcription recognition")],
   },
   {
+    id: "sidebar-categories",
+    title: msg("Sidebar categories"),
+    to: "/settings/threads",
+    searchTerms: [msg("category settings preset automatically categorize thread titles")],
+  },
+  {
     id: "auto-settle-inactive-threads",
     title: msg("Auto-settle inactive threads"),
     to: "/settings/threads",

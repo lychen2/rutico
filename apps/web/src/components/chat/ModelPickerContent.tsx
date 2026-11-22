@@ -6,10 +6,17 @@ import {
   type EnvironmentId,
   type ProviderDriverKind,
   type ResolvedKeybindingsConfig,
+  type UsageLimitSourceSnapshots,
   MODEL_PICKER_JUMP_KEYBINDING_COMMANDS,
 } from "@t3tools/contracts";
 import { resolveSelectableModel } from "@t3tools/shared/model";
 import { useAtomValue } from "@effect/atom-react";
+import { Atom } from "effect/reactivity";
+import { toServerClock } from "@t3tools/client-runtime/clock";
+import {
+  isReasoningSelect,
+  selectableProviderOptionChoices,
+} from "@t3tools/client-runtime/model-traits";
 import {
   formatProviderUpdateRequiredNotice,
   providerUpdateChannelLags,
@@ -30,6 +37,7 @@ import {
 import { ChevronRightIcon } from "lucide-react";
 import { ModelListRow } from "./ModelListRow";
 import { ModelPickerSidebar } from "./ModelPickerSidebar";
+import { modelPickerQuotaRemaining } from "./modelPickerQuota";
 import { useProviderWorkspaceSnapshotRefresh } from "./useProviderWorkspaceSnapshotRefresh";
 import { getProviderStatusMessage, hasProviderSetup } from "./ProviderStatusBanner";
 import {
@@ -47,10 +55,10 @@ import {
   ComboboxItem,
   ComboboxListVirtualized,
 } from "../ui/combobox";
-import { ModelEsque } from "./providerIconUtils";
+import type { ModelEsque } from "./providerIconUtils";
 import { isCommandPaletteOpen } from "../../commandPaletteBus";
 import { registerModelPickerContent } from "../../modelPickerVisibility";
-import { primaryServerKeybindingsAtom } from "../../state/server";
+import { primaryServerKeybindingsAtom, serverEnvironment } from "../../state/server";
 import {
   modelPickerJumpCommandForIndex,
   modelPickerJumpIndexFromCommand,
@@ -61,6 +69,7 @@ import {
   useEnvironmentModelPreferences,
   useToggleEnvironmentModelFavorite,
 } from "~/hooks/useSettings";
+import { useNowMinute } from "~/hooks/useNowMinute";
 import { announce } from "~/lib/announce";
 import { cn } from "~/lib/utils";
 import { getVirtualizedScrollFadeClassName } from "../ui/scroll-area";
@@ -174,10 +183,15 @@ function adjacentModelPickerProvider(input: {
 
 const EMPTY_MODEL_JUMP_LABELS = new Map<string, string>();
 const MODEL_LIST_ESTIMATED_ITEM_SIZE = 32;
-// Rendered heights in `--spacing` units. Chrome is the search box and list padding, plus a 1px border.
-const ROW_UNITS = 8;
-const ROW_SEPARATOR_UNITS = 0.5;
-const LIST_CHROME_UNITS = 15.5;
+const NO_USAGE_LIMIT_SOURCES: UsageLimitSourceSnapshots = [];
+const modelPickerUsageSourcesAtom = Atom.family((environmentId: EnvironmentId | null) =>
+  Atom.make((get) =>
+    environmentId === null
+      ? NO_USAGE_LIMIT_SOURCES
+      : (get(serverEnvironment.configValueAtom(environmentId))?.usageLimitSources ??
+        NO_USAGE_LIMIT_SOURCES),
+  ),
+);
 
 function ModelListSeparator() {
   return <div className="h-0.5" />;
@@ -279,13 +293,13 @@ function ModelPickerList({
   itemKeys,
   extraData,
   renderItem,
-  height,
+  docked,
 }: {
   listRef: RefObject<LegendListRef | null>;
   itemKeys: ReadonlyArray<string>;
   extraData: unknown;
   renderItem: (props: { item: string; index: number }) => ReactNode;
-  height?: string | undefined;
+  docked: boolean;
 }) {
   const [showTopScrollFade, setShowTopScrollFade] = useState(false);
   const [showBottomScrollFade, setShowBottomScrollFade] = useState(false);
@@ -301,9 +315,9 @@ function ModelPickerList({
     <div
       className={cn(
         "relative min-h-0 overflow-hidden pr-px",
-        itemKeys.length === 0 ? "h-0" : height ? "shrink-0" : "flex-1",
+        itemKeys.length === 0 ? "h-0" : docked ? "h-[min(146px,45dvh)]" : "h-[min(260px,45dvh)]",
       )}
-      style={itemKeys.length > 0 && height ? { height } : undefined}
+      data-model-picker-list
     >
       <ComboboxListVirtualized>
         <LegendList<string>
@@ -390,10 +404,13 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
   } = props;
   const [searchQuery, setSearchQuery] = useState("");
   const modelListRef = useRef<LegendListRef | null>(null);
-  const pickerContentRef = useRef<HTMLDivElement>(null);
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- publishes this picker's mount to global keydown handlers
   useLayoutEffect(() => registerModelPickerContent(), []);
   const highlightedModelKeyRef = useRef<string | null>(null);
+  const usageSources = useAtomValue(modelPickerUsageSourcesAtom(props.environmentId));
+  // Recheck open rows as their quota readings age or pass a reset.
+  const clientNow = Date.parse(`${useNowMinute()}:00Z`);
+  const quotaNow = props.environmentId ? toServerClock(props.environmentId, clientNow) : clientNow;
   const { favorites } = useEnvironmentModelPreferences(props.environmentId);
   const activeEntry = props.instanceEntries.find(
     (entry) => entry.instanceId === props.activeInstanceId,
@@ -492,7 +509,6 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
   );
   const serverKeybindings = useAtomValue(primaryServerKeybindingsAtom);
   const keybindings = providedKeybindings ?? serverKeybindings;
-  const [searchHeight, setSearchHeight] = useState(0);
   const toggleFavorite = useToggleEnvironmentModelFavorite(props.environmentId);
 
   const focusSearchInput = () => {
@@ -644,33 +660,6 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
   );
   const isLocked = lockedProvider !== null;
   const isSearching = searchQuery.trim().length > 0;
-  // Fit the tallest tab so switching tabs never resizes the popup and moves the rail under the cursor.
-  const tallestTabUnits = (() => {
-    const unitsByTab = new Map<ProviderInstanceId | "favorites", number>();
-    const addRow = (tab: ProviderInstanceId | "favorites") => {
-      const previous = unitsByTab.get(tab);
-      unitsByTab.set(
-        tab,
-        previous === undefined ? ROW_UNITS : previous + ROW_SEPARATOR_UNITS + ROW_UNITS,
-      );
-    };
-    const tabsWithLegacyRow = new Set<ProviderInstanceId>();
-    for (const model of flatModels) {
-      if (!matchesLockedProvider(model)) continue;
-      const isFavorite = favoritesSet.has(providerModelKey(model.instanceId, model.slug));
-      if (isFavorite) addRow("favorites");
-      if (model.isLegacy && !isFavorite) {
-        tabsWithLegacyRow.add(model.instanceId);
-      } else {
-        addRow(model.instanceId);
-      }
-    }
-    for (const instanceId of tabsWithLegacyRow) addRow(instanceId);
-    for (const [instanceId, subProviders] of subProvidersByInstance) {
-      for (const _subProvider of subProviders) addRow(instanceId);
-    }
-    return Math.max(0, ...unitsByTab.values());
-  })();
   const lockedDisabledInstanceIds = (() => {
     if (!isLocked) {
       return undefined;
@@ -899,6 +888,9 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
     modelJumpLabelByKey,
     activeModelKey,
     selectedModelKeySet,
+    entryByInstanceId,
+    usageSources,
+    quotaNow,
   };
 
   const onWindowKeyDown = (event: globalThis.KeyboardEvent) => {
@@ -956,10 +948,6 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
     )?.name;
     announce(gt("Model: {name}", { name: name ?? selectedSlug }), "model-picker");
   };
-  const frameHeight = `min(calc(var(--spacing) * ${tallestTabUnits + LIST_CHROME_UNITS} + 1px), calc(var(--spacing) * 86.5))`;
-  const searchUnits = filteredItemKeys.length * (ROW_UNITS + ROW_SEPARATOR_UNITS);
-  const dockedListUnits = isSearching ? Math.max(tallestTabUnits, searchUnits) : tallestTabUnits;
-  const dockedListHeight = `min(calc(var(--spacing) * ${Math.max(ROW_UNITS, dockedListUnits) + 3} + 1px), 300px, 45dvh)`;
   const providers = showSidebar && (
     <ModelPickerSidebar
       selectedInstanceId={selectedInstanceId}
@@ -986,26 +974,10 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
     <TooltipProvider delay={0}>
       <WindowKeyDownListener onKeyDown={onWindowKeyDown} />
       <div
-        ref={pickerContentRef}
         className={cn(
           "relative flex overflow-hidden",
           props.docked ? "w-full flex-col" : "max-h-86.5 w-screen max-w-90 flex-row sm:max-w-112",
         )}
-        style={
-          props.docked
-            ? undefined
-            : isSearching
-              ? { height: searchHeight }
-              : {
-                  minHeight: frameHeight,
-                  height:
-                    tallestTabUnits > 0 &&
-                    providerSetupEntries.length === 0 &&
-                    updateRequiredNotices.length === 0
-                      ? frameHeight
-                      : undefined,
-                }
-        }
         data-model-picker-content="true"
       >
         {!props.docked && providers}
@@ -1066,11 +1038,7 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
               ref={searchInputRef}
               placeholder={gt("Search models...")}
               value={searchQuery}
-              onChange={(e) => {
-                if (!props.docked && !isSearching)
-                  setSearchHeight(pickerContentRef.current?.offsetHeight ?? 0);
-                setSearchQuery(e.target.value);
-              }}
+              onChange={(event) => setSearchQuery(event.target.value)}
               onKeyDown={(e) => {
                 if (e.nativeEvent.isComposing || e.keyCode === 229) {
                   (e as typeof e & { preventBaseUIHandler?: () => void }).preventBaseUIHandler?.();
@@ -1158,7 +1126,7 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
             <ModelPickerList
               listRef={modelListRef}
               itemKeys={filteredItemKeys}
-              height={props.docked ? dockedListHeight : undefined}
+              docked={props.docked === true}
               extraData={modelListExtraData}
               renderItem={({ item: modelKey, index }) => {
                 if (legacySection?.key === modelKey) {
@@ -1231,6 +1199,22 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
                 }
                 const disabledReason =
                   getModelDisabledReason?.(model.instanceId, model.slug) ?? null;
+                const entry = entryByInstanceId.get(model.instanceId);
+                const catalogModel =
+                  entry?.models.find((candidate) => candidate.slug === model.slug) ??
+                  entry?.snapshot.models.find((candidate) => candidate.slug === model.slug);
+                const reasoning =
+                  catalogModel?.capabilities?.optionDescriptors?.find(isReasoningSelect);
+                const tierCount = reasoning ? selectableProviderOptionChoices(reasoning).length : 0;
+                const remainingQuota =
+                  entry && !model.isUnavailable
+                    ? modelPickerQuotaRemaining({
+                        provider: entry.snapshot,
+                        sources: usageSources,
+                        model: model.slug,
+                        now: quotaNow,
+                      })
+                    : null;
                 return (
                   <ModelListRow
                     key={modelKey}
@@ -1255,6 +1239,8 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
                     showNewBadge={model.badge === "new"}
                     unavailable={model.isUnavailable === true}
                     jumpLabel={modelJumpLabelByKey.get(modelKey) ?? null}
+                    tierCount={tierCount}
+                    remainingQuota={remainingQuota}
                     disabledReason={disabledReason}
                     onToggleFavorite={toggleFavorite}
                   />

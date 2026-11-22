@@ -275,7 +275,6 @@ import {
 import {
   SidebarCategoryDialog,
   SidebarCategoryHeader,
-  SidebarCategoryPreferences,
   sidebarCategoryRowId,
   useSidebarCategoryOptions,
   type SidebarCategoryOption,
@@ -1253,7 +1252,6 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
     moveToCategory,
     toggleCategory,
     assignCategories,
-    setCategoryPreferences,
     selectSuggestionModel,
   } = useSidebarCategories();
   // Existing v1 records have no preset and retain their previous classification rules.
@@ -1264,7 +1262,6 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
     categoryPreset,
     categoryState.assignments,
   );
-  const [categoryPreferencesOpen, setCategoryPreferencesOpen] = useState(false);
   const [categoryAction, setCategoryAction] = useState<SidebarCategoryAction | null>(null);
   const {
     draggableThreadKeys,
@@ -3279,7 +3276,10 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                 ) : null}
                 <SidebarHeaderIconButton
                   label={gt("Category settings")}
-                  onClick={() => setCategoryPreferencesOpen(true)}
+                  onClick={() => {
+                    if (isMobile) setOpenMobile(false);
+                    void router.navigate({ to: "/settings/threads", hash: "sidebar-categories" });
+                  }}
                 >
                   <SettingsIcon aria-hidden />
                 </SidebarHeaderIconButton>
@@ -3769,14 +3769,6 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
         </SidebarGroup>
       </SidebarContent>
       <SidebarChromeFooter />
-      {categoryPreferencesOpen ? (
-        <SidebarCategoryPreferences
-          preset={categoryPreset}
-          automatic={automaticCategories}
-          onSave={setCategoryPreferences}
-          onClose={() => setCategoryPreferencesOpen(false)}
-        />
-      ) : null}
       <SidebarCategoryDialog
         action={categoryAction}
         categories={categoryOptions}

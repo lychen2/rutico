@@ -116,6 +116,7 @@ import {
   SettingsSection,
 } from "./settingsLayout";
 import { useSearchableSetting } from "./settingsSearch";
+import { SidebarCategorySettingsSection } from "./SidebarCategorySettings";
 import { nativeLanguageName, SYSTEM_LANGUAGE } from "@t3tools/client-runtime/locales";
 import { SUPPORTED_LOCALES } from "../../i18n/locales";
 import { BackgroundActivitySettingsRow } from "./BackgroundActivitySettings";
@@ -1946,6 +1947,7 @@ export function ThreadsSettingsPanel() {
 
   return (
     <SettingsPageContainer>
+      <SidebarCategorySettingsSection />
       <SettingsSection id="new-projects" title={gt("New projects")}>
         <SettingsRow
           serverScoped

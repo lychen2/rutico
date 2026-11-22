@@ -107,6 +107,14 @@ describe("searchSettings", () => {
     });
   });
 
+  it("finds device-local category preferences in Threads settings", () => {
+    expect(searchSettings("sidebar categories")[0]).toMatchObject({
+      id: "sidebar-categories",
+      to: "/settings/threads",
+    });
+    expect(getSettingsSearchTargetScope("sidebar-categories")?.scope).toBeNull();
+  });
+
   it("matches normalized title substrings", () => {
     expect(searchSettings("  WORD   WRAP  ", ITEMS).map((item) => item.id)).toEqual(["word-wrap"]);
     expect(searchSettings("glass").map((item) => item.id)).toEqual(["setting-glass-opacity"]);

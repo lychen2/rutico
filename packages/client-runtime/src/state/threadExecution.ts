@@ -858,6 +858,7 @@ export function notificationChildThreadId(
     case "command":
     case "monitor":
     case "background_task":
+    case "thread_wait":
     case "system":
       return undefined;
     default:

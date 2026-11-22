@@ -32,6 +32,8 @@ export const ModelListRow = memo(function ModelListRow(props: {
   showNewBadge?: boolean;
   unavailable?: boolean;
   jumpLabel?: string | null;
+  tierCount: number;
+  remainingQuota: number | null;
   disabledReason?: string | null;
   onToggleFavorite: (instanceId: ProviderInstanceId, slug: string) => void;
 }) {
@@ -133,6 +135,19 @@ export const ModelListRow = memo(function ModelListRow(props: {
             {props.isFavorite ? gt("Remove from favorites") : gt("Add to favorites")}
           </TooltipPopup>
         </Tooltip>
+        {props.tierCount >= 2 || props.remainingQuota !== null ? (
+          <span className="flex shrink-0 items-center gap-1 whitespace-nowrap text-2xs leading-snug text-muted-foreground tabular-nums">
+            {props.tierCount >= 2 ? gt("{count} levels", { count: props.tierCount }) : null}
+            {props.tierCount >= 2 && props.remainingQuota !== null ? (
+              <span aria-hidden="true">·</span>
+            ) : null}
+            {props.remainingQuota !== null ? (
+              <span className={props.remainingQuota < 15 ? "text-warning" : undefined}>
+                {gt("{remaining}% left", { remaining: props.remainingQuota })}
+              </span>
+            ) : null}
+          </span>
+        ) : null}
         <span className="grid size-3.5 shrink-0 place-items-center" aria-hidden="true">
           {props.isSelected ? <CheckIcon className="size-full text-primary" /> : null}
         </span>

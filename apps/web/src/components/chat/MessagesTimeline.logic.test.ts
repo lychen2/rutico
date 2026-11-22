@@ -206,10 +206,11 @@ describe("deriveMessagesTimelineRows", () => {
       const fixture = makeStreamingTimelineFixture();
       const source = fixture.visibleTurnItems[0]!;
       const title = "检查材料参数";
+      const base = { ...source.item, providerThreadId: source.item.providerThreadId ?? null };
       const item: OrchestrationV2TurnItem =
         tool === "bash"
           ? {
-              ...source.item,
+              ...base,
               type: "command_execution",
               title,
               input: "cat materials.json",
@@ -217,14 +218,14 @@ describe("deriveMessagesTimelineRows", () => {
             }
           : tool === "write" || tool === "edit"
             ? {
-                ...source.item,
+                ...base,
                 type: "file_change",
                 title,
                 fileName: "/repo/materials.json",
                 newStr: "{}",
               }
             : {
-                ...source.item,
+                ...base,
                 type: "dynamic_tool",
                 title,
                 toolName: tool,
@@ -5256,6 +5257,7 @@ describe("deriveActiveTurnExecutionSummary & deriveTurnFoldStatsByRunId", () => 
         text: "Inspect and fix the timeline",
         runId,
         createdAt: "2026-01-01T00:00:00Z",
+        updatedAt: "2026-01-01T00:00:00Z",
         streaming: false,
       },
     };
@@ -5353,6 +5355,7 @@ describe("deriveActiveTurnExecutionSummary & deriveTurnFoldStatsByRunId", () => 
         text: "All tests pass.",
         runId,
         createdAt: "2026-01-01T00:00:05Z",
+        updatedAt: "2026-01-01T00:00:05Z",
         streaming: true,
       },
     };
@@ -5397,6 +5400,7 @@ describe("deriveActiveTurnExecutionSummary & deriveTurnFoldStatsByRunId", () => 
           text: "Ship the change",
           runId,
           createdAt: "2026-01-01T00:00:00Z",
+          updatedAt: "2026-01-01T00:00:00Z",
           streaming: false,
         },
       },
@@ -5411,7 +5415,7 @@ describe("deriveActiveTurnExecutionSummary & deriveTurnFoldStatsByRunId", () => 
           tone: "tool",
           runId,
           itemType: "file_change",
-          status: "completed",
+          toolLifecycleStatus: "completed",
           changedFiles: ["src/a.ts", "src/b.ts"],
         },
       },
@@ -5427,7 +5431,7 @@ describe("deriveActiveTurnExecutionSummary & deriveTurnFoldStatsByRunId", () => 
           tone: "tool",
           runId,
           itemType: "command_execution",
-          status: "completed",
+          toolLifecycleStatus: "completed",
         },
       },
       {
@@ -5440,7 +5444,7 @@ describe("deriveActiveTurnExecutionSummary & deriveTurnFoldStatsByRunId", () => 
           text: "Done.",
           runId,
           createdAt: "2026-01-01T00:00:11Z",
-          completedAt: "2026-01-01T00:00:12Z",
+          updatedAt: "2026-01-01T00:00:12Z",
           streaming: false,
         },
       },
@@ -5450,9 +5454,12 @@ describe("deriveActiveTurnExecutionSummary & deriveTurnFoldStatsByRunId", () => 
         runId,
         completedAt: "2026-01-01T00:00:12Z",
         assistantMessageId: MessageId.make("msg-assistant"),
+        checkpointTurnCount: 1,
+        checkpointRef: CheckpointRef.make("refs/t3/checkpoints/settled"),
+        status: "ready",
         files: [
-          { path: "src/a.ts", additions: 14, deletions: 3 },
-          { path: "src/b.ts", additions: 6, deletions: 1 },
+          { path: "src/a.ts", kind: "modified", additions: 14, deletions: 3 },
+          { path: "src/b.ts", kind: "modified", additions: 6, deletions: 1 },
         ],
       },
     ];

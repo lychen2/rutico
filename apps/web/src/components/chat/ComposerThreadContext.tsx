@@ -128,8 +128,14 @@ export function ComposerThreadContext({
               {gt("Time to first output")} {firstOutput ?? "–"}
             </span>
           </PopoverTrigger>
-          <PopoverPopup side="top" align="center" padding="none" width="md">
-            <div data-session-overview="" className="p-4">
+          <PopoverPopup
+            data-session-stats-popup
+            side="top"
+            align="center"
+            padding="none"
+            width="md"
+          >
+            <div className="w-full p-4">
               <div className="mb-3 flex items-center justify-between">
                 <PopoverTitle>{gt("Overview")}</PopoverTitle>
                 {status && (
@@ -228,8 +234,14 @@ export function ComposerThreadContext({
                 : `${percent}%`}
             </span>
           </PopoverTrigger>
-          <PopoverPopup side="top" align="center" padding="none" width="md">
-            <div data-session-overview="" className="p-4">
+          <PopoverPopup
+            data-session-stats-popup
+            side="top"
+            align="center"
+            padding="none"
+            width="md"
+          >
+            <div className="w-full p-4">
               <PopoverTitle className="mb-3">{gt("Round token usage")}</PopoverTitle>
               <p className="mb-1 text-xs font-semibold">{gt("Context window")}</p>
               <p className="text-xs text-muted-foreground tabular-nums">

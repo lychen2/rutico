@@ -2297,7 +2297,12 @@ it.each(["read", "bash"] as const)(
     const toolPurpose = "检查材料参数";
     const path = "/repo/materials.json";
     const command = `cat ${path}`;
-    const base = { ...source.item, status: "completed" as const, toolPurpose };
+    const base = {
+      ...source.item,
+      providerThreadId: source.item.providerThreadId ?? null,
+      status: "completed" as const,
+      toolPurpose,
+    };
     const item =
       tool === "read"
         ? { ...base, type: "dynamic_tool" as const, toolName: tool, title: tool, input: { path } }

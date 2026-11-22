@@ -2,6 +2,14 @@ import type { EnvironmentServerConfig } from "@t3tools/client-runtime/connection
 import { scopeThreadRef } from "@t3tools/client-runtime/environment";
 import { EnvironmentId, ProjectId, ThreadId } from "@t3tools/contracts";
 import type { LocalApi } from "@t3tools/contracts";
+import {
+  createMemoryHistory,
+  createRootRoute,
+  createRoute,
+  createRouter,
+  Outlet,
+  RouterProvider,
+} from "@tanstack/react-router";
 import { expect, it, vi } from "vite-plus/test";
 import { page, userEvent } from "vite-plus/test/browser";
 import { render } from "../../../test/render";
@@ -13,7 +21,8 @@ import { useProjects, useQuietThreadShells, useServerConfigs } from "../../state
 import { makeThreadFixture } from "../../test-fixtures";
 import type { Project } from "../../types";
 import Sidebar from "../Sidebar";
-import { SidebarProvider } from "../ui/sidebar";
+import { SidebarCategorySettingsSection } from "../settings/SidebarCategorySettings";
+import { SidebarInset, SidebarProvider } from "../ui/sidebar";
 import { SIDEBAR_CATEGORIES_STORAGE_KEY } from "./SidebarCategories";
 
 vi.mock("../../state/entities", { spy: true });
@@ -131,7 +140,28 @@ it("files loaded old and new threads without overriding a saved manual choice in
       newThread,
     ]);
   }
-  await using restored = await render(tree());
+  const rootRoute = createRootRoute({
+    component: () => (
+      <SidebarProvider>
+        <Sidebar routeReveal={{ observedKey: null, pendingKey: null }} />
+        <SidebarInset>
+          <Outlet />
+        </SidebarInset>
+      </SidebarProvider>
+    ),
+  });
+  const indexRoute = createRoute({ getParentRoute: () => rootRoute, path: "/" });
+  const settingsRoute = createRoute({
+    getParentRoute: () => rootRoute,
+    path: "/settings/threads",
+    component: SidebarCategorySettingsSection,
+  });
+  const router = createRouter({
+    routeTree: rootRoute.addChildren([indexRoute, settingsRoute]),
+    history: createMemoryHistory({ initialEntries: ["/"] }),
+    disableGlobalCatchBoundary: true,
+  });
+  await using restored = await render(<RouterProvider router={router} />, { router: false });
   await expectParent(renamedTitle, "shelf:settled");
   await expectParent(remoteOld.title, "category:invest");
   await expectParent(newThread.title, "category:numerical-simulation");
@@ -149,29 +179,31 @@ it("files loaded old and new threads without overriding a saved manual choice in
   await expectParent(remoteOld.title, "category:invest");
 
   const settingsButton = page.getByRole("button", { name: "Category settings" });
-  const settings = page.getByRole("dialog", { name: "Category settings" });
   await userEvent.click(localRow, { button: "right" });
   await userEvent.click(move.getByRole("button", { name: "Release work" }));
   await userEvent.click(settingsButton);
-  await expect.element(settings.getByRole("radio", { name: /Previous categories/ })).toBeChecked();
-  await userEvent.click(settings.getByRole("radio", { name: /General preset/ }));
-  await userEvent.click(settings.getByRole("button", { name: "Save" }));
+  await expect.element(page.getByRole("heading", { name: "Sidebar categories" })).toBeVisible();
+  expect(router.state.location.hash).toBe("sidebar-categories");
+  await expect.element(page.getByRole("radio", { name: /Previous categories/ })).toBeChecked();
+  await userEvent.click(page.getByRole("radio", { name: /General preset/ }));
+  await userEvent.click(page.getByRole("button", { name: "Cancel" }));
+  await expect.element(page.getByRole("radio", { name: /Previous categories/ })).toBeChecked();
+  await userEvent.click(page.getByRole("radio", { name: /General preset/ }));
+  await userEvent.click(page.getByRole("button", { name: "Save" }));
   await expectParent(renamedTitle, "category:release");
   await expectParent(newThread.title, "category:development");
   await userEvent.click(page.getByTestId("sidebar-settled-shelf-toggle"));
   await expectParent(remoteOld.title, "shelf:settled");
 
-  await userEvent.click(settingsButton);
   await userEvent.click(
-    settings.getByRole("checkbox", { name: "Automatically categorize from titles" }),
+    page.getByRole("checkbox", { name: "Automatically categorize from titles" }),
   );
-  await userEvent.click(settings.getByRole("button", { name: "Save" }));
+  await userEvent.click(page.getByRole("button", { name: "Save" }));
   await expectParent(newThread.title, "category:uncategorized");
   await expectParent(renamedTitle, "category:release");
 
-  await userEvent.click(settingsButton);
-  await userEvent.click(settings.getByRole("radio", { name: /By project/ }));
-  await userEvent.click(settings.getByRole("button", { name: "Save" }));
+  await userEvent.click(page.getByRole("radio", { name: /By project/ }));
+  await userEvent.click(page.getByRole("button", { name: "Save" }));
   await expectParent(renamedTitle, `category:project:${local}:${projectId}`);
   await expectParent(remoteOld.title, `category:project:${remote}:${projectId}`);
 });
