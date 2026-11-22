@@ -400,6 +400,11 @@ import {
   ServerUpsertKeybindingResult,
 } from "./server.ts";
 import {
+  SidebarCategorySuggestionError,
+  SidebarCategorySuggestionInput,
+  SidebarCategorySuggestionOutput,
+} from "./sidebarCategories.ts";
+import {
   HostResourcesSnapshot,
   ResourceTelemetryHistory,
   ResourceTelemetryHistoryInput,
@@ -569,6 +574,7 @@ export const WS_METHODS = {
 
   serverProbe: "server.probe",
   serverGetConfig: "server.getConfig",
+  serverSuggestSidebarCategories: "server.suggestSidebarCategories",
   serverGetNpmRelease: "server.getNpmRelease",
   serverRefreshProviders: "server.refreshProviders",
   serverUpdateProvider: "server.updateProvider",
@@ -737,6 +743,12 @@ const WsServerGetConfigRpc = Rpc.make(WS_METHODS.serverGetConfig, {
   payload: Schema.Struct({}),
   success: ServerConfig,
   error: Schema.Union([KeybindingsConfigError, ServerSettingsError, EnvironmentAuthorizationError]),
+});
+
+const WsServerSuggestSidebarCategoriesRpc = Rpc.make(WS_METHODS.serverSuggestSidebarCategories, {
+  payload: SidebarCategorySuggestionInput,
+  success: SidebarCategorySuggestionOutput,
+  error: Schema.Union([SidebarCategorySuggestionError, EnvironmentAuthorizationError]),
 });
 
 export const WsServerRefreshProvidersRpc = Rpc.make(WS_METHODS.serverRefreshProviders, {
@@ -2398,6 +2410,7 @@ export const WsRpcGroup = RpcGroup.make(
   WsGuestShareCreateRpc,
   WsServerProbeRpc,
   WsServerGetConfigRpc,
+  WsServerSuggestSidebarCategoriesRpc,
   WsServerRefreshProvidersRpc,
   WsServerUpdateProviderRpc,
   WsProviderConsumeResetCreditRpc,

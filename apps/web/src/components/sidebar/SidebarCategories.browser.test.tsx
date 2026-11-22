@@ -111,7 +111,7 @@ it("files loaded old and new threads without overriding a saved manual choice in
   const newThread = makeThreadFixture({
     environmentId: local,
     projectId,
-    title: "FDTD convergence benchmark",
+    title: "FDTD test convergence benchmark",
   });
   {
     await using screen = await render(tree());
@@ -147,4 +147,31 @@ it("files loaded old and new threads without overriding a saved manual choice in
   await userEvent.click(move.getByRole("button", { name: "Restore automatic categorization" }));
   await expectParent(renamedTitle, "category:wechat");
   await expectParent(remoteOld.title, "category:invest");
+
+  const settingsButton = page.getByRole("button", { name: "Category settings" });
+  const settings = page.getByRole("dialog", { name: "Category settings" });
+  await userEvent.click(localRow, { button: "right" });
+  await userEvent.click(move.getByRole("button", { name: "Release work" }));
+  await userEvent.click(settingsButton);
+  await expect.element(settings.getByRole("radio", { name: /Previous categories/ })).toBeChecked();
+  await userEvent.click(settings.getByRole("radio", { name: /General preset/ }));
+  await userEvent.click(settings.getByRole("button", { name: "Save" }));
+  await expectParent(renamedTitle, "category:release");
+  await expectParent(newThread.title, "category:development");
+  await userEvent.click(page.getByTestId("sidebar-settled-shelf-toggle"));
+  await expectParent(remoteOld.title, "shelf:settled");
+
+  await userEvent.click(settingsButton);
+  await userEvent.click(
+    settings.getByRole("checkbox", { name: "Automatically categorize from titles" }),
+  );
+  await userEvent.click(settings.getByRole("button", { name: "Save" }));
+  await expectParent(newThread.title, "category:uncategorized");
+  await expectParent(renamedTitle, "category:release");
+
+  await userEvent.click(settingsButton);
+  await userEvent.click(settings.getByRole("radio", { name: /By project/ }));
+  await userEvent.click(settings.getByRole("button", { name: "Save" }));
+  await expectParent(renamedTitle, `category:project:${local}:${projectId}`);
+  await expectParent(remoteOld.title, `category:project:${remote}:${projectId}`);
 });

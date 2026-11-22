@@ -17,7 +17,8 @@ import {
 } from "../ui/dialog";
 import { Input } from "../ui/input";
 import type { SidebarCategory } from "./SidebarCategories";
-import { BUILT_IN_CATEGORY_IDS, UNCATEGORIZED } from "./SidebarCategoryRules";
+import { BUILT_IN_CATEGORY_IDS, SIDEBAR_PRESET_RULES, UNCATEGORIZED } from "./SidebarCategoryRules";
+import type { SidebarCategoryPreset } from "./SidebarCategoryRules";
 
 export type SidebarCategoryOption = SidebarCategory & { readonly builtIn?: true };
 
@@ -45,14 +46,49 @@ const BUILT_IN_CATEGORY_LABELS = {
   "tools-other": msg("Other tools"),
 };
 
-export function useSidebarCategoryOptions(custom: readonly SidebarCategory[]) {
+const PRESET_CATEGORY_LABELS = {
+  development: msg("Development"),
+  content: msg("Writing & content"),
+  research: msg("Research"),
+  work: msg("Work admin"),
+  systems: msg("Tools & system"),
+  fixes: msg("Bug fixes"),
+  features: msg("Features"),
+  review: msg("Code review"),
+  docs: msg("Docs"),
+  deploy: msg("Deploy & ops"),
+  scripts: msg("Ideas & scripts"),
+  writing: msg("Writing"),
+  media: msg("Video & audio"),
+  publishing: msg("Publishing"),
+};
+
+export function useSidebarCategoryOptions(
+  custom: readonly SidebarCategory[],
+  preset: SidebarCategoryPreset,
+  assignments: Readonly<Record<string, string>>,
+) {
   const m = useMessages();
-  const builtIn = BUILT_IN_CATEGORY_IDS.map((id): SidebarCategoryOption => ({
-    id,
-    name: m(BUILT_IN_CATEGORY_LABELS[id]),
-    builtIn: true,
-  }));
-  return [...custom, ...builtIn];
+  if (preset === "project") return [];
+  const ids = new Set<string>(
+    preset === "legacy" ? BUILT_IN_CATEGORY_IDS : SIDEBAR_PRESET_RULES[preset].map(([id]) => id),
+  );
+  const assigned = new Set(Object.values(assignments));
+  for (const id of [...Object.keys(PRESET_CATEGORY_LABELS), ...BUILT_IN_CATEGORY_IDS]) {
+    if (assigned.has(id)) ids.add(id);
+  }
+  const labels = new Map([
+    ...Object.entries(PRESET_CATEGORY_LABELS),
+    ...Object.entries(BUILT_IN_CATEGORY_LABELS),
+  ]);
+  return [
+    ...custom,
+    ...Array.from(ids, (id): SidebarCategoryOption => ({
+      id,
+      name: m(labels.get(id)!),
+      builtIn: true,
+    })),
+  ];
 }
 
 const FOLDER_DOT_CLASS_NAME = {
@@ -133,6 +169,95 @@ export function SidebarCategoryHeader({
 }
 
 export type SidebarCategoryAction = { kind: "create" } | { kind: "move"; keys: readonly string[] };
+
+export function SidebarCategoryPreferences({
+  preset,
+  automatic,
+  onSave,
+  onClose,
+}: {
+  preset: SidebarCategoryPreset;
+  automatic: boolean;
+  onSave: (preferences: { preset: SidebarCategoryPreset; automatic: boolean }) => boolean;
+  onClose: () => void;
+}) {
+  const gt = useGT();
+  const [selected, setSelected] = useState(preset);
+  const [enabled, setEnabled] = useState(automatic);
+  const [failed, setFailed] = useState(false);
+  const presets = [
+    { id: "general", name: gt("General preset"), description: gt("A bit of everything") },
+    { id: "developer", name: gt("Developer"), description: gt("Mostly code") },
+    { id: "creator", name: gt("Creator"), description: gt("Writing, video, and publishing") },
+    { id: "project", name: gt("By project"), description: gt("Organize by folder") },
+    {
+      id: "legacy",
+      name: gt("Previous categories"),
+      description: gt("Keep the original sidebar rules"),
+    },
+  ] as const;
+  return (
+    <Dialog
+      open
+      onOpenChange={(open) => {
+        if (!open) onClose();
+      }}
+    >
+      <DialogPopup>
+        <DialogHeader>
+          <DialogTitle>{gt("Category settings")}</DialogTitle>
+        </DialogHeader>
+        <form
+          onSubmit={(event) => {
+            event.preventDefault();
+            if (onSave({ preset: selected, automatic: enabled })) onClose();
+            else setFailed(true);
+          }}
+        >
+          <div className="space-y-4 px-6 pb-4 text-sm">
+            <fieldset className="space-y-2">
+              <legend className="mb-2 font-medium">{gt("Category preset")}</legend>
+              {presets.map(({ id, name, description }) => (
+                <label key={id} className="flex items-center gap-3 rounded-lg border p-2">
+                  <input
+                    type="radio"
+                    name="sidebar-category-preset"
+                    checked={selected === id}
+                    onChange={() => setSelected(id)}
+                  />
+                  <span>
+                    {name}
+                    <span className="block text-xs text-muted-foreground">{description}</span>
+                  </span>
+                </label>
+              ))}
+            </fieldset>
+            <label className="flex items-center gap-2">
+              <input
+                type="checkbox"
+                checked={enabled}
+                disabled={selected === "project"}
+                onChange={(event) => setEnabled(event.target.checked)}
+              />
+              {gt("Automatically categorize from titles")}
+            </label>
+            {failed ? (
+              <p role="alert" className="text-error">
+                {gt("Could not save sidebar categories")}
+              </p>
+            ) : null}
+          </div>
+          <DialogFooter>
+            <DialogClose render={<Button type="button" variant="outline" />}>
+              {gt("Cancel")}
+            </DialogClose>
+            <Button type="submit">{gt("Save")}</Button>
+          </DialogFooter>
+        </form>
+      </DialogPopup>
+    </Dialog>
+  );
+}
 
 export function SidebarCategoryDialog({
   action,

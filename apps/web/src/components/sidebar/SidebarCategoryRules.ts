@@ -1,5 +1,82 @@
 export const UNCATEGORIZED = "uncategorized";
 
+export const SIDEBAR_CATEGORY_PRESETS = [
+  "general",
+  "developer",
+  "creator",
+  "project",
+  "legacy",
+] as const;
+export type SidebarCategoryPreset = (typeof SIDEBAR_CATEGORY_PRESETS)[number];
+
+const PRESET_KEYWORDS = {
+  general: {
+    development: "代码|接口|开发|数据库|代码库|code|api|bug|refactor|database|test",
+    content: "文章|博客|文案|写作|article|blog|copywriting|readme",
+    research: "分析|对比|调研|研究|analyze|compare|research",
+    work: "周报|会议|邮件|报销|report|meeting|email|invoice",
+    systems: "磁盘|模型|设置|系统|disk|model|settings|network",
+  },
+  developer: {
+    fixes: "修复|报错|故障|bug|fix|error|debug",
+    features: "功能|接口|新增|feature|api|implement",
+    review: "评审|审查|review",
+    docs: "文档|说明|docs|readme",
+    deploy: "部署|运维|监控|deploy|ops|infra",
+  },
+  creator: {
+    scripts: "选题|脚本|分镜|idea|script|storyboard",
+    writing: "文章|文案|博客|article|writing|blog",
+    media: "视频|动画|音频|video|audio|animation",
+    publishing: "发布|运营|推广|publish|campaign|marketing",
+  },
+};
+
+export const SIDEBAR_PRESET_RULES = {
+  general: Object.entries(PRESET_KEYWORDS.general).map(
+    ([id, words]) => [id, words.split("|")] as const,
+  ),
+  developer: Object.entries(PRESET_KEYWORDS.developer).map(
+    ([id, words]) => [id, words.split("|")] as const,
+  ),
+  creator: Object.entries(PRESET_KEYWORDS.creator).map(
+    ([id, words]) => [id, words.split("|")] as const,
+  ),
+};
+export const SIDEBAR_PRESET_CATEGORY_IDS = Object.values(SIDEBAR_PRESET_RULES).flatMap((rules) =>
+  rules.map(([id]) => id),
+);
+
+export function isClassifiableSidebarTitle(title: string) {
+  const trimmed = title.trim();
+  return trimmed.length > 0 && !/^(<image|\[external unsupported|Call your built-in)/.test(trimmed);
+}
+
+export function resolveSidebarCategory(input: {
+  readonly title: string;
+  readonly projectName?: string | undefined;
+  readonly preset: SidebarCategoryPreset;
+  readonly automatic: boolean;
+}) {
+  if (!input.automatic || input.preset === "project" || !isClassifiableSidebarTitle(input.title)) {
+    return UNCATEGORIZED;
+  }
+  if (input.preset === "legacy")
+    return classifyThread({ title: input.title, projectName: input.projectName });
+  const title = input.title.normalize("NFKC").toLowerCase();
+  const tokens = new Set(title.split(/[^a-z0-9]+/));
+  for (const [id, keywords] of SIDEBAR_PRESET_RULES[input.preset]) {
+    if (
+      keywords.some((keyword) =>
+        /^[a-z0-9]+$/.test(keyword) ? tokens.has(keyword) : title.includes(keyword),
+      )
+    ) {
+      return id;
+    }
+  }
+  return UNCATEGORIZED;
+}
+
 export const BUILT_IN_CATEGORY_IDS = [
   "wechat",
   "douyin-real",

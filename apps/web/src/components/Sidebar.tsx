@@ -268,15 +268,21 @@ import {
 } from "./sidebar/SidebarThreadRow";
 import { SidebarDraftBlock, useSidebarDrafts } from "./sidebar/SidebarDraftBlock";
 import { useSidebarCategories } from "./sidebar/SidebarCategories";
-import { classifyThread, UNCATEGORIZED } from "./sidebar/SidebarCategoryRules";
+import {
+  resolveSidebarCategory,
+  UNCATEGORIZED,
+  type SidebarCategoryPreset,
+} from "./sidebar/SidebarCategoryRules";
 import {
   SidebarCategoryDialog,
   SidebarCategoryHeader,
+  SidebarCategoryPreferences,
   sidebarCategoryRowId,
   useSidebarCategoryOptions,
   type SidebarCategoryOption,
   type SidebarCategoryAction,
 } from "./sidebar/SidebarCategoryNavigation";
+import { SidebarCategorySuggestions } from "./sidebar/SidebarCategorySuggestions";
 import {
   SidebarDragBoundary,
   SidebarSectionHeader,
@@ -418,6 +424,8 @@ function useSidebarThreads(input: {
   readonly routeRowThreadKey: string | null;
   readonly compactRows: boolean;
   readonly categories: readonly SidebarCategoryOption[];
+  readonly categoryPreset: SidebarCategoryPreset;
+  readonly automaticCategories: boolean;
   readonly projectByKey: ReadonlyMap<string, Project>;
   readonly projectDisplayNameByKey: ReadonlyMap<string, string>;
   readonly assignments: Readonly<Record<string, string>>;
@@ -434,6 +442,8 @@ function useSidebarThreads(input: {
     routeRowThreadKey,
     compactRows,
     categories,
+    categoryPreset,
+    automaticCategories,
     projectByKey,
     projectDisplayNameByKey,
     assignments,
@@ -480,7 +490,15 @@ function useSidebarThreads(input: {
     [snoozedThreads, "snoozed"],
     [settledThreads, "settled"],
   ] as const;
-  const categoryThreads = new Map(categories.map(({ id }) => [id, [] as EnvironmentThreadShell[]]));
+  const folders =
+    categoryPreset === "project"
+      ? Array.from(projectByKey, ([key, project]) => ({
+          id: `project:${key}`,
+          name: projectDisplayNameByKey.get(key) ?? project.title,
+          builtIn: true,
+        }))
+      : categories;
+  const categoryThreads = new Map(folders.map(({ id }) => [id, [] as EnvironmentThreadShell[]]));
   const uncategorized = {
     pinned: [] as EnvironmentThreadShell[],
     active: [] as EnvironmentThreadShell[],
@@ -495,12 +513,16 @@ function useSidebarThreads(input: {
       sectionByThreadKey.set(key, section);
       const projectKey = `${thread.environmentId}:${thread.projectId}`;
       const id =
-        assignments[key] ??
-        classifyThread({
-          title: thread.title,
-          projectName:
-            projectDisplayNameByKey.get(projectKey) ?? projectByKey.get(projectKey)?.title,
-        });
+        categoryPreset === "project"
+          ? `project:${projectKey}`
+          : (assignments[key] ??
+            resolveSidebarCategory({
+              title: thread.title,
+              projectName:
+                projectDisplayNameByKey.get(projectKey) ?? projectByKey.get(projectKey)?.title,
+              preset: categoryPreset,
+              automatic: automaticCategories,
+            }));
       const folder = categoryThreads.get(id);
       if (folder === undefined) {
         uncategorized[section].push(thread);
@@ -520,7 +542,9 @@ function useSidebarThreads(input: {
   const pagedSettledThreads = settledThreads.filter((thread) => {
     const key = threadShellKey(thread);
     return (
-      (assignments[key] === undefined || !categoryByThreadKey.has(key)) &&
+      (categoryPreset === "project" ||
+        assignments[key] === undefined ||
+        !categoryByThreadKey.has(key)) &&
       olderSettledShelf.isListed(thread)
     );
   });
@@ -550,7 +574,7 @@ function useSidebarThreads(input: {
   const visibleSnoozedThreads = snoozedShelfExpanded
     ? uncategorizedVisible(uncategorized.snoozed)
     : routeThreadOnly(uncategorized.snoozed, routeRowThreadKey);
-  const categoryFolders = categories.flatMap(({ id, name, builtIn }) => {
+  const categoryFolders = folders.flatMap(({ id, name, builtIn }) => {
     const threads = categoryThreads.get(id)!;
     if (builtIn && threads.length === 0) return [];
     const collapsed = collapsedCategories.includes(id);
@@ -1242,8 +1266,19 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
     createCategory,
     moveToCategory,
     toggleCategory,
+    assignCategories,
+    setCategoryPreferences,
+    selectSuggestionModel,
   } = useSidebarCategories();
-  const categoryOptions = useSidebarCategoryOptions(categoryState.categories);
+  // Existing v1 records have no preset and retain their previous classification rules.
+  const categoryPreset = categoryState.preset ?? "legacy";
+  const automaticCategories = categoryState.automatic ?? true;
+  const categoryOptions = useSidebarCategoryOptions(
+    categoryState.categories,
+    categoryPreset,
+    categoryState.assignments,
+  );
+  const [categoryPreferencesOpen, setCategoryPreferencesOpen] = useState(false);
   const [categoryAction, setCategoryAction] = useState<SidebarCategoryAction | null>(null);
   const {
     draggableThreadKeys,
@@ -1291,6 +1326,8 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
     routeRowThreadKey,
     compactRows: boringSidebarEnabled,
     categories: categoryOptions,
+    categoryPreset,
+    automaticCategories,
     projectByKey,
     projectDisplayNameByKey,
     assignments: categoryState.assignments,
@@ -2283,7 +2320,9 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
       const clicked = await settlePromise(() =>
         api.contextMenu.show(
           [
-            { id: "move-to-category", label: gt("Move to category"), icon: "folder" },
+            ...(categoryPreset !== "project"
+              ? [{ id: "move-to-category", label: gt("Move to category"), icon: "folder" as const }]
+              : []),
             ...(unpinMenuItem
               ? [{ ...unpinMenuItem, disabled: !canOperateThreads(pinnedSelectedThreads) }]
               : []),
@@ -2626,7 +2665,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
               ),
               canTurnIntoProject: canTurnThreadIntoProject(threadRef),
               canRename: !fromSearch,
-              canMoveToCategory: true,
+              canMoveToCategory: categoryPreset !== "project",
               supports: {
                 settlement: configLoaded,
                 autoSettleOptOut: supportsAutoSettleOptOut,
@@ -3221,13 +3260,44 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
           ) : null}
           {!isSearchingThreads ? (
             <div className="flex items-center justify-between px-2 pb-1 text-2xs text-sidebar-muted-foreground">
-              <h2>{gt("Categories", { $context: "sidebar section" })}</h2>
-              <SidebarHeaderIconButton
-                label={gt("New category")}
-                onClick={() => setCategoryAction({ kind: "create" })}
-              >
-                <FolderPlusIcon aria-hidden />
-              </SidebarHeaderIconButton>
+              <h2>
+                {categoryPreset === "project"
+                  ? gt("Projects")
+                  : gt("Categories", { $context: "sidebar section" })}
+              </h2>
+              <div className="flex items-center gap-1">
+                {categoryPreset !== "project" ? (
+                  <>
+                    <SidebarCategorySuggestions
+                      threads={Object.values(uncategorized)
+                        .flat()
+                        .filter(
+                          (thread) =>
+                            categoryState.assignments[threadShellKey(thread)] === undefined,
+                        )}
+                      categories={categoryOptions}
+                      connected={connectedEnvironmentIds}
+                      primary={primaryEnvironmentId}
+                      labels={environmentLabelById}
+                      models={categoryState.suggestionModels}
+                      onSelectModel={selectSuggestionModel}
+                      onConfirm={assignCategories}
+                    />
+                    <SidebarHeaderIconButton
+                      label={gt("New category")}
+                      onClick={() => setCategoryAction({ kind: "create" })}
+                    >
+                      <FolderPlusIcon aria-hidden />
+                    </SidebarHeaderIconButton>
+                  </>
+                ) : null}
+                <SidebarHeaderIconButton
+                  label={gt("Category settings")}
+                  onClick={() => setCategoryPreferencesOpen(true)}
+                >
+                  <SettingsIcon aria-hidden />
+                </SidebarHeaderIconButton>
+              </div>
             </div>
           ) : null}
           {isSearchingThreads ? (
@@ -3715,6 +3785,14 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
         </SidebarGroup>
       </SidebarContent>
       <SidebarChromeFooter />
+      {categoryPreferencesOpen ? (
+        <SidebarCategoryPreferences
+          preset={categoryPreset}
+          automatic={automaticCategories}
+          onSave={setCategoryPreferences}
+          onClose={() => setCategoryPreferencesOpen(false)}
+        />
+      ) : null}
       <SidebarCategoryDialog
         action={categoryAction}
         categories={categoryOptions}

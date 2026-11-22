@@ -2,6 +2,7 @@ import { useAtomValue } from "@effect/atom-react";
 import { parseScopedThreadKey } from "@t3tools/client-runtime/environment";
 import { enabledEnvironmentIds } from "@t3tools/client-runtime/state/connections";
 import type { EnvironmentId, ThreadId } from "@t3tools/contracts";
+import { ModelSelection } from "@t3tools/contracts";
 import * as Schema from "effect/Schema";
 import { Atom } from "effect/reactivity";
 import { useEffect } from "react";
@@ -12,20 +13,33 @@ import { appAtomRegistry } from "../../rpc/atomRegistry";
 import { environmentPresentations } from "../../state/presentation";
 import { environmentSnapshotAtom } from "../../state/shell";
 import { threadFamilies } from "../../state/threads";
-import { BUILT_IN_CATEGORY_IDS, UNCATEGORIZED } from "./SidebarCategoryRules";
+import {
+  BUILT_IN_CATEGORY_IDS,
+  SIDEBAR_CATEGORY_PRESETS,
+  SIDEBAR_PRESET_CATEGORY_IDS,
+  UNCATEGORIZED,
+} from "./SidebarCategoryRules";
 
 const Category = Schema.Struct({ id: Schema.String, name: Schema.String });
 const SidebarCategories = Schema.Struct({
   categories: Schema.Array(Category),
   assignments: Schema.Record(Schema.String, Schema.String),
   collapsed: Schema.Array(Schema.String),
+  preset: Schema.optionalKey(Schema.Literals(SIDEBAR_CATEGORY_PRESETS)),
+  automatic: Schema.optionalKey(Schema.Boolean),
+  suggestionModels: Schema.optionalKey(Schema.Record(Schema.String, ModelSelection)),
 });
 
 type SidebarCategories = typeof SidebarCategories.Type;
 export type SidebarCategory = typeof Category.Type;
 
 export const SIDEBAR_CATEGORIES_STORAGE_KEY = "t3code:sidebar-categories:v1";
-const EMPTY_CATEGORIES: SidebarCategories = { categories: [], assignments: {}, collapsed: [] };
+const EMPTY_CATEGORIES: SidebarCategories = {
+  categories: [],
+  assignments: {},
+  collapsed: [],
+  preset: "general",
+};
 
 const missingAssignedThreads = Atom.family((assignmentKeys: string) => {
   const assignedByEnvironment = new Map<EnvironmentId, ThreadId[]>();
@@ -85,30 +99,54 @@ export function useSidebarCategories() {
     setState((current) => ({ ...current, categories: [...current.categories, { id, name }] }));
     return readSaved().categories.some((category) => category.id === id);
   };
-  const moveToCategory = (keys: readonly string[], id: string | null) => {
+  const assignCategories = (moves: readonly { key: string; id: string | null }[]) => {
     setState((current) => {
+      const valid = new Set<string>([
+        UNCATEGORIZED,
+        ...BUILT_IN_CATEGORY_IDS,
+        ...SIDEBAR_PRESET_CATEGORY_IDS,
+        ...current.categories.map(({ id }) => id),
+      ]);
       if (
-        id !== null &&
-        id !== UNCATEGORIZED &&
-        !BUILT_IN_CATEGORY_IDS.some((categoryId) => categoryId === id) &&
-        !current.categories.some((category) => category.id === id)
+        moves.some(({ key, id }) => !parseScopedThreadKey(key) || (id !== null && !valid.has(id)))
       ) {
         return current;
       }
       const assignments = { ...current.assignments };
-      for (const key of keys) {
+      const destinations = new Set<string>();
+      for (const { key, id } of moves) {
         if (id === null) delete assignments[key];
-        else assignments[key] = id;
+        else {
+          assignments[key] = id;
+          destinations.add(id);
+        }
       }
-      const collapsed =
-        id === null ? current.collapsed : current.collapsed.filter((key) => key !== id);
-      return { ...current, assignments, collapsed };
+      return {
+        ...current,
+        assignments,
+        collapsed: current.collapsed.filter((id) => !destinations.has(id)),
+      };
     });
     const saved = readSaved();
-    return (
-      (id === null || !saved.collapsed.includes(id)) &&
-      keys.every((key) => (saved.assignments[key] ?? null) === id)
+    return moves.every(
+      ({ key, id }) =>
+        (id === null || !saved.collapsed.includes(id)) && (saved.assignments[key] ?? null) === id,
     );
+  };
+  const moveToCategory = (keys: readonly string[], id: string | null) =>
+    assignCategories(keys.map((key) => ({ key, id })));
+  const setCategoryPreferences = (preferences: Pick<SidebarCategories, "preset" | "automatic">) => {
+    setState((current) => ({ ...current, ...preferences }));
+    const saved = readSaved();
+    return saved.preset === preferences.preset && saved.automatic === preferences.automatic;
+  };
+  const selectSuggestionModel = (environmentId: EnvironmentId, model: ModelSelection | null) => {
+    setState((current) => {
+      const suggestionModels = { ...current.suggestionModels };
+      if (model === null) delete suggestionModels[environmentId];
+      else suggestionModels[environmentId] = model;
+      return { ...current, suggestionModels };
+    });
   };
   const toggleCategory = (id: string) => {
     setState((current) => ({
@@ -119,5 +157,13 @@ export function useSidebarCategories() {
     }));
   };
 
-  return { state, createCategory, moveToCategory, toggleCategory };
+  return {
+    state,
+    createCategory,
+    moveToCategory,
+    assignCategories,
+    toggleCategory,
+    setCategoryPreferences,
+    selectSuggestionModel,
+  };
 }
