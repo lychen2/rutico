@@ -104,8 +104,8 @@ it("keeps round token and cache totals separate from the current context window"
   );
 
   const trigger = screen.getByRole("button", { name: /Round 7/ });
-  const tokensTrigger = screen.getByRole("button", { name: /Cache 75%/ });
-  for (const value of ["1,200 tokens", "Cache 75%", "Context 21%"]) {
+  const tokensTrigger = screen.getByRole("button", { name: /Cache hit 75%/ });
+  for (const value of ["1,200 tokens", "Cache hit 75%", "Context 21%"]) {
     await expect.element(tokensTrigger.getByText(value, { exact: true })).toBeVisible();
   }
   for (const value of ["2 steps", "14.3 tokens/s"]) {
@@ -166,7 +166,7 @@ it("keeps round token and cache totals separate from the current context window"
   );
   const liveTrigger = screen.getByRole("button", { name: /Round 7/ });
   await expect.element(liveTrigger.getByText("Time to first output –")).toBeVisible();
-  for (const value of ["Cache read –", "Context –"]) {
+  for (const value of ["Cache hit –", "Context –"]) {
     await expect.element(screen.getByText(value, { exact: true })).toBeVisible();
   }
   await userEvent.click(liveTrigger);

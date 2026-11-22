@@ -3290,8 +3290,7 @@ export default function ChatView(props: ChatViewProps) {
       .filter((part) => part !== null)
       .join(" · ") || null;
   const hasOmpTodo = ompTodo !== null && ompTodo.steps.length > 0;
-  const showSessionStatus =
-    isOmpThread && !isDraftHeroState && composerMounted && pendingUserInputs.length === 0;
+  const showSessionStatus = isOmpThread && !isDraftHeroState && composerMounted;
   const composerContextRun = showSessionStatus
     ? (serverProjection.runs.find((run) => run.id === activeActivityRun?.runId) ?? null)
     : null;

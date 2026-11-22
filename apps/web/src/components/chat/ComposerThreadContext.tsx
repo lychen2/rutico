@@ -219,9 +219,7 @@ export function ComposerThreadContext({
               <span>{gt("{tokens} tokens", { tokens: total.toLocaleString(locale) })}</span>
             )}
             <span className="whitespace-nowrap">
-              {cachePercent === null
-                ? gt("Cache read") + " –"
-                : gt("Cache {percent}%", { percent: cachePercent })}
+              {gt("Cache hit")} {cachePercent === null ? "–" : `${cachePercent}%`}
             </span>
             <span className="whitespace-nowrap">
               {gt("Context", { $context: "context window row label" })}{" "}
