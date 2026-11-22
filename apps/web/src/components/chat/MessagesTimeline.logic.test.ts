@@ -28,7 +28,9 @@ import { describe, expect, it } from "vite-plus/test";
 import { MessageId, RunId } from "@t3tools/contracts";
 import {
   computeStableMessagesTimelineRows,
+  deriveActiveTurnExecutionSummary,
   deriveMessagesTimelineRows,
+  deriveTurnFoldStatsByRunId,
   timelineTurnFoldRunIdsByEntryId,
   liveAnswerPreview,
   deriveMessagesTimelineRowsWithState,
@@ -5231,5 +5233,241 @@ describe("workEntryReadOutput", () => {
         "/workspace/t3code",
       ),
     ).toBe("/workspace/t3code/src/app.ts\n~/.claude/CLAUDE.md\n~/.gitconfig");
+  });
+});
+
+describe("deriveActiveTurnExecutionSummary & deriveTurnFoldStatsByRunId", () => {
+  const runId = RunId.make("run-active-summary");
+  const latestRun = {
+    runId,
+    status: "running" as const,
+    startedAt: "2026-01-01T00:00:01Z",
+    completedAt: null,
+  };
+
+  it("tracks the active turn phase, tool call counts, and active tool label as the agent progresses", () => {
+    const userPrompt: TimelineEntry = {
+      id: "entry-user",
+      kind: "message",
+      createdAt: "2026-01-01T00:00:00Z",
+      message: {
+        id: MessageId.make("msg-user"),
+        role: "user",
+        text: "Inspect and fix the timeline",
+        runId,
+        createdAt: "2026-01-01T00:00:00Z",
+        streaming: false,
+      },
+    };
+    expect(
+      deriveActiveTurnExecutionSummary({
+        timelineEntries: [userPrompt],
+        latestRun,
+        runningRunId: runId,
+        isWorking: true,
+      }),
+    ).toEqual({
+      phase: "starting",
+      toolCallCount: 0,
+      completedToolCount: 0,
+      activeToolLabel: null,
+    });
+
+    const reasoningEntry: TimelineEntry = {
+      id: "entry-reasoning",
+      kind: "work",
+      createdAt: "2026-01-01T00:00:02Z",
+      entry: {
+        id: "work-reasoning",
+        createdAt: "2026-01-01T00:00:02Z",
+        label: "Thinking",
+        detail: "Checking files",
+        tone: "thinking",
+        runId,
+        itemType: "reasoning",
+        toolLifecycleStatus: "inProgress",
+      },
+    };
+    expect(
+      deriveActiveTurnExecutionSummary({
+        timelineEntries: [userPrompt, reasoningEntry],
+        latestRun,
+        runningRunId: runId,
+        isWorking: true,
+      }),
+    ).toMatchObject({
+      phase: "thinking",
+      toolCallCount: 0,
+    });
+
+    const completedToolEntry: TimelineEntry = {
+      id: "entry-tool-1",
+      kind: "work",
+      createdAt: "2026-01-01T00:00:03Z",
+      entry: {
+        id: "work-tool-1",
+        createdAt: "2026-01-01T00:00:03Z",
+        label: "Read file",
+        command: "cat src/index.ts",
+        tone: "tool",
+        runId,
+        itemType: "command_execution",
+        toolLifecycleStatus: "completed",
+      },
+    };
+    const runningToolEntry: TimelineEntry = {
+      id: "entry-tool-2",
+      kind: "work",
+      createdAt: "2026-01-01T00:00:04Z",
+      entry: {
+        id: "work-tool-2",
+        createdAt: "2026-01-01T00:00:04Z",
+        label: "Running tests",
+        command: "vp test",
+        tone: "tool",
+        runId,
+        itemType: "command_execution",
+        toolLifecycleStatus: "inProgress",
+      },
+    };
+    const executingSummary = deriveActiveTurnExecutionSummary({
+      timelineEntries: [userPrompt, reasoningEntry, completedToolEntry, runningToolEntry],
+      latestRun,
+      runningRunId: runId,
+      isWorking: true,
+    });
+    expect(executingSummary).toMatchObject({
+      phase: "executing",
+      toolCallCount: 2,
+      completedToolCount: 1,
+    });
+    expect(executingSummary?.activeToolLabel).toBeTruthy();
+
+    const streamingAnswer: TimelineEntry = {
+      id: "entry-assistant",
+      kind: "message",
+      createdAt: "2026-01-01T00:00:05Z",
+      message: {
+        id: MessageId.make("msg-assistant"),
+        role: "assistant",
+        text: "All tests pass.",
+        runId,
+        createdAt: "2026-01-01T00:00:05Z",
+        streaming: true,
+      },
+    };
+    expect(
+      deriveActiveTurnExecutionSummary({
+        timelineEntries: [
+          userPrompt,
+          reasoningEntry,
+          completedToolEntry,
+          {
+            ...runningToolEntry,
+            entry: { ...runningToolEntry.entry, toolLifecycleStatus: "completed" },
+          },
+          streamingAnswer,
+        ],
+        latestRun,
+        runningRunId: runId,
+        isWorking: true,
+      }),
+    ).toMatchObject({
+      phase: "answering",
+      toolCallCount: 2,
+      completedToolCount: 2,
+    });
+  });
+
+  it("aggregates settled turn fold statistics including tool steps and diff counts", () => {
+    const settledRun = {
+      runId,
+      status: "completed" as const,
+      startedAt: "2026-01-01T00:00:01Z",
+      completedAt: "2026-01-01T00:00:12Z",
+    };
+    const entries: TimelineEntry[] = [
+      {
+        id: "entry-user",
+        kind: "message",
+        createdAt: "2026-01-01T00:00:00Z",
+        message: {
+          id: MessageId.make("msg-user"),
+          role: "user",
+          text: "Ship the change",
+          runId,
+          createdAt: "2026-01-01T00:00:00Z",
+          streaming: false,
+        },
+      },
+      {
+        id: "entry-tool-1",
+        kind: "work",
+        createdAt: "2026-01-01T00:00:03Z",
+        entry: {
+          id: "work-tool-1",
+          createdAt: "2026-01-01T00:00:03Z",
+          label: "Edited file",
+          tone: "tool",
+          runId,
+          itemType: "file_change",
+          status: "completed",
+          changedFiles: ["src/a.ts", "src/b.ts"],
+        },
+      },
+      {
+        id: "entry-tool-2",
+        kind: "work",
+        createdAt: "2026-01-01T00:00:06Z",
+        entry: {
+          id: "work-tool-2",
+          createdAt: "2026-01-01T00:00:06Z",
+          label: "Ran command",
+          command: "vp test",
+          tone: "tool",
+          runId,
+          itemType: "command_execution",
+          status: "completed",
+        },
+      },
+      {
+        id: "entry-assistant",
+        kind: "message",
+        createdAt: "2026-01-01T00:00:11Z",
+        message: {
+          id: MessageId.make("msg-assistant"),
+          role: "assistant",
+          text: "Done.",
+          runId,
+          createdAt: "2026-01-01T00:00:11Z",
+          completedAt: "2026-01-01T00:00:12Z",
+          streaming: false,
+        },
+      },
+    ];
+    const turnDiffSummaries: TurnDiffSummary[] = [
+      {
+        runId,
+        completedAt: "2026-01-01T00:00:12Z",
+        assistantMessageId: MessageId.make("msg-assistant"),
+        files: [
+          { path: "src/a.ts", additions: 14, deletions: 3 },
+          { path: "src/b.ts", additions: 6, deletions: 1 },
+        ],
+      },
+    ];
+    const stats = deriveTurnFoldStatsByRunId({
+      timelineEntries: entries,
+      latestRun: settledRun,
+      isWorking: false,
+      turnDiffSummaries,
+    });
+    expect(stats.get(runId)).toEqual({
+      toolCallCount: 2,
+      changedFileCount: 2,
+      additions: 20,
+      deletions: 4,
+      interrupted: false,
+    });
   });
 });

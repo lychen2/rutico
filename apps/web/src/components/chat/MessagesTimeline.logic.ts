@@ -15,6 +15,7 @@ import {
 } from "@t3tools/client-runtime/user-message";
 import type { HandoffTimelineRun } from "@t3tools/client-runtime/handoff";
 import { renderCodexDirectivesForCopy } from "@t3tools/shared/codexMarkdownDirectives";
+import { turnChanges } from "@t3tools/client-runtime/state/thread-repositories";
 import {
   commandDisplayText,
   commandProgramName,
@@ -1621,6 +1622,161 @@ function deriveTimelineTurnFolds(
     retainedAssistantReplyEntryIds: retainedAssistantReplyEntryIds(timelineEntries),
     resolve: m,
   });
+}
+
+export interface ActiveTurnExecutionSummary {
+  readonly phase: "starting" | "thinking" | "executing" | "answering";
+  readonly toolCallCount: number;
+  readonly completedToolCount: number;
+  readonly activeToolLabel: string | null;
+}
+
+export interface TurnFoldSummaryStats {
+  readonly toolCallCount: number;
+  readonly changedFileCount: number;
+  readonly additions: number;
+  readonly deletions: number;
+  readonly interrupted: boolean;
+}
+
+export interface TimelineTaskProgressSummary {
+  readonly completed: number;
+  readonly total: number;
+  readonly activeStepText?: string | null;
+}
+
+export function deriveActiveTurnExecutionSummary(
+  input: {
+    readonly timelineEntries: ReadonlyArray<TimelineEntry>;
+    readonly latestRun?: TimelineLatestRun | null;
+    readonly runningRunId?: RunId | null;
+    readonly isWorking: boolean;
+    readonly runlessWorkActive?: boolean;
+    readonly workspaceRoot?: string | undefined;
+  },
+  resolve: MessageResolver = m,
+): ActiveTurnExecutionSummary | null {
+  if (!input.isWorking) return null;
+  const entries = input.timelineEntries;
+  const startIndex = lastResponseBoundaryIndex(entries) + 1;
+  let toolCallCount = 0;
+  let completedToolCount = 0;
+  let latestInProgressToolEntry: WorkLogEntry | null = null;
+  let latestToolEntry: WorkLogEntry | null = null;
+  let hasReasoningEntry = false;
+  let hasStreamingAssistantMessage = false;
+
+  for (let index = startIndex; index < entries.length; index += 1) {
+    const entry = entries[index];
+    if (!entry) continue;
+    if (entry.kind === "work") {
+      if (entry.entry.itemType === "reasoning") {
+        hasReasoningEntry = true;
+        continue;
+      }
+      if (workLogEntryIsToolLike(entry.entry)) {
+        toolCallCount += 1;
+        latestToolEntry = entry.entry;
+        if (
+          entry.entry.toolLifecycleStatus === "inProgress" ||
+          entry.entry.projectedItem?.item.status === "running"
+        ) {
+          latestInProgressToolEntry = entry.entry;
+        } else {
+          completedToolCount += 1;
+        }
+      }
+      continue;
+    }
+    if (
+      entry.kind === "message" &&
+      entry.message.role === "assistant" &&
+      (entry.message.streaming || entry.message.text.trim().length > 0)
+    ) {
+      hasStreamingAssistantMessage = true;
+    }
+  }
+
+  const phase: ActiveTurnExecutionSummary["phase"] =
+    hasStreamingAssistantMessage && latestInProgressToolEntry === null
+      ? "answering"
+      : latestInProgressToolEntry !== null || toolCallCount > 0
+        ? "executing"
+        : hasReasoningEntry
+          ? "thinking"
+          : "starting";
+
+  const activeTool = latestInProgressToolEntry ?? (phase === "executing" ? latestToolEntry : null);
+  const activeToolLabel = activeTool
+    ? liveWorkEntryLabel(activeTool, input.workspaceRoot, true, resolve)
+    : null;
+
+  return {
+    phase,
+    toolCallCount,
+    completedToolCount,
+    activeToolLabel,
+  };
+}
+
+export function deriveTurnFoldStatsByRunId(
+  input: Pick<
+    MessagesTimelineRowsInput,
+    | "timelineEntries"
+    | "latestRun"
+    | "isWorking"
+    | "runlessWorkActive"
+    | "runningRunId"
+    | "toolCallVisibility"
+    | "revealedMessageId"
+    | "turnDiffSummaries"
+  >,
+): ReadonlyMap<RunId, TurnFoldSummaryStats> {
+  const foldsByAnchorEntryId = deriveTimelineTurnFolds(input);
+  if (foldsByAnchorEntryId.size === 0) return new Map();
+
+  const timelineEntries = timelineRowEntries(input);
+  const entryById = new Map(timelineEntries.map((entry) => [entry.id, entry]));
+  const diffSummaryByRunId = new Map<RunId, TurnDiffSummary>();
+  for (const summary of input.turnDiffSummaries) {
+    diffSummaryByRunId.set(summary.runId, summary);
+  }
+
+  const result = new Map<RunId, TurnFoldSummaryStats>();
+  for (const fold of foldsByAnchorEntryId.values()) {
+    let toolCallCount = 0;
+    const fallbackChangedFiles = new Set<string>();
+    for (const entryId of fold.entryIds) {
+      const entry = entryById.get(entryId);
+      if (entry?.kind !== "work") continue;
+      if (workLogEntryIsToolLike(entry.entry)) {
+        toolCallCount += 1;
+      }
+      if (entry.entry.changedFiles) {
+        for (const filePath of entry.entry.changedFiles) {
+          fallbackChangedFiles.add(filePath);
+        }
+      }
+    }
+    const diffSummary = diffSummaryByRunId.get(fold.runId);
+    const diffTotals = diffSummary ? turnChanges(diffSummary).totals : null;
+    const changedFileCount =
+      diffTotals && diffTotals.count > 0 ? diffTotals.count : fallbackChangedFiles.size;
+    const additions = diffTotals?.additions ?? 0;
+    const deletions = diffTotals?.deletions ?? 0;
+    const interrupted =
+      input.latestRun?.runId === fold.runId && input.latestRun.status === "interrupted";
+
+    result.set(fold.runId, {
+      toolCallCount,
+      changedFileCount,
+      additions,
+      deletions,
+      interrupted,
+    });
+  }
+
+  return result;
 }
 
 export function deriveMessagesTimelineRows(

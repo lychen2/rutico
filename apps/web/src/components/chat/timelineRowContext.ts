@@ -27,7 +27,13 @@ import type { PendingApproval } from "../../session-logic";
 import { type ChatFileAttachment } from "../../types";
 import { type ExpandedImageItem, ExpandedImagePreview } from "./ExpandedImagePreview";
 import { type AssistantCitationTarget } from "./AssistantCitationSource";
-import { type MessagesTimelineRow, type WorkGroupScrollAnchor } from "./MessagesTimeline.logic";
+import {
+  type ActiveTurnExecutionSummary,
+  type MessagesTimelineRow,
+  type TimelineTaskProgressSummary,
+  type TurnFoldSummaryStats,
+  type WorkGroupScrollAnchor,
+} from "./MessagesTimeline.logic";
 import { type TimestampFormat } from "@t3tools/contracts/settings";
 import type { TurnItemDetailSource } from "../../state/queries";
 import { type HandoffTimelineRun } from "./V2LifecycleRow";
@@ -120,6 +126,9 @@ export interface TimelineRowActivityState {
   latestRunId: RunId | null;
   backgroundWorktreeSetup: WorktreeSetupSnapshot | null;
   liveAnswerPreview: string | null;
+  activeTurnSummary?: ActiveTurnExecutionSummary | null;
+  taskProgress?: TimelineTaskProgressSummary | null;
+  turnFoldStatsByRunId?: ReadonlyMap<RunId, TurnFoldSummaryStats>;
 }
 
 export const TimelineRowCtx = createContext<TimelineRowSharedState>(null!);

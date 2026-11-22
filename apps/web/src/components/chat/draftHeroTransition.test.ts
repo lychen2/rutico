@@ -1,6 +1,12 @@
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 
-import { runMobileComposerTransition } from "./draftHeroTransition";
+import {
+  DRAFT_HERO_AGENT_IGNITE_DELAY_RATIO,
+  DRAFT_HERO_AGENT_IGNITE_OFFSET_PX,
+  DRAFT_HERO_MESSAGE_ENTER_OFFSET_PX,
+  DRAFT_HERO_MESSAGE_ENTER_SCALE,
+  runMobileComposerTransition,
+} from "./draftHeroTransition";
 
 type StartViewTransition = (update: () => void | Promise<void>) => {
   finished: Promise<void>;
@@ -121,4 +127,13 @@ describe("runMobileComposerTransition", () => {
       expect(update).toHaveBeenCalledTimes(1);
     },
   );
+
+  it("defines coordinated first-message entrance and agent startup timing constants", () => {
+    expect(DRAFT_HERO_MESSAGE_ENTER_SCALE).toBeGreaterThan(0.9);
+    expect(DRAFT_HERO_MESSAGE_ENTER_SCALE).toBeLessThan(1);
+    expect(DRAFT_HERO_MESSAGE_ENTER_OFFSET_PX).toBeGreaterThan(0);
+    expect(DRAFT_HERO_AGENT_IGNITE_OFFSET_PX).toBeGreaterThan(0);
+    expect(DRAFT_HERO_AGENT_IGNITE_DELAY_RATIO).toBeGreaterThan(0);
+    expect(DRAFT_HERO_AGENT_IGNITE_DELAY_RATIO).toBeLessThan(1);
+  });
 });

@@ -34,10 +34,22 @@ function ThreadNowLine({
   return (
     <div
       role={announce ? "alert" : undefined}
-      className={cn(lineClassName, "items-baseline")}
+      className={cn(
+        lineClassName,
+        "items-baseline",
+        announce &&
+          "mb-1.5 rounded-lg border border-warning/30 bg-warning/8 px-2.5 py-1.5 text-foreground/90",
+      )}
       data-thread-now-line="true"
+      data-thread-now-kind={announce ? "attention" : "status"}
     >
-      <span aria-hidden className="flex size-3.5 shrink-0 self-center items-center justify-center">
+      <span
+        aria-hidden
+        className={cn(
+          "flex size-3.5 shrink-0 self-center items-center justify-center",
+          announce && "text-warning-foreground",
+        )}
+      >
         {item.icon}
       </span>
       <span className="min-w-0 truncate">

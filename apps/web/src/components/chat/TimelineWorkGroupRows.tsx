@@ -18,7 +18,7 @@ import { LegendList, type LegendListRef } from "@legendapp/list/react";
 import { workEntryDisplayIndicatesToolFailure } from "../../session-logic";
 import ChatMarkdown from "../ChatMarkdown";
 import { assetMediaActionsSource } from "./ChatMarkdownMedia";
-import { Minimize2Icon, XIcon } from "lucide-react";
+import { ChevronRightIcon, Minimize2Icon, WrenchIcon, XIcon } from "lucide-react";
 import { Button } from "../ui/button";
 import { getVirtualizedScrollFadeClassName } from "../ui/scroll-area";
 import {
@@ -349,10 +349,20 @@ function ExpandedWorkGroupEntries({
 const workEntryKey = (entry: TimelineWorkEntry) => entry.id;
 
 export function WorkingTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "working" }> }) {
-  const { isCompacting, isPreparingWorktree, backgroundWorktreeSetup } =
-    use(TimelineRowActivityCtx);
+  const {
+    isCompacting,
+    isPreparingWorktree,
+    backgroundWorktreeSetup,
+    activeTurnSummary,
+    taskProgress,
+  } = use(TimelineRowActivityCtx);
   const compacting = row.compacting === true || isCompacting;
   const shimmer = isPreparingWorktree || compacting;
+  const phase = isPreparingWorktree
+    ? "preparing"
+    : compacting
+      ? "compacting"
+      : (activeTurnSummary?.phase ?? "starting");
   const label = isPreparingWorktree ? (
     <T>Setting up worktree…</T>
   ) : compacting ? (
@@ -364,9 +374,26 @@ export function WorkingTimelineRow({ row }: { row: Extract<TimelineRow, { kind: 
   ) : (
     <T>Working...</T>
   );
+  const toolCallCount = activeTurnSummary?.toolCallCount ?? 0;
+  const showTaskPill =
+    !isPreparingWorktree && !compacting && taskProgress != null && taskProgress.total > 0;
+  const taskRatio = showTaskPill
+    ? Math.max(0, Math.min(1, taskProgress.completed / taskProgress.total))
+    : 0;
   return (
-    <div className="border-b border-border/60 pb-2 pt-1">
-      <div className="flex h-6 min-w-0 items-baseline gap-2 px-1 text-sm leading-relaxed text-muted-foreground tabular-nums">
+    <div
+      className="border-b border-border/60 pb-2 pt-1"
+      data-working-row="true"
+      data-working-phase={phase}
+    >
+      <div className="flex h-6 min-w-0 items-center gap-2 px-1 text-sm leading-relaxed text-muted-foreground tabular-nums">
+        <span
+          aria-hidden="true"
+          data-working-indicator="true"
+          className="relative flex size-2 shrink-0 items-center justify-center"
+        >
+          <span className="size-1.5 rounded-full bg-info motion-safe:animate-pulse" />
+        </span>
         <span
           ref={shimmer ? observeVisibleAnimation : undefined}
           className="relative shrink-0 overflow-hidden whitespace-nowrap"
@@ -374,6 +401,40 @@ export function WorkingTimelineRow({ row }: { row: Extract<TimelineRow, { kind: 
           {label}
           {shimmer ? <ActivityShimmerOverlay>{label}</ActivityShimmerOverlay> : null}
         </span>
+        {!isPreparingWorktree && !compacting && (toolCallCount > 0 || showTaskPill) ? (
+          <span
+            aria-hidden="true"
+            data-working-summary="true"
+            className="inline-flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground/80"
+          >
+            {toolCallCount > 0 ? (
+              <span
+                data-working-step-count={toolCallCount}
+                className="inline-flex shrink-0 items-center gap-1 rounded-full bg-muted/65 px-1.5 py-0.5 font-medium tabular-nums"
+              >
+                <WrenchIcon className="size-2.5 shrink-0 opacity-75" />
+                <span>{toolCallCount}</span>
+              </span>
+            ) : null}
+            {showTaskPill ? (
+              <span
+                data-working-task-pill="true"
+                data-working-task-step={taskProgress.activeStepText ?? undefined}
+                className="inline-flex min-w-0 items-center gap-1.5 rounded-full bg-muted/65 px-1.5 py-0.5 font-medium tabular-nums"
+              >
+                <span className="h-1 w-5 shrink-0 overflow-hidden rounded-full bg-border">
+                  <span
+                    className="block h-full origin-left rounded-full bg-info transition-transform duration-200 motion-reduce:transition-none"
+                    style={{ transform: `scaleX(${taskRatio})` }}
+                  />
+                </span>
+                <span>
+                  {taskProgress.completed}/{taskProgress.total}
+                </span>
+              </span>
+            ) : null}
+          </span>
+        ) : null}
         {backgroundWorktreeSetup ? (
           <BackgroundWorktreeSetupChip snapshot={backgroundWorktreeSetup} />
         ) : null}
@@ -482,6 +543,7 @@ function LiveActivityRow({
   failed = false,
   active = false,
   shimmer = false,
+  trailingBadge,
 }: {
   label: ReactNode;
   iconName?: WorkEntryIconName;
@@ -489,6 +551,7 @@ function LiveActivityRow({
   failed?: boolean;
   active?: boolean;
   shimmer?: boolean;
+  trailingBadge?: ReactNode;
 }) {
   const animated = active && !failed;
   const showShimmer = animated && shimmer;
@@ -504,10 +567,17 @@ function LiveActivityRow({
         failed={failed}
         announceFailure={failed}
         active={animated && !shimmer}
+        trailingBadge={trailingBadge}
       />
       {showShimmer ? (
         <ActivityShimmerOverlay>
-          <LiveActivityContent label={label} iconName={iconName} toolIcon={toolIcon} highlighted />
+          <LiveActivityContent
+            label={label}
+            iconName={iconName}
+            toolIcon={toolIcon}
+            highlighted
+            trailingBadge={trailingBadge}
+          />
         </ActivityShimmerOverlay>
       ) : null}
     </div>
@@ -522,6 +592,7 @@ function LiveActivityContent({
   announceFailure = false,
   active = false,
   highlighted = false,
+  trailingBadge,
 }: {
   label: ReactNode;
   iconName: WorkEntryIconName | undefined;
@@ -530,6 +601,7 @@ function LiveActivityContent({
   announceFailure?: boolean;
   active?: boolean;
   highlighted?: boolean;
+  trailingBadge?: ReactNode;
 }) {
   const gt = useGT();
   const showTrailingFailureMark =
@@ -572,8 +644,13 @@ function LiveActivityContent({
         </span>
       }
       trailing={
-        showTrailingFailureMark ? (
-          <XIcon aria-hidden className={cn("size-3 shrink-0", failedToolIconClassName)} />
+        showTrailingFailureMark || trailingBadge ? (
+          <span className="inline-flex shrink-0 items-center gap-1">
+            {showTrailingFailureMark ? (
+              <XIcon aria-hidden className={cn("size-3 shrink-0", failedToolIconClassName)} />
+            ) : null}
+            {trailingBadge}
+          </span>
         ) : null
       }
     />
@@ -603,10 +680,28 @@ export function LiveWorkEntryTimelineRow({
       ? liveThoughtLine((row.thought.detail ?? "").slice(0, THOUGHT_PREVIEW_SOURCE_MAX_LENGTH))
       : "";
   const thoughtIsStatus = thoughtLine !== "" && row.entry === row.thought;
+  const groupCount = row.groupedEntries.length;
+  const groupCountBadge =
+    groupCount > 1 ? (
+      <span
+        aria-hidden="true"
+        data-live-work-group-count={groupCount}
+        className="inline-flex items-center gap-0.5 rounded-full bg-muted/65 px-1.5 py-0.5 text-2xs font-medium text-muted-foreground tabular-nums transition-colors group-hover/live-work:bg-muted group-hover/live-work:text-foreground"
+      >
+        <span>{groupCount}</span>
+        <ChevronRightIcon
+          className={cn(
+            "size-2.5 shrink-0 transition-transform duration-200 ease-(--ease-spring-snappy) motion-reduce:transition-none rtl:-scale-x-100",
+            row.expanded && "rotate-90 rtl:-rotate-90",
+          )}
+        />
+      </span>
+    ) : null;
 
   return (
     <button
       type="button"
+      data-live-execution-slot={row.active ? "active" : "settled"}
       className={cn(
         "group/live-work flex w-full max-w-full cursor-pointer rounded-md text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/70",
         thoughtLine ? "flex-col items-start" : "min-h-6 items-center",
@@ -681,6 +776,7 @@ export function LiveWorkEntryTimelineRow({
         toolIcon={row.entry.toolIcon ?? row.entry.toolSource?.icon}
         failed={failed}
         active={row.active}
+        trailingBadge={groupCountBadge}
       />
     </button>
   );

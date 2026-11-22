@@ -2,6 +2,10 @@ import { flushSync } from "react-dom";
 
 export const DRAFT_HERO_TRANSITION_ANIMATION_ID = "t3-draft-hero-transition";
 export const DRAFT_HERO_TRANSITION_EASING = "cubic-bezier(0.22, 1, 0.36, 1)";
+export const DRAFT_HERO_MESSAGE_ENTER_SCALE = 0.985;
+export const DRAFT_HERO_MESSAGE_ENTER_OFFSET_PX = 14;
+export const DRAFT_HERO_AGENT_IGNITE_OFFSET_PX = 10;
+export const DRAFT_HERO_AGENT_IGNITE_DELAY_RATIO = 0.28;
 export const MOBILE_COMPOSER_VIEW_TRANSITION_NAME = "t3-mobile-composer";
 export const MOBILE_DRAFT_HEADLINE_VIEW_TRANSITION_NAME = "t3-mobile-draft-headline";
 const MOBILE_COMPOSER_TRANSITION_DURATION_PROPERTY = "--mobile-composer-transition-duration";

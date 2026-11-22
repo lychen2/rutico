@@ -3634,6 +3634,15 @@ export default function ChatView(props: ChatViewProps) {
                     activePendingApproval?.requestId ?? activePendingUserInput?.requestId ?? null
                   }
                   activeTurnStartedAt={activeWorkStartedAt}
+                  taskProgress={
+                    hasOmpTodo && ompTodo
+                      ? {
+                          completed: ompTodo.completed,
+                          total: ompTodo.steps.length,
+                          activeStepText: ompTodo.current?.title ?? null,
+                        }
+                      : null
+                  }
                   providerStartingLabel={
                     activeActivityRun?.providerStartingLabelMsg
                       ? messages(activeActivityRun.providerStartingLabelMsg)

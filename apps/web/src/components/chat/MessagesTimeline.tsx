@@ -56,13 +56,17 @@ import {
 import { type PendingApproval, type TimelineEntry } from "../../session-logic";
 import type { CodexArtifactTemplate } from "@t3tools/shared/codexArtifactTemplates";
 import { type ChatFileAttachment, type TurnDiffSummary } from "../../types";
+import { formatDiffCount } from "@t3tools/client-runtime/diff-count";
 import {
   ArrowRightIcon,
   BotIcon,
+  CheckCircle2Icon,
   ChevronRightIcon,
   CircleAlertIcon,
+  CircleDotIcon,
   MessagesSquareIcon,
   Minimize2Icon,
+  WrenchIcon,
 } from "lucide-react";
 import { Skeleton } from "../ui/skeleton";
 import { ExpandedImagePreview } from "./ExpandedImagePreview";
@@ -89,8 +93,11 @@ import {
   TIMELINE_MINIMAP_TARGET_OFFSET,
   timelineTurnFoldRunIdsByEntryId,
   liveAnswerPreview,
+  deriveActiveTurnExecutionSummary,
+  deriveTurnFoldStatsByRunId,
   type MessagesTimelineRow,
   type TimelineLatestRun,
+  type TimelineTaskProgressSummary,
 } from "./MessagesTimeline.logic";
 import { type ThreadFindMatch } from "./threadFind";
 import { useThreadFindNavigation } from "./useThreadFindNavigation";
@@ -238,6 +245,8 @@ interface MessagesTimelineProps {
   syncing?: boolean;
   runlessWorkActive?: boolean;
   activeTurnStartedAt?: string | null;
+  /** Optional task progress summary linked from the thread's active checklist. */
+  taskProgress?: TimelineTaskProgressSummary | null;
   /** Replaces "Thinking" while the active run's provider has not started a turn. */
   providerStartingLabel?: string | null;
   worktreeSetup?: WorktreeSetupSnapshot | null;
@@ -360,6 +369,7 @@ const ConversationTimeline = memo(function ConversationTimeline({
   syncing = false,
   runlessWorkActive = false,
   activeTurnStartedAt = null,
+  taskProgress = null,
   providerStartingLabel = null,
   worktreeSetup = null,
   footer = null,
@@ -1178,6 +1188,24 @@ const ConversationTimeline = memo(function ConversationTimeline({
     latestRun?.startedAt != null
       ? worktreeSetup
       : null;
+  const activeTurnSummary = deriveActiveTurnExecutionSummary({
+    timelineEntries,
+    latestRun,
+    runningRunId,
+    isWorking,
+    runlessWorkActive,
+    workspaceRoot,
+  });
+  const turnFoldStatsByRunId = deriveTurnFoldStatsByRunId({
+    timelineEntries,
+    latestRun,
+    isWorking,
+    runlessWorkActive,
+    runningRunId,
+    toolCallVisibility,
+    revealedMessageId,
+    turnDiffSummaries,
+  });
   const activityState: TimelineRowActivityState = {
     isWorking,
     isCompacting: compactionAwaitingRow,
@@ -1189,6 +1217,9 @@ const ConversationTimeline = memo(function ConversationTimeline({
     latestRunId: latestRun?.runId ?? null,
     liveAnswerPreview:
       isWorking && toolCallVisibility === "zen" ? liveAnswerPreview(timelineEntries) : null,
+    activeTurnSummary,
+    taskProgress,
+    turnFoldStatsByRunId,
   };
   // Mounted in both the empty and filled timeline so a thread's first turn
   // starts from a baseline instead of a fresh, silent region.
@@ -1860,13 +1891,21 @@ function WorkHistorySkeleton() {
 
 function TurnFoldTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "turn-fold" }> }) {
   const ctx = use(TimelineRowCtx);
+  const { turnFoldStatsByRunId } = use(TimelineRowActivityCtx);
+  const stats = turnFoldStatsByRunId?.get(row.runId);
   const { loading, error, toggle } = useDeferredWorkLoading(row, () =>
     ctx.onToggleTurnFold(row.runId),
   );
+  const showSettledSummary =
+    !row.expanded && stats !== undefined && (stats.toolCallCount > 0 || stats.changedFileCount > 0);
 
   return (
-    <div className="group/timeline-row border-b border-border/60 pb-2 pe-0.5 pt-1">
-      <div className="relative flex items-center gap-1">
+    <div
+      className="group/timeline-row border-b border-border/60 pb-2 pe-0.5 pt-1"
+      data-turn-fold-row="true"
+      data-turn-fold-state={stats?.interrupted ? "interrupted" : "completed"}
+    >
+      <div className="relative flex items-center gap-1.5">
         <button
           type="button"
           aria-expanded={row.expanded}
@@ -1875,6 +1914,19 @@ function TurnFoldTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "turn-
           className="group/fold flex cursor-pointer select-none items-center gap-1 rounded-md px-1 text-sm leading-relaxed text-muted-foreground tabular-nums transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/70"
           aria-busy={loading}
         >
+          {stats?.interrupted ? (
+            <CircleDotIcon
+              aria-hidden="true"
+              data-turn-fold-icon="interrupted"
+              className="size-3.5 shrink-0 text-warning-foreground/80 transition-colors group-hover/fold:text-warning-foreground"
+            />
+          ) : (
+            <CheckCircle2Icon
+              aria-hidden="true"
+              data-turn-fold-icon="completed"
+              className="size-3.5 shrink-0 text-success-foreground/80 transition-colors group-hover/fold:text-success-foreground"
+            />
+          )}
           <span>
             {row.label}
             {error ? ` · ${error}` : ""}
@@ -1884,6 +1936,43 @@ function TurnFoldTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "turn-
             className="size-3.5 shrink-0 transition-transform duration-200 ease-(--ease-spring-snappy) group-aria-expanded/fold:rotate-90 motion-reduce:transition-none rtl:-scale-x-100 rtl:group-aria-expanded/fold:-rotate-90"
           />
         </button>
+        {showSettledSummary ? (
+          <span
+            aria-hidden="true"
+            data-turn-fold-summary="true"
+            onClick={toggle}
+            className="inline-flex cursor-pointer select-none items-center gap-1.5 text-xs text-muted-foreground/80 tabular-nums transition-colors hover:text-foreground"
+          >
+            {stats.toolCallCount > 0 ? (
+              <span
+                data-turn-fold-tools={stats.toolCallCount}
+                className="inline-flex items-center gap-1 rounded-full bg-muted/60 px-1.5 py-0.5 font-medium"
+              >
+                <WrenchIcon className="size-2.5 shrink-0 opacity-75" />
+                <span>{stats.toolCallCount}</span>
+              </span>
+            ) : null}
+            {stats.changedFileCount > 0 ? (
+              <span
+                data-turn-fold-files={stats.changedFileCount}
+                className="inline-flex items-center gap-1 rounded-full bg-muted/60 px-1.5 py-0.5 font-mono text-2xs"
+              >
+                {stats.additions > 0 || stats.deletions > 0 ? (
+                  <>
+                    <span className="text-diff-addition-foreground">
+                      +{formatDiffCount(stats.additions)}
+                    </span>
+                    <span className="text-diff-deletion-foreground">
+                      −{formatDiffCount(stats.deletions)}
+                    </span>
+                  </>
+                ) : (
+                  <span>{stats.changedFileCount}f</span>
+                )}
+              </span>
+            ) : null}
+          </span>
+        ) : null}
         <TimelineRowTimestamp
           createdAt={row.createdAt}
           timestampFormat={ctx.timestampFormat}

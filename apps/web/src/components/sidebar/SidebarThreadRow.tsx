@@ -1019,8 +1019,24 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
     }
   };
 
+  const takeoverCue =
+    status === "approval" || status === "input" || status === "request"
+      ? "attention"
+      : status === "failed" || status === "limited"
+        ? "failed"
+        : isWoke
+          ? "woke"
+          : isUnread
+            ? "done"
+            : null;
   const rowSurfaceClassName = cn(
     "group/sidebar-row relative w-full cursor-pointer overflow-hidden rounded-md text-left outline-none select-none transition-[background-color,color,opacity,box-shadow] duration-150 ease-out motion-reduce:transition-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
+    takeoverCue !== null &&
+      "before:pointer-events-none before:absolute before:inset-y-1.5 before:start-0 before:w-0.5 before:rounded-full",
+    takeoverCue === "attention" && "before:bg-warning-foreground/80",
+    takeoverCue === "failed" && "before:bg-error-foreground/80",
+    takeoverCue === "woke" && "before:bg-warning-foreground/70",
+    takeoverCue === "done" && "before:bg-success-foreground/75",
     variantAction === "unsettle" &&
       !props.isActive &&
       "[&:not(:hover):not(:focus-within)_*:not(.live-activity-focus_*)]:text-secondary-label",
@@ -1358,6 +1374,9 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
                 tabIndex={0}
                 data-sidebar-row={threadKey}
                 data-sidebar-parent={props.navigationParent}
+                data-sidebar-status={status}
+                data-sidebar-takeover={takeoverCue ?? undefined}
+                data-sidebar-unread={isUnread ? "true" : undefined}
                 aria-label={accessibility.label}
                 aria-current={accessibility.current}
                 data-testid={inFolder ? "sidebar-row-folder" : "sidebar-row-slim"}
@@ -1564,6 +1583,9 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
               tabIndex={0}
               data-sidebar-row={threadKey}
               data-sidebar-parent={props.navigationParent}
+              data-sidebar-status={status}
+              data-sidebar-takeover={takeoverCue ?? undefined}
+              data-sidebar-unread={isUnread ? "true" : undefined}
               aria-label={accessibility.label}
               aria-current={accessibility.current}
               data-testid="sidebar-row-card"
