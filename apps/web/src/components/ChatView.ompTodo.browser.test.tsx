@@ -50,7 +50,7 @@ const driver = ProviderDriverKind.make("omp");
 const provider = { ...CODEX_PROVIDER, instanceId, driver };
 const modelSelection = { instanceId, model: "gpt-5.4" };
 
-it("keeps one current OMP checklist in the timeline footer and isolates disclosure by thread", async () => {
+it("keeps one current OMP checklist above the composer and isolates disclosure by thread", async () => {
   const thread = threadWithHistory("omp-todo-footer", 1, modelSelection);
   const other = threadWithHistory("omp-todo-neighbor", 1, modelSelection);
   const at = DateTime.makeUnsafe("2026-03-17T19:12:28.000Z");
@@ -171,9 +171,16 @@ it("keeps one current OMP checklist in the timeline footer and isolates disclosu
   await expect.element(trigger).toHaveAttribute("aria-expanded", "true");
   await expect.element(trigger.getByText(/校对仪表盘/)).toBeVisible();
   await expect.element(trigger.getByText("0/3", { exact: true })).toBeVisible();
-  expect(checklist.element().closest('[data-chat-composer-overlay="true"]')).toBeNull();
-  expect(checklist.element().closest(".messages-timeline-scroll")).not.toBeNull();
+  expect(checklist.element().closest('[data-chat-composer-stack="true"]')).not.toBeNull();
+  expect(checklist.element().closest(".messages-timeline-scroll")).toBeNull();
   await expect.element(steps).toBeVisible();
+  const capsuleBounds = trigger.element().getBoundingClientRect();
+  const laneBounds = checklist.element().getBoundingClientRect();
+  expect(steps.element().getBoundingClientRect().bottom).toBeLessThanOrEqual(capsuleBounds.top);
+  expect(capsuleBounds.width).toBeLessThan(laneBounds.width);
+  expect(
+    Math.abs(capsuleBounds.left + capsuleBounds.right - laneBounds.left - laneBounds.right),
+  ).toBeLessThan(2);
   await expect.element(steps.getByText("检查桌面布局", { exact: true })).toBeVisible();
   await expect.element(steps.getByText("等待验收", { exact: true })).toBeVisible();
   await expect.element(steps.getByText("已阻塞", { exact: true })).toBeVisible();

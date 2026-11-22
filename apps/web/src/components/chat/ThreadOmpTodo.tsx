@@ -164,6 +164,7 @@ export function ThreadOmpTodo({
     }
   });
   const listId = useId();
+  const triggerRef = useRef<HTMLButtonElement>(null);
   const label = gt("To-do list");
   const statusLabels = {
     completed: gt("Completed"),
@@ -172,8 +173,7 @@ export function ThreadOmpTodo({
     pending: gt("Pending"),
   };
   const status = current ? statusLabels[current.status] : statusLabels.completed;
-  const title =
-    current?.title ?? gt("{completed}/{total} done", { completed, total: steps.length });
+  const title = current?.title ?? statusLabels.completed;
   const titleRef = useRef<HTMLSpanElement>(null);
   const previousTitle = useRef(title);
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Animate the changed step title once after DOM commit.
@@ -206,9 +206,10 @@ export function ThreadOmpTodo({
   }, [done, storageKey]);
 
   return (
-    <div className="chat-content-lane pb-3">
+    <div className="mx-auto w-full max-w-(--chat-content-max-width) pb-1">
       <section aria-label={label} data-omp-todo data-mode={mode}>
         <button
+          ref={triggerRef}
           type="button"
           data-omp-todo-bar
           aria-label={`${label} · ${title} · ${status} · ${completed}/${steps.length}`}
@@ -225,7 +226,6 @@ export function ThreadOmpTodo({
               {title}
             </span>
           </span>
-          <span data-omp-todo-pill>{status}</span>
           <span data-omp-todo-segments aria-hidden>
             {steps.map((step) => (
               <i
@@ -249,6 +249,22 @@ export function ThreadOmpTodo({
           aria-hidden={!expanded}
         >
           <div>
+            <div className="flex items-center gap-2 border-b border-border px-3 py-2">
+              <strong>{label}</strong>
+              <span data-omp-todo-count>
+                {completed}/{steps.length}
+              </span>
+              <button
+                type="button"
+                className="ms-auto rounded-full bg-secondary px-2 py-1"
+                onClick={() => {
+                  triggerRef.current?.click();
+                  triggerRef.current?.focus();
+                }}
+              >
+                {gt("Collapse")}
+              </button>
+            </div>
             <ol data-omp-todo-list>
               {steps.map((step) => (
                 <TodoStepRow

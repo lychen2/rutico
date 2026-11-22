@@ -133,16 +133,7 @@ export function ReadOnlyThreadTimeline(props: {
             onIsAtEndChange={follow.onIsAtEndChangeStable}
             onViewportAttach={follow.attachTimelineViewport}
             onFooterGrow={follow.onTimelineFooterGrowStable}
-            footer={
-              todo.steps.length === 0 ? (
-                footer
-              ) : (
-                <>
-                  <ThreadOmpTodo key={threadKey} threadKey={threadKey} progress={todo} />
-                  {footer}
-                </>
-              )
-            }
+            footer={footer}
           />
         </SideThreadsOpenContext>
         {follow.showScrollToBottom ? (
@@ -153,6 +144,9 @@ export function ReadOnlyThreadTimeline(props: {
           />
         ) : null}
       </div>
+      {todo.steps.length > 0 ? (
+        <ThreadOmpTodo key={threadKey} threadKey={threadKey} progress={todo} />
+      ) : null}
       {props.children({ scrollToEnd: () => follow.scrollToEnd(true) })}
     </>
   );

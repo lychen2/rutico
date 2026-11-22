@@ -1,26 +1,31 @@
 [data-omp-todo] {
+  position: relative;
+  display: flex;
+  justify-content: center;
   min-width: 0;
-  border: 1px solid var(--border);
-  border-radius: 14px;
-  background: var(--card);
   color: var(--foreground);
-  overflow: hidden;
+  --todo-surface: oklch(
+    from var(--app-theme-surface-raised, var(--surface-raised, var(--card))) l calc(c * 0.7) h
+  );
   font-size: 12px;
 }
 [data-omp-todo-bar] {
   display: flex;
   align-items: center;
-  width: 100%;
+  width: fit-content;
+  max-width: 100%;
+  border: 1px solid var(--border);
+  background: var(--todo-surface);
   min-width: 0;
   gap: 9px;
   padding: 11px 14px;
   min-height: 40px;
-  border-radius: inherit;
+  border-radius: 999px;
   text-align: start;
   cursor: pointer;
 }
 [data-omp-todo-title] {
-  flex: 1;
+  flex: 0 1 auto;
   min-width: 0;
   overflow: hidden;
 }
@@ -85,7 +90,7 @@
 [data-omp-todo-segments] {
   display: flex;
   gap: 3px;
-  width: 84px;
+  width: 56px;
   min-width: 0;
   flex-shrink: 1;
   overflow: hidden;
@@ -111,6 +116,15 @@
   white-space: nowrap;
 }
 [data-omp-todo-body] {
+  position: absolute;
+  z-index: 1;
+  bottom: calc(100% + 6px);
+  width: min(100%, 36rem);
+  border-radius: 16px;
+  background: var(--todo-surface);
+  box-shadow:
+    0 0 0 1px var(--border),
+    0 6px 24px rgb(0 0 0 / 16%);
   display: grid;
   grid-template-rows: 0fr;
   visibility: hidden;

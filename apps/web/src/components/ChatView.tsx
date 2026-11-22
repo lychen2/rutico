@@ -3308,20 +3308,12 @@ export default function ChatView(props: ChatViewProps) {
         )
       : null;
   const timelineFooter =
-    !hasOmpTodo &&
     pendingHandoff === null &&
     !hasThreadNow &&
     threadStatusLine === null &&
     pendingGuestMessageCount === 0 &&
     !hasQueuedTurns ? null : (
       <>
-        {hasOmpTodo ? (
-          <ThreadOmpTodo
-            key={`todo:${routeThreadKey}`}
-            threadKey={routeThreadKey}
-            progress={ompTodo}
-          />
-        ) : null}
         {pendingHandoff === null ? null : (
           <div className="chat-content-lane">
             <HandoffRow
@@ -3745,6 +3737,13 @@ export default function ChatView(props: ChatViewProps) {
                   data-chat-composer-stack="true"
                   className="group/composer-stack pointer-events-auto relative z-10 mx-auto w-full max-w-(--chat-content-max-width)"
                 >
+                  {hasOmpTodo ? (
+                    <ThreadOmpTodo
+                      key={routeThreadKey}
+                      threadKey={routeThreadKey}
+                      progress={ompTodo}
+                    />
+                  ) : null}
                   {isDraftHeroState ? (
                     <div className="absolute inset-x-0 bottom-full">
                       <div
