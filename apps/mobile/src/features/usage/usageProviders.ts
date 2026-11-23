@@ -25,7 +25,7 @@ export const PROVIDER_LABEL: Record<UsageProviderKind, string> = {
   cursor: "Cursor",
   opencode: "OpenCode",
   antigravity: "Antigravity",
-  pi: "Pi",
+  pi: "OMP",
   muse: "Muse Code",
 };
 

@@ -26,7 +26,7 @@ import {
 import { formatUsageContractMismatch, usageSourceMessages } from "@t3tools/shared/usageFormatCopy";
 import { msg, T, useGT, useLocale, useMessages, Var } from "gt-react-native";
 import { use, useRef, useState, type ReactNode } from "react";
-import { View } from "react-native";
+import { Pressable, View } from "react-native";
 import { RefreshControl } from "../../components/ui/RefreshControl";
 import Animated, { FadeIn, ReduceMotion } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -394,6 +394,7 @@ function UsageScreen(props: {
                           isPast24Hours={isPast24Hours}
                           columns={width >= 900 ? 6 : wide ? 3 : 2}
                         />
+                        <ProjectsSection merged={merged} metric={metric} />
                         <CostSection merged={merged} wide={wide} />
                         <ModelsSection merged={merged} metric={metric} columns={wide ? 2 : 1} />
                       </UsageUpdating>
@@ -467,11 +468,26 @@ function ChartCard(props: {
   const { merged, metric } = props;
   const colors = useProviderColors();
   const locale = useLocale();
+  const isZh = locale.toLowerCase().startsWith("zh");
   const hasActivity = props.daily.some((period) => period.totalTokens > 0);
   const [fillHeight, setFillHeight] = useState(0);
+  const [selectedDay, setSelectedDay] = useState<string | null>(null);
+  const activeSelectedDay =
+    selectedDay !== null && props.days.includes(selectedDay) ? selectedDay : null;
+  const selectedTotals =
+    activeSelectedDay === null
+      ? null
+      : (props.daily.find((period) => period.day === activeSelectedDay) ?? null);
   const height = props.fill ? Math.max(fillHeight, props.height) : props.height;
   const chart = hasActivity ? (
-    <UsageDailyChart days={props.days} daily={props.daily} metric={metric} height={height} />
+    <UsageDailyChart
+      days={props.days}
+      daily={props.daily}
+      metric={metric}
+      height={height}
+      selectedDay={activeSelectedDay}
+      onSelectDay={setSelectedDay}
+    />
   ) : (
     <View style={{ height }} className="items-center justify-center">
       <Text className="text-base text-foreground-muted">
@@ -484,11 +500,39 @@ function ChartCard(props: {
     <View
       className={`gap-4 rounded-[24px] border-continuous bg-grouped-card p-4${props.fill ? " flex-1" : ""}`}
     >
-      {props.title ? (
-        <Text className="text-sm font-t3-medium text-foreground">{props.title}</Text>
-      ) : (
-        <UsageSummary merged={merged} metric={metric} />
-      )}
+      <View className="flex-row items-start justify-between gap-2">
+        <View className="min-w-0 flex-1">
+          {props.title ? (
+            <Text className="text-sm font-t3-medium text-foreground">{props.title}</Text>
+          ) : (
+            <UsageSummary merged={merged} metric={metric} />
+          )}
+        </View>
+        {activeSelectedDay !== null ? (
+          <Pressable
+            onPress={() => setSelectedDay(null)}
+            className="rounded-full bg-subtle px-2.5 py-1"
+          >
+            <Text className="text-xs font-t3-medium tabular-nums text-foreground">
+              {props.isPast24Hours
+                ? usageAxisHourLabel(activeSelectedDay, locale, props.timeZone)
+                : usageAxisDayLabel(activeSelectedDay, locale)}
+              {" · "}
+              {selectedTotals
+                ? metric === "cost"
+                  ? formatUsd(selectedTotals.costUsd)
+                  : formatTokens(selectedTotals.totalTokens)
+                : metric === "cost"
+                  ? formatUsd(0)
+                  : "0"}
+            </Text>
+          </Pressable>
+        ) : hasActivity ? (
+          <Text className="text-xs text-foreground-tertiary">
+            {isZh ? "点击柱条看明细" : "Tap bar for detail"}
+          </Text>
+        ) : null}
+      </View>
 
       {props.fill ? (
         // Absolute so the measured slot can shrink again when the neighbour gets shorter.
@@ -537,15 +581,43 @@ function ChartCard(props: {
 function UsageSummary(props: { readonly merged: MergedUsage; readonly metric: UsageChartMetric }) {
   const { merged, metric } = props;
   const gt = useGT();
+  const locale = useLocale();
+  const isZh = locale.toLowerCase().startsWith("zh");
+  const cacheSavingsUsd = merged.costQuality.cacheSavingsUsd;
+  const tokPerSec = merged.throughput.total.tokensPerSecond;
   return (
-    <View className="gap-0.5">
+    <View className="gap-1.5">
       <Text className="text-sm text-foreground-muted">
         {metric === "cost" ? gt("Raw token cost") : gt("Processed tokens")}
       </Text>
       <Text className="text-4xl font-t3-bold tabular-nums text-foreground">
         {metric === "cost" ? `${formatUsd(merged.costUsd)}*` : formatTokens(merged.totalTokens)}
       </Text>
-      <Text className="text-sm text-foreground-muted">
+      <View className="flex-row flex-wrap items-center gap-1.5">
+        {cacheSavingsUsd >= 0.01 ? (
+          <View
+            className="rounded-full px-2 py-0.5"
+            style={{ backgroundColor: "rgba(48, 209, 88, 0.14)" }}
+          >
+            <Text className="text-xs font-t3-medium tabular-nums" style={{ color: "#1d8a3f" }}>
+              {isZh
+                ? `缓存省下 ${formatUsd(cacheSavingsUsd)}`
+                : `Saved ${formatUsd(cacheSavingsUsd)}`}
+            </Text>
+          </View>
+        ) : null}
+        {tokPerSec !== null ? (
+          <View
+            className="rounded-full px-2 py-0.5"
+            style={{ backgroundColor: "rgba(10, 132, 255, 0.14)" }}
+          >
+            <Text className="text-xs font-t3-medium tabular-nums" style={{ color: "#007aff" }}>
+              {`${tokPerSec.toFixed(1)} tok/s`}
+            </Text>
+          </View>
+        ) : null}
+      </View>
+      <Text className="text-xs text-foreground-muted">
         {metric === "cost"
           ? gt("* if billed at full API rate")
           : gt("{count, plural, other {Across {sessions} sessions}}", {
@@ -572,11 +644,35 @@ function ProviderSection(props: {
   const ordered = [...merged.providers].sort((a, b) =>
     metric === "cost" ? b.costUsd - a.costUsd : b.totalTokens - a.totalTokens,
   );
+  const throughputByProvider = new Map(
+    merged.throughput.byProvider.map((entry) => [entry.provider, entry.tokensPerSecond]),
+  );
 
   return (
     <SettingsSection title={gt("Providers")}>
+      {ordered.length > 1 ? (
+        <View className="px-4 pt-4 pb-1">
+          <View className="h-2 flex-row gap-0.5 overflow-hidden rounded-full">
+            {ordered.map((provider) => {
+              const share = metric === "cost" ? provider.costShare : provider.tokenShare;
+              if (share <= 0) return null;
+              return (
+                <View
+                  key={provider.provider}
+                  className="h-full rounded-sm"
+                  style={{
+                    flex: Math.max(0.02, share),
+                    backgroundColor: colors[provider.provider],
+                  }}
+                />
+              );
+            })}
+          </View>
+        </View>
+      ) : null}
       {ordered.map((provider, index) => {
         const share = metric === "cost" ? provider.costShare : provider.tokenShare;
+        const speed = throughputByProvider.get(provider.provider) ?? null;
         return (
           <View
             key={provider.provider}
@@ -593,17 +689,24 @@ function ProviderSection(props: {
                 />
                 <Text
                   className={
-                    props.compact ? "text-base text-foreground" : "text-lg text-foreground"
+                    props.compact
+                      ? "text-base text-foreground"
+                      : "text-lg font-t3-medium text-foreground"
                   }
                 >
                   {PROVIDER_LABEL[provider.provider]}
                 </Text>
+                {speed !== null ? (
+                  <Text className="text-xs tabular-nums text-foreground-tertiary">
+                    {`${speed.toFixed(1)} tok/s`}
+                  </Text>
+                ) : null}
               </View>
               <Text
                 className={
                   props.compact
-                    ? "text-base tabular-nums text-foreground"
-                    : "text-lg tabular-nums text-foreground"
+                    ? "text-base font-t3-medium tabular-nums text-foreground"
+                    : "text-lg font-t3-medium tabular-nums text-foreground"
                 }
               >
                 {metric === "cost"
@@ -612,12 +715,15 @@ function ProviderSection(props: {
               </Text>
             </View>
             {props.compact ? null : (
-              <View className="h-1 flex-row overflow-hidden rounded-full bg-subtle">
+              <View className="h-1.5 flex-row overflow-hidden rounded-full bg-subtle">
                 <View
                   className="h-full rounded-full"
-                  style={{ flex: share, backgroundColor: colors[provider.provider] }}
+                  style={{
+                    flex: Math.max(0.01, share),
+                    backgroundColor: colors[provider.provider],
+                  }}
                 />
-                <View style={{ flex: 1 - share }} />
+                <View style={{ flex: Math.max(0, 1 - share) }} />
               </View>
             )}
             <Text className="text-sm text-foreground-muted">
@@ -630,6 +736,78 @@ function ProviderSection(props: {
                     share: formatPercent(share),
                     cost: formatUsd(provider.costUsd),
                   })}
+            </Text>
+          </View>
+        );
+      })}
+    </SettingsSection>
+  );
+}
+
+function ProjectsSection(props: {
+  readonly merged: MergedUsage;
+  readonly metric: UsageChartMetric;
+}) {
+  const { merged, metric } = props;
+  const locale = useLocale();
+  const isZh = locale.toLowerCase().startsWith("zh");
+  if (merged.projects.length === 0) return null;
+
+  const ordered = [...merged.projects]
+    .sort((a, b) =>
+      metric === "cost"
+        ? b.costUsd - a.costUsd || b.totalTokens - a.totalTokens
+        : b.totalTokens - a.totalTokens || b.costUsd - a.costUsd,
+    )
+    .slice(0, 8);
+  const peak = ordered.reduce(
+    (max, project) => Math.max(max, metric === "cost" ? project.costUsd : project.totalTokens),
+    0,
+  );
+
+  return (
+    <SettingsSection title={isZh ? "按项目" : "By project"}>
+      {ordered.map((project, index) => {
+        const value = metric === "cost" ? project.costUsd : project.totalTokens;
+        const share = metric === "cost" ? project.costShare : project.tokenShare;
+        const fill = peak > 0 ? Math.max(0.03, value / peak) : 0;
+        const title =
+          project.kind === "project"
+            ? project.title
+            : project.kind === "unlinked"
+              ? isZh
+                ? "未归属项目 / 终端会话"
+                : "Unlinked / terminal sessions"
+              : isZh
+                ? "旧版服务端未上报"
+                : "Unreported by server";
+        return (
+          <View
+            key={project.key}
+            className={cn("gap-1.5 p-4", index > 0 && "border-t border-border-subtle")}
+          >
+            <View className="flex-row items-baseline justify-between gap-3">
+              <Text
+                className="min-w-0 flex-1 text-base font-t3-medium text-foreground"
+                numberOfLines={1}
+              >
+                {title}
+              </Text>
+              <Text className="text-base font-t3-medium tabular-nums text-foreground">
+                {metric === "cost" ? formatUsd(project.costUsd) : formatTokens(project.totalTokens)}
+              </Text>
+            </View>
+            <View className="h-1.5 flex-row overflow-hidden rounded-full bg-subtle">
+              <View
+                className="h-full rounded-full"
+                style={{ flex: fill, backgroundColor: "#ff5a1f" }}
+              />
+              <View style={{ flex: Math.max(0, 1 - fill) }} />
+            </View>
+            <Text className="text-xs text-foreground-muted">
+              {metric === "cost"
+                ? `${formatPercent(share)} · ${formatTokens(project.totalTokens)} tokens`
+                : `${formatPercent(share)} · ${formatUsd(project.costUsd)}`}
             </Text>
           </View>
         );
@@ -850,57 +1028,91 @@ function ModelsSection(props: {
       ? b.costUsd - a.costUsd || b.totalTokens - a.totalTokens
       : b.totalTokens - a.totalTokens || b.costUsd - a.costUsd,
   );
+  const peak = ordered.reduce(
+    (max, model) => Math.max(max, metric === "tokens" ? model.totalTokens : model.costUsd),
+    0,
+  );
+  const modelSpeed = new Map(
+    merged.throughput.byModel.map((entry) => [
+      `${entry.provider}:${entry.model}`,
+      entry.tokensPerSecond,
+    ]),
+  );
 
   return (
     <SettingsSection title={gt("By model")}>
       <View className="flex-row flex-wrap">
-        {ordered.map((model, index) => (
-          <View
-            key={`${model.provider}:${model.model}`}
-            className={cn(
-              "flex-row items-center gap-3 p-4",
-              index >= props.columns && "border-t border-border-subtle",
-              index % props.columns === 1 && "border-l border-border-subtle",
-            )}
-            style={{ width: `${100 / props.columns}%` }}
-          >
+        {ordered.map((model, index) => {
+          const speed = modelSpeed.get(`${model.provider}:${model.model}`) ?? null;
+          const barVal = metric === "tokens" ? model.totalTokens : model.costUsd;
+          const fill = peak > 0 ? Math.max(0.02, barVal / peak) : 0;
+          return (
             <View
-              className="size-2.5 shrink-0 rounded-full"
-              style={{ backgroundColor: colors[model.provider] }}
-            />
-            <View className="min-w-0 flex-1 gap-0.5">
-              <Text className="text-base text-foreground" numberOfLines={1}>
-                {model.model}
-              </Text>
-              <Text className="text-sm text-foreground-muted">
-                {metric === "tokens"
-                  ? isModelCostUnknown(model)
-                    ? gt("{share} of tokens · no known rates", {
-                        share: formatPercent(model.tokenShare),
-                      })
-                    : gt("{share} of tokens · {cost}", {
-                        share: formatPercent(model.tokenShare),
-                        cost: formatUsd(model.costUsd),
-                      })
-                  : isModelCostUnknown(model)
-                    ? gt("no known rates · {tokens} tokens", {
-                        tokens: formatTokens(model.totalTokens),
-                      })
-                    : gt("{share} of cost · {tokens} tokens", {
-                        share: formatPercent(model.costShare),
-                        tokens: formatTokens(model.totalTokens),
-                      })}
-              </Text>
+              key={`${model.provider}:${model.model}`}
+              className={cn(
+                "gap-2 p-4",
+                index >= props.columns && "border-t border-border-subtle",
+                index % props.columns === 1 && "border-l border-border-subtle",
+              )}
+              style={{ width: `${100 / props.columns}%` }}
+            >
+              <View className="flex-row items-center gap-3">
+                <View
+                  className="size-2.5 shrink-0 rounded-full"
+                  style={{ backgroundColor: colors[model.provider] }}
+                />
+                <View className="min-w-0 flex-1 gap-0.5">
+                  <View className="flex-row items-baseline gap-1.5">
+                    <Text
+                      className="min-w-0 flex-1 text-base font-t3-medium text-foreground"
+                      numberOfLines={1}
+                    >
+                      {model.model}
+                    </Text>
+                    {speed !== null ? (
+                      <Text className="text-xs tabular-nums text-foreground-tertiary">
+                        {`${speed.toFixed(1)} tok/s`}
+                      </Text>
+                    ) : null}
+                  </View>
+                  <Text className="text-sm text-foreground-muted">
+                    {metric === "tokens"
+                      ? isModelCostUnknown(model)
+                        ? gt("{share} of tokens · no known rates", {
+                            share: formatPercent(model.tokenShare),
+                          })
+                        : gt("{share} of tokens · {cost}", {
+                            share: formatPercent(model.tokenShare),
+                            cost: formatUsd(model.costUsd),
+                          })
+                      : isModelCostUnknown(model)
+                        ? gt("no known rates · {tokens} tokens", {
+                            tokens: formatTokens(model.totalTokens),
+                          })
+                        : gt("{share} of cost · {tokens} tokens", {
+                            share: formatPercent(model.costShare),
+                            tokens: formatTokens(model.totalTokens),
+                          })}
+                  </Text>
+                </View>
+                <Text className="text-base font-t3-medium tabular-nums text-foreground">
+                  {metric === "tokens"
+                    ? formatTokens(model.totalTokens)
+                    : isModelCostUnknown(model)
+                      ? gt("Unpriced", { $context: "model with no known price" })
+                      : formatUsd(model.costUsd)}
+                </Text>
+              </View>
+              <View className="h-1 flex-row overflow-hidden rounded-full bg-subtle">
+                <View
+                  className="h-full rounded-full"
+                  style={{ flex: fill, backgroundColor: colors[model.provider] }}
+                />
+                <View style={{ flex: Math.max(0, 1 - fill) }} />
+              </View>
             </View>
-            <Text className="text-base tabular-nums text-foreground">
-              {metric === "tokens"
-                ? formatTokens(model.totalTokens)
-                : isModelCostUnknown(model)
-                  ? gt("Unpriced", { $context: "model with no known price" })
-                  : formatUsd(model.costUsd)}
-            </Text>
-          </View>
-        ))}
+          );
+        })}
       </View>
     </SettingsSection>
   );
