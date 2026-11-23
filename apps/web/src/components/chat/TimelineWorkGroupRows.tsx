@@ -637,7 +637,8 @@ function LiveActivityContent({
           className={cn(
             "block truncate",
             highlighted && "text-foreground",
-            active && "live-tool-shine",
+            // Static emphasis: the old text sheen cost ~9% CPU for as long as a tool ran.
+            active && "text-foreground",
           )}
         >
           {label}
