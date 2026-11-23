@@ -1,27 +1,16 @@
-// V18 Starship renderer from T3 Stardust v1.2.0 (0d74649582), MIT; see LICENSE.
-import { msg, useGT, useMessages } from "gt-react";
+// V17-B Fusion Core Overclock (聚变核心超频) renderer from T3 Stardust Kit, MIT; see LICENSE.
+import { useGT, useLocale } from "gt-react";
 import { type ReactNode, useEffect, useRef, useState } from "react";
 import { observeResize } from "~/lib/observeResize";
 import { cn } from "~/lib/utils";
 import {
-  type StarshipParticle,
-  type StarshipStoryBeat,
-  createStarshipParticles,
-  drawStarshipScene,
-  prewarmStarshipParticles,
-  sampleStarshipAccent,
-  sampleStarshipFlash,
-  starshipStoryAtRatio,
-  stepStarshipParticles,
-} from "./cosmicSliderScenes";
-
-const storyLabels = {
-  "Pad standby · cryo mist": msg("Pad standby · cryo mist"),
-  "Raptors ignite · clamps open": msg("Raptors ignite · clamps open"),
-  "Max-Q · breaking clouds": msg("Max-Q · breaking clouds"),
-  "Edge of space · vacuum plume": msg("Edge of space · vacuum plume"),
-  "Deep-space warp · full mission": msg("Deep-space warp · full mission"),
-} satisfies Record<StarshipStoryBeat, string>;
+  REACTOR_STORY_ZH,
+  type ReactorStoryBeat,
+  drawReactorScene,
+  reactorStoryAtRatio,
+  sampleReactorAccent,
+  sampleReactorFlash,
+} from "./fusionReactorScene";
 
 // V18 Starship Launch Stack geometry: 50px canvas (+ 3px bevel = 56px track), 50x44 glass lens.
 const TRACK_H = 50;
@@ -78,13 +67,13 @@ export function CosmicEffortSlider(props: {
   readonly children?: ReactNode;
 }) {
   const gt = useGT();
-  const messages = useMessages();
+  const locale = useLocale();
+  const isZh = locale.toLowerCase().startsWith("zh");
   const { options, value, disabled = false, onChange } = props;
   const wellRef = useRef<HTMLDivElement>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const offCanvasRef = useRef<HTMLCanvasElement | null>(null);
-  const particlesRef = useRef<StarshipParticle[] | null>(null);
 
   const foundIndex = options.findIndex((o) => o.id === value);
   const selectedIndex = Math.max(0, foundIndex);
@@ -93,7 +82,7 @@ export function CosmicEffortSlider(props: {
 
   const pointerId = useRef<number | null>(null);
   const [dragging, setDragging] = useState(false);
-  const [dragStory, setDragStory] = useState<StarshipStoryBeat | null>(null);
+  const [dragStory, setDragStory] = useState<ReactorStoryBeat | null>(null);
 
   const stateRef = useRef({
     val: targetRatio,
@@ -140,13 +129,6 @@ export function CosmicEffortSlider(props: {
     const off = offCanvasRef.current;
     const octx = off.getContext("2d");
     if (!octx) return;
-
-    if (!particlesRef.current) {
-      const pool = createStarshipParticles(68);
-      prewarmStarshipParticles(pool, stateRef.current.val);
-      particlesRef.current = pool;
-    }
-    const particles = particlesRef.current;
 
     const motion = window.matchMedia("(prefers-reduced-motion: reduce)");
     const well = wellRef.current;
@@ -255,19 +237,7 @@ export function CosmicEffortSlider(props: {
 
       octx.setTransform(dpr, 0, 0, dpr, 0, 0);
       octx.clearRect(0, 0, cssW, cssH);
-      const { nx, ny, angle } = drawStarshipScene(
-        octx,
-        cssW,
-        cssH,
-        st.val,
-        kx,
-        st.t,
-        particles,
-        st.shock,
-      );
-      if (!reducedMotion && st.hitstop <= 0) {
-        stepStarshipParticles(particles, dt, st.val, nx, ny, angle, cssW);
-      }
+      drawReactorScene(octx, cssW, cssH, st.val, kx, st.t, st.shock);
 
       // Detent dots along the lower rim, one per level.
       for (let i = 0; i < count; i++) {
@@ -281,7 +251,7 @@ export function CosmicEffortSlider(props: {
       // Single-frame upshift exposure flash.
       if (!reducedMotion && st.flash > 0.01) {
         octx.save();
-        octx.fillStyle = sampleStarshipFlash(st.val);
+        octx.fillStyle = sampleReactorFlash(st.val);
         octx.globalAlpha = st.flash;
         octx.fillRect(0, 0, cssW, cssH);
         octx.restore();
@@ -363,7 +333,7 @@ export function CosmicEffortSlider(props: {
       const rg = ctx.createLinearGradient(kx, ky - kh / 2, kx, ky + kh / 2);
       rg.addColorStop(0, "rgba(255,255,255,0.92)");
       rg.addColorStop(0.5, "rgba(255,255,255,0.28)");
-      rg.addColorStop(1, sampleStarshipAccent(st.val));
+      rg.addColorStop(1, sampleReactorAccent(st.val));
       ctx.strokeStyle = rg;
       ctx.lineWidth = st.dragging || st.chroma > 0.2 ? 1.8 : 1.3;
       ctx.beginPath();
@@ -418,7 +388,7 @@ export function CosmicEffortSlider(props: {
     const ratio = Math.abs(raw - detent) < SNAP ? detent : raw;
     const state = stateRef.current;
     state.target = ratio;
-    setDragStory(starshipStoryAtRatio(ratio));
+    setDragStory(reactorStoryAtRatio(ratio));
     if (idx !== state.lastIdx) {
       applyShiftJuice(state, idx, state.lastIdx);
       state.lastIdx = idx;
@@ -428,14 +398,14 @@ export function CosmicEffortSlider(props: {
   };
 
   const activeOpt = foundIndex >= 0 ? options[foundIndex] : undefined;
-  const activeColor = sampleStarshipAccent(targetRatio);
+  const activeColor = sampleReactorAccent(targetRatio);
   const levelLabel = activeOpt?.label ?? props.label;
-  const storyKey = dragStory ?? starshipStoryAtRatio(targetRatio);
+  const storyKey = dragStory ?? reactorStoryAtRatio(targetRatio);
 
   return (
     <div
       data-cosmic-effort-slider
-      data-cosmic-scene="starship"
+      data-cosmic-scene="reactor"
       className={cn(disabled && "opacity-60")}
       onPointerEnter={() => wakeLoopRef.current?.()}
       onFocus={() => wakeLoopRef.current?.()}
@@ -456,7 +426,7 @@ export function CosmicEffortSlider(props: {
       </div>
       <div data-cosmic-sub-row>
         <span key={storyKey} className="truncate" data-cosmic-story={storyKey}>
-          {messages(storyLabels[storyKey])}
+          {isZh ? REACTOR_STORY_ZH[storyKey] : storyKey}
         </span>
         <span className="shrink-0 tabular-nums" data-cosmic-stage>
           {gt("{count, plural, one {# level} other {# levels}}", { count })}
