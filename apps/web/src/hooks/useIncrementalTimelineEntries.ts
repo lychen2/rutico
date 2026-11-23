@@ -6,12 +6,26 @@ import {
   type TimelineEntriesProjection,
 } from "../session-logic";
 
+function sameAttachmentUrls(
+  left?: ReadonlyMap<string, string>,
+  right?: ReadonlyMap<string, string>,
+) {
+  if (left === right) return true;
+  if (!left || !right || left.size !== right.size) return false;
+  for (const [id, url] of left) {
+    if (right.get(id) !== url) return false;
+  }
+  return true;
+}
+
 function sameInput(left: TimelineEntriesInput, right: TimelineEntriesInput): boolean {
   return (
-    left.visibleTurnItems === right.visibleTurnItems &&
+    (left.visibleTurnItems === right.visibleTurnItems ||
+      (left.visibleTurnItems.length === right.visibleTurnItems.length &&
+        left.visibleTurnItems.every((row, index) => row === right.visibleTurnItems[index]))) &&
     left.optimisticMessages === right.optimisticMessages &&
     left.anchoredMessages === right.anchoredMessages &&
-    left.attachmentUrlById === right.attachmentUrlById &&
+    sameAttachmentUrls(left.attachmentUrlById, right.attachmentUrlById) &&
     left.attempts === right.attempts &&
     left.nodes === right.nodes &&
     left.plans === right.plans

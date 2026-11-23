@@ -400,6 +400,10 @@ import { branchMismatchBannerItem, extensionStatusBannerItem } from "./chat/Thre
 import { ComposerThreadContext } from "./chat/ComposerThreadContext";
 import { currentRoundActivity } from "./chat/currentRoundActivity";
 import { selectOmpTodo, ThreadOmpTodo, withoutOmpTodoSnapshots } from "./chat/ThreadOmpTodo";
+import { TaskPlanCapsule } from "./chat/TaskPlanCapsule";
+import { TaskPlanSummary } from "./chat/TaskPlanSummary";
+import { antigravityTaskTrail } from "./chat/antigravityTaskTrail";
+import styles from "./chat/taskPlanCapsule.module.css";
 import { ThreadNow } from "./chat/ThreadNow";
 import { threadRuntimeIsActive, type ThreadStructure } from "@t3tools/client-runtime/state/shell";
 import { useDelayedStatus } from "../hooks/useDelayedStatus";
@@ -1616,10 +1620,7 @@ export default function ChatView(props: ChatViewProps) {
   const anchoredTimelineMessages = feedbackSubmissions.flatMap((submission) =>
     submission.status === "interrupted"
       ? []
-      : [
-          { ...codexFeedbackMessage(submission, "user", messages), runId: null },
-          { ...codexFeedbackMessage(submission, "assistant", messages), runId: null },
-        ],
+      : [{ ...codexFeedbackMessage(submission, "user"), runId: null }],
   );
   const selectedInstanceId = serverProjection?.thread.modelSelection.instanceId;
   const selectedDriver =
@@ -1627,6 +1628,18 @@ export default function ChatView(props: ChatViewProps) {
       ? activeProviderThread?.driver
       : providerStatuses.find((provider) => provider.instanceId === selectedInstanceId)?.driver;
   const isOmpThread = serverProjection !== null && selectedDriver === "omp";
+  const isAntigravityThread =
+    serverProjection !== null &&
+    (selectedDriver === "antigravity" ||
+      (selectedProviderEntry?.instanceId === selectedInstanceId &&
+        selectedProviderEntry?.acpRegistryAgentId === "antigravity-acp"));
+  const taskTrail = isAntigravityThread
+    ? antigravityTaskTrail(serverProjection, activeActivityRun?.runId ?? null, gt)
+    : null;
+  const taskTrailKey = taskTrail === null ? null : `${routeThreadKey}:${taskTrail.key}`;
+  const [dismissedTaskTrailKey, setDismissedTaskTrailKey] = useState<string | null>(null);
+  const showTaskSummary = taskTrail?.complete === true && dismissedTaskTrailKey === taskTrailKey;
+  const dismissTaskTrail = useStableCallback(() => setDismissedTaskTrailKey(taskTrailKey));
   const extensionStatuses = deriveProviderExtensionStatuses(serverProjection);
   const ompTodo = serverProjection ? selectOmpTodo(serverProjection) : null;
 
@@ -1650,7 +1663,7 @@ export default function ChatView(props: ChatViewProps) {
     isServerThread && serverTimelineRows.length !== serverVisibleTurnItems.length;
   const serverTimelineEntries = useIncrementalTimelineEntries(activeThreadKey, {
     ...timelineEntriesInput,
-    visibleTurnItems: withoutOmpTodoSnapshots(serverTimelineRows),
+    visibleTurnItems: withoutOmpTodoSnapshots(serverTimelineRows, taskTrail?.planId),
   });
   const draftTimelineEntries = optimisticUserMessages.map(
     (message) =>
@@ -3309,7 +3322,8 @@ export default function ChatView(props: ChatViewProps) {
       .filter((part) => part !== null)
       .join(" · ") || null;
   const hasOmpTodo = ompTodo !== null && ompTodo.steps.length > 0;
-  const showSessionStatus = isOmpThread && !isDraftHeroState && composerMounted;
+  const showSessionStatus =
+    (isOmpThread || isAntigravityThread) && !isDraftHeroState && composerMounted;
   const composerContextRun = showSessionStatus
     ? (serverProjection.runs.find((run) => run.id === activeActivityRun?.runId) ?? null)
     : null;
@@ -3327,12 +3341,20 @@ export default function ChatView(props: ChatViewProps) {
         )
       : null;
   const timelineFooter =
+    !showTaskSummary &&
     pendingHandoff === null &&
     !hasThreadNow &&
     threadStatusLine === null &&
     pendingGuestMessageCount === 0 &&
     !hasQueuedTurns ? null : (
       <>
+        {taskTrail !== null && showTaskSummary ? (
+          <TaskPlanSummary
+            key={taskTrailKey}
+            progress={taskTrail}
+            onOpenFile={openFileSurfaceStable}
+          />
+        ) : null}
         {pendingHandoff === null ? null : (
           <div className="chat-content-lane">
             <HandoffRow
@@ -3677,6 +3699,7 @@ export default function ChatView(props: ChatViewProps) {
                   {...(onOpenWorktreeSetupTerminal ? { onOpenWorktreeSetupTerminal } : {})}
                   isPreparingWorktree={isPreparingWorktree}
                   footer={timelineFooter}
+                  floatingTodoPlanId={taskTrail?.planId}
                   listRef={legendListRef}
                   runs={serverProjection?.runs ?? []}
                   latestRun={activeActivityRun}
@@ -3771,6 +3794,18 @@ export default function ChatView(props: ChatViewProps) {
                       threadKey={routeThreadKey}
                       progress={ompTodo}
                     />
+                  ) : null}
+                  {taskTrail !== null && !showTaskSummary ? (
+                    <div className={styles["plan-anchor"]}>
+                      <div className={styles["plan-anchor-slot"]}>
+                        <TaskPlanCapsule
+                          key={taskTrailKey}
+                          progress={taskTrail}
+                          onDismissed={dismissTaskTrail}
+                          onOpenFile={openFileSurfaceStable}
+                        />
+                      </div>
+                    </div>
                   ) : null}
                   {isDraftHeroState ? (
                     <div className="absolute inset-x-0 bottom-full">
@@ -4008,8 +4043,11 @@ export default function ChatView(props: ChatViewProps) {
                             turnUsage={composerProviderTurn?.turnTokenUsage ?? null}
                             modelOutputTiming={composerProviderTurn?.modelOutputTiming}
                             usage={
-                              activeProviderThread?.driver === "omp" ? activeContextWindow : null
+                              activeProviderThread?.providerInstanceId === selectedInstanceId
+                                ? activeContextWindow
+                                : null
                             }
+                            fallbackTextThread={isAntigravityThread ? routeThreadDetailRef : null}
                           />
                         ) : null}
                         <div className="min-h-0">

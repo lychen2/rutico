@@ -1,0 +1,756 @@
+/* Floating task-plan capsule above the composer. Three corner radii (20 > 14 > 8, each inside
+ * the one around it by the 6px pad), integer type sizes (13/12/11), no looping animation. */
+.plan-anchor {
+  position: relative;
+  height: 0;
+  z-index: 20;
+  container-type: inline-size;
+}
+.plan-anchor-slot {
+  position: absolute;
+  inset-inline: 0;
+  bottom: 8px;
+  display: flex;
+  justify-content: center;
+  pointer-events: none;
+}
+.plan-capsule,
+.plan-summary {
+  --plan-width: 440px;
+  --plan-ease-open: cubic-bezier(0.32, 0.72, 0, 1);
+  --plan-ease-close: cubic-bezier(0.4, 0, 0.2, 1);
+  --plan-ease-swap: cubic-bezier(0.22, 1, 0.36, 1);
+  --plan-open: 360ms;
+  --plan-close: 240ms;
+  --plan-detail-open: 320ms;
+  --plan-detail-close: 220ms;
+  --plan-fade-in: 200ms;
+  --plan-fade-out: 140ms;
+  --plan-shift: 8px;
+  --plan-accent: var(--primary);
+  --plan-accent-text: color-mix(in srgb, var(--primary) 60%, var(--foreground));
+  --plan-warn-text: color-mix(in srgb, var(--warning) 40%, var(--foreground));
+  --plan-err-text: color-mix(in srgb, var(--destructive) 50%, var(--foreground));
+  --plan-ok-text: color-mix(in srgb, var(--success) 60%, var(--foreground));
+  --plan-muted: color-mix(in srgb, var(--muted-foreground) 70%, var(--foreground));
+  --plan-hint: var(--primary);
+  color: var(--foreground);
+  font-size: 13px;
+  line-height: 1.5;
+}
+.plan-capsule {
+  position: relative;
+  width: min(var(--plan-width), 100%);
+  min-width: 0;
+  pointer-events: auto;
+  /* No end fill: a filling opacity animation makes this element a backdrop root, and the card's
+     backdrop-filter would then blur nothing behind it. */
+  animation: plan-appear var(--plan-fade-in) var(--plan-ease-swap) backwards;
+  transition:
+    width var(--plan-close) var(--plan-ease-close),
+    opacity var(--plan-fade-in) var(--plan-ease-swap),
+    transform var(--plan-fade-in) var(--plan-ease-swap),
+    visibility 0s;
+}
+.plan-capsule *,
+.plan-capsule *::before,
+.plan-capsule *::after,
+.plan-summary *,
+.plan-summary *::before,
+.plan-summary *::after {
+  box-sizing: border-box;
+}
+.plan-capsule[data-open="true"] {
+  --plan-width: 600px;
+  transition:
+    width var(--plan-open) var(--plan-ease-open),
+    opacity var(--plan-fade-in) var(--plan-ease-swap),
+    transform var(--plan-fade-in) var(--plan-ease-swap),
+    visibility 0s;
+}
+.plan-capsule[data-visible="false"] {
+  opacity: 0;
+  transform: translateY(var(--plan-shift));
+  visibility: hidden;
+  pointer-events: none;
+  transition:
+    width 0s,
+    opacity var(--plan-fade-out) var(--plan-ease-close),
+    transform var(--plan-fade-out) var(--plan-ease-close),
+    visibility 0s var(--plan-fade-out);
+}
+.plan-capsule[data-mode="need"] {
+  --plan-hint: var(--warning);
+}
+.plan-capsule[data-mode="problem"] {
+  --plan-hint: var(--destructive);
+}
+@keyframes plan-appear {
+  from {
+    opacity: 0;
+    transform: translateY(var(--plan-shift));
+  }
+}
+.plan-card {
+  position: relative;
+  overflow: hidden;
+  border-radius: 20px;
+  background: color-mix(in srgb, var(--card) 88%, transparent);
+  -webkit-backdrop-filter: blur(24px) saturate(1.6);
+  backdrop-filter: blur(24px) saturate(1.6);
+  box-shadow:
+    0 0 0 1px var(--border),
+    inset 0 0 0 1px color-mix(in srgb, var(--background) 50%, transparent),
+    0 1px 2px rgb(0 0 0 / 0.05),
+    0 8px 24px -12px rgb(0 0 0 / 0.14);
+}
+/* The deeper shadow fades in on a separate layer; box-shadow itself is never animated. */
+.plan-shadow {
+  position: absolute;
+  inset: 0;
+  border-radius: 20px;
+  box-shadow:
+    0 2px 6px rgb(0 0 0 / 0.06),
+    0 22px 48px -14px rgb(0 0 0 / 0.26);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--plan-close) var(--plan-ease-close);
+}
+.plan-capsule[data-open="true"] .plan-shadow {
+  opacity: 1;
+  transition-duration: var(--plan-open);
+  transition-timing-function: var(--plan-ease-open);
+}
+/* One 700ms outline pulse when attention is first needed. */
+.plan-hint {
+  position: absolute;
+  inset: 0;
+  border-radius: 20px;
+  pointer-events: none;
+  z-index: 1;
+}
+.plan-hint[data-hint="true"] {
+  animation: plan-hint 700ms var(--plan-ease-swap) 1 both;
+}
+@keyframes plan-hint {
+  from {
+    box-shadow: inset 0 0 0 2px var(--plan-hint);
+  }
+  to {
+    box-shadow: inset 0 0 0 2px transparent;
+  }
+}
+.plan-panel {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows var(--plan-close) var(--plan-ease-close);
+}
+.plan-capsule[data-open="true"] .plan-panel {
+  grid-template-rows: 1fr;
+  transition: grid-template-rows var(--plan-open) var(--plan-ease-open);
+}
+.plan-panel-clip {
+  min-height: 0;
+  overflow: hidden;
+}
+.plan-panel-body {
+  display: flex;
+  flex-direction: column;
+  max-height: clamp(150px, calc(100dvh - 300px), 480px);
+  opacity: 0;
+  visibility: hidden;
+  transition:
+    opacity var(--plan-fade-out) var(--plan-ease-close),
+    visibility 0s var(--plan-fade-out);
+}
+.plan-capsule[data-open="true"] .plan-panel-body {
+  opacity: 1;
+  visibility: visible;
+  transition:
+    opacity var(--plan-fade-in) var(--plan-ease-swap) 60ms,
+    visibility 0s;
+}
+.plan-panel-head {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px 6px 16px;
+  font-size: 12px;
+  color: var(--plan-muted);
+}
+.plan-panel-head strong {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--foreground);
+}
+.plan-panel-spacer {
+  flex: 1;
+}
+.plan-capsule kbd {
+  font:
+    11px/1 ui-monospace,
+    "SF Mono",
+    Menlo,
+    monospace;
+  padding: 3px 5px;
+  border-radius: 8px;
+  background: var(--secondary);
+  border: 1px solid var(--border);
+  color: var(--plan-muted);
+}
+.plan-panel-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+  padding: 0 6px 6px;
+  scrollbar-width: thin;
+}
+
+.plan-bar {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  height: 40px;
+  padding: 0 14px 0 12px;
+  border-radius: 20px;
+  text-align: left;
+  cursor: pointer;
+}
+.plan-bar:hover {
+  background: color-mix(in srgb, var(--foreground) 4%, transparent);
+}
+.plan-capsule :focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+.plan-bar:focus-visible,
+.plan-stage-row:focus-visible {
+  outline-offset: -2px;
+}
+.plan-ring {
+  width: 18px;
+  height: 18px;
+  flex: none;
+  overflow: visible;
+}
+.plan-ring circle,
+.plan-ring path {
+  fill: none;
+}
+.plan-ring-track {
+  stroke: color-mix(in srgb, var(--foreground) 22%, transparent);
+  stroke-width: 2;
+}
+.plan-ring-arc {
+  stroke: var(--plan-accent);
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-dasharray: var(--plan-percent, 0) 100;
+  transform: rotate(-90deg);
+  transform-origin: 9px 9px;
+  transition: stroke-dasharray 400ms var(--plan-ease-open);
+}
+.plan-ring-dash {
+  stroke: var(--warning);
+  stroke-width: 2;
+  stroke-dasharray: 3 3.2;
+  opacity: 0;
+}
+.plan-ring .plan-ring-fill {
+  fill: var(--success);
+  opacity: 0;
+}
+.plan-ring-check {
+  stroke: #fff;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  opacity: 0;
+}
+.plan-ring-alert {
+  stroke: var(--destructive);
+  stroke-width: 2;
+  stroke-linecap: round;
+  opacity: 0;
+}
+.plan-ring[data-mode="need"] .plan-ring-track,
+.plan-ring[data-mode="need"] .plan-ring-arc {
+  opacity: 0;
+}
+.plan-ring[data-mode="need"] .plan-ring-dash {
+  opacity: 1;
+}
+.plan-ring[data-mode="problem"] .plan-ring-arc {
+  stroke: var(--destructive);
+}
+.plan-ring[data-mode="problem"] .plan-ring-alert {
+  opacity: 1;
+}
+.plan-ring[data-mode="done"] .plan-ring-fill,
+.plan-ring[data-mode="done"] .plan-ring-check {
+  opacity: 1;
+}
+.plan-ring[data-mode="done"] .plan-ring-track,
+.plan-ring[data-mode="done"] .plan-ring-arc {
+  opacity: 0;
+}
+.plan-title {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  height: 20px;
+  overflow: hidden;
+}
+.plan-title > span {
+  position: absolute;
+  inset: 0;
+  display: block;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 20px;
+}
+.plan-title[data-swapping="true"] .plan-title-in {
+  animation: plan-title-in 300ms var(--plan-ease-swap) both;
+}
+.plan-title-out {
+  animation: plan-title-out 200ms var(--plan-ease-close) both;
+}
+@keyframes plan-title-in {
+  from {
+    opacity: 0;
+    transform: translateY(var(--plan-shift));
+  }
+}
+@keyframes plan-title-out {
+  to {
+    opacity: 0;
+    transform: translateY(calc(var(--plan-shift) * -0.75));
+  }
+}
+.plan-pill {
+  flex: none;
+  padding: 0 8px;
+  border-radius: 999px;
+  background: var(--secondary);
+  color: var(--plan-muted);
+  font-size: 11px;
+  line-height: 18px;
+  white-space: nowrap;
+}
+.plan-pill[data-tone="need"] {
+  background: color-mix(in srgb, var(--warning) 16%, transparent);
+  color: var(--plan-warn-text);
+}
+.plan-pill[data-tone="problem"] {
+  background: color-mix(in srgb, var(--destructive) 14%, transparent);
+  color: var(--plan-err-text);
+}
+.plan-segments {
+  display: flex;
+  gap: 3px;
+  width: 68px;
+  flex: none;
+}
+.plan-segments i {
+  flex: 1;
+  height: 4px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--foreground) 14%, transparent);
+  transition: background-color 400ms var(--plan-ease-open);
+}
+.plan-segments i[data-status="done"] {
+  background: var(--foreground);
+}
+.plan-segments i[data-status="run"] {
+  background: var(--plan-accent);
+}
+.plan-segments i[data-status="need"] {
+  background: var(--warning);
+}
+.plan-segments i[data-status="problem"] {
+  background: var(--destructive);
+}
+.plan-capsule[data-mode="done"] .plan-segments i {
+  background: var(--success);
+}
+.plan-count {
+  flex: none;
+  min-width: 26px;
+  text-align: right;
+  color: var(--plan-muted);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+.plan-chevron {
+  flex: none;
+  width: 14px;
+  height: 14px;
+  color: var(--plan-muted);
+  transition: transform var(--plan-close) var(--plan-ease-close);
+}
+.plan-capsule[data-open="true"] .plan-chevron {
+  transform: rotate(180deg);
+  transition-duration: var(--plan-open);
+  transition-timing-function: var(--plan-ease-open);
+}
+
+.plan-stages {
+  display: grid;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.plan-stage-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 36px;
+  padding: 0 10px;
+  border-radius: 14px;
+  text-align: left;
+}
+button.plan-stage-row {
+  cursor: pointer;
+}
+button.plan-stage-row:hover {
+  background: color-mix(in srgb, var(--foreground) 4%, transparent);
+}
+.plan-stage-mark {
+  position: relative;
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 14px;
+  height: 14px;
+  border: 1.5px solid color-mix(in srgb, var(--foreground) 28%, transparent);
+  border-radius: 50%;
+}
+.plan-stage-mark svg {
+  width: 10px;
+  height: 10px;
+  fill: none;
+  stroke: var(--card);
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.plan-stage-mark[data-status="done"] {
+  background: var(--foreground);
+  border-color: var(--foreground);
+}
+.plan-stage-mark[data-status="run"] {
+  border-color: var(--plan-accent);
+  background: radial-gradient(circle, var(--plan-accent) 38%, transparent 42%);
+}
+.plan-stage-mark[data-status="need"] {
+  border-style: dashed;
+  border-color: var(--warning);
+}
+.plan-stage-mark[data-status="problem"] {
+  border-color: var(--destructive);
+  background: color-mix(in srgb, var(--destructive) 14%, transparent);
+}
+.plan-stage-mark[data-status="problem"]::after {
+  content: "";
+  width: 2px;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--destructive);
+}
+.plan-stage-name {
+  flex: none;
+  max-width: 55%;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: 13px;
+}
+.plan-stage[data-status="todo"] .plan-stage-name {
+  color: var(--plan-muted);
+}
+.plan-stage[data-current="true"] .plan-stage-name {
+  font-weight: 600;
+}
+.plan-stage-summary {
+  min-width: 0;
+  margin-left: auto;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  color: var(--plan-muted);
+  font-size: 12px;
+}
+.plan-stage-summary[data-tone="run"] {
+  color: var(--plan-accent-text);
+}
+.plan-stage-summary[data-tone="need"] {
+  color: var(--plan-warn-text);
+}
+.plan-stage-summary[data-tone="problem"] {
+  color: var(--plan-err-text);
+}
+.plan-stage-chevron {
+  flex: none;
+  width: 12px;
+  height: 12px;
+  color: var(--plan-muted);
+  transition: transform var(--plan-detail-close) var(--plan-ease-close);
+}
+.plan-stage[data-open="true"] .plan-stage-chevron {
+  transform: rotate(90deg);
+  transition-duration: var(--plan-detail-open);
+  transition-timing-function: var(--plan-ease-open);
+}
+.plan-detail {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows var(--plan-detail-close) var(--plan-ease-close);
+}
+.plan-stage[data-open="true"] .plan-detail {
+  grid-template-rows: 1fr;
+  transition: grid-template-rows var(--plan-detail-open) var(--plan-ease-open);
+}
+.plan-detail-clip {
+  min-height: 0;
+  overflow: hidden;
+}
+.plan-detail-body {
+  padding: 2px 0 6px;
+  opacity: 0;
+  transition: opacity var(--plan-fade-out) ease;
+}
+.plan-stage[data-open="true"] .plan-detail-body {
+  opacity: 1;
+  transition: opacity var(--plan-fade-in) ease 40ms;
+}
+/* A stage's operations scroll inside a fixed window instead of growing the panel. */
+.plan-operations {
+  max-height: 176px;
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+/* 瓷白 Porcelain has no material: a plain surface and a hairline. */
+html[data-theme-id="porcelain"] .plan-card {
+  background: var(--card);
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+  box-shadow: 0 0 0 1px var(--border);
+}
+html[data-theme-id="porcelain"] .plan-shadow {
+  box-shadow: 0 8px 24px -16px rgb(0 0 0 / 0.2);
+}
+@media (prefers-reduced-transparency: reduce) {
+  .plan-card {
+    background: var(--card);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+}
+@media (max-width: 480px) {
+  .plan-segments {
+    width: 36px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .plan-capsule {
+    --plan-open: 160ms;
+    --plan-close: 160ms;
+    --plan-detail-open: 160ms;
+    --plan-detail-close: 160ms;
+    --plan-shift: 0px;
+  }
+  .plan-ring-arc,
+  .plan-segments i,
+  .plan-hint[data-hint="true"],
+  .plan-title[data-swapping="true"] .plan-title-in,
+  .plan-title-out {
+    animation: none;
+    transition: none;
+  }
+  .plan-title-out {
+    display: none;
+  }
+}
+
+/* History row: the finished plan, one line, openable. */
+.plan-summary {
+  --plan-ease-open: cubic-bezier(0.32, 0.72, 0, 1);
+  --plan-ease-close: cubic-bezier(0.4, 0, 0.2, 1);
+  --plan-open: 360ms;
+  --plan-close: 240ms;
+  --plan-detail-open: 320ms;
+  --plan-detail-close: 220ms;
+  --plan-fade-in: 200ms;
+  --plan-fade-out: 140ms;
+  border-radius: 20px;
+  background: var(--card);
+  box-shadow: 0 0 0 1px var(--border);
+  overflow: hidden;
+}
+.plan-summary-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  height: 40px;
+  padding: 0 14px 0 12px;
+  text-align: left;
+  cursor: pointer;
+}
+.plan-summary-bar:hover {
+  background: color-mix(in srgb, var(--foreground) 4%, transparent);
+}
+.plan-summary :focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: -2px;
+}
+.plan-summary-check {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--success);
+  color: #fff;
+}
+.plan-summary-check svg {
+  width: 12px;
+  height: 12px;
+  stroke-width: 2.5;
+}
+.plan-summary-title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: 13px;
+  font-weight: 600;
+}
+.plan-summary-chevron {
+  flex: none;
+  width: 14px;
+  height: 14px;
+  color: var(--plan-muted);
+  transition: transform var(--plan-close) var(--plan-ease-close);
+}
+.plan-summary[data-open="true"] .plan-summary-chevron {
+  transform: rotate(180deg);
+  transition-duration: var(--plan-open);
+  transition-timing-function: var(--plan-ease-open);
+}
+.plan-summary-body {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows var(--plan-close) var(--plan-ease-close);
+}
+.plan-summary[data-open="true"] .plan-summary-body {
+  grid-template-rows: 1fr;
+  transition: grid-template-rows var(--plan-open) var(--plan-ease-open);
+}
+.plan-summary-clip {
+  min-height: 0;
+  overflow: hidden;
+}
+.plan-summary-scroll {
+  max-height: min(50vh, 420px);
+  overflow: auto;
+  overscroll-behavior: contain;
+  padding: 0 6px 6px;
+}
+html[data-theme-id="porcelain"] .plan-summary {
+  background: transparent;
+}
+@media (prefers-reduced-motion: reduce) {
+  .plan-summary {
+    --plan-open: 160ms;
+    --plan-close: 160ms;
+    --plan-detail-open: 160ms;
+    --plan-detail-close: 160ms;
+  }
+}
+
+/* Grouped tool sub-items (shared structure across themes) */
+.plan-head-badge,
+.plan-stage-badge,
+.plan-bar-ico {
+  display: none;
+}
+.plan-collapse-btn {
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  padding: 0;
+  cursor: pointer;
+}
+.plan-step-sub {
+  margin: 4px 10px 4px 25px;
+  padding-left: 10px;
+  border-left: 1.5px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.plan-tool-chip {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  font-size: 11.5px;
+  color: var(--plan-muted);
+  font-family: var(--font-mono);
+  flex-wrap: wrap;
+}
+.plan-tool-tag {
+  font-family: var(--font-sans);
+  font-size: 10.5px;
+  padding: 1px 6px;
+  border-radius: 5px;
+  background: var(--secondary);
+  color: var(--plan-muted);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.plan-tool-items {
+  display: inline;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.plan-step-sub .plan-tool-item.task-command-row {
+  display: inline;
+  padding: 0;
+  margin: 0;
+  gap: 0;
+  min-height: 0;
+  font-size: inherit;
+  color: inherit;
+}
+.plan-tool-item[data-status="failed"]:not([data-failure="no-result"]) {
+  color: var(--plan-err-text);
+}
+.plan-tool-sep {
+  opacity: 0.7;
+}
+.plan-tool-file {
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  padding: 0;
+  cursor: pointer;
+  text-decoration: none;
+}
+.plan-tool-file:hover {
+  color: var(--foreground);
+  text-decoration: underline;
+}

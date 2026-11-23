@@ -23,6 +23,7 @@ export function ThreadTimeline({
   entriesInput,
   draftEntries,
   activeThreadKey,
+  floatingTodoPlanId,
   syncing,
   detailLoading,
   ...timelineProps
@@ -33,13 +34,14 @@ export function ThreadTimeline({
   /** A local draft's optimistic rows; null for a server thread. */
   draftEntries: ReadonlyArray<TimelineEntry> | null;
   activeThreadKey: string | null;
+  floatingTodoPlanId?: string | undefined;
   syncing: boolean;
   detailLoading: boolean;
 }) {
   const visibleTurnItems = useTimelineVisibleTurnItems(threadDetailRef);
   const serverEntries = useIncrementalTimelineEntries(activeThreadKey, {
     ...entriesInput,
-    visibleTurnItems: withoutOmpTodoSnapshots(visibleTurnItems),
+    visibleTurnItems: withoutOmpTodoSnapshots(visibleTurnItems, floatingTodoPlanId),
   });
   const entries = draftEntries ?? serverEntries;
   const displayedEntries = resolveThreadSwitchTimeline({

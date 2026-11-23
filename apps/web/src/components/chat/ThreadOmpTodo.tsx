@@ -6,11 +6,18 @@ import { useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode } f
 import { observeVisibleAnimation } from "~/lib/visibleAnimation";
 import "./threadOmpTodo.css";
 
-export function withoutOmpTodoSnapshots(rows: readonly OrchestrationV2ProjectedTurnItem[]) {
+export function withoutOmpTodoSnapshots(
+  rows: readonly OrchestrationV2ProjectedTurnItem[],
+  floatingTodoPlanId?: string,
+) {
   let retained: OrchestrationV2ProjectedTurnItem[] | undefined;
   for (let index = 0; index < rows.length; index += 1) {
     const row = rows[index]!;
-    if (row.item.type === "todo_list" && row.item.planId === `omp-todo:${row.item.threadId}`) {
+    if (
+      row.item.type === "todo_list" &&
+      (row.item.planId === `omp-todo:${row.item.threadId}` ||
+        row.item.planId === floatingTodoPlanId)
+    ) {
       retained ??= rows.slice(0, index);
     } else {
       retained?.push(row);

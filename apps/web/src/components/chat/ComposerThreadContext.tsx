@@ -2,6 +2,7 @@ import type { ContextWindowSnapshot } from "@t3tools/client-runtime/state/contex
 import type {
   OrchestrationV2Run,
   OrchestrationV2ProviderTurn,
+  ScopedThreadRef,
   TurnTokenUsage,
 } from "@t3tools/contracts";
 import { formatDuration } from "@t3tools/shared/orchestrationTiming";
@@ -9,6 +10,7 @@ import * as DateTime from "effect/DateTime";
 import { msg, useGT, useLocale, useMessages } from "gt-react";
 
 import { tickTextContent } from "~/lib/tickTextContent";
+import { useThreadVisibleTurnItems } from "../../state/entities";
 import { Popover, PopoverPopup, PopoverTitle, PopoverTrigger } from "../ui/popover";
 
 const runStatusLabels = {
@@ -35,6 +37,7 @@ export function ComposerThreadContext({
   modelOutputTiming,
   activity,
   contextStatus,
+  fallbackTextThread = null,
 }: {
   readonly usage: ContextWindowSnapshot | null;
   readonly run: Pick<
@@ -46,6 +49,7 @@ export function ComposerThreadContext({
   readonly modelOutputTiming?: OrchestrationV2ProviderTurn["modelOutputTiming"];
   readonly activity?: ReturnType<typeof currentRoundActivity> | null;
   readonly contextStatus?: string | undefined;
+  readonly fallbackTextThread?: ScopedThreadRef | null;
 }) {
   const gt = useGT();
   const locale = useLocale();
@@ -74,6 +78,24 @@ export function ComposerThreadContext({
   const cacheRead = modelUsage?.cachedInputTokens;
   const cacheWrite = modelUsage?.cacheCreationTokens;
   const reasoningTokens = modelUsage?.reasoningTokens;
+  const items = useThreadVisibleTurnItems(
+    output === undefined && run !== null ? fallbackTextThread : null,
+  );
+  let outputCharacters = 0;
+  for (const { item } of items) {
+    if (
+      item.type !== "assistant_message" ||
+      item.runId !== run?.id ||
+      item.parentItemId !== null ||
+      item.phase === "commentary"
+    )
+      continue;
+    for (const character of item.text) {
+      // Count Unicode code points, including whitespace, without allocating an array.
+      if (character.length > 0) outputCharacters++;
+    }
+  }
+  const amount = output ?? (outputCharacters > 0 ? outputCharacters : undefined);
   const total = input !== undefined && output !== undefined ? input + output : null;
   const firstOutputMs =
     startMs === null || modelOutputTiming === undefined
@@ -85,10 +107,13 @@ export function ComposerThreadContext({
   const rateRef = tickTextContent(
     (nowMs) => {
       const elapsed = startMs === null ? 0 : (endMs ?? nowMs) - startMs;
-      if (output === undefined || elapsed <= 0 || (endMs === null && !running)) return "–";
-      return `${((output * 1000) / elapsed).toLocaleString(locale, { maximumFractionDigits: 1 })} tokens/s`;
+      if (amount === undefined || elapsed <= 0 || (endMs === null && !running)) return "–";
+      const rate = ((amount * 1000) / elapsed).toLocaleString(locale, { maximumFractionDigits: 1 });
+      return output === undefined
+        ? gt("{rate} chars/s", { rate })
+        : gt("{rate} tokens/s", { rate });
     },
-    running && output !== undefined && startMs !== null,
+    running && amount !== undefined && startMs !== null && endMs === null,
   );
   const cachePercent =
     input !== undefined && input > 0 && cacheRead !== undefined
