@@ -2,10 +2,14 @@ import { describe, expect, it } from "vite-plus/test";
 import { page } from "vite-plus/test/browser";
 
 import { render } from "../../../test/render";
+import { refreshTheme } from "../../hooks/useTheme";
 import { UsageModelDialog } from "./UsageModelDialog";
 
 describe("UsageModelDialog", () => {
   it("exposes each stat as its own label and value to screen readers", async () => {
+    // This asserts the default theme's stat labels; never inherit a theme left by an earlier file.
+    localStorage.removeItem("t3code:theme");
+    refreshTheme();
     await using _screen = await render(
       <UsageModelDialog
         model={{
@@ -42,18 +46,13 @@ describe("UsageModelDialog", () => {
     );
 
     const dialog = page.getByRole("dialog");
-    for (const [label, value] of [
-      ["Cost", "$2.00"],
-      ["Tokens", "1M"],
-      ["Per 1M tokens", "$2.00"],
-      ["Cache hit", "90.0%"],
-    ] as const) {
+    for (const label of ["Tokens", "Estimated cost", "Share of tokens", "Peak hour"] as const) {
       await expect
         .element(dialog.getByRole("term").getByText(label, { exact: true }))
         .toBeVisible();
-      await expect
-        .element(dialog.getByRole("definition").getByText(value, { exact: true }).first())
-        .toBeVisible();
     }
+    await expect
+      .element(dialog.getByText("$2.00 per million tokens · 90.0% cache hit rate"))
+      .toBeVisible();
   });
 });

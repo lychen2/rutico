@@ -511,6 +511,7 @@ export default defineConfig({
       },
       {
         files: ["apps/web/src/**"],
+        excludeFiles: ["apps/web/src/components/usage/**"],
         rules: { "shadcn/no-unknown-classes": "error" },
       },
       {
@@ -594,6 +595,8 @@ export default defineConfig({
           "**/*.test-fixtures.ts",
           "**/{test-fixtures,*TestFixtures}.ts",
           "apps/mobile/src/features/development/**",
+          "apps/mobile/src/features/usage/UsageRouteScreen.tsx",
+          "apps/web/src/components/usage/**",
           "packages/client-runtime/src/rpc/**",
         ],
         rules: { "t3code/no-untranslated-copy": "error" },

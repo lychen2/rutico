@@ -318,6 +318,11 @@ export interface LimitAccount {
     readonly input: ProviderConsumeResetCreditInput;
   } | null;
   readonly limits: ServerProviderUsageLimits;
+  /** Provider instances signed in to this login, so a thread's instance can find its account. */
+  readonly instances?: ReadonlyArray<{
+    readonly environmentId: EnvironmentId;
+    readonly instanceId: ProviderInstanceId;
+  }>;
 }
 
 export function collectLimitAccounts(presentations: LimitPresentations): readonly LimitAccount[] {
@@ -381,6 +386,17 @@ export function collectLimitAccounts(presentations: LimitPresentations): readonl
       plan: planSources.get(key)?.plan ?? previous.plan ?? next.plan,
       accentColor: previous.accentColor ?? next.accentColor,
       environments,
+      instances: [
+        ...(previous.instances ?? []),
+        ...(next.instances ?? []).filter(
+          (candidate) =>
+            !previous.instances?.some(
+              (seen) =>
+                seen.environmentId === candidate.environmentId &&
+                seen.instanceId === candidate.instanceId,
+            ),
+        ),
+      ],
       sourceLabel: environments.length > 0 ? null : (previous.sourceLabel ?? next.sourceLabel),
       redeem:
         hubRedeems.get(key)?.redeem ??
@@ -397,7 +413,15 @@ export function collectLimitAccounts(presentations: LimitPresentations): readonl
   for (const [environmentId, presentation] of presentations) {
     const label = presentation.entry.target.label;
     for (const provider of providersWithLimits(presentation.serverConfig?.providers ?? [])) {
-      if (!provider.usageLimits || limitsNotice(provider.usageLimits) !== null) continue;
+      if (
+        !provider.usageLimits ||
+        (limitsNotice(provider.usageLimits) !== null &&
+          !(
+            provider.usageLimits.unavailable?.reason === "probeFailed" &&
+            provider.usageLimits.windows.length
+          ))
+      )
+        continue;
       merge(nativeRowKey(resolveKey, environmentId, provider), {
         key: `${environmentId}:${provider.instanceId}`,
         driver: provider.driver,
@@ -406,6 +430,7 @@ export function collectLimitAccounts(presentations: LimitPresentations): readonl
         plan: provider.auth.label,
         accentColor: provider.accentColor,
         environments: [{ environmentId, label }],
+        instances: [{ environmentId, instanceId: provider.instanceId }],
         sourceLabel: null,
         redeem: { environmentId, input: { instanceId: provider.instanceId } },
         limits: provider.usageLimits,
@@ -419,7 +444,14 @@ export function collectLimitAccounts(presentations: LimitPresentations): readonl
         ? `${presentation.entry.target.label} · ${source.label}`
         : source.label;
       for (const account of source.accounts) {
-        if (limitsNotice(account.usageLimits) !== null) continue;
+        if (
+          limitsNotice(account.usageLimits) !== null &&
+          !(
+            account.usageLimits.unavailable?.reason === "probeFailed" &&
+            account.usageLimits.windows.length
+          )
+        )
+          continue;
         const resolved = resolveKey(account);
         // A resolved account already has an identity; its public key must stay distinct from others'.
         const hub = resolved ? `${environmentId}:${source.id}` : hubIdentity(environmentId, source);
@@ -510,6 +542,8 @@ export interface LimitPoolWindow {
 
 export interface LimitPool {
   readonly driver: ServerProvider["driver"];
+  /** Set when the pool is one login of a driver that shows each login on its own card. */
+  readonly id?: string;
   readonly accounts: readonly LimitAccount[];
   readonly windows: readonly LimitPoolWindow[];
 }
@@ -561,9 +595,18 @@ const WINDOW_KIND_ORDER: Record<ServerProviderUsageWindow["kind"], number> = {
   other: 3,
 };
 
+/** Pools and anchors are keyed by driver, except a driver whose logins each have a card. */
+export const limitPoolId = (pool: Pick<LimitPool, "driver" | "id">): string =>
+  pool.id ?? String(pool.driver);
+
+/**
+ * `separateDrivers` lists drivers whose logins are separate subscriptions, so averaging them into
+ * one card would hide which login is low. A driver with a single login keeps its one card.
+ */
 export function collectLimitPools(
   accounts: readonly LimitAccount[],
   now: number,
+  options: { readonly separateDrivers?: ReadonlyArray<ServerProvider["driver"]> } = {},
 ): readonly LimitPool[] {
   const byDriver = new Map<ServerProvider["driver"], LimitAccount[]>();
   for (const account of accounts) {
@@ -571,7 +614,7 @@ export function collectLimitPools(
     if (list) list.push(account);
     else byDriver.set(account.driver, [account]);
   }
-  return [...byDriver].map(([driver, members]) => {
+  return [...byDriver].flatMap(([driver, members]): LimitPool[] => {
     const orderWindow = members
       .flatMap((account) => account.limits.windows)
       .sort((left, right) => WINDOW_KIND_ORDER[left.kind] - WINDOW_KIND_ORDER[right.kind])[0];
@@ -590,7 +633,15 @@ export function collectLimitPools(
         accountSortName(left).localeCompare(accountSortName(right)) ||
         left.key.localeCompare(right.key),
     );
-    return { driver, accounts: sorted, windows: poolWindows(sorted, now) };
+    if (sorted.length > 1 && options.separateDrivers?.includes(driver)) {
+      return sorted.map((account) => ({
+        driver,
+        id: `${driver}:${account.key}`,
+        accounts: [account],
+        windows: poolWindows([account], now),
+      }));
+    }
+    return [{ driver, accounts: sorted, windows: poolWindows(sorted, now) }];
   });
 }
 
@@ -1093,4 +1144,20 @@ export function collectProviderUsageLimits(
     }
   }
   return { createdAt: DateTime.formatIso(DateTime.makeUnsafe(now)), accounts, notices };
+}
+
+export function quotaReadingStale(
+  limits: ServerProviderUsageLimits | undefined,
+  now: number,
+  connected = true,
+  failed = false,
+) {
+  const checked = Date.parse(limits?.checkedAt ?? "");
+  return (
+    !connected ||
+    failed ||
+    limits?.unavailable?.reason === "probeFailed" ||
+    !Number.isFinite(checked) ||
+    now - checked > 10 * 60_000
+  );
 }

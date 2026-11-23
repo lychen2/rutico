@@ -1,4 +1,11 @@
-import { T, useGT, useLocale, Var } from "gt-react";
+import { uiText as copy } from "~/i18n";
+import { UsageBusiestHour } from "./UsageBusiestHour";
+
+import { useUsageDateFormat } from "./useUsageDateFormat";
+import { UsageModelBars } from "./UsageModelBars";
+import { UsageDetailsSheet } from "./UsageDetailsSheet";
+import { UsageCount } from "./UsageMotion";
+import { useUiText } from "~/i18n/useUiText";
 import { formatPercent, formatTokens, formatUsd } from "@t3tools/shared/usageFormat";
 import { isModelCostUnknown, type ModelTotals } from "@t3tools/shared/usageMerge";
 
@@ -26,6 +33,8 @@ import {
 import { PROVIDER_PRESENTATION } from "./usageProviders";
 
 export interface UsageChartWindow {
+  readonly periodLabel?: string;
+  readonly selectedHour?: string | null;
   readonly days: readonly string[];
   readonly hours: readonly string[];
   readonly resolution: "day" | "hour";
@@ -49,8 +58,8 @@ export function UsageModelDialog({
   readonly onSetPrice: () => void;
   readonly onClose: () => void;
 }) {
-  const gt = useGT();
-  const locale = useLocale();
+  const uiText = useUiText();
+  const dateFormat = useUsageDateFormat();
   const usage = mergeAnsweredUsage(
     environments,
     (bucket) => bucket.provider === model.provider && bucket.model === model.model,
@@ -61,14 +70,192 @@ export function UsageModelDialog({
   const hitRate = cacheHitRate(model);
   const perMillion = costPerMillionTokens(model);
   const stats = [
-    { label: gt("Cost"), value: costUnknown ? gt("Unpriced") : formatUsd(model.costUsd, locale) },
-    { label: gt("Tokens"), value: formatTokens(model.totalTokens) },
+    {
+      label: "Cost",
+      value: costUnknown ? "Unpriced" : formatUsd(model.costUsd),
+      number: costUnknown ? null : model.costUsd,
+      format: formatUsd,
+    },
+    {
+      label: "Tokens",
+      value: formatTokens(model.totalTokens),
+      number: model.totalTokens,
+      format: formatTokens,
+    },
     perMillion === null
       ? null
-      : { label: gt("Per 1M tokens"), value: formatUsd(perMillion, locale) },
-    hitRate === null ? null : { label: gt("Cache hit"), value: formatPercent(hitRate) },
+      : {
+          label: "Per 1M tokens",
+          value: formatUsd(perMillion),
+          number: perMillion,
+          format: formatUsd,
+        },
+    hitRate === null
+      ? null
+      : {
+          label: "Cache hit",
+          value: formatPercent(hitRate),
+          number: hitRate,
+          format: formatPercent,
+        },
   ].filter((stat) => stat !== null);
 
+  const busiest = usage.hourly.toSorted((a, b) => b.totalTokens - a.totalTokens)[0];
+  const appleStats = [
+    {
+      label: copy("Tokens"),
+      value: formatTokens(model.totalTokens),
+      number: model.totalTokens,
+      format: formatTokens,
+    },
+    {
+      label: copy("Estimated cost"),
+      value: costUnknown ? copy("Unpriced") : formatUsd(model.costUsd),
+      number: costUnknown ? null : model.costUsd,
+      format: formatUsd,
+    },
+    {
+      label: copy("Share of tokens"),
+      value: formatPercent(model.tokenShare),
+      number: model.tokenShare,
+      format: formatPercent,
+    },
+    {
+      label: copy("Peak hour"),
+      value:
+        busiest && busiest.totalTokens > 0 ? (
+          dateFormat.formatHourShort(busiest.hourStart, chartWindow.timeZone, chartWindow.hour12)
+        ) : chartWindow.resolution === "day" ? (
+          <UsageBusiestHour
+            key={`${model.provider}:${model.model}:${chartWindow.days[0]}:${chartWindow.days.at(-1)}`}
+            days={chartWindow.days}
+            timeZone={chartWindow.timeZone}
+            hour12={chartWindow.hour12}
+            model={model}
+            environments={environments}
+          />
+        ) : (
+          copy("No hourly usage")
+        ),
+      number: null,
+      format: formatTokens,
+    },
+  ];
+  const period =
+    chartWindow.periodLabel ??
+    (chartWindow.resolution === "hour"
+      ? copy("Last 24 hours")
+      : copy("Last {count} days", { count: chartWindow.days.length }));
+  const share =
+    metric === "tokens"
+      ? copy("{value} of tokens", { value: formatPercent(model.tokenShare) })
+      : costUnknown
+        ? copy("Unpriced")
+        : copy("{value} of cost", { value: formatPercent(model.costShare) });
+
+  const useV9Sheet = true;
+  if (useV9Sheet)
+    return (
+      <UsageDetailsSheet
+        open
+        onOpenChange={(open) => {
+          if (!open) onClose();
+        }}
+        title={model.model}
+        description={`${presentation.label} · ${period} · ${share}`}
+      >
+        <div className="flex min-w-0 flex-col gap-4">
+          <dl className="usage-model-stats">
+            {appleStats.map((stat) => (
+              <div key={stat.label} className="flex min-w-0 flex-col gap-0.5">
+                <dt className="text-xs text-muted-foreground">{uiText(stat.label)}</dt>
+                <dd>
+                  {stat.number === null ? (
+                    <span data-text-stat>{stat.value}</span>
+                  ) : (
+                    <UsageCount value={stat.number} format={stat.format} />
+                  )}
+                </dd>
+              </div>
+            ))}
+          </dl>
+
+          {/* Unpriced cost is unknown, not zero, so its trend shows tokens. */}
+          <UsageModelBars
+            usage={usage}
+            window={chartWindow}
+            metric={costUnknown ? "tokens" : metric}
+          />
+
+          <section className="usage-analysis-panel">
+            <div className="usage-type-table" role="table" aria-label={uiText("Tokens and costs")}>
+              <div role="row" className="usage-type-row usage-type-head">
+                <span>{uiText("Type")}</span>
+                <span>{uiText("Share of tokens")}</span>
+                <span>{uiText("Tokens")}</span>
+                <span>{uiText("Cost")}</span>
+              </div>
+              {tokenTypeSegments(model.tokens)
+                .map((row) => ({
+                  ...row,
+                  cost:
+                    costTypeSegments(usage.categoryCost).find((cost) => cost.label === row.label)
+                      ?.value ?? 0,
+                }))
+                .filter((row) => row.value > 0 || row.cost > 0)
+                .toSorted((a, b) => b.value - a.value)
+                .map((row) => (
+                  <div role="row" className="usage-type-row" key={row.label}>
+                    <span>{row.label}</span>
+                    <span className="usage-type-track">
+                      <i
+                        style={{
+                          width: `${Math.max(1.5, model.totalTokens > 0 ? (row.value / model.totalTokens) * 100 : 0)}%`,
+                        }}
+                      />
+                    </span>
+                    <span>{formatTokens(row.value)}</span>
+                    <span>{costUnknown ? uiText("Unpriced") : formatUsd(row.cost)}</span>
+                  </div>
+                ))}
+              {usage.categoryCost.unsplit > 0 ? (
+                <div role="row" className="usage-type-row">
+                  <span>{uiText("Unallocated")}</span>
+                  <span />
+                  <span>–</span>
+                  <span>{formatUsd(usage.categoryCost.unsplit)}</span>
+                </div>
+              ) : null}
+            </div>
+          </section>
+          {usage.speedCost.fast + usage.speedCost.ultrafast > 0 ? (
+            <UsageShareBar
+              label="Cost by speed"
+              segments={speedCostSegments(usage.speedCost)}
+              format={formatUsd}
+              aside={<SpeedPremium premiumUsd={usage.speedCost.premium} />}
+            />
+          ) : null}
+        </div>
+
+        <div className="usage-model-price-entry">
+          <span className="usage-model-secondary">
+            {copy("{price} per million tokens · {rate} cache hit rate", {
+              price: perMillion === null ? uiText("Unpriced") : formatUsd(perMillion),
+              rate: hitRate === null ? uiText("No data yet") : formatPercent(hitRate),
+            })}
+          </span>
+          <Button variant="outline" size="sm" onClick={onSetPrice}>
+            {uiText("Edit pricing…")}
+          </Button>
+        </div>
+        {model.unpricedTokens > 0 ? (
+          <p className="usage-model-secondary">
+            {copy("{count} unpriced tokens", { count: formatTokens(model.unpricedTokens) })}
+          </p>
+        ) : null}
+      </UsageDetailsSheet>
+    );
   return (
     <Dialog
       open
@@ -76,7 +263,7 @@ export function UsageModelDialog({
         if (!open) onClose();
       }}
     >
-      <DialogPopup className="max-w-3xl">
+      <DialogPopup data-usage-dialog className="max-w-3xl">
         <DialogHeader>
           <div className="flex items-center gap-2">
             <ProviderInstanceIcon
@@ -88,9 +275,7 @@ export function UsageModelDialog({
           </div>
           <DialogDescription>
             {presentation.label}
-            {costUnknown
-              ? ""
-              : ` · ${gt("{share} of cost", { share: formatPercent(model.costShare) })}`}
+            {costUnknown ? "" : ` · ${formatPercent(model.costShare)} of cost`}
           </DialogDescription>
         </DialogHeader>
         <DialogPanel>
@@ -98,7 +283,7 @@ export function UsageModelDialog({
             <dl className="grid grid-cols-2 gap-x-6 gap-y-4 sm:grid-cols-4">
               {stats.map((stat) => (
                 <div key={stat.label} className="flex min-w-0 flex-col gap-0.5">
-                  <dt className="text-xs text-muted-foreground">{stat.label}</dt>
+                  <dt className="text-xs text-muted-foreground">{uiText(stat.label)}</dt>
                   <dd className="text-2xl font-semibold text-foreground">{stat.value}</dd>
                 </div>
               ))}
@@ -121,21 +306,21 @@ export function UsageModelDialog({
             <div className="grid gap-x-10 gap-y-8 sm:grid-cols-2">
               {costUnknown ? null : (
                 <UsageShareBar
-                  label={gt("Cost by type")}
+                  label="Cost by type"
                   segments={costTypeSegments(usage.categoryCost)}
-                  format={(value: number) => formatUsd(value, locale)}
+                  format={formatUsd}
                 />
               )}
               <UsageShareBar
-                label={gt("Tokens by type")}
+                label="Tokens by type"
                 segments={tokenTypeSegments(model.tokens)}
                 format={formatTokens}
               />
               {usage.speedCost.fast + usage.speedCost.ultrafast > 0 ? (
                 <UsageShareBar
-                  label={gt("Cost by speed")}
+                  label="Cost by speed"
                   segments={speedCostSegments(usage.speedCost)}
-                  format={(value: number) => formatUsd(value, locale)}
+                  format={formatUsd}
                   aside={<SpeedPremium premiumUsd={usage.speedCost.premium} />}
                 />
               ) : null}
@@ -145,13 +330,10 @@ export function UsageModelDialog({
         {model.unpricedTokens > 0 ? (
           <DialogFooter variant="bare" className="items-center sm:justify-between">
             <span className="text-xs text-muted-foreground">
-              {gt("{tokens} tokens have no known price", {
-                tokens: formatTokens(model.unpricedTokens),
-              })}
+              {formatTokens(model.unpricedTokens)}
+              {uiText("tokens have no known price")}
             </span>
-            <Button onClick={onSetPrice}>
-              <T>Set price</T>
-            </Button>
+            <Button onClick={onSetPrice}>{uiText("Set price")}</Button>
           </DialogFooter>
         ) : null}
       </DialogPopup>
@@ -160,15 +342,11 @@ export function UsageModelDialog({
 }
 
 export function SpeedPremium({ premiumUsd }: { readonly premiumUsd: number }) {
-  const locale = useLocale();
+  const uiText = useUiText();
   return (
     <span className="text-xs text-muted-foreground">
-      <T>
-        Premium{" "}
-        <span className="text-foreground tabular-nums">
-          <Var>{formatUsd(premiumUsd, locale)}</Var>
-        </span>
-      </T>
+      {uiText("Premium")}
+      <span className="text-foreground tabular-nums">{formatUsd(premiumUsd)}</span>
     </span>
   );
 }

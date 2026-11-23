@@ -1,5 +1,5 @@
+import { useUiText } from "~/i18n/useUiText";
 import { formatPercent } from "@t3tools/shared/usageFormat";
-import { useMessages } from "gt-react";
 import type { ReactNode } from "react";
 
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
@@ -21,7 +21,7 @@ export function UsageShareBar({
   readonly format: (value: number) => string;
   readonly aside?: ReactNode;
 }) {
-  const m = useMessages();
+  const uiText = useUiText();
   const visible = segments.filter((segment) => segment.value > 0);
   const total = visible.reduce((sum, segment) => sum + segment.value, 0);
   if (total <= 0) return null;
@@ -29,13 +29,13 @@ export function UsageShareBar({
   return (
     <div className="flex min-w-0 flex-col gap-2.5">
       <div className="flex items-baseline justify-between gap-3">
-        <h3 className="text-sm font-medium text-foreground">{label}</h3>
+        <h3 className="text-sm font-medium text-foreground">{uiText(label)}</h3>
         {aside}
       </div>
       {/* The legend below carries every figure; the bar's tooltips are pointer-only. */}
       <div aria-hidden className="flex h-2 gap-0.5">
         {visible.map((segment) => (
-          <Tooltip key={segment.label}>
+          <Tooltip key={uiText(segment.label)}>
             <TooltipTrigger
               render={
                 <div
@@ -45,20 +45,21 @@ export function UsageShareBar({
               }
             />
             <TooltipPopup>
-              {m(segment.label)} · {format(segment.value)} · {formatPercent(segment.value / total)}
+              {uiText(segment.label)} · {format(segment.value)} ·{" "}
+              {formatPercent(segment.value / total)}
             </TooltipPopup>
           </Tooltip>
         ))}
       </div>
       <ul aria-label={label} className="flex flex-wrap gap-x-4 gap-y-1 text-xs">
         {visible.map((segment) => (
-          <li key={segment.label} className="flex items-center gap-1.5">
+          <li key={uiText(segment.label)} className="flex items-center gap-1.5">
             <span
               aria-hidden
               className="size-2 rounded-xs"
               style={{ backgroundColor: segment.color }}
             />
-            <span className="text-muted-foreground">{m(segment.label)}</span>{" "}
+            <span className="text-muted-foreground">{uiText(segment.label)}</span>{" "}
             <span className="text-foreground tabular-nums">{format(segment.value)}</span>
             <span className="sr-only">, {formatPercent(segment.value / total)}</span>
           </li>

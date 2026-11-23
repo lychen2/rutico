@@ -1,3 +1,4 @@
+import { uiText } from "~/i18n";
 import type { UsageProviderKind } from "@t3tools/contracts";
 
 import { ProviderDriverKind } from "@t3tools/contracts";
@@ -13,43 +14,56 @@ type UsageProviderPresentation = {
 export const PROVIDER_PRESENTATION = {
   codex: {
     label: "Codex",
-    color: "var(--contrast-foreground)",
+    color: "var(--usage-codex)",
     driverKind: ProviderDriverKind.make("codex"),
   },
   claude: {
     label: "Claude Code",
-    color: "#d97757",
+    color: "var(--usage-claude)",
     driverKind: ProviderDriverKind.make("claudeAgent"),
   },
   grok: {
     label: "Grok Build",
-    color: "color-mix(in oklab, var(--contrast-foreground) 72%, var(--background))",
+    color: "var(--usage-grok)",
     driverKind: ProviderDriverKind.make("grok"),
   },
-  cursor: { label: "Cursor", color: "#8b8b8b", driverKind: ProviderDriverKind.make("cursor") },
+  cursor: {
+    label: "Cursor",
+    color: "var(--usage-other)",
+    driverKind: ProviderDriverKind.make("cursor"),
+  },
   opencode: {
     label: "OpenCode",
-    color: "#5b9bbd",
+    color: "var(--usage-other)",
     driverKind: ProviderDriverKind.make("opencode"),
   },
   antigravity: {
     label: "Antigravity",
-    color: "#8c7bd1",
+    color: "var(--usage-antigravity)",
     driverKind: ProviderDriverKind.make("antigravity"),
   },
   pi: {
-    label: "Pi",
-    color: "#4d9f8a",
+    label: "OMP",
+    color: "var(--usage-pi)",
     driverKind: ProviderDriverKind.make("pi"),
   },
   muse: {
     label: "Muse Code",
-    color: "#0866ff",
+    color: "var(--usage-other)",
     driverKind: ProviderDriverKind.make("muse"),
   },
 } satisfies Record<UsageProviderKind, UsageProviderPresentation>;
 
-export const PROVIDER_ORDER = Object.keys(PROVIDER_PRESENTATION) as UsageProviderKind[];
+export const PROVIDER_ORDER = [
+  "codex",
+  "claude",
+  "grok",
+  "antigravity",
+  "cursor",
+  "opencode",
+  "pi",
+  "muse",
+] as UsageProviderKind[];
 
 export function providersWithUsage(
   totals: readonly {
@@ -64,6 +78,21 @@ export function providersWithUsage(
       .map((entry) => entry.provider),
   );
   return PROVIDER_ORDER.filter((provider) => active.has(provider));
+}
+
+export function usageSeries(provider: UsageProviderKind): UsageProviderKind {
+  return ["codex", "claude", "grok", "antigravity", "pi"].includes(provider) ? provider : "cursor";
+}
+export const USAGE_SERIES_ORDER: readonly UsageProviderKind[] = [
+  "codex",
+  "claude",
+  "grok",
+  "antigravity",
+  "pi",
+  "cursor",
+];
+export function usageSeriesLabel(provider: UsageProviderKind) {
+  return provider === "cursor" ? uiText("Other providers") : PROVIDER_PRESENTATION[provider].label;
 }
 
 export function rankProvidersByMetric(
