@@ -29,6 +29,7 @@ import { cacheHitRate, modelShare, sortModelsByTokens } from "./usageBreakdown";
 import { PROVIDER_PRESENTATION, usageSeries, usageSeriesLabel } from "./usageProviders";
 import { Toggle } from "../ui/toggle-group";
 import { UsageSegments as ToggleGroup } from "./UsageSegments";
+import "./usagePresentation.css";
 import "./costTokensV9.css";
 
 const HOURS = Array.from({ length: 24 }, (_, hour) => hour);

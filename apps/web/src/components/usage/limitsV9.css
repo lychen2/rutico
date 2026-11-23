@@ -8,45 +8,48 @@
   --spring: cubic-bezier(0.3, 0.7, 0.2, 1);
   --spring-flip: cubic-bezier(0.22, 1.08, 0.36, 1);
 
-  --ac: #ff5a1f;
-  --ac-soft: rgba(255, 90, 31, 0.1);
-  --ac-glow: rgba(255, 90, 31, 0.24);
+  --ac: var(--primary);
+  --ac-soft: color-mix(in srgb, var(--primary) 12%, transparent);
+  --ac-glow: color-mix(in srgb, var(--primary) 24%, transparent);
 
   --surface: var(--card, #ffffff);
-  --surface-2: #f5f5f8;
-  --logo-bg: #f2f2f5;
-  --glass-strong: rgba(255, 255, 255, 0.95);
+  --surface-2: color-mix(in srgb, var(--foreground) 4%, var(--card, #ffffff));
+  --logo-bg: color-mix(in srgb, var(--foreground) 7%, var(--card, #ffffff));
+  --glass-strong: color-mix(in srgb, var(--popover, var(--card, #ffffff)) 96%, transparent);
   --fg: var(--foreground, #1d1d1f);
-  --fg-2: #6e6e73;
-  --fg-3: #9a9aa1;
-  --line: rgba(0, 0, 0, 0.085);
-  --hair: rgba(0, 0, 0, 0.055);
-  --fill: rgba(118, 118, 128, 0.095);
-  --fill-hover: rgba(118, 118, 128, 0.155);
-  --sel-surface: rgba(0, 0, 0, 0.048);
-  --r0: #e8e8ed;
+  --fg-2: var(--muted-foreground, #6e6e73);
+  --fg-3: color-mix(in srgb, var(--muted-foreground, #9a9aa1) 75%, transparent);
+  --line: var(--border, rgba(0, 0, 0, 0.085));
+  --hair: color-mix(in srgb, var(--border, rgba(0, 0, 0, 0.085)) 70%, transparent);
+  --fill: color-mix(in srgb, var(--foreground) 7%, transparent);
+  --fill-hover: color-mix(in srgb, var(--foreground) 12%, transparent);
+  --sel-surface: color-mix(in srgb, var(--foreground) 6%, transparent);
+  --r0: color-mix(in srgb, var(--foreground) 11%, var(--card, #ffffff));
 
-  --ok: #1d8a3f;
-  --ok-bg: rgba(52, 199, 89, 0.13);
-  --warn: #c25400;
-  --warn-bg: rgba(255, 149, 0, 0.14);
-  --bad: #d70015;
-  --bad-bg: rgba(255, 59, 48, 0.12);
-  --blue: #007aff;
+  --ok: var(--success-foreground, var(--success, #1d8a3f));
+  --ok-bg: color-mix(in srgb, var(--success, #34c759) 14%, transparent);
+  --warn: var(--warning-foreground, var(--warning, #c25400));
+  --warn-bg: color-mix(in srgb, var(--warning, #ff9500) 15%, transparent);
+  --bad: var(--destructive, var(--error, #d70015));
+  --bad-bg: color-mix(in srgb, var(--destructive, #ff3b30) 13%, transparent);
+  --blue: var(--info-foreground, var(--info, #007aff));
   --violet: #7c5ce6;
   --violet-bg: rgba(124, 92, 230, 0.12);
-  --v9-red: #ff3b30;
-  --v9-green: #34c759;
-  --v9-blue: #4285f4;
-  --v9-amber: #ff9500;
-  --v9-on-ac: #ffffff;
+  --v9-red: var(--destructive, #ff3b30);
+  --v9-green: var(--success, #34c759);
+  --v9-blue: var(--info, #4285f4);
+  --v9-amber: var(--warning, #ff9500);
+  --v9-on-ac: var(--primary-foreground, #ffffff);
 
   --shadow-card:
-    0 0 0 0.5px rgba(0, 0, 0, 0.075), 0 1px 2px rgba(0, 0, 0, 0.03), 0 8px 24px rgba(0, 0, 0, 0.035);
+    0 0 0 0.5px color-mix(in srgb, var(--foreground) 7%, transparent),
+    0 1px 2px rgba(0, 0, 0, 0.03), 0 8px 24px rgba(0, 0, 0, 0.035);
   --shadow-float:
-    0 0 0 0.5px rgba(0, 0, 0, 0.09), 0 16px 40px -8px rgba(0, 0, 0, 0.16),
-    0 4px 12px rgba(0, 0, 0, 0.05);
-  --shadow-elevated: 0 0 0 0.5px rgba(0, 0, 0, 0.14), 0 12px 30px -6px rgba(0, 0, 0, 0.13);
+    0 0 0 0.5px color-mix(in srgb, var(--foreground) 9%, transparent),
+    0 16px 40px -8px rgba(0, 0, 0, 0.16), 0 4px 12px rgba(0, 0, 0, 0.05);
+  --shadow-elevated:
+    0 0 0 0.5px color-mix(in srgb, var(--foreground) 14%, transparent),
+    0 12px 30px -6px rgba(0, 0, 0, 0.13);
 
   font-size: 13px;
   line-height: 1.5;
@@ -55,29 +58,32 @@
   -webkit-font-smoothing: antialiased;
 }
 :is(.dark) [data-lv9-root] {
-  --surface-2: color-mix(in srgb, var(--card, #2a2a2d) 94%, #fff);
-  --logo-bg: #2c2c30;
-  --glass-strong: rgba(30, 30, 34, 0.96);
-  --fg-2: #a1a1a6;
-  --fg-3: #76767d;
-  --line: rgba(255, 255, 255, 0.11);
-  --hair: rgba(255, 255, 255, 0.07);
-  --fill: rgba(255, 255, 255, 0.085);
-  --fill-hover: rgba(255, 255, 255, 0.145);
-  --sel-surface: rgba(255, 255, 255, 0.08);
-  --r0: #2b2b30;
-  --ok: #30d158;
-  --ok-bg: rgba(48, 209, 88, 0.16);
-  --warn: #ff9f0a;
-  --warn-bg: rgba(255, 159, 10, 0.18);
-  --bad: #ff453a;
-  --bad-bg: rgba(255, 69, 58, 0.16);
-  --blue: #0a84ff;
+  --ac-soft: color-mix(in srgb, var(--primary) 16%, transparent);
+  --ac-glow: color-mix(in srgb, var(--primary) 28%, transparent);
+  --surface-2: color-mix(in srgb, var(--foreground) 6%, var(--card, #2a2a2d));
+  --logo-bg: color-mix(in srgb, var(--foreground) 8%, var(--card, #2c2c30));
+  --fill: color-mix(in srgb, var(--foreground) 8%, transparent);
+  --fill-hover: color-mix(in srgb, var(--foreground) 14%, transparent);
+  --sel-surface: color-mix(in srgb, var(--foreground) 8%, transparent);
+  --r0: color-mix(in srgb, var(--foreground) 12%, var(--card, #2b2b30));
+  --ok: var(--success-foreground, var(--success, #30d158));
+  --ok-bg: color-mix(in srgb, var(--success, #30d158) 16%, transparent);
+  --warn: var(--warning-foreground, var(--warning, #ff9f0a));
+  --warn-bg: color-mix(in srgb, var(--warning, #ff9f0a) 18%, transparent);
+  --bad: var(--error-foreground, var(--destructive, #ff453a));
+  --bad-bg: color-mix(in srgb, var(--destructive, #ff453a) 16%, transparent);
+  --blue: var(--info-foreground, var(--info, #0a84ff));
   --violet: #a78bfa;
   --violet-bg: rgba(167, 139, 250, 0.16);
-  --shadow-card: 0 0 0 0.5px rgba(255, 255, 255, 0.1), 0 8px 28px rgba(0, 0, 0, 0.38);
-  --shadow-float: 0 0 0 0.5px rgba(255, 255, 255, 0.14), 0 20px 50px rgba(0, 0, 0, 0.65);
-  --shadow-elevated: 0 0 0 0.5px rgba(255, 255, 255, 0.22), 0 14px 36px rgba(0, 0, 0, 0.55);
+  --shadow-card:
+    0 0 0 0.5px color-mix(in srgb, var(--foreground) 10%, transparent),
+    0 8px 28px rgba(0, 0, 0, 0.35);
+  --shadow-float:
+    0 0 0 0.5px color-mix(in srgb, var(--foreground) 14%, transparent),
+    0 20px 50px rgba(0, 0, 0, 0.65);
+  --shadow-elevated:
+    0 0 0 0.5px color-mix(in srgb, var(--foreground) 22%, transparent),
+    0 14px 36px rgba(0, 0, 0, 0.55);
 }
 
 /* V9 base resets, zero specificity so they never beat a rule below. */
@@ -253,6 +259,7 @@
 /* ---------- risk hero ---------- */
 [data-lv9-root] [data-lv9~="risk-hero"] {
   background: var(--surface);
+  border: 0.5px solid var(--line);
   border-radius: 16px;
   box-shadow: var(--shadow-card);
   padding: 15px 18px;
@@ -1241,7 +1248,7 @@ html:root
   font-size: 11.8px;
   font-weight: 650;
   background: var(--ac);
-  color: #fff;
+  color: var(--v9-on-ac);
   white-space: nowrap;
   box-shadow: 0 2px 10px var(--ac-glow);
   transition:

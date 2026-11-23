@@ -65,7 +65,7 @@ export function TaskPlanCapsule({ progress, onOpenFile, onDismissed }: TaskPlanC
   const [fading, setFading] = useState(false);
   const [hintKey, setHintKey] = useState(0);
   const { complete, waiting } = progress;
-  const needStep = waiting ? waitingStepId(progress) : undefined;
+  const needStep = progress.blockedStepId ?? (waiting ? waitingStepId(progress) : undefined);
   const milestones = deriveMilestones({
     steps: progress.steps,
     activities: progress.activities,
@@ -88,9 +88,13 @@ export function TaskPlanCapsule({ progress, onOpenFile, onDismissed }: TaskPlanC
     : 0;
   const title = complete
     ? completedTitle(milestones.length, progress.durationMs, gt)
-    : liveFallback && completedFallbackOps > 0 && current
-      ? `${current.name} · ${gt("{count} calls completed", { count: completedFallbackOps })}`
-      : (current?.name ?? gt("Task steps"));
+    : progress.liveIntent !== undefined
+      ? liveFallback && completedFallbackOps > 0
+        ? `${progress.liveIntent} · ${gt("{count} calls completed", { count: completedFallbackOps })}`
+        : progress.liveIntent
+      : liveFallback && completedFallbackOps > 0 && current
+        ? `${current.name} · ${gt("{count} calls completed", { count: completedFallbackOps })}`
+        : (current?.name ?? gt("Task steps"));
   const pill =
     mode === "need" ? gt("Needs confirmation") : mode === "problem" ? gt("Problem") : null;
 

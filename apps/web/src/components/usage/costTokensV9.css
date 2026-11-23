@@ -22,14 +22,14 @@
   --spring-flip: cubic-bezier(0.22, 1.08, 0.36, 1);
   --ease-exit: cubic-bezier(0.4, 0, 0.85, 0.6);
 
-  --ac: #ff5a1f;
-  --ac-2: #ff8a5b;
-  --ac-3: #ffb293;
-  --ac-4: #ffd6c6;
-  --ac-soft: rgba(255, 90, 31, 0.1);
-  --ac-glow: rgba(255, 90, 31, 0.24);
+  --ac: var(--primary);
+  --ac-2: color-mix(in srgb, var(--primary) 72%, var(--card));
+  --ac-3: color-mix(in srgb, var(--primary) 48%, var(--card));
+  --ac-4: color-mix(in srgb, var(--primary) 24%, var(--card));
+  --ac-soft: color-mix(in srgb, var(--primary) 12%, transparent);
+  --ac-glow: color-mix(in srgb, var(--primary) 24%, transparent);
 
-  --ctv9-prov-codex: #ff5a1f;
+  --ctv9-prov-codex: var(--primary);
   --ctv9-prov-claude: #d97757;
   --ctv9-prov-antigravity: #4285f4;
   --ctv9-prov-grok: #8e8e93;
@@ -40,33 +40,34 @@
   --ctv9-gem-1: #9b72cb;
   --ctv9-gem-2: #d96570;
 
-  --bg: #f4f5f8;
-  --surface: #ffffff;
-  --surface-2: #f5f5f8;
-  --logo-bg: #f2f2f5;
-  --fg: #1d1d1f;
-  --fg-2: #6e6e73;
-  --fg-3: #9a9aa1;
-  --line: rgba(0, 0, 0, 0.085);
-  --hair: rgba(0, 0, 0, 0.055);
-  --fill: rgba(118, 118, 128, 0.095);
-  --fill-hover: rgba(118, 118, 128, 0.155);
-  --sel-surface: rgba(0, 0, 0, 0.048);
-  --r0: #e8e8ed;
+  --bg: var(--background);
+  --surface: var(--card);
+  --surface-2: color-mix(in srgb, var(--foreground) 4%, var(--card));
+  --logo-bg: color-mix(in srgb, var(--foreground) 7%, var(--card));
+  --fg: var(--foreground);
+  --fg-2: var(--muted-foreground);
+  --fg-3: color-mix(in srgb, var(--muted-foreground) 75%, transparent);
+  --line: var(--border);
+  --hair: color-mix(in srgb, var(--border) 70%, transparent);
+  --fill: color-mix(in srgb, var(--foreground) 7%, transparent);
+  --fill-hover: color-mix(in srgb, var(--foreground) 12%, transparent);
+  --sel-surface: color-mix(in srgb, var(--foreground) 6%, transparent);
+  --r0: color-mix(in srgb, var(--foreground) 11%, var(--card));
 
-  --ok: #1d8a3f;
-  --ok-bg: rgba(52, 199, 89, 0.13);
-  --warn: #c25400;
-  --warn-bg: rgba(255, 149, 0, 0.14);
-  --bad: #d70015;
-  --bad-bg: rgba(255, 59, 48, 0.12);
-  --blue: #007aff;
-  --blue-bg: rgba(0, 122, 255, 0.12);
+  --ok: var(--success-foreground, var(--success, #1d8a3f));
+  --ok-bg: color-mix(in srgb, var(--success, #34c759) 14%, transparent);
+  --warn: var(--warning-foreground, var(--warning, #c25400));
+  --warn-bg: color-mix(in srgb, var(--warning, #ff9500) 15%, transparent);
+  --bad: var(--destructive, var(--error, #d70015));
+  --bad-bg: color-mix(in srgb, var(--destructive, #ff3b30) 13%, transparent);
+  --blue: var(--info-foreground, var(--info, #007aff));
+  --blue-bg: color-mix(in srgb, var(--info, #007aff) 13%, transparent);
   --violet: #7c5ce6;
   --violet-bg: rgba(124, 92, 230, 0.12);
 
   --shadow-card:
-    0 0 0 0.5px rgba(0, 0, 0, 0.075), 0 1px 2px rgba(0, 0, 0, 0.03), 0 8px 24px rgba(0, 0, 0, 0.035);
+    0 0 0 0.5px color-mix(in srgb, var(--foreground) 7%, transparent),
+    0 1px 2px rgba(0, 0, 0, 0.03), 0 8px 24px rgba(0, 0, 0, 0.035);
 
   font-family: var(--font);
   color: var(--fg);
@@ -77,32 +78,29 @@
 }
 
 :is(.dark) [data-ctv9-root] {
-  --bg: #0c0c0e;
-  --surface: #18181b;
-  --surface-2: #222226;
-  --logo-bg: #2c2c30;
-  --fg: #f5f5f7;
-  --fg-2: #a1a1a6;
-  --fg-3: #76767d;
-  --line: rgba(255, 255, 255, 0.11);
-  --hair: rgba(255, 255, 255, 0.07);
-  --fill: rgba(255, 255, 255, 0.085);
-  --fill-hover: rgba(255, 255, 255, 0.145);
-  --sel-surface: rgba(255, 255, 255, 0.08);
-  --r0: #2b2b30;
+  --ac-soft: color-mix(in srgb, var(--primary) 16%, transparent);
+  --ac-glow: color-mix(in srgb, var(--primary) 28%, transparent);
+  --surface-2: color-mix(in srgb, var(--foreground) 6%, var(--card));
+  --logo-bg: color-mix(in srgb, var(--foreground) 8%, var(--card));
+  --fill: color-mix(in srgb, var(--foreground) 8%, transparent);
+  --fill-hover: color-mix(in srgb, var(--foreground) 14%, transparent);
+  --sel-surface: color-mix(in srgb, var(--foreground) 8%, transparent);
+  --r0: color-mix(in srgb, var(--foreground) 12%, var(--card));
 
-  --ok: #30d158;
-  --ok-bg: rgba(48, 209, 88, 0.16);
-  --warn: #ff9f0a;
-  --warn-bg: rgba(255, 159, 10, 0.18);
-  --bad: #ff453a;
-  --bad-bg: rgba(255, 69, 58, 0.16);
-  --blue: #0a84ff;
-  --blue-bg: rgba(10, 132, 255, 0.18);
+  --ok: var(--success-foreground, var(--success, #30d158));
+  --ok-bg: color-mix(in srgb, var(--success, #30d158) 16%, transparent);
+  --warn: var(--warning-foreground, var(--warning, #ff9f0a));
+  --warn-bg: color-mix(in srgb, var(--warning, #ff9f0a) 18%, transparent);
+  --bad: var(--error-foreground, var(--destructive, #ff453a));
+  --bad-bg: color-mix(in srgb, var(--destructive, #ff453a) 16%, transparent);
+  --blue: var(--info-foreground, var(--info, #0a84ff));
+  --blue-bg: color-mix(in srgb, var(--info, #0a84ff) 18%, transparent);
   --violet: #a78bfa;
   --violet-bg: rgba(167, 139, 250, 0.16);
 
-  --shadow-card: 0 0 0 0.5px rgba(255, 255, 255, 0.1), 0 8px 28px rgba(0, 0, 0, 0.38);
+  --shadow-card:
+    0 0 0 0.5px color-mix(in srgb, var(--foreground) 10%, transparent),
+    0 8px 28px rgba(0, 0, 0, 0.35);
 }
 
 @keyframes ctv9PanelFade {
@@ -247,7 +245,7 @@
 [data-ctv9-root] [data-ctv9="card"],
 [data-ctv9-root] [data-ctv9="card"][data-usage-card] {
   background: var(--surface);
-  border: 0;
+  border: 0.5px solid var(--line);
   border-radius: 18px;
   box-shadow: var(--shadow-card);
   padding: 18px 20px;
@@ -337,7 +335,7 @@
 [data-ctv9-root] [data-ctv9="hero-chart-card"],
 [data-ctv9-root] [data-ctv9="hero-chart-card"][data-usage-card] {
   background: var(--surface);
-  border: 0;
+  border: 0.5px solid var(--line);
   border-radius: 20px;
   box-shadow: var(--shadow-card);
   padding: 20px 22px 16px;

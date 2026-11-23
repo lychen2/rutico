@@ -50,10 +50,16 @@ const driver = ProviderDriverKind.make("omp");
 const provider = { ...CODEX_PROVIDER, instanceId, driver };
 const modelSelection = { instanceId, model: "gpt-5.4" };
 
-it("keeps one current OMP checklist above the composer and isolates disclosure by thread", async () => {
+it("shows OMP tool intent in the floating capsule and folds calls into overall todo stages", async () => {
   const thread = threadWithHistory("omp-todo-footer", 1, modelSelection);
   const other = threadWithHistory("omp-todo-neighbor", 1, modelSelection);
   const at = DateTime.makeUnsafe("2026-03-17T19:12:28.000Z");
+  const activeRun = {
+    ...thread.runs[0]!,
+    status: "running" as const,
+    startedAt: at,
+    completedAt: null,
+  };
   const providerThread: OrchestrationV2ProviderThread = {
     id: ProviderThreadId.make("provider-thread-omp-todo"),
     driver,
@@ -72,8 +78,73 @@ it("keeps one current OMP checklist above the composer and isolates disclosure b
     createdAt: at,
     updatedAt: at,
   };
+  const planId = PlanId.make(`omp-todo:${thread.id}`);
+  const itemBase = {
+    threadId: thread.id,
+    runId: activeRun.id,
+    nodeId: NodeId.make("omp-todo-node"),
+    providerThreadId: providerThread.id,
+    providerTurnId: null,
+    nativeItemRef: null,
+    parentItemId: null,
+    title: null,
+    startedAt: at,
+    completedAt: at,
+    updatedAt: at,
+  };
+  const firstSnapshot = {
+    ...itemBase,
+    id: TurnItemId.make("omp-todo-update-1"),
+    type: "todo_list",
+    ordinal: 2,
+    status: "completed",
+    planId,
+    steps: [
+      { id: "first", text: "校对仪表盘\n检查桌面布局", status: "running" },
+      { id: "second", text: "检查窄屏显示", status: "pending" },
+      { id: "dropped", text: "已放弃的任务\n[abandoned]", status: "pending" },
+    ],
+  } satisfies OrchestrationV2TurnItem;
+  const firstCall = {
+    ...itemBase,
+    id: TurnItemId.make("omp-call-1"),
+    type: "command_execution",
+    ordinal: 3,
+    status: "completed",
+    title: "bash",
+    toolPurpose: "检索用量页样式文件",
+    input: "rg usagePresentation apps/web/src",
+  } satisfies OrchestrationV2TurnItem;
+  const secondSnapshot = {
+    ...firstSnapshot,
+    id: TurnItemId.make("omp-todo-update-2"),
+    ordinal: 4,
+    steps: [
+      { id: "first", text: "校对仪表盘\n检查桌面布局", status: "completed" },
+      { id: "second", text: "检查窄屏显示", status: "running" },
+      { id: "dropped", text: "已放弃的任务\n[abandoned]", status: "pending" },
+    ],
+  } satisfies OrchestrationV2TurnItem;
+  const liveCall = {
+    ...itemBase,
+    id: TurnItemId.make("omp-call-2"),
+    type: "file_change",
+    ordinal: 5,
+    status: "running",
+    completedAt: null,
+    fileName: "apps/web/src/components/usage/costTokensV9.css",
+    toolPurpose: "适配主题卡片变量",
+  } satisfies OrchestrationV2TurnItem;
   using _environment = installFakeEnvironment(
-    [{ ...thread, providerThreads: [providerThread] }, other],
+    [
+      {
+        ...thread,
+        runs: [activeRun],
+        providerThreads: [providerThread],
+        items: [thread.items[0]!, firstSnapshot, firstCall, secondSnapshot, liveCall],
+      },
+      other,
+    ],
     { providers: [provider] },
   );
   __setClientSettingsForTests({
@@ -93,50 +164,27 @@ it("keeps one current OMP checklist above the composer and isolates disclosure b
     router: false,
   });
 
-  const checklist = page.getByRole("region", { name: "待办清单" });
-  const trigger = checklist.getByRole("button", { name: /^待办清单/ });
-  const steps = checklist.getByRole("list");
   const status = page.getByRole("button", { name: /上下文 25%/ });
   await expect.element(status).toBeVisible();
   expect(status.element().closest("form")).toBeNull();
   await status.click();
   await expect.element(page.getByText(/24,600.*100,000|100,000.*24,600/)).toBeVisible();
   await userEvent.keyboard("{Escape}");
-  await expect.element(checklist).not.toBeInTheDocument();
+
+  // Before an overall todo plan arrives, OMP's live tool intent still renders in the floating capsule.
+  const capsule = page.getByRole("region", { name: "任务进度" });
+  await expect.element(capsule.getByRole("button", { name: /适配主题卡片变量/ })).toBeVisible();
 
   const plan: OrchestrationV2PlanArtifact = {
     kind: "todo_list",
-    id: PlanId.make(`omp-todo:${thread.id}`),
+    id: planId,
     threadId: thread.id,
-    runId: thread.runs[0]!.id,
+    runId: activeRun.id,
     nodeId: NodeId.make("omp-todo-node"),
     status: "active",
-    steps: [
-      { id: "first", text: "校对仪表盘\n检查桌面布局", status: "running" },
-      { id: "second", text: "检查窄屏显示", status: "pending" },
-      { id: "third", text: "打包\n[blocked] 等待验收", status: "pending" },
-      { id: "dropped", text: "已放弃的任务\n[abandoned]", status: "pending" },
-    ],
+    steps: secondSnapshot.steps,
   };
-  const mirroredSnapshot = {
-    id: TurnItemId.make("omp-todo-update"),
-    type: "todo_list",
-    threadId: thread.id,
-    runId: plan.runId,
-    nodeId: plan.nodeId,
-    providerThreadId: providerThread.id,
-    providerTurnId: null,
-    nativeItemRef: null,
-    parentItemId: null,
-    ordinal: 2,
-    status: "completed",
-    title: null,
-    startedAt: at,
-    completedAt: at,
-    updatedAt: at,
-    planId: plan.id,
-    steps: [{ id: "old", text: "旧 OMP 待办快照", status: "running" }],
-  } satisfies OrchestrationV2TurnItem;
+  // Neighbor thread's omp-todo plan must stay isolated from this thread.
   await emitThreadEvent(thread.id, {
     type: "plan.updated",
     payload: {
@@ -146,117 +194,42 @@ it("keeps one current OMP checklist above the composer and isolates disclosure b
     },
   });
   await emitThreadEvent(thread.id, { type: "plan.updated", payload: plan });
-  await emitThreadEvent(thread.id, { type: "turn-item.updated", payload: mirroredSnapshot });
-  await emitThreadEvent(thread.id, {
-    type: "turn-item.updated",
-    payload: {
-      ...mirroredSnapshot,
-      id: TurnItemId.make("different-todo-update"),
-      ordinal: 3,
-      planId: PlanId.make("other-provider-plan"),
-      steps: [{ id: "other", text: "其他提供方的任务", status: "running" }],
-    },
-  });
-  const fold = page.getByRole("button", { name: /^工作了/ });
-  await expect.element(fold).toHaveAttribute("aria-expanded", "false");
-  await fold.click();
-  await expect.element(fold).toHaveAttribute("aria-expanded", "true");
-  await expect.element(page.getByText(/其他提供方的任务/)).toBeVisible();
-  await userEvent.keyboard("{Enter}");
-  await expect.element(fold).toHaveAttribute("aria-expanded", "false");
-  await expect.element(page.getByText(/其他提供方的任务/)).not.toBeInTheDocument();
-  await expect
-    .element(page.getByText(/旧 OMP 待办快照|相邻会话的待办快照/))
-    .not.toBeInTheDocument();
-  await expect.element(trigger).toHaveAttribute("aria-expanded", "true");
-  await expect.element(trigger.getByText(/校对仪表盘/)).toBeVisible();
-  await expect.element(trigger.getByText("0/3", { exact: true })).toBeVisible();
-  expect(checklist.element().closest('[data-chat-composer-stack="true"]')).not.toBeNull();
-  expect(checklist.element().closest(".messages-timeline-scroll")).toBeNull();
-  await expect.element(steps).toBeVisible();
-  const capsuleBounds = trigger.element().getBoundingClientRect();
-  const laneBounds = checklist.element().getBoundingClientRect();
-  expect(steps.element().getBoundingClientRect().bottom).toBeLessThanOrEqual(capsuleBounds.top);
-  expect(capsuleBounds.width).toBeLessThan(laneBounds.width);
-  expect(
-    Math.abs(capsuleBounds.left + capsuleBounds.right - laneBounds.left - laneBounds.right),
-  ).toBeLessThan(2);
-  await expect.element(steps.getByText("检查桌面布局", { exact: true })).toBeVisible();
-  await expect.element(steps.getByText("等待验收", { exact: true })).toBeVisible();
-  await expect.element(steps.getByText("已阻塞", { exact: true })).toBeVisible();
-  await expect.element(steps.getByText("待处理", { exact: true })).toBeVisible();
-  await expect.element(steps.getByText("已放弃的任务")).not.toBeInTheDocument();
+  await expect.element(page.getByText("相邻会话的待办快照")).not.toBeInTheDocument();
+  expect(document.querySelector("[data-omp-todo]")).toBeNull();
 
-  const updatedPlan: OrchestrationV2PlanArtifact = {
-    ...plan,
-    steps: plan.steps.map((step, index) => ({
-      ...step,
-      status: index === 0 ? "completed" : index === 1 ? "running" : step.status,
-    })),
-  };
-  await emitThreadEvent(thread.id, { type: "plan.updated", payload: updatedPlan });
-  await expect.element(trigger.getByText(/检查窄屏显示/)).toBeVisible();
-  await expect.element(trigger.getByText("1/3", { exact: true })).toBeVisible();
-  await expect.element(trigger).toHaveAttribute("aria-expanded", "true");
-  await expect
-    .element(steps.getByRole("listitem").filter({ hasText: "检查窄屏显示" }).getByText("进行中"))
-    .toBeVisible();
-  trigger.element().focus();
-  await userEvent.keyboard("{Enter}");
+  // Collapsed bar displays live tool intent alongside overall todo counter (1/2).
+  const trigger = capsule.getByRole("button", { name: /适配主题卡片变量.*1\/2/ });
   await expect.element(trigger).toHaveAttribute("aria-expanded", "false");
-  await expect.element(steps).not.toBeInTheDocument();
+  expect(capsule.element().closest('[data-chat-composer-stack="true"]')).not.toBeNull();
+  expect(capsule.element().closest(".messages-timeline-scroll")).toBeNull();
 
-  await router.navigate({ to: `/${ENVIRONMENT_ID}/${other.id}` });
-  await vi.waitFor(() => expect(isThreadSubscribed(other.id)).toBe(true));
-  await emitThreadEvent(other.id, {
-    type: "plan.updated",
-    payload: {
-      ...plan,
-      id: PlanId.make(`omp-todo:${other.id}`),
-      threadId: other.id,
-      runId: other.runs[0]!.id,
-      steps: [{ id: "neighbor", text: "仅相邻会话可见的任务", status: "running" }],
-    },
-  });
+  // Opening reveals the overall todo stages with tool intents folded under each stage.
+  await trigger.click();
   await expect.element(trigger).toHaveAttribute("aria-expanded", "true");
-  await expect.element(trigger.getByText("仅相邻会话可见的任务")).toBeVisible();
-  await expect.element(page.getByText(/检查窄屏显示/)).not.toBeInTheDocument();
-  await router.navigate({ to: `/${ENVIRONMENT_ID}/${thread.id}` });
-  // The fake socket's snapshots come from the initial fixtures, not its live event stream.
-  await vi.waitFor(() => expect(isThreadSubscribed(thread.id)).toBe(true));
-  await emitThreadEvent(thread.id, { type: "plan.updated", payload: updatedPlan });
-  await expect.element(trigger.getByText(/检查窄屏显示/)).toBeVisible();
-  await expect.element(trigger).toHaveAttribute("aria-expanded", "false");
-  await expect.element(page.getByText("仅相邻会话可见的任务")).not.toBeInTheDocument();
+  const stages = capsule.getByRole("list");
+  await expect.element(stages.getByText("校对仪表盘")).toBeVisible();
+  await expect.element(stages.getByText("检查窄屏显示")).toBeVisible();
+  await expect.element(stages.getByText("已放弃的任务")).not.toBeInTheDocument();
+
+  await stages.getByRole("button", { name: /校对仪表盘/ }).click();
+  await expect.element(stages.getByText("检索用量页样式文件", { exact: true })).toBeVisible();
+
+  await stages.getByRole("button", { name: /检查窄屏显示/ }).click();
+  await expect.element(stages.getByText("适配主题卡片变量", { exact: true })).toBeVisible();
 
   await page.viewport(360, 760);
-  await trigger.click();
-  await expect.element(steps).toBeVisible();
-  const bounds = checklist.element().getBoundingClientRect();
+  const bounds = capsule.element().getBoundingClientRect();
   expect(bounds.left).toBeGreaterThanOrEqual(0);
   expect(bounds.right).toBeLessThanOrEqual(360);
-  await emitThreadEvent(thread.id, {
-    type: "plan.updated",
-    payload: {
-      ...plan,
-      steps: plan.steps.slice(0, 3).map((step) => ({ ...step, status: "completed" })),
-    },
-  });
-  await expect.element(trigger.getByText("已完成", { exact: true })).toBeVisible();
-  await expect.element(trigger.getByText("3/3", { exact: true })).toBeVisible();
-  await expect.element(trigger).toHaveAttribute("aria-expanded", "false");
-  await expect.element(steps).not.toBeInTheDocument();
-  await trigger.click();
-  await expect.element(steps.getByText("检查窄屏显示")).toBeVisible();
 
-  await emitThreadEvent(thread.id, {
-    type: "plan.updated",
-    payload: { ...plan, status: "completed", steps: [] },
-  });
-  await expect.element(checklist).not.toBeInTheDocument();
-  await expect.element(page.getByText(/旧 OMP 待办快照/)).not.toBeInTheDocument();
+  await userEvent.keyboard("{Escape}");
+  await expect.element(trigger).toHaveAttribute("aria-expanded", "false");
+
+  // Switching to a neighbor thread with no activity hides this thread's capsule.
+  await router.navigate({ to: `/${ENVIRONMENT_ID}/${other.id}` });
+  await vi.waitFor(() => expect(isThreadSubscribed(other.id)).toBe(true));
+  await expect.element(capsule).not.toBeInTheDocument();
   await page.viewport(1280, 800);
-  await expect.element(status).toBeVisible();
 });
 
 it("hides only known idle OMP chatter and retains meaningful extension status", () => {

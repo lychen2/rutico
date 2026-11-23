@@ -1633,9 +1633,10 @@ export default function ChatView(props: ChatViewProps) {
     (selectedDriver === "antigravity" ||
       (selectedProviderEntry?.instanceId === selectedInstanceId &&
         selectedProviderEntry?.acpRegistryAgentId === "antigravity-acp"));
-  const taskTrail = isAntigravityThread
-    ? antigravityTaskTrail(serverProjection, activeActivityRun?.runId ?? null, gt)
-    : null;
+  const taskTrail =
+    isAntigravityThread || isOmpThread
+      ? antigravityTaskTrail(serverProjection, activeActivityRun?.runId ?? null, gt)
+      : null;
   const taskTrailKey = taskTrail === null ? null : `${routeThreadKey}:${taskTrail.key}`;
   const [dismissedTaskTrailKey, setDismissedTaskTrailKey] = useState<string | null>(null);
   const showTaskSummary = taskTrail?.complete === true && dismissedTaskTrailKey === taskTrailKey;
@@ -3788,7 +3789,7 @@ export default function ChatView(props: ChatViewProps) {
                   data-chat-composer-stack="true"
                   className="group/composer-stack pointer-events-auto relative z-10 mx-auto w-full max-w-(--chat-content-max-width)"
                 >
-                  {hasOmpTodo ? (
+                  {hasOmpTodo && taskTrail === null ? (
                     <ThreadOmpTodo
                       key={routeThreadKey}
                       threadKey={routeThreadKey}

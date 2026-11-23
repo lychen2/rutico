@@ -98,14 +98,14 @@ it("dims other providers, toggles off, shows real type tooltips, filters an hour
   await userEvent.click(screen.getByRole("button", { name: "取消小时筛选" }));
   expect(screen.container.querySelectorAll(".usage-breakdown-table tbody tr")).toHaveLength(4);
 });
-it("keeps long values in separate columns inside a 560 px sheet and inherits orange in both appearances", async () => {
+it("keeps long values in separate columns inside a 560 px sheet and inherits theme primary in both appearances", async () => {
   using _locale = testUiLocale("zh-CN");
   const root = document.documentElement,
     theme = root.getAttribute("data-theme-id"),
     style = root.getAttribute("style"),
     wasDark = root.classList.contains("dark");
   try {
-    applyThemePalette("apple", "light");
+    applyThemePalette("ocean", "light");
     const model = mergeUsageEnvironments(analysisFixture()).models[0]!;
     await using screen = await render(
       <UsageModelDialog
@@ -139,8 +139,10 @@ it("keeps long values in separate columns inside a 560 px sheet and inherits ora
     await expect.element(page.getByRole("button", { name: "调整价格…" })).toBeVisible();
     expect(sheet.querySelectorAll(".usage-model-stats dt")[0]?.textContent).toBe("令牌");
     for (const appearance of ["light", "dark"] as const) {
-      applyThemePalette("apple", appearance);
-      expect(getComputedStyle(sheet).getPropertyValue("--primary").trim()).toBe("#ff5a1f");
+      applyThemePalette("ocean", appearance);
+      const expectedPrimary = getComputedStyle(root).getPropertyValue("--primary").trim();
+      expect(expectedPrimary).not.toBe("");
+      expect(getComputedStyle(sheet).getPropertyValue("--primary").trim()).toBe(expectedPrimary);
     }
     expect(screen.container).toBeDefined();
   } finally {
@@ -489,5 +491,40 @@ it("shows overall and per-provider throughput rates on V9 tokens page when serve
     expect(provRates).toEqual(["80 令牌/秒", "56 令牌/秒"]);
   } finally {
     vi.mocked(useUsage).mockReset();
+  }
+});
+
+it("adapts V9 cost cards and accent colors to the active dark theme tokens", async () => {
+  const root = document.documentElement;
+  const prevTheme = root.getAttribute("data-theme-id");
+  const prevStyle = root.getAttribute("style");
+  const wasDark = root.classList.contains("dark");
+  const envs = analysisFixture();
+  vi.mocked(useUsage).mockReturnValue({
+    merged: mergeUsageEnvironments(envs),
+    environments: envs,
+    selectedEnvironments: envs,
+    isPending: false,
+    isPartial: false,
+    shown: null,
+    refresh: vi.fn(async () => {}),
+  });
+  try {
+    applyThemePalette("ocean", "dark");
+    await using screen = await render(<V9CostFixture />);
+    const heroCard = screen.container.querySelector<HTMLElement>('[data-ctv9="hero-chart-card"]')!;
+    const v9Root = screen.container.querySelector<HTMLElement>("[data-ctv9-root]")!;
+    const expectedCard = getComputedStyle(root).getPropertyValue("--card").trim();
+    const expectedPrimary = getComputedStyle(root).getPropertyValue("--primary").trim();
+    expect(getComputedStyle(v9Root).getPropertyValue("--surface").trim()).toBe(expectedCard);
+    expect(getComputedStyle(v9Root).getPropertyValue("--ac").trim()).toBe(expectedPrimary);
+    expect(getComputedStyle(heroCard).backgroundColor).not.toBe("rgb(24, 24, 27)");
+  } finally {
+    vi.mocked(useUsage).mockReset();
+    if (prevTheme === null) root.removeAttribute("data-theme-id");
+    else root.setAttribute("data-theme-id", prevTheme);
+    if (prevStyle === null) root.removeAttribute("style");
+    else root.setAttribute("style", prevStyle);
+    root.classList.toggle("dark", wasDark);
   }
 });

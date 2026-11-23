@@ -1,32 +1,38 @@
 :root {
   --usage-pi: #4d9f8a;
-  --apple-fill: rgba(118, 118, 128, 0.095);
-  --apple-fill-hover: rgba(118, 118, 128, 0.155);
-  --apple-line: rgba(0, 0, 0, 0.085);
-  --apple-hair: rgba(0, 0, 0, 0.055);
-  --apple-glass-strong: rgba(255, 255, 255, 0.95);
+  --apple-fill: color-mix(in srgb, var(--foreground) 7%, transparent);
+  --apple-fill-hover: color-mix(in srgb, var(--foreground) 12%, transparent);
+  --apple-line: var(--border);
+  --apple-hair: color-mix(in srgb, var(--border) 70%, transparent);
+  --apple-glass-strong: color-mix(in srgb, var(--popover) 96%, transparent);
   --apple-float-shadow:
-    0 0 0 0.5px rgba(0, 0, 0, 0.09), 0 16px 40px -8px rgba(0, 0, 0, 0.16),
-    0 4px 12px rgba(0, 0, 0, 0.05);
+    0 0 0 0.5px color-mix(in srgb, var(--foreground) 9%, transparent),
+    0 16px 40px -8px rgba(0, 0, 0, 0.16), 0 4px 12px rgba(0, 0, 0, 0.05);
   --apple-spring: cubic-bezier(0.3, 0.7, 0.2, 1);
   --apple-ease-exit: cubic-bezier(0.4, 0, 0.85, 0.6);
-  --apple-secondary: #ececf4;
-  --apple-slider: #ffffff;
+  --apple-secondary: var(--muted);
+  --apple-slider: var(--card);
   --apple-card-shadow:
-    0 0 0 0.5px rgba(0, 0, 0, 0.07), 0 1px 2px rgba(0, 0, 0, 0.04), 0 6px 18px rgba(0, 0, 0, 0.06);
-  --apple-slider-shadow: 0 0 0 0.5px rgba(0, 0, 0, 0.06), 0 1px 3px rgba(0, 0, 0, 0.12);
+    0 0 0 0.5px color-mix(in srgb, var(--foreground) 7%, transparent),
+    0 1px 2px rgba(0, 0, 0, 0.04), 0 6px 18px rgba(0, 0, 0, 0.06);
+  --apple-slider-shadow:
+    0 0 0 0.5px color-mix(in srgb, var(--foreground) 8%, transparent), 0 1px 3px rgba(0, 0, 0, 0.12);
 }
 html.dark:root {
   --usage-pi: #5ab69e;
-  --apple-fill: rgba(255, 255, 255, 0.085);
-  --apple-fill-hover: rgba(255, 255, 255, 0.145);
-  --apple-line: rgba(255, 255, 255, 0.11);
-  --apple-hair: rgba(255, 255, 255, 0.07);
-  --apple-glass-strong: rgba(30, 30, 34, 0.96);
-  --apple-float-shadow: 0 0 0 0.5px rgba(255, 255, 255, 0.14), 0 20px 50px rgba(0, 0, 0, 0.65);
-  --apple-secondary: #2c2c32;
-  --apple-slider: #636366;
-  --apple-card-shadow: 0 0 0 0.5px rgba(255, 255, 255, 0.07), 0 6px 18px rgba(0, 0, 0, 0.35);
+  --apple-fill: color-mix(in srgb, var(--foreground) 8%, transparent);
+  --apple-fill-hover: color-mix(in srgb, var(--foreground) 14%, transparent);
+  --apple-line: var(--border);
+  --apple-hair: color-mix(in srgb, var(--border) 70%, transparent);
+  --apple-glass-strong: color-mix(in srgb, var(--popover) 96%, transparent);
+  --apple-float-shadow:
+    0 0 0 0.5px color-mix(in srgb, var(--foreground) 14%, transparent),
+    0 20px 50px rgba(0, 0, 0, 0.65);
+  --apple-secondary: color-mix(in srgb, var(--foreground) 6%, var(--card));
+  --apple-slider: color-mix(in srgb, var(--foreground) 12%, var(--card));
+  --apple-card-shadow:
+    0 0 0 0.5px color-mix(in srgb, var(--foreground) 9%, transparent),
+    0 6px 18px rgba(0, 0, 0, 0.35);
 }
 
 :root {
@@ -279,8 +285,9 @@ html:root {
     font-size: 13px;
   }
   [data-usage-overview] .surface-glass {
-    background: rgba(28, 28, 30, 0.94);
-    color: #fff;
+    background: color-mix(in srgb, var(--popover) 94%, transparent);
+    color: var(--popover-foreground);
+    border: 0.5px solid var(--border);
     border-radius: 13px;
     backdrop-filter: blur(20px);
   }
@@ -774,8 +781,8 @@ html:root {
     padding: 2px 4px;
     font-size: 10px;
     font-style: normal;
-    background: #1c1c1e;
-    color: white;
+    background: var(--foreground);
+    color: var(--background);
     white-space: nowrap;
   }
   .usage-capacity-legend {
@@ -916,26 +923,25 @@ html:root [data-usage-overview] .surface-glass {
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.16);
 }
 @media (prefers-reduced-transparency: reduce) {
-  html:root .surface-glass {
+  html:root [data-usage-overview] .surface-glass {
     backdrop-filter: none;
     -webkit-backdrop-filter: none;
-    background: rgba(255, 255, 255, 0.96);
-  }
-  html.dark:root .surface-glass,
-  html:root [data-usage-overview] .surface-glass {
-    background: rgba(28, 28, 30, 0.96);
+    background: var(--popover);
   }
 }
 
-/* C77 — usage dashboard back to the approved 方案 A mock: orange accent ramp on greys,
-   section headings outside cards, equal-height rows, dot heatmap and 6-row breakdown. */
-html:root [data-usage-page] {
-  --primary: #ff5a1f;
-  --primary-foreground: #fff;
+@keyframes usage-gauge-draw {
+  from {
+    stroke-dasharray: 0 400;
+  }
 }
-html.dark:root:root [data-usage-page] {
-  --primary: #ff6a33;
+@keyframes usage-dot-pop {
+  from {
+    transform: scale(0);
+  }
 }
+
+/* Usage dashboard layout & presentation tokens inherit the active T3 theme palette. */
 html:root {
   [data-usage-overview][data-apple-dashboard] {
     display: flex;
@@ -1130,11 +1136,6 @@ html:root {
   .usage-gauge-arc {
     animation: usage-gauge-draw 1100ms cubic-bezier(0.22, 0.8, 0.2, 1) 1 both;
   }
-  @keyframes usage-gauge-draw {
-    from {
-      stroke-dasharray: 0 400;
-    }
-  }
 
   /* Bottom row: heatmap + breakdown, same height. */
   [data-usage-bottom-row] {
@@ -1179,11 +1180,6 @@ html:root {
   }
   .usage-heat-row i {
     animation: usage-dot-pop 420ms cubic-bezier(0.34, 1.4, 0.64, 1) 1 both;
-  }
-  @keyframes usage-dot-pop {
-    from {
-      transform: scale(0);
-    }
   }
   :is(.usage-heat-row, .usage-heat-legend) i[data-level="1"] {
     background: color-mix(in srgb, var(--primary) 20%, var(--card)) !important;
@@ -1678,9 +1674,6 @@ html:root .usage-limit-windows [data-limit-countdown] {
 [data-usage-sheet],
 [data-usage-dialog],
 [data-usage-portal] {
-  --primary: #ff5a1f;
-  --primary-foreground: #fff;
-  --ring: #ff5a1f;
   --usage-codex: var(--primary);
   --usage-claude: color-mix(in srgb, var(--primary) 72%, var(--card));
   --usage-grok: color-mix(in srgb, var(--primary) 46%, var(--card));
@@ -1688,13 +1681,6 @@ html:root .usage-limit-windows [data-limit-countdown] {
   --usage-other: var(--muted-foreground);
 }
 html:root {
-  [data-usage-page],
-  [data-usage-sheet],
-  [data-usage-dialog],
-  [data-usage-portal] {
-    --primary: #ff5a1f;
-    --ring: #ff5a1f;
-  }
   [data-usage-sheet] [data-slot="sheet-title"] {
     font-size: 19px;
     font-weight: 700;
@@ -2858,7 +2844,6 @@ html:root .usage-limit-ring-card[data-highlighted] {
 
 html:root {
   [data-app-modal]:has([data-usage-page]) {
-    --primary: #ff5a1f;
     --ring: color-mix(in srgb, var(--foreground) 22%, transparent);
   }
   [data-usage-sheet][data-panel-width="720"] .usage-readout {
@@ -3143,9 +3128,6 @@ html:root .usage-limit-windows [data-t3-unused] .usage-limit-group-track > i {
   background: var(--muted-foreground);
 }
 .usage-reset-dialog {
-  --primary: #ff5a1f;
-  --primary-foreground: #fff;
-  --ring: #ff5a1f;
   width: 400px;
   max-width: calc(100vw - 32px);
 }
@@ -3233,12 +3215,6 @@ html:root .usage-limit-windows [data-t3-unused] .usage-limit-group-track > i {
   .usage-limit-flip[data-open] .usage-slot-back {
     visibility: hidden;
   }
-}
-
-/* Match the visible background composer's action to the usage portal while it is open. */
-html:root:has([data-usage-page], [data-usage-portal]) {
-  --message-action: #ff5a1f;
-  --message-action-hover: #e84d14;
 }
 
 html:root .usage-limit-windows button:has(.usage-limit-group-track) {

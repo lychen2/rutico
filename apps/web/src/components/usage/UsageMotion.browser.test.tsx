@@ -108,3 +108,20 @@ it("a new period keeps the page in place: digits move from the old value and onl
     spy.mockRestore();
   }
 });
+it("clips each rolling digit column to one vertical slot without needing external CSS imports", async () => {
+  await using screen = await render(
+    <div style={{ fontSize: "40px" }}>
+      <UsageCount value={75} format={(n) => `${n}%`} />
+    </div>,
+  );
+  const digitCols = [...screen.container.querySelectorAll<HTMLElement>(".usage-digit")];
+  expect(digitCols).toHaveLength(2);
+  for (const col of digitCols) {
+    const style = getComputedStyle(col);
+    const rect = col.getBoundingClientRect();
+    expect(style.overflow).toBe("hidden");
+    expect(rect.height).toBeCloseTo(40, 0);
+    // A single tabular digit column is ~0.6em wide, never 10 digits laid out horizontally.
+    expect(rect.width).toBeLessThan(40);
+  }
+});

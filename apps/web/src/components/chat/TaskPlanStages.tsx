@@ -119,9 +119,11 @@ function GroupedToolChips({
             <span className={styles["plan-tool-items"]}>
               {group.items.map((activity, idx) => {
                 const failure = trailFailureKind(activity);
-                const display = activity.path
-                  ? activity.path.split(/[\\/]/).at(-1) || activity.path
-                  : (activity.command ?? activity.label);
+                const display = activity.purpose
+                  ? activity.purpose
+                  : activity.path
+                    ? activity.path.split(/[\\/]/).at(-1) || activity.path
+                    : (activity.command ?? activity.label);
                 return (
                   <span
                     key={activity.id}
