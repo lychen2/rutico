@@ -550,9 +550,10 @@ export const AntigravityDriver: ProviderDriver<
     });
 
     const usage = yield* makeAntigravityUsageProbe({
-      profileDirectory,
       authMethod: auth.authMethod,
-    });
+      resolveExecutable: installation.resolve(settings.binaryPath, processEnvironment),
+      environment: processEnvironment,
+    }).pipe(Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner));
     const provider = yield* makeAntigravityProvider(settings, {
       environment: processEnvironment,
       stampIdentity: classifyModels,

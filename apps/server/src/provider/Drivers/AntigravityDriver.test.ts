@@ -104,6 +104,7 @@ const makeHarness = Effect.fn("makeAntigravityDriverHarness")(function* (
       executablePath,
       [
         "#!/bin/sh",
+        'if [ "$1" = "-p" ] && [ "$2" = "/usage" ]; then printf \'%s\\n\' \'{"status":"SUCCESS","command":{"name":"usage","data":{"groups":[{"name":"Gemini Models","buckets":[{"id":"gemini-5h","window":"5h","remaining_fraction":0.9}]}]}}}\'; exit 0; fi',
         ...(options.loginRequired
           ? [`printf '%s\\n' ${shellQuote(ANTIGRAVITY_AUTH_STDOUT_PREFIX + authorizationUrl)}`]
           : []),
@@ -512,7 +513,7 @@ it.layer(layerTest)("AntigravityDriver", (it) => {
         // Gemini Enterprise can strip the native MCP servers, and the documented `acp-mcp-call`
         // fallback reads these from the shell.
         const agentLaunches = h.launches.filter(
-          (launch) => launch.command === h.first.executablePath,
+          (launch) => launch.command === h.first.executablePath && launch.args[0] === "acp",
         );
         expect(agentLaunches).toHaveLength(2);
         expect(agentLaunches[1]?.environment).toMatchObject({
