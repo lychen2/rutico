@@ -123,7 +123,7 @@ export const AntigravityDriver: ProviderDriver<
   AntigravityUsage.AntigravityUsage
 > = {
   driverKind: DRIVER,
-  metadata: { displayName: "Antigravity", supportsMultipleInstances: true },
+  metadata: { displayName: "Antigravity", supportsMultipleInstances: false },
   configSchema: AntigravitySettings,
   defaultConfig: () => decodeSettings({}),
   usage: AntigravityUsage.antigravityUsageReader,
@@ -180,6 +180,7 @@ export const AntigravityDriver: ProviderDriver<
       ),
     );
     const profileDirectory = directories.profile;
+    const nativeGeminiHome = path.join(userHome, ".gemini");
     // Only a session reports whether agy offers Auto, so keep the last answer across restarts.
     const runtimeModesPath = path.join(profileDirectory, "t3-runtime-modes.json");
     const rememberedRuntimeModes = yield* fileSystem.readFileString(runtimeModesPath).pipe(
@@ -599,7 +600,7 @@ export const AntigravityDriver: ProviderDriver<
           (snapshot) => snapshot.slashCommands?.some((command) => command.name === "goal") === true,
         ),
       ),
-      profileDirectory,
+      profileDirectory: nativeGeminiHome,
       onSessionStarted: (started, cwd) =>
         provider.onSessionStarted(started, cwd).pipe(Effect.andThen(authFlow.onSignedInElsewhere)),
       onSessionEvent: (event, cwd) => {
@@ -619,7 +620,7 @@ export const AntigravityDriver: ProviderDriver<
         }),
     });
     const textGeneration = yield* makeAntigravityTextGeneration({
-      profileDirectory,
+      profileDirectory: nativeGeminiHome,
       defaultModel,
       withProcess: authFlow.withProcess,
       makeRuntime: (cwd) =>
@@ -691,7 +692,7 @@ export const AntigravityDriver: ProviderDriver<
       snapshotForCwd: (cwd) =>
         !enabled
           ? provider.snapshot.getSnapshot
-          : discoverAntigravitySkills({ cwd, userHome, profileDirectory }).pipe(
+          : discoverAntigravitySkills({ cwd, userHome, profileDirectory: nativeGeminiHome }).pipe(
               Effect.provideService(FileSystem.FileSystem, fileSystem),
               Effect.provideService(Path.Path, path),
               Effect.flatMap((skills) => provider.snapshotForCwd(cwd, skills)),

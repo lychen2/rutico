@@ -10,9 +10,11 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Path from "effect/Path";
 
+import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as ServerConfig from "../config.ts";
 import { readAntigravityChildWork } from "../provider/acp/AntigravityChildWork.ts";
 import { resolveAntigravityInstanceDirectories } from "../provider/antigravityAuthSupport.ts";
+import { resolveAntigravityUserHome } from "../provider/Drivers/AntigravitySkills.ts";
 import * as ThreadManagement from "./ThreadManagementService.ts";
 
 /** Reads what a provider-native subagent's children did, on demand. Other providers stream real child sessions. */
@@ -35,6 +37,9 @@ const make = Effect.gen(function* () {
   const { stateDir } = yield* ServerConfig.ServerConfig;
   const digest = yield* Digest.Digest;
   const path = yield* Path.Path;
+  const platform = yield* HostProcess.Platform;
+  const homeDirectory = yield* HostProcess.HomeDirectory;
+  const processEnvironment = yield* HostProcess.Environment;
 
   const getNativeChildWork = Effect.fn("NativeChildWorkQuery.getNativeChildWork")(
     function* (input: OrchestrationV2GetNativeChildWorkInput) {
@@ -93,12 +98,9 @@ const make = Effect.gen(function* () {
       if (!rootSessionId || providerThread?.providerInstanceId !== subagent.providerInstanceId) {
         return NO_CHILDREN;
       }
-      const directories = yield* resolveAntigravityInstanceDirectories(
-        stateDir,
-        subagent.providerInstanceId,
-      ).pipe(Effect.provideService(Digest.Digest, digest), Effect.provideService(Path.Path, path));
-      const children = yield* readAntigravityChildWork({
-        profileDirectory: directories.profile,
+      const userHome = resolveAntigravityUserHome(platform, processEnvironment, homeDirectory);
+      const nativeGeminiHome = path.join(userHome, ".gemini");
+      const queryInput = {
         rootSessionId,
         nativeTaskId,
         launch: { title: subagent.title, prompt: subagent.prompt },
@@ -109,7 +111,24 @@ const make = Effect.gen(function* () {
             ? [{ nativeTaskId: id, title: other.title, prompt: other.prompt }]
             : [];
         }),
+      };
+      let children = yield* readAntigravityChildWork({
+        profileDirectory: nativeGeminiHome,
+        ...queryInput,
       });
+      if (children.length === 0) {
+        const directories = yield* resolveAntigravityInstanceDirectories(
+          stateDir,
+          subagent.providerInstanceId,
+        ).pipe(
+          Effect.provideService(Digest.Digest, digest),
+          Effect.provideService(Path.Path, path),
+        );
+        children = yield* readAntigravityChildWork({
+          profileDirectory: directories.profile,
+          ...queryInput,
+        });
+      }
       return { children };
     },
     (effect, input) =>

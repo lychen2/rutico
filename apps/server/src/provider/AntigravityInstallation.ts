@@ -649,6 +649,10 @@ export const makeAntigravityInstallation = Effect.fn("AntigravityInstallation.ma
         "The custom Antigravity executable is missing or not executable, or it is not the agy CLI.",
       );
     }
+    for (const candidate of yield* commandCandidates("agy", processEnvironment)) {
+      const selected = yield* fromExternal(candidate, "path");
+      if (selected) return selected;
+    }
     if (yield* fs.exists(activePath)) {
       yield* ensureRealManagedRoot("resolve");
       const active = yield* readRecord(activePath, ActiveRelease);
@@ -659,10 +663,6 @@ export const makeAntigravityInstallation = Effect.fn("AntigravityInstallation.ma
           `Antigravity ${installed.version} no longer works with this T3 Code release. Update it in Antigravity setup.`,
         );
       return installed;
-    }
-    for (const candidate of yield* commandCandidates("agy", processEnvironment)) {
-      const selected = yield* fromExternal(candidate, "path");
-      if (selected) return selected;
     }
     return yield* installationError(
       "resolve",
@@ -681,6 +681,12 @@ export const makeAntigravityInstallation = Effect.fn("AntigravityInstallation.ma
         const external = yield* findVerifiedExternal(
           yield* commandCandidates(override, processEnvironment),
           "override",
+        );
+        if (external !== null) return external;
+      } else {
+        const external = yield* findVerifiedExternal(
+          yield* commandCandidates("agy", processEnvironment),
+          "path",
         );
         if (external !== null) return external;
       }

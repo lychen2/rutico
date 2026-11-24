@@ -1041,8 +1041,17 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("Antigravity inst
           path: externalDirectory,
           previous: true,
         });
-        yield* expectPreviousRelease(installation);
+        expect(yield* installation.resolve()).toMatchObject({
+          executablePath: externalExecutable,
+          source: "path",
+          managedVersionDirectory: null,
+        });
         expect(yield* installation.resolve(undefined, { PATH: externalDirectory })).toMatchObject({
+          executablePath: externalExecutable,
+          source: "path",
+          managedVersionDirectory: null,
+        });
+        expect(yield* installation.resolve(undefined, { PATH: "" })).toMatchObject({
           source: "managed",
           version: previousVersion,
         });
@@ -1062,7 +1071,6 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("Antigravity inst
         ).toMatchObject({
           operation: "resolve",
         });
-        yield* expectPreviousRelease(installation);
         yield* installation.remove();
         expect(yield* installation.resolve()).toMatchObject({
           source: "path",
@@ -1142,7 +1150,13 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("Antigravity inst
           installedVersion: null,
           canRemove: true,
         });
-        expect(yield* restarted.installation.resolve().pipe(Effect.flip)).toMatchObject({
+        expect(yield* restarted.installation.resolve()).toMatchObject({
+          source: "path",
+          executablePath: path.join(externalDirectory, "agy"),
+        });
+        expect(
+          yield* restarted.installation.resolve(undefined, { PATH: "" }).pipe(Effect.flip),
+        ).toMatchObject({
           operation: "resolve",
         });
         yield* restarted.installation.remove();
@@ -1158,7 +1172,10 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("Antigravity inst
           canRemove: true,
         });
         yield* Deferred.await(restarted.stagingReleased);
-        expect((yield* restarted.installation.resolve()).source).toBe("managed");
+        expect((yield* restarted.installation.resolve()).source).toBe("path");
+        expect((yield* restarted.installation.resolve(undefined, { PATH: "" })).source).toBe(
+          "managed",
+        );
       }),
   );
 

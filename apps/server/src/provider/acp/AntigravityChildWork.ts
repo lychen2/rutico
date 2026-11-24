@@ -141,6 +141,22 @@ function transcriptSteps(
   );
 }
 
+const ANTIGRAVITY_APP_DATA_DIRS = ["antigravity-cli", "antigravity-acp"] as const;
+
+async function resolveAntigravityAppDataPath(
+  profileRoot: string,
+  segments: ReadonlyArray<string>,
+  kind: "file" | "directory",
+) {
+  for (const appDataDir of ANTIGRAVITY_APP_DATA_DIRS) {
+    const resolved = await antigravityManagedPath(profileRoot, [appDataDir, ...segments], kind);
+    if (resolved !== undefined) {
+      return { appDataDir, ...resolved };
+    }
+  }
+  return undefined;
+}
+
 /** Reads the tail of the transcript at the named child's own unlinked profile path. */
 async function readChildTranscript(
   profileRoot: string,
@@ -149,16 +165,9 @@ async function readChildTranscript(
   byteCap: number,
 ) {
   const expected = (
-    await antigravityManagedPath(
+    await resolveAntigravityAppDataPath(
       profileRoot,
-      [
-        "antigravity-acp",
-        "brain",
-        child.conversationId,
-        ".system_generated",
-        "logs",
-        "transcript.jsonl",
-      ],
+      ["brain", child.conversationId, ".system_generated", "logs", "transcript.jsonl"],
       "file",
     )
   )?.path;
@@ -296,9 +305,13 @@ const decodeDetachedSubagent = Schema.decodeUnknownOption(
 
 /** A conversation's inbox. Throws past a bound or on a file it cannot read, so nothing is proven. */
 async function readInbox(profileRoot: string, conversationId: string) {
-  const directory = ["antigravity-acp", "brain", conversationId, ".system_generated", "messages"];
-  const inbox = await antigravityManagedPath(profileRoot, directory, "directory");
+  const inbox = await resolveAntigravityAppDataPath(
+    profileRoot,
+    ["brain", conversationId, ".system_generated", "messages"],
+    "directory",
+  );
   if (inbox === undefined) return [];
+  const directory = [inbox.appDataDir, "brain", conversationId, ".system_generated", "messages"];
   // `read.json` is the runtime's read receipts, not a message.
   const names = (await NodeFSP.readdir(inbox.path)).filter(
     (name) => name.endsWith(".json") && name !== "read.json",
@@ -319,9 +332,9 @@ async function listDetachedChildIds(
   profileRoot: string,
   rootSessionId: string,
 ): Promise<ReadonlyArray<string> | undefined> {
-  const children = await antigravityManagedPath(
+  const children = await resolveAntigravityAppDataPath(
     profileRoot,
-    ["antigravity-acp", "brain", rootSessionId, ".system_generated", "subagents"],
+    ["brain", rootSessionId, ".system_generated", "subagents"],
     "directory",
   );
   if (children === undefined) return undefined;
@@ -344,16 +357,9 @@ function detachedLaunchCall(message: ChildMessage, rootSessionId: string) {
 }
 
 async function readDetachedSubagent(profileRoot: string, rootSessionId: string, childId: string) {
-  const file = await antigravityManagedPath(
+  const file = await resolveAntigravityAppDataPath(
     profileRoot,
-    [
-      "antigravity-acp",
-      "brain",
-      rootSessionId,
-      ".system_generated",
-      "subagents",
-      `${childId}.json`,
-    ],
+    ["brain", rootSessionId, ".system_generated", "subagents", `${childId}.json`],
     "file",
   );
   if (file === undefined || file.info.size > MAX_STEP_BYTES) return undefined;
@@ -430,9 +436,13 @@ async function hasUnreadWakingInboxMessage(
   profileRoot: string,
   sessionId: string,
 ): Promise<boolean> {
-  const directory = ["antigravity-acp", "brain", sessionId, ".system_generated", "messages"];
-  const inbox = await antigravityManagedPath(profileRoot, directory, "directory");
+  const inbox = await resolveAntigravityAppDataPath(
+    profileRoot,
+    ["brain", sessionId, ".system_generated", "messages"],
+    "directory",
+  );
   if (inbox === undefined) return false;
+  const directory = [inbox.appDataDir, "brain", sessionId, ".system_generated", "messages"];
   const entries = await NodeFSP.readdir(inbox.path).catch(() => undefined);
   if (entries === undefined) return false;
   const messageNames = entries.filter((name) => name.endsWith(".json") && name !== "read.json");
@@ -470,9 +480,9 @@ async function readLastTranscriptLine(
   profileRoot: string,
   sessionId: string,
 ): Promise<Schema.Schema.Type<typeof TranscriptLine> | undefined> {
-  const transcript = await antigravityManagedPath(
+  const transcript = await resolveAntigravityAppDataPath(
     profileRoot,
-    ["antigravity-acp", "brain", sessionId, ".system_generated", "logs", "transcript.jsonl"],
+    ["brain", sessionId, ".system_generated", "logs", "transcript.jsonl"],
     "file",
   );
   if (transcript === undefined) return undefined;

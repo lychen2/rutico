@@ -343,15 +343,9 @@ it.layer(layerTest)("AntigravityDriver", (it) => {
           h.second.executablePath,
         ]);
         for (const launch of agentLaunches) {
-          expect(launch.args).toEqual([
-            "acp",
-            "--gemini-dir",
-            h.profileDirectory,
-            "--app-data-dir",
-            "antigravity-acp",
-          ]);
-          expect(launch.profileDirectory).toBe(h.profileDirectory);
-          expect(launch.forceFileStorage).toBe("1");
+          expect(launch.args).toEqual(["acp", "--disable-telemetry"]);
+          expect(launch.profileDirectory).toBeUndefined();
+          expect(launch.forceFileStorage).toBeUndefined();
           expect(launch.extendEnv).toBe(false);
         }
         for (const launch of h.launches) expect(launch.credentialKeys).toEqual([]);
@@ -441,13 +435,7 @@ it.layer(layerTest)("AntigravityDriver", (it) => {
             modelSelection,
             runtimePolicy: cliPolicy,
           });
-          expect(h.launches.at(-1)?.args).toEqual([
-            "acp",
-            "--gemini-dir",
-            h.profileDirectory,
-            "--app-data-dir",
-            "antigravity-acp",
-          ]);
+          expect(h.launches.at(-1)?.args).toEqual(["acp", "--disable-telemetry"]);
           expect(
             (yield* h.readRequests)
               .slice(requestsBefore)
