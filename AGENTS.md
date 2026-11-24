@@ -12,6 +12,8 @@ Typed WebSocket RPC → V2 command → SQLite commit (events, projections, recei
 
 OMP is built in alongside Pi. It launches `omp --mode rpc-ui`; the adapter maps todos into shared plan events. Check extension changes with the installed OMP loader and tool/RPC APIs.
 
+T3 Code is truly open. We share our roadmap, we share how we think about things, and of course we share all our code. A large number of our users run forks (our MIT license covers source code only, not T3 Code's trademarks or branding; see [TRADEMARK.md](TRADEMARK.md)). We work in the open, and should strive to stay that way.
+
 ## Key Directories
 
 - `apps/server`: RPC, orchestration, persistence, checkpoints. `packages/provider-*`: adapters and test support.
@@ -49,6 +51,11 @@ Update existing docs when a contract changes: `docs/internals/` for constraints,
 - Use Vite+ with the Node 26.13.1 and pnpm 12.14.0 pins in `package.json`, not Bun except for scripts that require it. Use package tasks (`effect-tsgo tsrs --noEmit`; Astro for marketing). `.repos/` is read-only reference source; never import it.
 - Wait while `.t3/setup-running` names a live PID; inspect `.t3/setup-failed` on failure. Use worktree `.t3` or an explicit `--home-dir`; never write to or run dev against `~/.t3/userdata`.
 - Stop only your own process tree using tracked PIDs, never name/path patterns. Do not detach without permission. Never set `VITE_HTTP_URL` or `VITE_WS_URL`; use `vp run dev --share` and give the tester the pairing URL privately without consuming it.
+
+## Terminology
+
+- **you** = the agent reading this file. **we / us / maintainers** = Theo, Julius, and the people building T3 Code. **user** = person driving coding agents in T3 Code. **agent** = coding agent running inside T3 Code.
+- Domain terms (environment, project, thread, turn, provider, checkpoint, etc.): [00_glossary.md](docs/internals/00_glossary.md).
 
 ## Testing & QA
 

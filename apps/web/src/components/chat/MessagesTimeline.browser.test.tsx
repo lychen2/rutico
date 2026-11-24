@@ -78,15 +78,17 @@ vi.mock(import("~/state/query"), async (original) => ({
   })) as never,
 }));
 
-const stubbedAsset = vi.hoisted(() => ({ url: "" }));
+const stubbedAsset = vi.hoisted(() => ({ url: "", failed: false }));
 vi.mock(import("~/assets/assetUrls"), async (original) => {
   const actual = await original();
   return {
     ...actual,
     useAssetUrlState: ((...args: Parameters<typeof actual.useAssetUrlState>) =>
-      stubbedAsset.url
-        ? { _tag: "Success", url: stubbedAsset.url }
-        : actual.useAssetUrlState(...args)) as typeof actual.useAssetUrlState,
+      stubbedAsset.failed
+        ? { _tag: "Failure" }
+        : stubbedAsset.url
+          ? { _tag: "Success", url: stubbedAsset.url }
+          : actual.useAssetUrlState(...args)) as typeof actual.useAssetUrlState,
     useAssetUrls: ((...args: Parameters<typeof actual.useAssetUrls>) =>
       stubbedAsset.url
         ? args[1].map(() => stubbedAsset.url)
@@ -110,7 +112,6 @@ function baseProps(): Omit<TimelineProps, "timelineEntries"> {
     turnDiffSummaries: [],
     runs: [],
     routeThreadKey: `environment-local:thread-${Math.random().toString(36).slice(2)}`,
-    onOpenTurnDiff: () => {},
     onOpenThread: () => {},
     onForkFromRun: async () => {},
     supportsConversationRollback: false,
@@ -626,6 +627,48 @@ describe("MessagesTimeline messages", () => {
     await vi.waitFor(() => expect(viewport.scrollTop).toBeLessThan(atEnd));
   });
 
+  it("keeps the visible sentence in a long message when the chat width changes", async () => {
+    setup();
+    const size = { width: window.innerWidth, height: window.innerHeight };
+    onTestFinished(() => page.viewport(size.width, size.height));
+    await page.viewport(1200, 1400);
+    const props = { ...baseProps(), liveFollowEnabled: false };
+    const paragraphs = Array.from(
+      { length: 30 },
+      (_, index) =>
+        `Paragraph ${index + 1}. ${"A side panel should not move the sentence being read out of view. ".repeat(5)}`,
+    );
+    await using screen = await renderTimeline(
+      [message(paragraphs.join("\n\n"), { role: "assistant" })],
+      props,
+    );
+    screen.container.style.width = "900px";
+    const viewport = props.listRef.current!.getScrollableNode()!;
+    const target = page.getByText(paragraphs[15]!.trim(), { exact: true }).element();
+    await vi.waitFor(() => {
+      expect(viewport.scrollHeight).toBeGreaterThan(1000);
+      expect(viewport.scrollHeight - viewport.clientHeight - viewport.scrollTop).toBeLessThan(2);
+    });
+    await props.listRef.current!.scrollToOffset({
+      offset:
+        viewport.scrollTop +
+        target.getBoundingClientRect().top -
+        viewport.getBoundingClientRect().top -
+        24,
+      animated: false,
+    });
+    viewport.dispatchEvent(new Event("scroll"));
+    const before = target.getBoundingClientRect().top - viewport.getBoundingClientRect().top;
+    expect(Math.abs(before - 24)).toBeLessThan(2);
+    for (const width of [500, 900]) {
+      screen.container.style.width = `${width}px`;
+      await vi.waitFor(() => {
+        const after = target.getBoundingClientRect().top - viewport.getBoundingClientRect().top;
+        expect(Math.abs(after - before)).toBeLessThan(30);
+      });
+    }
+  });
+
   it("disables the minimap's next turn button at the bottom of the thread", async () => {
     setup();
     const props = baseProps();
@@ -772,6 +815,51 @@ describe("MessagesTimeline messages", () => {
     expect(screen.text()).toContain("B turn 118:");
     expect(screen.text()).not.toContain("A turn");
     expectItemOrder();
+  });
+
+  it("opens a working parent thread at its end without landing short", async () => {
+    setup();
+    const props = baseProps();
+    const parent = Array.from({ length: 30 }, (_, index) =>
+      message(
+        `Parent turn ${index}:\n\n${"x ".repeat(200)}`,
+        { role: index % 2 === 0 ? "user" : "assistant" },
+        `parent-${index}`,
+      ),
+    );
+    await using screen = await renderElement(
+      <MessagesTimeline
+        {...props}
+        parentThreadLink={{ title: "Parent thread", open: () => {} }}
+        timelineEntries={[message("Short child reply.", { role: "assistant" }, "child-0")]}
+      />,
+    );
+    expect(screen.text()).toContain("Subagent of");
+    const viewport = props.listRef.current!.getScrollableNode()!;
+    const end = () => viewport.scrollHeight - viewport.clientHeight;
+    // Distance from the end as each scroll lands, against the content height at that moment.
+    const shortfalls: number[] = [];
+    viewport.addEventListener("scroll", () =>
+      shortfalls.push(Math.round(end() - viewport.scrollTop)),
+    );
+
+    // A working parent's footer (queued turns, its subagents) is taller than the child's.
+    await screen.rerender(
+      <MessagesTimeline
+        {...props}
+        routeThreadKey={`${props.routeThreadKey}-parent`}
+        timelineEntries={parent}
+        footer={<div style={{ height: 300 }}>Waiting on 4 subagents</div>}
+        isWorking
+      />,
+    );
+    await vi.waitFor(() => {
+      expect(screen.text()).toContain("Parent turn 29:");
+      expect(end() - viewport.scrollTop).toBeLessThanOrEqual(1);
+    });
+
+    expect(shortfalls.length).toBeGreaterThan(0);
+    expect(shortfalls).toEqual(shortfalls.map(() => 0));
   });
 
   it("puts rows back in item order soon after a continuous scroll stops", async () => {
@@ -1318,6 +1406,37 @@ describe("MessagesTimeline citations", () => {
     });
   });
 
+  it("keeps the citation highlight through an IME Escape", async () => {
+    await using _screen = await renderTimeline(
+      [
+        message("A question", {}, "question"),
+        message("the cited answer", { role: "assistant" }, "cited"),
+      ],
+      { citationRequest: CITATION_REQUEST, citationHistory: { _tag: "found" } },
+    );
+    const highlighted = () => document.querySelector("[data-citation-highlighted]");
+    await vi.waitFor(() => expect(highlighted()).not.toBeNull());
+    const pressEscape = (init: KeyboardEventInit, prevented = false) =>
+      act(() => {
+        const event = new KeyboardEvent("keydown", {
+          key: "Escape",
+          ...init,
+          bubbles: true,
+          cancelable: true,
+        });
+        // The composer's editor prevents every plain Escape before it reaches the document.
+        if (prevented) event.preventDefault();
+        document.body.dispatchEvent(event);
+      });
+
+    for (const init of [{ isComposing: true }, { keyCode: 229 }]) {
+      await pressEscape(init);
+      expect(highlighted()).not.toBeNull();
+    }
+    await pressEscape({ keyCode: 27 }, true);
+    expect(highlighted()).toBeNull();
+  });
+
   it("opens the superseded attempt that folds the cited response", async () => {
     const runId = RunId.make("run-steered");
     const attempt = (id: string, ordinal: number, status: "superseded" | "running") => ({
@@ -1799,6 +1918,47 @@ describe("MessagesTimeline attachments", () => {
         ),
       }),
     );
+  });
+
+  it("keeps an unavailable viewed image inside the 10rem work-log strip", async () => {
+    stubbedAsset.failed = true;
+    onTestFinished(() => {
+      stubbedAsset.failed = false;
+    });
+    await using screen = await renderElement(
+      <TimelineRowCtx
+        value={
+          {
+            threadRef: { environmentId: ENVIRONMENT_ID, threadId: ThreadId.make("thread-1") },
+            workspaceRoot: "/repo",
+          } as never
+        }
+      >
+        <ViewedImagesTimelineRow
+          row={{
+            kind: "viewed-images",
+            id: "viewed",
+            createdAt: CREATED_AT,
+            paths: ["/repo/step-1.jpg", "/repo/step-3.jpg"],
+          }}
+        />
+      </TimelineRowCtx>,
+    );
+    const frame = await vi.waitFor(() => {
+      const element = screen.container.querySelector<HTMLElement>(
+        '[data-image-gallery] [role="alert"]',
+      );
+      expect(element).toBeTruthy();
+      return element!;
+    });
+    const size = await vi.waitFor(() => {
+      const rect = frame.getBoundingClientRect();
+      expect(rect.width).toBeGreaterThan(0);
+      return rect;
+    });
+    expect(size.height).toBeLessThanOrEqual(161);
+    expect(size.width).toBeLessThanOrEqual(285);
+    expect(Math.abs(size.width / size.height - 16 / 9)).toBeLessThan(0.02);
   });
 
   it("opens an image from an expanded tool row as a gallery of the turn's viewed images", async () => {
@@ -2329,7 +2489,6 @@ it.each(["read", "bash"] as const)(
     await expect.element(originalInput).toBeVisible();
   },
 );
-
 it("keeps concurrent approvals actionable outside collapsed work and restores settled rows", async () => {
   setup();
   const fixture = makeStreamingTimelineFixture();

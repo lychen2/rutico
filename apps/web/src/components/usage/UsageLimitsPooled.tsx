@@ -624,7 +624,7 @@ function PoolWindowCard({
   readonly description?: string | undefined;
 }) {
   const uiText = useUiText();
-  const nextRefill = pool.resets.find((reset) => reset.at > now);
+  const nextRefill = pool.resets.find((reset) => reset.at > now && reset.restoresPercent > 0);
   const elapsed = pool.members.map((m) => paceRemainingPercent(m.window, now));
   const timeUsed =
     elapsed.length && elapsed.every((v) => v !== null)
