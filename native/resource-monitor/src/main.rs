@@ -4,9 +4,7 @@ use std::io::{self, BufRead, BufWriter, Write};
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError};
 use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
-use sysinfo::{
-    MINIMUM_CPU_UPDATE_INTERVAL, Pid, ProcessRefreshKind, ProcessesToUpdate, System, UpdateKind,
-};
+use sysinfo::{MINIMUM_CPU_UPDATE_INTERVAL, Pid, ProcessRefreshKind, ProcessesToUpdate, System};
 
 const PROTOCOL_VERSION: u32 = 3;
 const MIN_SAMPLE_INTERVAL_MS: u64 = 250;
@@ -527,27 +525,15 @@ impl Collector {
                     return None;
                 }
                 let disk_usage = details.disk_usage();
-                let command = if details.cmd().is_empty() {
-                    process.name().to_string_lossy().into_owned()
-                } else {
-                    details
-                        .cmd()
-                        .iter()
-                        .map(|part| part.to_string_lossy())
-                        .collect::<Vec<_>>()
-                        .join(" ")
-                };
+                let process_name = process.name().to_string_lossy().into_owned();
 
                 Some(ProcessSample {
                     pid,
                     ppid: process.parent().map(Pid::as_u32).unwrap_or(0),
                     start_time_ms: process.start_time().saturating_mul(1_000),
                     run_time_ms: process.run_time().saturating_mul(1_000),
-                    name: truncate_utf8(
-                        process.name().to_string_lossy().into_owned(),
-                        MAX_PROCESS_NAME_BYTES,
-                    ),
-                    command: truncate_utf8(command, MAX_PROCESS_COMMAND_BYTES),
+                    name: truncate_utf8(process_name.clone(), MAX_PROCESS_NAME_BYTES),
+                    command: truncate_utf8(process_name, MAX_PROCESS_COMMAND_BYTES),
                     status: truncate_utf8(
                         format!("{:?}", process.status()),
                         MAX_PROCESS_STATUS_BYTES,
@@ -599,7 +585,6 @@ fn process_refresh_kind() -> ProcessRefreshKind {
         .with_memory()
         .with_cpu()
         .with_disk_usage()
-        .with_cmd(UpdateKind::Always)
         .without_tasks()
 }
 
@@ -1116,6 +1101,7 @@ mod tests {
             .find(|process| process.pid == pid.as_u32())
             .expect("external process details");
         assert!(!selected.command.is_empty());
+        assert_eq!(selected.command, selected.name);
         assert!(selected.resident_bytes > 0);
         assert!(selected.start_time_ms > 0);
         assert_eq!(
@@ -1458,10 +1444,10 @@ mod tests {
     }
 
     #[test]
-    fn refreshes_commands_without_enumerating_linux_tasks() {
+    fn skips_commands_and_linux_tasks_while_refreshing_resources() {
         let refresh_kind = process_refresh_kind();
 
-        assert_eq!(refresh_kind.cmd(), UpdateKind::Always);
+        assert_eq!(refresh_kind.cmd(), sysinfo::UpdateKind::Never);
         assert!(!refresh_kind.tasks());
         assert!(refresh_kind.cpu());
         assert!(refresh_kind.memory());

@@ -335,7 +335,7 @@ it.effect(
         assert.isTrue(Option.isNone(yield* service.getById(projectId)));
         const projection = yield* projections.getThreadProjection(threadId);
         assert.isNotNull(projection.thread.deletedAt);
-        assert.lengthOf(projection.messages, 4);
+        assert.lengthOf(projection.messages, 0);
         assert.equal(yield* importer.pendingThreadCount, 0);
         const rows = yield* sql<{
           readonly v2_deleted_at: string | null;

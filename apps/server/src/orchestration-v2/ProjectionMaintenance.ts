@@ -12,6 +12,7 @@ import {
   EVENT_LOG_PRUNED_THROUGH,
 } from "../persistence/OrchestrationEventStore.ts";
 import * as ProjectionStore from "./ProjectionStore.ts";
+import { purgeAllDeletedThreads } from "./purgeDeletedThreadHistory.ts";
 
 export class ProjectionMaintenanceError extends Schema.TaggedError<ProjectionMaintenanceError>()(
   "ProjectionMaintenanceError",
@@ -276,7 +277,7 @@ export const layer: Layer.Layer<ProjectionMaintenanceV2, never, SqlClient.SqlCli
         `.pipe(NodeSqliteClient.readOnly);
         const head = bounds[0]?.sequence ?? 0;
 
-        let deletedEventCount = 0;
+        let deletedEventCount = yield* sql.withTransaction(purgeAllDeletedThreads(sql));
         const markIsDue =
           mark !== undefined &&
           DateTime.toEpochMillis(now) - Date.parse(mark.updated_at) >=

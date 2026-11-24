@@ -580,6 +580,12 @@ const make = Effect.gen(function* () {
           AND event.stream_id = thread.thread_id
           AND event.event_type = 'thread.created'
       )
+      AND NOT EXISTS (
+        SELECT 1
+        FROM orchestration_v2_projection_threads AS vt
+        WHERE vt.thread_id = thread.thread_id
+          AND vt.deleted_at IS NOT NULL
+      )
       ORDER BY thread.created_at ASC, thread.thread_id ASC
     `.pipe(NodeSqliteClient.readOnly);
     let importedThreadCount = repairedThreadCount;
@@ -670,6 +676,12 @@ const make = Effect.gen(function* () {
           AND event.aggregate_kind = 'thread'
           AND event.stream_id = thread.thread_id
           AND event.event_type = 'thread.created'
+      )
+      AND NOT EXISTS (
+        SELECT 1
+        FROM orchestration_v2_projection_threads AS vt
+        WHERE vt.thread_id = thread.thread_id
+          AND vt.deleted_at IS NOT NULL
       )
       UNION
       SELECT legacy_import.thread_id

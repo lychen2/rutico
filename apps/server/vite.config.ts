@@ -25,14 +25,7 @@ const buildVersion =
   process.env.APP_VERSION?.trim() ||
   resolveTaggedSourceVersion(NodePath.join(import.meta.dirname, "../.."), packageJson.version);
 const cliBuildChannel = /^[^-+]+-(?:nightly|preview)\./.test(buildVersion) ? "nightly" : "latest";
-// Official release workflows set the telemetry channel; local builds and forks use "dev".
-const TELEMETRY_CHANNELS = ["stable", "nightly", "preview", "dev"];
-const telemetryChannel = process.env.T3CODE_TELEMETRY_CHANNEL?.trim() || "dev";
-if (!TELEMETRY_CHANNELS.includes(telemetryChannel)) {
-  throw new Error(
-    `T3CODE_TELEMETRY_CHANNEL must be one of ${TELEMETRY_CHANNELS.join(", ")}, got "${telemetryChannel}".`,
-  );
-}
+const isPackagedRelease = process.env.T3CODE_PACKAGED_RELEASE === "1";
 
 // tsdown SEA needs one chunk (sourcemaps count) and Node >=25.7, so package separately.
 // "bundle" emits the embedded CLI. "1" builds dist-exe/t3 from the bootstrap.
@@ -151,22 +144,13 @@ export default mergeConfig(
       },
       define: {
         __T3CODE_BUILD_CHANNEL__: JSON.stringify(cliBuildChannel),
-        __T3CODE_TELEMETRY_CHANNEL__: JSON.stringify(telemetryChannel),
+        __T3CODE_PACKAGED_RELEASE__: JSON.stringify(isPackagedRelease),
         __T3CODE_BUILD_RELAY_URL__: JSON.stringify(repoEnv.T3CODE_RELAY_URL?.trim() ?? ""),
         __T3CODE_BUILD_CLERK_PUBLISHABLE_KEY__: JSON.stringify(
           repoEnv.T3CODE_CLERK_PUBLISHABLE_KEY?.trim() ?? "",
         ),
         __T3CODE_BUILD_CLERK_CLI_OAUTH_CLIENT_ID__: JSON.stringify(
           repoEnv.T3CODE_CLERK_CLI_OAUTH_CLIENT_ID?.trim() ?? "",
-        ),
-        __T3CODE_BUILD_RELAY_CLIENT_OTLP_TRACES_URL__: JSON.stringify(
-          repoEnv.T3CODE_RELAY_CLIENT_OTLP_TRACES_URL?.trim() ?? "",
-        ),
-        __T3CODE_BUILD_RELAY_CLIENT_OTLP_TRACES_DATASET__: JSON.stringify(
-          repoEnv.T3CODE_RELAY_CLIENT_OTLP_TRACES_DATASET?.trim() ?? "",
-        ),
-        __T3CODE_BUILD_RELAY_CLIENT_OTLP_TRACES_TOKEN__: JSON.stringify(
-          repoEnv.T3CODE_RELAY_CLIENT_OTLP_TRACES_TOKEN?.trim() ?? "",
         ),
       },
     },
