@@ -155,6 +155,7 @@ import { environmentProjects } from "../state/projects";
 import { threadEnvironment } from "../state/threads";
 import { useOlderSettledShelf, useOlderSettledShelfGrowth } from "../state/olderSettledShelf";
 import { useThreadSearch } from "../state/queries";
+import { useAtomCommand } from "../state/use-atom-command";
 import { useOrchestrationCommand } from "../state/use-orchestration-command";
 import { readEnvironmentScope, useEnvironmentScope } from "../state/session";
 import { appAtomRegistry } from "../rpc/atomRegistry";
@@ -227,6 +228,7 @@ import { ProjectFavicon } from "./ProjectFavicon";
 import { deriveProviderEntriesByEnvironment } from "../providerInstances";
 import { useStableCallback } from "../hooks/useStableCallback";
 import {
+  markSidebarOverviewNavigation,
   resolveSidebarRouteReveal,
   type SidebarRouteReveal,
   useActiveRowReveal,
@@ -249,7 +251,8 @@ import {
 } from "./ui/combobox";
 import { SidebarContent, SidebarGroup, useSidebar } from "./ui/sidebar";
 import { SidebarChromeFooter, SidebarChromeHeader } from "./sidebar/SidebarChrome";
-import { SidebarOverview } from "./sidebar/SidebarOverview";
+import { SidebarOverview, type SidebarOverviewActions } from "./sidebar/SidebarOverview";
+import { collectActiveOverviewKeys } from "./sidebar/SidebarOverview.logic";
 import { SidebarHeaderIconButton, SidebarThreadHeader } from "./sidebar/SidebarThreadHeader";
 import { TooltipProvider } from "./ui/tooltip";
 import {
@@ -968,6 +971,11 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
   const regenerateThreadTitle = useOrchestrationCommand(threadEnvironment.regenerateTitle, {
     reportFailure: false,
   });
+  const interruptThreadTurn = useOrchestrationCommand(threadEnvironment.interruptTurn, {
+    reportFailure: false,
+  });
+  const visitThread = useAtomCommand(threadEnvironment.visit, { reportFailure: false });
+  const markThreadVisited = useUiStateStore((state) => state.markThreadVisited);
   const { copyToClipboard: copyPathToClipboard } = useCopyToClipboard<{ path: string }>({
     onError: (error) => {
       toastManager.add(
@@ -1176,7 +1184,15 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
     clearSelection();
     setPersistedProjectScopeKeys([]);
   }, [clearSelection, revealWidensScope, setPersistedProjectScopeKeys]);
-  const revealActiveRow = useActiveRowReveal(routeReveal, routeRowThreadKey, routeKeyInPlace);
+  const activeOverviewKeys = collectActiveOverviewKeys(listedThreads);
+  const isRouteRunningInOverview =
+    routeRowThreadKey !== null && activeOverviewKeys.has(routeRowThreadKey);
+  const revealActiveRow = useActiveRowReveal(
+    routeReveal,
+    routeRowThreadKey,
+    routeKeyInPlace,
+    isRouteRunningInOverview,
+  );
   const [departingThreadKey, setDepartingThreadKey] = useState<string | null>(null);
   if (departingThreadKey !== null && departingThreadKey !== routeThreadKey) {
     setDepartingThreadKey(null);
@@ -1456,6 +1472,105 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
       to: "/$environmentId/$threadId",
       params: buildThreadRouteParams(threadRef),
     });
+  };
+
+  const navigateFromOverview = (threadRef: ScopedThreadRef) => {
+    const rowKey = scopedThreadKey(resolveListedAncestorThreadRef(threadRef, threads));
+    markSidebarOverviewNavigation(routeReveal, rowKey);
+    return navigateToThread(threadRef);
+  };
+
+  const attemptOverviewStop = (threadRef: ScopedThreadRef) => {
+    void (async () => {
+      const result = await interruptThreadTurn({
+        environmentId: threadRef.environmentId,
+        input: { threadId: threadRef.threadId },
+      });
+      if (result._tag === "Failure" && !isAtomCommandInterrupted(result)) {
+        const error = squashAtomCommandFailure(result);
+        toastManager.add(
+          stackedThreadToast({
+            type: "error",
+            title: gt("Failed to stop thread"),
+            description: thrownErrorMessage(error, m) ?? gt("An error occurred."),
+          }),
+        );
+      }
+    })();
+  };
+
+  const attemptOverviewMarkRead = (threadRef: ScopedThreadRef) => {
+    const visitedAt = new Date().toISOString();
+    markThreadVisited(scopedThreadKey(threadRef), visitedAt);
+    void visitThread({
+      environmentId: threadRef.environmentId,
+      input: { threadId: threadRef.threadId, visitedAt },
+    });
+  };
+
+  const attemptOverviewArchive = (threadRef: ScopedThreadRef) => {
+    void (async () => {
+      const thread = readThreadShell(threadRef);
+      if (confirmThreadArchive) {
+        const api = readLocalApi();
+        if (!api) return;
+        const confirmed = await settlePromise(() =>
+          api.dialogs.confirm(
+            gt('Archive thread "{title}"?', { title: thread?.title || gt("Untitled thread") }),
+          ),
+        );
+        if (confirmed._tag === "Failure" || !confirmed.value) return;
+      }
+      let didArchive = false;
+      const result = await archiveThread(threadRef, {
+        onArchived: () => {
+          didArchive = true;
+        },
+      });
+      if (result._tag === "Failure" && !isAtomCommandInterrupted(result)) {
+        const error = squashAtomCommandFailure(result);
+        toastManager.add(
+          stackedThreadToast({
+            type: "error",
+            title: didArchive
+              ? gt("Thread archived, but navigation failed")
+              : gt("Failed to archive thread"),
+            description: thrownErrorMessage(error, m) ?? gt("An error occurred."),
+          }),
+        );
+      }
+    })();
+  };
+
+  const attemptOverviewDelete = (threadRef: ScopedThreadRef) => {
+    void (async () => {
+      const thread = readThreadShell(threadRef);
+      if (confirmThreadDelete) {
+        const api = readLocalApi();
+        if (!api) return;
+        const confirmed = await settlePromise(() =>
+          api.dialogs.confirm(
+            [
+              gt('Delete thread "{title}"?', { title: thread?.title || gt("Untitled thread") }),
+              gt("This permanently clears conversation history for this thread."),
+            ].join("\n"),
+            { variant: "destructive" },
+          ),
+        );
+        if (confirmed._tag === "Failure" || !confirmed.value) return;
+      }
+      const result = await deleteThread(threadRef);
+      if (result._tag === "Failure" && !isAtomCommandInterrupted(result)) {
+        const error = squashAtomCommandFailure(result);
+        toastManager.add(
+          stackedThreadToast({
+            type: "error",
+            title: gt("Failed to delete thread"),
+            description: thrownErrorMessage(error, m) ?? gt("An error occurred."),
+          }),
+        );
+      }
+    })();
   };
 
   const handleThreadFileDrop = async (threadRef: ScopedThreadRef, files: File[]) => {
@@ -3294,7 +3409,21 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
               now={snoozeNow}
               providers={providerEntriesByEnvironment}
               projectNames={projectDisplayNameByKey}
-              onNavigate={navigateToThread}
+              timestampFormat={timestampFormat}
+              actions={
+                {
+                  onStop: attemptOverviewStop,
+                  onMarkRead: attemptOverviewMarkRead,
+                  onSettle: attemptSettle,
+                  onUnsettle: attemptUnsettle,
+                  onArchive: attemptOverviewArchive,
+                  onSnooze: attemptSnooze,
+                  onMarkUnread: markThreadUnread,
+                  onDelete: attemptOverviewDelete,
+                  onContextMenu: handleThreadContextMenu,
+                } satisfies SidebarOverviewActions
+              }
+              onNavigate={navigateFromOverview}
             />
           ) : null}
           {!isSearchingThreads ? (

@@ -21,7 +21,9 @@ export type OverviewStatus =
   | "background"
   | "children"
   | "failed"
-  | "unread";
+  | "unread"
+  | "done"
+  | "today";
 
 type OverviewRow<S extends OverviewStatus = OverviewStatus> = {
   readonly key: string;
@@ -32,7 +34,8 @@ type OverviewRow<S extends OverviewStatus = OverviewStatus> = {
 };
 
 type AttentionStatus = RequestStatus | "failed" | "unread";
-type ActiveStatus = Exclude<OverviewStatus, "failed" | "unread">;
+type TodayStatus = "done" | "today";
+type ActiveStatus = Exclude<OverviewStatus, "failed" | "unread" | TodayStatus>;
 
 type ActiveGroup = {
   readonly root: OverviewRow<ActiveStatus>;
@@ -41,6 +44,44 @@ type ActiveGroup = {
 };
 
 export const ATTENTION_PREVIEW_LIMIT = 5;
+const TODAY_TASKS_ROLLOVER_HOUR = 4;
+
+export function failedRunToken(thread: EnvironmentThreadShell): string | null {
+  const run = thread.latestRun;
+  if (run?.status !== "failed") return null;
+  return run.runId || run.completedAt || thread.updatedAt;
+}
+
+/**
+ * Start of the current logical day in local time, rolling over at `rolloverHour` (default 04:00).
+ * Before 04:00 local time, the logical day starts at yesterday's 04:00.
+ */
+export function logicalDayStartMs(nowMs: number, rolloverHour = TODAY_TASKS_ROLLOVER_HOUR): number {
+  const start = new Date(nowMs);
+  if (start.getHours() < rolloverHour) {
+    start.setDate(start.getDate() - 1);
+  }
+  start.setHours(rolloverHour, 0, 0, 0);
+  return start.getTime();
+}
+
+function resolveTodayTaskTimestamp(thread: EnvironmentThreadShell): number | null {
+  const candidates = [
+    thread.settledAt,
+    thread.latestRun?.completedAt ?? null,
+    thread.latestRun?.startedAt ?? null,
+    thread.updatedAt,
+    thread.createdAt,
+  ];
+  let latest: number | null = null;
+  for (const candidate of candidates) {
+    if (candidate === null) continue;
+    const ms = Date.parse(candidate);
+    if (!Number.isFinite(ms)) continue;
+    if (latest === null || ms > latest) latest = ms;
+  }
+  return latest;
+}
 
 function activeStatus(
   thread: EnvironmentThreadShell,
@@ -64,12 +105,18 @@ function activeStatus(
   }
 }
 
-const attentionRank: Record<AttentionStatus, number> = { approval: 0, input: 0, failed: 1, unread: 2 };
+const attentionRank: Record<AttentionStatus, number> = {
+  approval: 0,
+  input: 0,
+  failed: 1,
+  unread: 2,
+};
 
 export function buildSidebarOverview(
   threads: readonly EnvironmentThreadShell[],
   now: string,
   localVisits: Readonly<Record<string, string | undefined>>,
+  acknowledgedErrors: Readonly<Record<string, string | undefined>> = {},
 ) {
   const liveThreads = threads.filter((thread) => thread.deletedAt === null);
   const byKey = new Map<string, EnvironmentThreadShell>();
@@ -130,11 +177,13 @@ export function buildSidebarOverview(
     }
     const lastVisitedAt = resolveThreadLastVisitedAt(thread.lastVisitedAt, localVisits[key]);
     const timestamp = Date.parse(run?.completedAt ?? thread.updatedAt);
-    if (
-      run?.status === "failed" &&
-      (thread.settledAt === null ||
-        (run.completedAt !== null && timestamp > Date.parse(thread.settledAt)))
-    ) {
+    const errorToken = failedRunToken(thread);
+    const errorAcknowledged = errorToken !== null && acknowledgedErrors[key] === errorToken;
+    const failureUnsettled =
+      thread.settledAt === null
+        ? thread.settledOverride !== "settled"
+        : run?.completedAt != null && timestamp > Date.parse(thread.settledAt);
+    if (run?.status === "failed" && !errorAcknowledged && failureUnsettled) {
       attentionCount += 1;
       attention.push({ key, ref, thread, status: "failed", timestamp });
     } else if (run?.status === "completed" && hasUnseenCompletion({ ...thread, lastVisitedAt })) {
@@ -181,7 +230,64 @@ export function buildSidebarOverview(
       (a.timestamp ?? 0) - (b.timestamp ?? 0) ||
       a.key.localeCompare(b.key),
   );
-  return { active, attention, attentionCount };
+
+  const activeKeys = new Set<string>();
+  for (const group of active) {
+    activeKeys.add(group.root.key);
+    for (const child of group.children) activeKeys.add(child.key);
+  }
+  const shownTopKeys = new Set<string>(activeKeys);
+  for (const row of attention) shownTopKeys.add(row.key);
+
+  const nowMs = Date.parse(now);
+  const todayStartMs = Number.isFinite(nowMs) ? logicalDayStartMs(nowMs) : null;
+  const todayTasks: OverviewRow<TodayStatus>[] = [];
+  if (todayStartMs !== null) {
+    for (const thread of liveThreads) {
+      if (
+        thread.archivedAt !== null ||
+        thread.lineage.relationshipToParent === "subagent" ||
+        effectiveSnoozed(thread, { now })
+      ) {
+        continue;
+      }
+      const ref = scopeThreadRef(thread.environmentId, thread.id);
+      const key = scopedThreadKey(ref);
+      if (shownTopKeys.has(key)) continue;
+      const timestamp = resolveTodayTaskTimestamp(thread);
+      if (timestamp === null || timestamp < todayStartMs) continue;
+      const status: TodayStatus =
+        thread.settledOverride === "settled" || thread.settledAt !== null ? "done" : "today";
+      todayTasks.push({ key, ref, thread, status, timestamp });
+    }
+    todayTasks.sort(
+      (a, b) => (b.timestamp ?? 0) - (a.timestamp ?? 0) || a.key.localeCompare(b.key),
+    );
+  }
+
+  return { active, activeKeys, attention, attentionCount, todayTasks };
+}
+
+export function collectActiveOverviewKeys(
+  threads: readonly EnvironmentThreadShell[],
+): ReadonlySet<string> {
+  const liveThreads = threads.filter((thread) => thread.deletedAt === null);
+  const keys = new Set<string>();
+  for (const thread of liveThreads) {
+    const request = thread.hasPendingApprovals
+      ? "approval"
+      : thread.hasPendingUserInput
+        ? "input"
+        : null;
+    const waitsForBackground = backgroundWorkHoldsCompletion(thread.pendingBackgroundTasks);
+    if (activeStatus(thread, request, waitsForBackground) === null) continue;
+    const ref = scopeThreadRef(thread.environmentId, thread.id);
+    keys.add(scopedThreadKey(ref));
+    if (thread.lineage.parentThreadId !== null || thread.delegatedFrom !== null) {
+      keys.add(scopedThreadKey(resolveListedAncestorThreadRef(ref, liveThreads)));
+    }
+  }
+  return keys;
 }
 
 export function previewActiveWork(groups: readonly ActiveGroup[]) {

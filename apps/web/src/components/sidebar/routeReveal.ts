@@ -9,10 +9,15 @@ import { filterSidebarV2VisibleThreads } from "../Sidebar.logic";
 // Leaving Settings commits the router's location before its matches, briefly hiding thread params.
 // Ignore null keys so the same thread does not look new during that gap.
 export interface SidebarRouteReveal {
+  overviewKey?: string | null;
   observedKey: string | null;
   pendingKey: string | null;
   // A draft's first send names its thread without navigating; the user is not looking for it.
   pendingInPlace?: boolean;
+}
+
+export function markSidebarOverviewNavigation(reveal: SidebarRouteReveal, key: string): void {
+  reveal.overviewKey = key;
 }
 
 export function pendingSidebarRouteReveal(
@@ -22,6 +27,9 @@ export function pendingSidebarRouteReveal(
 ): string | null {
   if (routeKey === null) return null;
   if (reveal.observedKey !== routeKey) {
+    if (reveal.overviewKey !== routeKey) {
+      reveal.overviewKey = null;
+    }
     reveal.observedKey = routeKey;
     reveal.pendingKey = routeKey;
     reveal.pendingInPlace = inPlace;
@@ -40,6 +48,7 @@ export function useActiveRowReveal(
   reveal: SidebarRouteReveal,
   routeKey: string | null,
   inPlace = false,
+  suppressReveal = false,
 ) {
   const mountRevealOwed = useRef(true);
   pendingSidebarRouteReveal(reveal, routeKey, inPlace);
@@ -58,11 +67,12 @@ export function useActiveRowReveal(
       return stopWaiting;
     }
     const revealInPlace = reveal.pendingKey === rowKey && reveal.pendingInPlace === true;
+    const keepInOverview = suppressReveal || reveal.overviewKey === rowKey;
     completeSidebarRouteReveal(reveal);
     mountRevealOwed.current = false;
     // A row under the pointer was just clicked, so it is in view; scrolling it would force a
     // layout mid-commit. Keyboard activation can come from a focused row scrolled out of view.
-    if (revealInPlace || row.matches(":hover")) return undefined;
+    if (revealInPlace || keepInOverview || row.matches(":hover")) return undefined;
     row.scrollIntoView({ block: "nearest" });
     return undefined;
   };

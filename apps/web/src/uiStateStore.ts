@@ -22,6 +22,7 @@ export interface PersistedUiState {
   projectExpandedById?: Record<string, boolean>;
   projectOrder?: string[];
   threadLastVisitedAtById?: Record<string, string>;
+  acknowledgedErrorRunByThreadKey?: Record<string, string>;
   collapsedProjectCwds?: string[];
   expandedProjectCwds?: string[];
   projectOrderCwds?: string[];
@@ -39,6 +40,7 @@ export interface UiProjectState {
 
 export interface UiThreadState {
   threadLastVisitedAtById: Record<string, string>;
+  acknowledgedErrorRunByThreadKey: Record<string, string>;
 }
 
 export interface UiEndpointState {
@@ -57,6 +59,7 @@ const initialState: UiState = {
   projectOrder: [],
   sidebarProjectScopeKeys: [],
   threadLastVisitedAtById: {},
+  acknowledgedErrorRunByThreadKey: {},
   defaultAdvertisedEndpointKey: null,
   pullRequestMergeMethod: "merge",
 };
@@ -112,6 +115,18 @@ function sanitizeTimestampRecord(value: unknown): Record<string, string> {
   );
 }
 
+function sanitizeStringRecord(value: unknown): Record<string, string> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return {};
+  }
+  return Object.fromEntries(
+    Object.entries(value).filter(
+      (entry): entry is [string, string] =>
+        entry[0].length > 0 && typeof entry[1] === "string" && entry[1].length > 0,
+    ),
+  );
+}
+
 export function parsePersistedState(parsed: PersistedUiState): UiState {
   const projectExpandedById =
     parsed.projectExpandedById === undefined
@@ -140,6 +155,7 @@ export function parsePersistedState(parsed: PersistedUiState): UiState {
     projectExpandedById,
     projectOrder,
     threadLastVisitedAtById: sanitizeTimestampRecord(parsed.threadLastVisitedAtById),
+    acknowledgedErrorRunByThreadKey: sanitizeStringRecord(parsed.acknowledgedErrorRunByThreadKey),
     defaultAdvertisedEndpointKey: sanitizeOptionalKey(parsed.defaultAdvertisedEndpointKey),
     sidebarProjectScopeKeys: sanitizeStringArray(
       parsed.sidebarProjectScopeKeys ?? [parsed.sidebarProjectScopeKey],
@@ -183,6 +199,7 @@ export function persistState(state: UiState): void {
         projectExpandedById: state.projectExpandedById,
         projectOrder: state.projectOrder,
         threadLastVisitedAtById: state.threadLastVisitedAtById,
+        acknowledgedErrorRunByThreadKey: state.acknowledgedErrorRunByThreadKey,
         defaultAdvertisedEndpointKey: state.defaultAdvertisedEndpointKey,
         sidebarProjectScopeKeys: state.sidebarProjectScopeKeys,
         // Older clients read only this field.
@@ -360,9 +377,33 @@ export function reorderProjects(
   };
 }
 
+export function acknowledgeThreadError(
+  state: UiState,
+  threadKey: string,
+  errorToken: string | null,
+): UiState {
+  if (errorToken === null || errorToken.length === 0) {
+    if (!(threadKey in state.acknowledgedErrorRunByThreadKey)) return state;
+    const next = { ...state.acknowledgedErrorRunByThreadKey };
+    delete next[threadKey];
+    return { ...state, acknowledgedErrorRunByThreadKey: next };
+  }
+  if (state.acknowledgedErrorRunByThreadKey[threadKey] === errorToken) {
+    return state;
+  }
+  return {
+    ...state,
+    acknowledgedErrorRunByThreadKey: {
+      ...state.acknowledgedErrorRunByThreadKey,
+      [threadKey]: errorToken,
+    },
+  };
+}
+
 interface UiStateStore extends UiState {
   markThreadVisited: (threadId: string, visitedAt: string) => void;
   markThreadUnread: (threadId: string, latestTurnCompletedAt: string | null | undefined) => void;
+  acknowledgeThreadError: (threadKey: string, errorToken: string | null) => void;
   setDefaultAdvertisedEndpointKey: (key: string | null) => void;
   setSidebarProjectScopeKeys: (projectKeys: readonly string[]) => void;
   setPullRequestMergeMethod: (method: PullRequestMergeMethod) => void;
@@ -380,6 +421,8 @@ export const useUiStateStore = create<UiStateStore>((set) => ({
     set((state) => markThreadVisited(state, threadId, visitedAt)),
   markThreadUnread: (threadId, latestTurnCompletedAt) =>
     set((state) => markThreadUnread(state, threadId, latestTurnCompletedAt)),
+  acknowledgeThreadError: (threadKey, errorToken) =>
+    set((state) => acknowledgeThreadError(state, threadKey, errorToken)),
   setDefaultAdvertisedEndpointKey: (key) =>
     set((state) => setDefaultAdvertisedEndpointKey(state, key)),
   setSidebarProjectScopeKeys: (projectKeys) =>

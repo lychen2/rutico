@@ -2,6 +2,7 @@ import { ThreadId } from "@t3tools/contracts";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 
 import {
+  acknowledgeThreadError,
   legacyProjectCwdPreferenceKey,
   markThreadUnread,
   markThreadVisited,
@@ -21,6 +22,7 @@ function makeUiState(overrides: Partial<UiState> = {}): UiState {
     projectOrder: [],
     sidebarProjectScopeKeys: [],
     threadLastVisitedAtById: {},
+    acknowledgedErrorRunByThreadKey: {},
     defaultAdvertisedEndpointKey: null,
     pullRequestMergeMethod: "merge",
     ...overrides,
@@ -80,6 +82,16 @@ describe("uiStateStore pure functions", () => {
     expect(setProjectExpanded(next, keys, false)).toBe(next);
   });
 
+  it("acknowledges and clears dismissed failed runs per thread", () => {
+    const initialState = makeUiState();
+    const acked = acknowledgeThreadError(initialState, "local:thread-1", "run-err-1");
+    expect(acked.acknowledgedErrorRunByThreadKey["local:thread-1"]).toBe("run-err-1");
+    expect(acknowledgeThreadError(acked, "local:thread-1", "run-err-1")).toBe(acked);
+
+    const cleared = acknowledgeThreadError(acked, "local:thread-1", null);
+    expect(cleared.acknowledgedErrorRunByThreadKey).toEqual({});
+  });
+
   it("moves grouped project members together", () => {
     const keyALocal = "env-local:proj-a";
     const keyARemote = "env-remote:proj-a";
@@ -116,6 +128,7 @@ describe("parsePersistedState", () => {
       threadLastVisitedAtById: {
         "environment:thread-1": "2026-02-25T12:35:00.000Z",
       },
+      acknowledgedErrorRunByThreadKey: {},
       defaultAdvertisedEndpointKey: "desktop-core:lan:http",
       sidebarProjectScopeKeys: [],
       pullRequestMergeMethod: "merge",
@@ -186,6 +199,7 @@ describe("uiStateStore persistence", () => {
       threadLastVisitedAtById: {
         "environment:thread-1": "2026-02-25T12:35:00.000Z",
       },
+      acknowledgedErrorRunByThreadKey: {},
       defaultAdvertisedEndpointKey: "desktop-core:lan:http",
     });
 
@@ -202,6 +216,7 @@ describe("uiStateStore persistence", () => {
       threadLastVisitedAtById: {
         "environment:thread-1": "2026-02-25T12:35:00.000Z",
       },
+      acknowledgedErrorRunByThreadKey: {},
       defaultAdvertisedEndpointKey: "desktop-core:lan:http",
       sidebarProjectScopeKeys: [],
       sidebarProjectScopeKey: null,

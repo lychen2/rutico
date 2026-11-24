@@ -9,6 +9,7 @@ import {
   EnvironmentId,
   type LocalApi,
   ProjectId,
+  RunId,
   ThreadId,
   type ScopedThreadRef,
 } from "@t3tools/contracts";
@@ -29,6 +30,7 @@ import { useConnectedEnvironmentIds, usePrimaryEnvironmentId } from "../state/en
 import { readEnvironmentScope, useEnvironmentScope } from "../state/session";
 import { useOrchestrationCommand } from "../state/use-orchestration-command";
 import { useTerminalUiStateStore } from "../terminalUiStateStore";
+import { useUiStateStore } from "../uiStateStore";
 import { readLocalApi } from "../localApi";
 import * as localApi from "../localApi";
 import type { Project } from "../types";
@@ -423,6 +425,74 @@ it("bounces changed overview counts once and cancels Attention exits with reduce
   await expect.element(attention).not.toBeInTheDocument();
   expect(screen.container.querySelector("[data-sidebar-motion-exit]")).toBeNull();
   expect(animations).not.toHaveBeenCalled();
+});
+
+it("lets failed overview rows be dismissed or archived and toggles collapsed Today's tasks", async () => {
+  useUiStateStore.setState({ acknowledgedErrorRunByThreadKey: {} });
+  const group = project("overview-actions");
+  const now = new Date(2026, 0, 2, 10, 0, 0, 0).toISOString();
+  const earlierToday = new Date(2026, 0, 2, 8, 0, 0, 0).toISOString();
+  const failed = makeThreadFixture({
+    environmentId: EnvironmentId.make("local"),
+    id: ThreadId.make("failed-overview"),
+    projectId: group.id,
+    title: "Broken task",
+    createdAt: earlierToday,
+    updatedAt: earlierToday,
+    latestRun: {
+      runId: RunId.make("run-broken"),
+      status: "failed",
+      requestedAt: earlierToday,
+      startedAt: earlierToday,
+      completedAt: earlierToday,
+      assistantMessageId: null,
+    },
+  });
+  const doneToday = makeThreadFixture({
+    environmentId: EnvironmentId.make("local"),
+    id: ThreadId.make("done-today"),
+    projectId: group.id,
+    title: "Wrapped up today",
+    createdAt: earlierToday,
+    updatedAt: earlierToday,
+    settledOverride: "settled",
+    settledAt: earlierToday,
+  });
+  const onArchive = vi.fn();
+  const onNavigate = vi.fn();
+  await using screen = await render(
+    <TooltipProvider>
+      <SidebarOverview
+        threads={[failed, doneToday]}
+        activeKey={null}
+        now={now}
+        providers={new Map()}
+        projectNames={new Map()}
+        actions={{ onArchive }}
+        onNavigate={onNavigate}
+      />
+    </TooltipProvider>,
+    { router: false },
+  );
+
+  const attention = screen.getByRole("region", { name: "Needs my attention" });
+  await expect.element(attention.getByRole("button", { name: /Broken task/ })).toBeVisible();
+
+  // Today's tasks starts collapsed and reveals today's threads when toggled.
+  const todayRegion = screen.getByRole("region", { name: "Today's tasks" });
+  const todayToggle = todayRegion.getByRole("button", { name: /Today's tasks/ });
+  await expect.element(todayToggle).toHaveAttribute("aria-expanded", "false");
+  await expect
+    .element(todayRegion.getByRole("button", { name: /Wrapped up today/ }))
+    .not.toBeInTheDocument();
+  await userEvent.click(todayToggle);
+  await expect.element(todayToggle).toHaveAttribute("aria-expanded", "true");
+  await expect.element(todayRegion.getByRole("button", { name: /Wrapped up today/ })).toBeVisible();
+
+  // Dismiss clears the failed attention item immediately.
+  const dismissButton = attention.getByRole("button", { name: "Dismiss" });
+  await userEvent.click(dismissButton);
+  await expect.element(attention).not.toBeInTheDocument();
 });
 
 describe("sidebar render isolation", () => {

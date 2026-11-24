@@ -1,18 +1,41 @@
 import { toServerClock } from "@t3tools/client-runtime/clock";
-import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/models";
+import {
+  threadRuntimeCanArchive,
+  type EnvironmentThreadShell,
+} from "@t3tools/client-runtime/state/models";
 import { THREAD_STATUS_TEXT } from "@t3tools/client-runtime/state/thread-activity-announcement";
-import type { ScopedThreadRef } from "@t3tools/contracts";
+import { canSnooze } from "@t3tools/client-runtime/state/thread-settled";
+import {
+  AuthOrchestrationOperateScope,
+  type ContextMenuSource,
+  type ScopedThreadRef,
+} from "@t3tools/contracts";
+import type { TimestampFormat } from "@t3tools/contracts/settings";
 import { msg, useGT, useMessages } from "gt-react";
-import { ChevronDownIcon } from "lucide-react";
+import {
+  AlarmClockIcon,
+  ArchiveIcon,
+  CheckIcon,
+  ChevronDownIcon,
+  EllipsisIcon,
+  EyeOffIcon,
+  MailIcon,
+  SquareIcon,
+  Trash2Icon,
+  Undo2Icon,
+  XIcon,
+} from "lucide-react";
 import { useLayoutEffect, useRef, useState } from "react";
-import type { ReactNode } from "react";
+import type { ReactNode, Ref } from "react";
 import { cn } from "~/lib/utils";
+import { contextMenuSourceOf } from "../../contextMenuSource";
 import { useNowMinute } from "../../hooks/useNowMinute";
 import {
   useAllEnvironmentShellsBootstrapped,
   useQuietThreadProjection,
 } from "../../state/entities";
 import { useEnvironments } from "../../state/environments";
+import { useEnvironmentScope } from "../../state/session";
 import { formatRelativeElapsed } from "../../timestampFormat";
 import { useUiStateStore } from "../../uiStateStore";
 import {
@@ -20,12 +43,15 @@ import {
   SIDEBAR_REDUCED_MOTION,
   sidebarWorkbenchEase,
 } from "../Sidebar.motion";
+import { pickSnoozePreset, resolveSnoozePresets, type SnoozePreset } from "../Sidebar.snooze";
 import { Button } from "../ui/button";
+import { Menu, MenuItem, MenuItemDetail, MenuPopup, MenuSeparator, MenuTrigger } from "../ui/menu";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import type { SidebarProviderEntry } from "./SidebarThreadRow";
 import {
   ATTENTION_PREVIEW_LIMIT,
   buildSidebarOverview,
+  failedRunToken,
   previewActiveWork,
   selectOverviewProgress,
   type OverviewStatus,
@@ -41,10 +67,32 @@ const statusMessages = {
   background: msg("Waiting on a background task"),
   failed: THREAD_STATUS_TEXT.failed,
   unread: msg("New result"),
+  done: msg("Settled"),
+  today: msg("Active today"),
 };
 
 type Overview = ReturnType<typeof buildSidebarOverview>;
-type OverviewRow = Overview["active"][number]["root"] | Overview["attention"][number];
+type OverviewRow =
+  | Overview["active"][number]["root"]
+  | Overview["attention"][number]
+  | Overview["todayTasks"][number];
+type OverviewRowMode = "running" | "attention" | "today";
+
+export interface SidebarOverviewActions {
+  readonly onStop?: (ref: ScopedThreadRef) => void;
+  readonly onMarkRead?: (ref: ScopedThreadRef) => void;
+  readonly onSettle?: (ref: ScopedThreadRef) => void;
+  readonly onUnsettle?: (ref: ScopedThreadRef) => void;
+  readonly onArchive?: (ref: ScopedThreadRef) => void;
+  readonly onSnooze?: (ref: ScopedThreadRef, preset: Pick<SnoozePreset, "snoozedUntil">) => void;
+  readonly onMarkUnread?: (ref: ScopedThreadRef) => void;
+  readonly onDelete?: (ref: ScopedThreadRef) => void;
+  readonly onContextMenu?: (
+    ref: ScopedThreadRef,
+    position: { x: number; y: number },
+    source: ContextMenuSource,
+  ) => void;
+}
 
 function useOverviewListMotion(layoutKey: string, attentionExit = false) {
   const controller = useRef<ReturnType<typeof createSidebarListMotion> | null>(null);
@@ -66,6 +114,27 @@ function useOverviewListMotion(layoutKey: string, attentionExit = false) {
     controller.current?.update(true);
   }, [layoutKey]);
   return attach;
+}
+
+function useActiveRunningOverviewButton(activeKey: string | null, isRunningActive: boolean) {
+  const buttonRef = useRef<HTMLButtonElement | null>(null);
+  const previousActiveKey = useRef<string | null>(activeKey);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Synchronizes DOM scroll/focus with route changes targeting a running overview row.
+  useLayoutEffect(() => {
+    const changed = previousActiveKey.current !== activeKey;
+    previousActiveKey.current = activeKey;
+    if (!changed || !isRunningActive) return;
+    const button = buttonRef.current;
+    if (!button || button.getClientRects().length === 0) return;
+    if (!button.matches(":hover")) {
+      button.scrollIntoView({ block: "nearest" });
+    }
+    const activeEl = document.activeElement;
+    if (activeEl !== button && activeEl?.closest('[data-slot="sidebar"]') !== null) {
+      button.focus({ preventScroll: true });
+    }
+  }, [activeKey, isRunningActive]);
+  return buttonRef;
 }
 
 function OverviewCount({ count, className }: { count: number; className: string }) {
@@ -133,21 +202,361 @@ function OverviewProgress({ row }: { row: OverviewRow }) {
   );
 }
 
+function OverviewActionIconButton({
+  actionKey,
+  label,
+  icon,
+  tone,
+  onClick,
+}: {
+  actionKey: string;
+  label: string;
+  icon: ReactNode;
+  tone?: "done" | "stop" | undefined;
+  onClick: () => void;
+}) {
+  return (
+    <Tooltip>
+      <TooltipTrigger
+        render={
+          <button
+            type="button"
+            aria-label={label}
+            data-overview-quick-action={actionKey}
+            onClick={(event) => {
+              event.stopPropagation();
+              onClick();
+            }}
+            className={cn(
+              "inline-flex size-5.5 shrink-0 cursor-pointer items-center justify-center rounded-md text-sidebar-muted-foreground outline-none transition-colors hover:bg-sidebar-row-hover hover:text-sidebar-foreground focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring",
+              tone === "done" && "hover:text-success-foreground",
+              tone === "stop" && "hover:text-error-foreground",
+            )}
+          />
+        }
+      >
+        {icon}
+      </TooltipTrigger>
+      <TooltipPopup side="top">{label}</TooltipPopup>
+    </Tooltip>
+  );
+}
+
+function OverviewRowQuickActions({
+  row,
+  mode,
+  now,
+  timestampFormat,
+  actions,
+  onDismissError,
+}: {
+  row: OverviewRow;
+  mode: OverviewRowMode;
+  now: string;
+  timestampFormat: TimestampFormat;
+  actions: SidebarOverviewActions | undefined;
+  onDismissError: (key: string, token: string) => void;
+}) {
+  const gt = useGT();
+  const messages = useMessages();
+  const [menuOpen, setMenuOpen] = useState(false);
+  const canOperate = useEnvironmentScope(row.ref.environmentId, AuthOrchestrationOperateScope);
+  const errorToken = row.status === "failed" ? failedRunToken(row.thread) : null;
+  const canArchive =
+    canOperate && actions?.onArchive !== undefined && threadRuntimeCanArchive(row.thread.runtime);
+  const canSnoozeRow =
+    canOperate && actions?.onSnooze !== undefined && canSnooze(row.thread, { now });
+  const snoozePresets =
+    menuOpen && canSnoozeRow
+      ? // oxlint-disable-next-line react/purity -- Presets are resolved only while the menu is open, so each opening reads a fresh time.
+        resolveSnoozePresets(new Date(), timestampFormat, row.ref.environmentId, messages)
+      : [];
+
+  const dismissFailure =
+    errorToken !== null ? () => onDismissError(row.key, errorToken) : undefined;
+  const handleSettle =
+    canOperate && actions?.onSettle !== undefined
+      ? () => {
+          if (errorToken !== null) onDismissError(row.key, errorToken);
+          if (row.status === "unread") actions.onMarkRead?.(row.ref);
+          actions.onSettle?.(row.ref);
+        }
+      : undefined;
+  const handleArchive = canArchive
+    ? () => {
+        if (errorToken !== null) onDismissError(row.key, errorToken);
+        actions?.onArchive?.(row.ref);
+      }
+    : undefined;
+  const handleUnsettle =
+    canOperate && actions?.onUnsettle !== undefined
+      ? () => actions.onUnsettle?.(row.ref)
+      : undefined;
+  const handleStop =
+    canOperate && mode === "running" && row.status !== "children" && actions?.onStop !== undefined
+      ? () => actions.onStop?.(row.ref)
+      : undefined;
+  const handleMarkRead =
+    row.status === "unread" && actions?.onMarkRead !== undefined
+      ? () => actions.onMarkRead?.(row.ref)
+      : undefined;
+  const handleMarkUnread =
+    mode !== "attention" && actions?.onMarkUnread !== undefined
+      ? () => actions.onMarkUnread?.(row.ref)
+      : undefined;
+  const handleDelete =
+    canOperate && actions?.onDelete !== undefined
+      ? () => {
+          if (errorToken !== null) onDismissError(row.key, errorToken);
+          actions.onDelete?.(row.ref);
+        }
+      : undefined;
+
+  const hasMenuItems =
+    dismissFailure !== undefined ||
+    handleMarkRead !== undefined ||
+    handleSettle !== undefined ||
+    handleUnsettle !== undefined ||
+    handleArchive !== undefined ||
+    handleMarkUnread !== undefined ||
+    canSnoozeRow ||
+    handleDelete !== undefined;
+
+  if (
+    !handleStop &&
+    !dismissFailure &&
+    !handleSettle &&
+    !handleUnsettle &&
+    !handleArchive &&
+    !hasMenuItems
+  ) {
+    return null;
+  }
+
+  return (
+    <span
+      data-overview-quick-actions={mode}
+      className={cn(
+        "pointer-events-none absolute top-1 end-1 flex items-center gap-px rounded-md bg-sidebar/90 opacity-0 backdrop-blur-xs transition-opacity motion-reduce:transition-none",
+        "group-hover/overview-row:pointer-events-auto group-hover/overview-row:opacity-100 group-focus-within/overview-row:pointer-events-auto group-focus-within/overview-row:opacity-100",
+        menuOpen && "pointer-events-auto opacity-100",
+      )}
+    >
+      {handleStop ? (
+        <OverviewActionIconButton
+          actionKey="stop"
+          label={gt("Stop")}
+          icon={<SquareIcon className="size-3 fill-current" />}
+          tone="stop"
+          onClick={handleStop}
+        />
+      ) : null}
+      {row.status === "failed" && dismissFailure ? (
+        <OverviewActionIconButton
+          actionKey="dismiss"
+          label={gt("Dismiss")}
+          icon={<XIcon className="size-3.5" />}
+          onClick={dismissFailure}
+        />
+      ) : null}
+      {row.status === "unread" && handleSettle ? (
+        <OverviewActionIconButton
+          actionKey="settle"
+          label={gt("Settle")}
+          icon={<CheckIcon className="size-3.5" />}
+          tone="done"
+          onClick={handleSettle}
+        />
+      ) : null}
+      {mode === "today" && row.status === "done" && handleUnsettle ? (
+        <OverviewActionIconButton
+          actionKey="unsettle"
+          label={gt("Un-settle")}
+          icon={<Undo2Icon className="size-3.5" />}
+          onClick={handleUnsettle}
+        />
+      ) : null}
+      {mode === "today" && row.status === "today" && handleSettle ? (
+        <OverviewActionIconButton
+          actionKey="settle"
+          label={gt("Settle")}
+          icon={<CheckIcon className="size-3.5" />}
+          tone="done"
+          onClick={handleSettle}
+        />
+      ) : null}
+      {(row.status === "failed" || row.status === "unread" || mode === "today") && handleArchive ? (
+        <OverviewActionIconButton
+          actionKey="archive"
+          label={gt("Archive")}
+          icon={<ArchiveIcon className="size-3.5" />}
+          onClick={handleArchive}
+        />
+      ) : null}
+      {hasMenuItems ? (
+        <Menu open={menuOpen} onOpenChange={setMenuOpen}>
+          <Tooltip>
+            <TooltipTrigger
+              render={
+                <MenuTrigger
+                  render={
+                    <button
+                      type="button"
+                      aria-label={gt("More actions")}
+                      data-overview-quick-action="more"
+                      onClick={(event) => event.stopPropagation()}
+                      className="inline-flex size-5.5 shrink-0 cursor-pointer items-center justify-center rounded-md text-sidebar-muted-foreground outline-none transition-colors hover:bg-sidebar-row-hover hover:text-sidebar-foreground focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring"
+                    />
+                  }
+                />
+              }
+            >
+              <EllipsisIcon className="size-3.5" />
+            </TooltipTrigger>
+            <TooltipPopup side="top">{gt("More actions")}</TooltipPopup>
+          </Tooltip>
+          <MenuPopup side="bottom" align="end">
+            {dismissFailure ? (
+              <MenuItem
+                onClick={(event) => {
+                  event.stopPropagation();
+                  dismissFailure();
+                }}
+              >
+                <EyeOffIcon />
+                {gt("Dismiss")}
+              </MenuItem>
+            ) : null}
+            {handleMarkRead ? (
+              <MenuItem
+                onClick={(event) => {
+                  event.stopPropagation();
+                  handleMarkRead();
+                }}
+              >
+                <CheckIcon />
+                {gt("Mark as read")}
+              </MenuItem>
+            ) : null}
+            {row.status !== "done" &&
+            row.status !== "approval" &&
+            row.status !== "input" &&
+            handleSettle ? (
+              <MenuItem
+                onClick={(event) => {
+                  event.stopPropagation();
+                  handleSettle();
+                }}
+              >
+                <CheckIcon />
+                {gt("Settle")}
+              </MenuItem>
+            ) : null}
+            {row.status === "done" && handleUnsettle ? (
+              <MenuItem
+                onClick={(event) => {
+                  event.stopPropagation();
+                  handleUnsettle();
+                }}
+              >
+                <Undo2Icon />
+                {gt("Un-settle")}
+              </MenuItem>
+            ) : null}
+            {handleMarkUnread ? (
+              <MenuItem
+                onClick={(event) => {
+                  event.stopPropagation();
+                  handleMarkUnread();
+                }}
+              >
+                <MailIcon />
+                {gt("Mark unread")}
+              </MenuItem>
+            ) : null}
+            {snoozePresets.length > 0 ? <MenuSeparator /> : null}
+            {snoozePresets.map((preset) => (
+              <MenuItem
+                key={preset.id}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  const picked = pickSnoozePreset(
+                    snoozePresets,
+                    preset.id,
+                    timestampFormat,
+                    row.ref.environmentId,
+                  );
+                  if (picked) actions?.onSnooze?.(row.ref, picked);
+                }}
+              >
+                <AlarmClockIcon />
+                {preset.label}
+                <MenuItemDetail>{preset.whenLabel}</MenuItemDetail>
+              </MenuItem>
+            ))}
+            {handleArchive ? (
+              <>
+                <MenuSeparator />
+                <MenuItem
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    handleArchive();
+                  }}
+                >
+                  <ArchiveIcon />
+                  {gt("Archive")}
+                </MenuItem>
+              </>
+            ) : null}
+            {handleDelete ? (
+              <>
+                <MenuSeparator />
+                <MenuItem
+                  variant="destructive"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    handleDelete();
+                  }}
+                >
+                  <Trash2Icon />
+                  {gt("Delete")}
+                </MenuItem>
+              </>
+            ) : null}
+          </MenuPopup>
+        </Menu>
+      ) : null}
+    </span>
+  );
+}
+
 function OverviewThreadButton({
   row,
+  mode,
   title,
   statusLabel,
   context,
   active,
   showProgress,
+  now,
+  timestampFormat,
+  actions,
+  buttonRef,
+  onDismissError,
   onOpen,
 }: {
   row: OverviewRow;
+  mode: OverviewRowMode;
   title: string;
   statusLabel: string;
   context: string | null;
   active: boolean;
   showProgress: boolean;
+  now: string;
+  timestampFormat: TimestampFormat;
+  actions: SidebarOverviewActions | undefined;
+  buttonRef?: Ref<HTMLButtonElement> | undefined;
+  onDismissError: (key: string, token: string) => void;
   onOpen: () => void;
 }) {
   const messages = useMessages();
@@ -174,42 +583,73 @@ function OverviewThreadButton({
     children: "bg-sky-600 dark:bg-sky-400",
     failed: "bg-red-600 dark:bg-red-400",
     unread: "bg-emerald-600 dark:bg-emerald-400",
+    done: "bg-emerald-600/75 dark:bg-emerald-400/75",
+    today: "bg-sidebar-muted-foreground/50",
   };
   return (
-    <Tooltip>
-      <TooltipTrigger
-        render={
-          <button
-            type="button"
-            aria-current={active ? "page" : undefined}
-            onClick={onOpen}
-            className="block min-w-0 flex-1 cursor-pointer rounded-md px-2 py-1.5 text-start text-sidebar-foreground outline-none hover:bg-sidebar-row-hover focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring aria-[current=page]:bg-sidebar-row-active"
-          />
-        }
-      >
-        <span className="flex min-w-0 items-center gap-2">
-          <span
-            aria-hidden
-            className={cn("size-1.5 shrink-0 rounded-full", indicator[row.status])}
-          />
-          <span className="min-w-0 flex-1 truncate text-sm">{title}</span>
-          {time === null ? null : (
-            <span className="shrink-0 text-2xs text-sidebar-muted-foreground tabular-nums">
-              <span className="sr-only">{time.label}</span>
-              <span aria-hidden>{time.value}</span>
-            </span>
-          )}
-        </span>
-        <span className="flex min-w-0 items-center gap-1.5 ps-3.5 text-2xs text-sidebar-muted-foreground">
-          {showProgress && row.status !== "children" ? <OverviewProgress row={row} /> : null}
-          <span className="truncate">
-            {statusLabel}
-            {context === null ? null : ` · ${context}`}
+    <div className="group/overview-row relative flex min-w-0 flex-1 items-center">
+      <Tooltip>
+        <TooltipTrigger
+          render={
+            <button
+              ref={buttonRef}
+              type="button"
+              data-overview-row={mode}
+              aria-current={active ? "page" : undefined}
+              onClick={onOpen}
+              onContextMenu={
+                actions?.onContextMenu
+                  ? (event) => {
+                      event.preventDefault();
+                      actions.onContextMenu?.(
+                        row.ref,
+                        { x: event.clientX, y: event.clientY },
+                        contextMenuSourceOf(event.nativeEvent),
+                      );
+                    }
+                  : undefined
+              }
+              className={cn(
+                "block min-w-0 flex-1 cursor-pointer rounded-md px-2 py-1.5 text-start text-sidebar-foreground outline-none hover:bg-sidebar-row-hover focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring aria-[current=page]:bg-sidebar-row-active",
+                mode === "today" &&
+                  row.status === "done" &&
+                  "opacity-75 hover:opacity-100 aria-[current=page]:opacity-100",
+              )}
+            />
+          }
+        >
+          <span className="flex min-w-0 items-center gap-2">
+            <span
+              aria-hidden
+              className={cn("size-1.5 shrink-0 rounded-full", indicator[row.status])}
+            />
+            <span className="min-w-0 flex-1 truncate text-sm">{title}</span>
+            {time === null ? null : (
+              <span className="shrink-0 text-2xs text-sidebar-muted-foreground tabular-nums">
+                <span className="sr-only">{time.label}</span>
+                <span aria-hidden>{time.value}</span>
+              </span>
+            )}
           </span>
-        </span>
-      </TooltipTrigger>
-      <TooltipPopup>{context === null ? title : `${title} · ${context}`}</TooltipPopup>
-    </Tooltip>
+          <span className="flex min-w-0 items-center gap-1.5 ps-3.5 text-2xs text-sidebar-muted-foreground">
+            {showProgress && row.status !== "children" ? <OverviewProgress row={row} /> : null}
+            <span className="truncate">
+              {statusLabel}
+              {context === null ? null : ` · ${context}`}
+            </span>
+          </span>
+        </TooltipTrigger>
+        <TooltipPopup>{context === null ? title : `${title} · ${context}`}</TooltipPopup>
+      </Tooltip>
+      <OverviewRowQuickActions
+        row={row}
+        mode={mode}
+        now={now}
+        timestampFormat={timestampFormat}
+        actions={actions}
+        onDismissError={onDismissError}
+      />
+    </div>
   );
 }
 
@@ -219,6 +659,8 @@ export function SidebarOverview({
   now,
   providers,
   projectNames,
+  timestampFormat = "locale",
+  actions,
   onNavigate,
 }: {
   threads: readonly EnvironmentThreadShell[];
@@ -226,6 +668,8 @@ export function SidebarOverview({
   now: string;
   providers: ReadonlyMap<string, ReadonlyMap<string, SidebarProviderEntry>>;
   projectNames: ReadonlyMap<string, string>;
+  timestampFormat?: TimestampFormat;
+  actions?: SidebarOverviewActions;
   onNavigate: (ref: ScopedThreadRef) => void;
 }) {
   const gt = useGT();
@@ -240,10 +684,22 @@ export function SidebarOverview({
       (environment) => environment.entry.enabled && environment.connection.phase !== "connected",
     );
   const localVisits = useUiStateStore((state) => state.threadLastVisitedAtById);
-  const { active, attention, attentionCount } = buildSidebarOverview(threads, now, localVisits);
+  const acknowledgedErrors = useUiStateStore((state) => state.acknowledgedErrorRunByThreadKey);
+  const acknowledgeThreadError = useUiStateStore((state) => state.acknowledgeThreadError);
+  const { active, activeKeys, attention, attentionCount, todayTasks } = buildSidebarOverview(
+    threads,
+    now,
+    localVisits,
+    acknowledgedErrors,
+  );
   const [showAllAttention, setShowAllAttention] = useState(false);
   const [showAllRunning, setShowAllRunning] = useState(false);
+  const [showTodayTasks, setShowTodayTasks] = useState(false);
   const [collapsedGroups, setCollapsedGroups] = useState<ReadonlySet<string>>(() => new Set());
+  const activeRunningButtonRef = useActiveRunningOverviewButton(
+    activeKey,
+    activeKey !== null && activeKeys.has(activeKey),
+  );
   const preview = previewActiveWork(active);
   const childCount = active.reduce((sum, group) => sum + group.childCount, 0);
   const hiddenActive =
@@ -251,6 +707,7 @@ export function SidebarOverview({
     preview.some((group) => group.children.length < group.childCount);
   const activeLabel = gt("Running now");
   const attentionLabel = gt("Needs my attention");
+  const todayTasksLabel = gt("Today's tasks");
   const shownAttention = showAllAttention ? attention : attention.slice(0, ATTENTION_PREVIEW_LIMIT);
   const shownRunning = showAllRunning ? active : preview;
   const runningLayoutKey = JSON.stringify(
@@ -260,17 +717,19 @@ export function SidebarOverview({
     ]),
   );
   const attentionLayoutKey = JSON.stringify(shownAttention.map((row) => row.key));
+  const todayLayoutKey = showTodayTasks ? JSON.stringify(todayTasks.map((row) => row.key)) : "[]";
   const hasMoreAttention = attention.length > ATTENTION_PREVIEW_LIMIT;
   const attachRunning = useOverviewListMotion(runningLayoutKey);
   const attachAttention = useOverviewListMotion(attentionLayoutKey, true);
+  const attachToday = useOverviewListMotion(todayLayoutKey);
   const attachSections = useOverviewListMotion(
-    `${runningLayoutKey}:${attentionLayoutKey}:${incomplete}:${hiddenActive}:${hasMoreAttention}`,
+    `${runningLayoutKey}:${attentionLayoutKey}:${todayLayoutKey}:${incomplete}:${hiddenActive}:${hasMoreAttention}:${todayTasks.length > 0}`,
     true,
   );
   const headingClass =
     "flex min-w-0 items-center gap-2 px-2 pt-2 pb-1 text-2xs text-sidebar-muted-foreground";
 
-  const renderRow = (row: OverviewRow, mode: "running" | "attention", count = 0) => {
+  const renderRow = (row: OverviewRow, mode: OverviewRowMode, count = 0) => {
     const thread = row.thread;
     const title = thread.title || gt("Untitled thread");
     const statusLabel =
@@ -282,15 +741,21 @@ export function SidebarOverview({
     const providerId = thread.runtime?.providerInstanceId ?? thread.providerInstanceId;
     const provider = providers.get(thread.environmentId)?.get(providerId)?.displayName;
     const project = projectNames.get(`${thread.environmentId}:${thread.projectId}`);
-    const context = mode === "attention" ? (project ?? provider) : (provider ?? project);
+    const context = mode === "running" ? (provider ?? project) : (project ?? provider);
     return (
       <OverviewThreadButton
         row={row}
+        mode={mode}
         title={title}
         statusLabel={statusLabel}
         context={context ?? null}
         active={activeKey === row.key}
-        showProgress={mode === "attention" || activeKey === row.key}
+        showProgress={mode === "attention" || (mode === "running" && activeKey === row.key)}
+        now={now}
+        timestampFormat={timestampFormat}
+        actions={actions}
+        buttonRef={mode === "running" && activeKey === row.key ? activeRunningButtonRef : undefined}
+        onDismissError={acknowledgeThreadError}
         onOpen={() => onNavigate(row.ref)}
       />
     );
@@ -433,6 +898,44 @@ export function SidebarOverview({
                     count: attention.length - ATTENTION_PREVIEW_LIMIT,
                   })}
             </Button>
+          ) : null}
+        </section>
+      ) : null}
+      {todayTasks.length > 0 ? (
+        <section aria-label={todayTasksLabel} data-sidebar-motion-key="today-tasks">
+          <button
+            type="button"
+            aria-expanded={showTodayTasks}
+            onClick={() => setShowTodayTasks((expanded) => !expanded)}
+            className={cn(
+              headingClass,
+              "w-full cursor-pointer rounded-md text-start outline-none hover:text-sidebar-foreground focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring",
+            )}
+          >
+            <span>{todayTasksLabel}</span>
+            <span className="ms-auto inline-flex shrink-0 items-center gap-1 tabular-nums">
+              <OverviewCount count={todayTasks.length} className="tabular-nums" />
+              <ChevronDownIcon
+                aria-hidden
+                className={cn(
+                  "size-3 motion-safe:transition-transform motion-safe:duration-150",
+                  !showTodayTasks && "-rotate-90 rtl:rotate-90",
+                )}
+              />
+            </span>
+          </button>
+          {showTodayTasks ? (
+            <ul
+              ref={attachToday}
+              aria-label={todayTasksLabel}
+              className="relative flex flex-col gap-px"
+            >
+              {todayTasks.map((row) => (
+                <li key={row.key} data-sidebar-motion-key={row.key} className="flex min-w-0">
+                  {renderRow(row, "today")}
+                </li>
+              ))}
+            </ul>
           ) : null}
         </section>
       ) : null}

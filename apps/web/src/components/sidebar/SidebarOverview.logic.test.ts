@@ -5,6 +5,9 @@ import { expect, it } from "vite-plus/test";
 import { makeThreadFixture, makeThreadProjectionFixture } from "../../test-fixtures";
 import {
   buildSidebarOverview,
+  collectActiveOverviewKeys,
+  failedRunToken,
+  logicalDayStartMs,
   previewActiveWork,
   selectOverviewProgress,
 } from "./SidebarOverview.logic";
@@ -83,7 +86,11 @@ it("retains failed work until settlement and does not surface a previous failure
 it("preserves a cross-environment child's route and keeps the running preview within five rows", () => {
   const home = EnvironmentId.make("home");
   const remote = EnvironmentId.make("remote");
-  const root = makeThreadFixture({ environmentId: home, id: ThreadId.make("root"), createdAt: start });
+  const root = makeThreadFixture({
+    environmentId: home,
+    id: ThreadId.make("root"),
+    createdAt: start,
+  });
   const remoteRoot = makeThreadFixture({
     environmentId: remote,
     id: root.id,
@@ -144,5 +151,115 @@ it("counts progress from the live OMP checklist and respects a cleared snapshot"
     done: 1,
     total: 2,
   });
-  expect(selectOverviewProgress({ ...projection, plans: [{ ...plan, steps: [] }] }, thread)).toBeNull();
+  expect(
+    selectOverviewProgress({ ...projection, plans: [{ ...plan, steps: [] }] }, thread),
+  ).toBeNull();
+});
+
+it("dismisses an acknowledged failed run while resurfacing a newer failed run", () => {
+  const failed = makeThreadFixture({
+    id: ThreadId.make("failed-dismiss"),
+    lastVisitedAt: now,
+    latestRun: {
+      runId: RunId.make("run-fail-1"),
+      status: "failed",
+      requestedAt: start,
+      startedAt: start,
+      completedAt: end,
+      assistantMessageId: null,
+    },
+  });
+  const key = scopedThreadKey(scopeThreadRef(failed.environmentId, failed.id));
+  const token = failedRunToken(failed)!;
+  expect(buildSidebarOverview([failed], now, {}, { [key]: token }).attention).toEqual([]);
+
+  const failedAgain = {
+    ...failed,
+    latestRun: {
+      ...failed.latestRun!,
+      runId: RunId.make("run-fail-2"),
+      completedAt: now,
+    },
+  };
+  expect(
+    buildSidebarOverview([failedAgain], now, {}, { [key]: token }).attention.map(
+      (row) => row.status,
+    ),
+  ).toEqual(["failed"]);
+});
+
+it("collects today's tasks with a 04:00 local rollover and excludes running and attention rows", () => {
+  const localTime = (year: number, month: number, day: number, hour: number, minute = 0) =>
+    new Date(year, month - 1, day, hour, minute, 0, 0).toISOString();
+
+  // At 03:30 local time on Jan 2, the logical day still starts at Jan 1 04:00.
+  const beforeRolloverNow = localTime(2026, 1, 2, 3, 30);
+  expect(logicalDayStartMs(Date.parse(beforeRolloverNow))).toBe(
+    new Date(2026, 0, 1, 4, 0, 0, 0).getTime(),
+  );
+
+  // At 04:00 local time on Jan 2, the logical day rolls over to Jan 2 04:00.
+  const afterRolloverNow = localTime(2026, 1, 2, 4, 0);
+  expect(logicalDayStartMs(Date.parse(afterRolloverNow))).toBe(
+    new Date(2026, 0, 2, 4, 0, 0, 0).getTime(),
+  );
+
+  const beforeBoundary = makeThreadFixture({
+    id: ThreadId.make("before-4am"),
+    createdAt: localTime(2026, 1, 1, 3, 0),
+    updatedAt: localTime(2026, 1, 1, 3, 59),
+  });
+  const activeToday = makeThreadFixture({
+    id: ThreadId.make("active-today"),
+    createdAt: localTime(2026, 1, 1, 10, 0),
+    updatedAt: localTime(2026, 1, 2, 1, 15),
+  });
+  const settledToday = makeThreadFixture({
+    id: ThreadId.make("settled-today"),
+    createdAt: localTime(2026, 1, 1, 9, 0),
+    updatedAt: localTime(2026, 1, 1, 20, 0),
+    settledOverride: "settled",
+    settledAt: localTime(2026, 1, 2, 2, 0),
+  });
+  const runningToday = makeThreadFixture({
+    id: ThreadId.make("running-today"),
+    createdAt: localTime(2026, 1, 2, 2, 30),
+    updatedAt: localTime(2026, 1, 2, 2, 30),
+    runtime: {
+      status: "running",
+      activeRunId: RunId.make("live-run"),
+      providerInstanceId: settledToday.providerInstanceId,
+      providerName: null,
+      lastError: null,
+      updatedAt: localTime(2026, 1, 2, 2, 30),
+    },
+  });
+  const attentionToday = makeThreadFixture({
+    id: ThreadId.make("attention-today"),
+    createdAt: localTime(2026, 1, 2, 2, 40),
+    updatedAt: localTime(2026, 1, 2, 2, 40),
+    latestRun: {
+      runId: RunId.make("fail-today"),
+      status: "failed",
+      requestedAt: localTime(2026, 1, 2, 2, 35),
+      startedAt: localTime(2026, 1, 2, 2, 35),
+      completedAt: localTime(2026, 1, 2, 2, 40),
+      assistantMessageId: null,
+    },
+  });
+
+  const threads = [beforeBoundary, activeToday, settledToday, runningToday, attentionToday];
+  const overviewBeforeRollover = buildSidebarOverview(threads, beforeRolloverNow, {});
+  expect(overviewBeforeRollover.todayTasks.map((row) => [row.ref.threadId, row.status])).toEqual([
+    [settledToday.id, "done"],
+    [activeToday.id, "today"],
+  ]);
+  expect(
+    collectActiveOverviewKeys(threads).has(
+      scopedThreadKey(scopeThreadRef(runningToday.environmentId, runningToday.id)),
+    ),
+  ).toBe(true);
+
+  const overviewAfterRollover = buildSidebarOverview(threads, afterRolloverNow, {});
+  expect(overviewAfterRollover.todayTasks).toEqual([]);
 });

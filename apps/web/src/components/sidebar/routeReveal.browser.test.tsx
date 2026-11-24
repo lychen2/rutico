@@ -3,7 +3,11 @@ import { page, userEvent } from "vite-plus/test/browser";
 
 import { render } from "../../../test/render";
 import { Sidebar, SidebarProvider, SidebarTrigger, useSidebar } from "../ui/sidebar";
-import { type SidebarRouteReveal, useActiveRowReveal } from "./routeReveal";
+import {
+  markSidebarOverviewNavigation,
+  type SidebarRouteReveal,
+  useActiveRowReveal,
+} from "./routeReveal";
 
 const ROW_HEIGHT_PX = 24;
 
@@ -12,8 +16,14 @@ function RevealList(props: {
   readonly rowKeys: ReadonlyArray<string>;
   readonly activeKey: string | null;
   readonly inPlace?: boolean;
+  readonly suppressReveal?: boolean;
 }) {
-  const revealActiveRow = useActiveRowReveal(props.reveal, props.activeKey, props.inPlace);
+  const revealActiveRow = useActiveRowReveal(
+    props.reveal,
+    props.activeKey,
+    props.inPlace,
+    props.suppressReveal,
+  );
   return (
     <ul aria-label="Threads" style={{ height: ROW_HEIGHT_PX * 4, overflowY: "auto", margin: 0 }}>
       {props.rowKeys.map((key) => (
@@ -208,5 +218,40 @@ describe("useActiveRowReveal", () => {
     await userEvent.click(screen.getByRole("button", { name: "Toggle Sidebar" }));
 
     await expect.element(page.getByText("thread-40", { exact: true })).toBeInViewport();
+  });
+
+  it("does not scroll the bottom list when navigating from the top overview", async () => {
+    const reveal = newReveal();
+    const keys = rowKeys(50);
+    await using screen = await render(
+      <RevealList reveal={reveal} rowKeys={keys} activeKey="thread-0" />,
+      { router: false },
+    );
+    const target = screen.getByText("thread-40", { exact: true });
+    await expect.element(target).not.toBeInViewport();
+
+    markSidebarOverviewNavigation(reveal, "thread-40");
+    await screen.rerender(<RevealList reveal={reveal} rowKeys={keys} activeKey="thread-40" />);
+
+    await vi.waitFor(() => expect(reveal.pendingKey).toBeNull());
+    await expect.element(target).not.toBeInViewport();
+  });
+
+  it("does not scroll the bottom list when reveal is suppressed for a running overview thread", async () => {
+    const reveal = newReveal();
+    const keys = rowKeys(50);
+    await using screen = await render(
+      <RevealList reveal={reveal} rowKeys={keys} activeKey="thread-0" />,
+      { router: false },
+    );
+    const target = screen.getByText("thread-40", { exact: true });
+    await expect.element(target).not.toBeInViewport();
+
+    await screen.rerender(
+      <RevealList reveal={reveal} rowKeys={keys} activeKey="thread-40" suppressReveal />,
+    );
+
+    await vi.waitFor(() => expect(reveal.pendingKey).toBeNull());
+    await expect.element(target).not.toBeInViewport();
   });
 });
