@@ -1,25 +1,31 @@
-import { type AntigravitySettings, UsageReadError } from "@t3tools/contracts";
-import { expandHomePath } from "@t3tools/provider-core/server/pathExpansion";
-import * as ProviderHost from "@t3tools/provider-core/server/ProviderHost";
+import type { AntigravitySettings, UsageReadError } from "@t3tools/contracts";
 import type {
   ProviderUsageInstance,
   ProviderUsageReader,
   ProviderUsageScan,
 } from "@t3tools/provider-core/server/usage";
-import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as Context from "effect/Context";
-import * as Digest from "effect/crypto/Digest";
 import * as Effect from "effect/Effect";
-import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
-import * as Path from "effect/Path";
 
-import { resolveAntigravityInstanceDirectories } from "../antigravityAuthSupport.ts";
-import {
-  antigravityRateModel,
-  makeAntigravityUsageCache,
-  readAntigravityUsage,
-} from "./antigravityUsageReader.ts";
+// Effort and routing variants share the base model's price.
+const antigravityRateModel = (model: string) => {
+  const base = model.replace(
+    /-(?:extra-low|low|medium|high|tiered|control|thinking|agent|orchestrator)$/,
+    "",
+  );
+  return /^gemini-3-flash-(?:agent(?:-[ab])?|[ab])$/.test(model)
+    ? "gemini-3.5-flash"
+    : model === "gemini-3.7-flash-safety-le"
+      ? "gemini-3.7-flash"
+      : model === "gemini-pro-orchestrator-neon"
+        ? "gemini-4-neon"
+        : model === "gemini-pro-orchestrator-g1-pro"
+          ? "gemini-4-argon"
+          : base === "gemini-3-flash"
+            ? "gemini-3-flash-preview"
+            : base;
+};
 
 export class AntigravityUsage extends Context.Service<
   AntigravityUsage,
@@ -31,96 +37,12 @@ export class AntigravityUsage extends Context.Service<
   }
 >()("t3/provider/Drivers/AntigravityUsage") {}
 
-const make = Effect.gen(function* () {
-  const digest = yield* Digest.Digest;
-  const fileSystem = yield* FileSystem.FileSystem;
-  const path = yield* Path.Path;
-  const host = yield* ProviderHost.ProviderHost;
-  const cache = makeAntigravityUsageCache();
-
-  const dataRoots = Effect.fn("AntigravityUsage.dataRoots")(function* (
-    environment: NodeJS.ProcessEnv,
-  ) {
-    const home = yield* HostProcess.HomeDirectory;
-    const configured = environment["ANTIGRAVITY_DATA_DIR"]
-      ?.split(",")
-      .map((value) => value.trim())
-      .filter(Boolean);
-    const defaults = [
-      ...["antigravity", "antigravity-cli", "antigravity-ide", "antigravity-backup"].map((name) =>
-        path.join(home, ".gemini", name),
-      ),
-      path.join(home, ".config", "antigravity"),
-    ];
-    const canonical = new Set<string>();
-    for (const root of configured?.length ? configured : defaults) {
-      const resolved = path.resolve(expandHomePath(root, home));
-      canonical.add(
-        yield* fileSystem.realPath(resolved).pipe(Effect.orElseSucceed(() => resolved)),
-      );
-    }
-    return [...canonical];
-  });
-
-  const scan: AntigravityUsage["Service"]["scan"] = Effect.fn("AntigravityUsage.scan")(function* ({
-    instances,
-    windowStartMs,
-  }) {
-    const roots: Array<string> = [];
-    for (const instance of instances) roots.push(...(yield* dataRoots(instance.environment)));
-    for (const { instanceId } of instances) {
-      const directories = yield* resolveAntigravityInstanceDirectories(
-        host.paths.stateDir,
-        instanceId,
-      ).pipe(
-        Effect.provideService(Digest.Digest, digest),
-        Effect.provideService(Path.Path, path),
-        Effect.mapError(
-          (cause) =>
-            new UsageReadError({
-              reason: "scanFailed",
-              detail: "Antigravity profile directory could not be resolved.",
-              cause,
-            }),
-        ),
-      );
-      roots.push(path.join(directories.profile, "antigravity-acp"));
-    }
-    const conversationDirs = new Set<string>();
-    for (const root of roots) {
-      const resolvedRoot = yield* fileSystem.realPath(root).pipe(Effect.orElseSucceed(() => root));
-      const nested = path.join(resolvedRoot, "conversations");
-      const dir = (yield* fileSystem
-        .exists(nested)
-        .pipe(Effect.catchCause(() => Effect.succeed(false))))
-        ? nested
-        : resolvedRoot;
-      conversationDirs.add(yield* fileSystem.realPath(dir).pipe(Effect.orElseSucceed(() => dir)));
-    }
-    const result = yield* readAntigravityUsage([...conversationDirs], windowStartMs, cache).pipe(
-      Effect.provideService(FileSystem.FileSystem, fileSystem),
-      Effect.provideService(Path.Path, path),
-    );
-    const scanned: ProviderUsageScan[] = [];
-    for (const dir of conversationDirs) {
-      const exists = yield* fileSystem
-        .exists(dir)
-        .pipe(Effect.catchCause(() => Effect.succeed(false)));
-      const failed = result.errors.some(
-        (error) => error === dir || error.startsWith(`${dir}${path.sep}`),
-      );
-      scanned.push({
-        dir,
-        files: !exists && !failed ? null : result.files.filter((file) => file.root === dir),
-        status: failed ? "partial" : "ok",
-        ...(failed ? { message: "Some Antigravity history could not be read." } : {}),
-      });
-    }
-    return scanned;
-  });
-
-  return AntigravityUsage.of({ scan });
-});
+/** Scanning and binary-decoding Antigravity's private SQLite/protobuf databases is disabled. */
+const make = Effect.succeed(
+  AntigravityUsage.of({
+    scan: () => Effect.succeed([]),
+  }),
+);
 
 export const layer = Layer.effect(AntigravityUsage, make);
 

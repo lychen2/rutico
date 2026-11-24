@@ -328,7 +328,7 @@ it.layer(layerTest)("AntigravityDriver", (it) => {
         expect(snapshot.models[0]?.aliases).toContain(ANTIGRAVITY_DEFAULT_MODEL);
         expect(snapshot.models.every((model) => model.isLegacy !== true)).toBe(true);
         expect(snapshot.slashCommands.map((command) => command.name)).toEqual(["plan", "logout"]);
-        expect(snapshot.supportsTextGeneration).toBe(true);
+        expect(snapshot.supportsTextGeneration).toBe(false);
         h.controls.selected = h.second;
         yield* h.refresh();
 
@@ -408,8 +408,7 @@ it.layer(layerTest)("AntigravityDriver", (it) => {
             .filter((request) => request.method === "initialize")
             .map((request) => request.params?.clientCapabilities),
         ).toEqual([
-          // Two model refreshes, then thread title generation.
-          helper,
+          // Two model refreshes; background text generation is disabled and spawns no session.
           helper,
           helper,
           {

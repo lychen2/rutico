@@ -37,7 +37,6 @@ import {
   readAntigravityPendingReply,
 } from "../../provider/acp/AntigravityChildWork.ts";
 import { readAntigravityClientTextFile } from "../../provider/acp/AntigravityClientFiles.ts";
-import { watchAntigravityPromptOutcome } from "../../provider/acp/AntigravityTurnOutcome.ts";
 import {
   antigravityApprovalOptions,
   antigravityToolOutlivesPrompt,
@@ -307,8 +306,6 @@ export function makeAntigravityAcpAdapterFlavor(
     ...(profileDirectory === undefined
       ? {}
       : {
-          watchPromptOutcome: (sessionId: string) =>
-            watchAntigravityPromptOutcome(profileDirectory, sessionId),
           subagentsOutlivingPrompt: ({ sessionId, nativeTaskIds }) =>
             readAntigravityChildrenAtWork({
               profileDirectory,

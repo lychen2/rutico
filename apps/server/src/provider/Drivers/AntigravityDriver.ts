@@ -27,7 +27,6 @@ import * as Scope from "effect/Scope";
 import * as Stream from "effect/Stream";
 import * as ChildProcess from "effect/process/ChildProcess";
 import * as ChildProcessSpawner from "effect/process/ChildProcessSpawner";
-import { HttpClient } from "effect/http";
 import * as AcpErrors from "effect-acp/errors";
 
 import * as ProviderHost from "@t3tools/provider-core/server/ProviderHost";
@@ -58,10 +57,7 @@ import {
 } from "../acp/AntigravityAcpSupport.ts";
 import type * as AcpSessionRuntime from "@t3tools/provider-acp/server/AcpSessionRuntime";
 import type { ServerProviderDraft } from "@t3tools/provider-core/server/snapshotProbe";
-import {
-  removeAntigravitySessionFiles,
-  retireAntigravityRuntimeTempDirs,
-} from "../acp/AntigravitySessionFiles.ts";
+import { retireAntigravityRuntimeTempDirs } from "../acp/AntigravitySessionFiles.ts";
 import * as IdAllocator from "@t3tools/provider-core/server/IdAllocator";
 import * as ProviderContinuationRequests from "@t3tools/provider-core/server/ProviderContinuationRequests";
 import {
@@ -115,7 +111,6 @@ export type AntigravityDriverEnv =
   | Digest.Digest
   | SecureRandom.SecureRandom
   | FileSystem.FileSystem
-  | HttpClient.HttpClient
   | IdAllocator.IdAllocatorV2
   | McpProviderSessions.McpProviderSessions
   | ModelCatalog.ModelCatalog
@@ -143,7 +138,6 @@ export const AntigravityDriver: ProviderDriver<
     const digest = yield* Digest.Digest;
     const random = yield* SecureRandom.SecureRandom;
     const fileSystem = yield* FileSystem.FileSystem;
-    const httpClient = yield* HttpClient.HttpClient;
     const path = yield* Path.Path;
     const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
     const host = yield* ProviderHost.ProviderHost;
@@ -390,33 +384,12 @@ export const AntigravityDriver: ProviderDriver<
               }),
           ),
         );
-      let sessionId: string | undefined;
-      yield* Effect.addFinalizer(() =>
-        removeAntigravitySessionFiles({
-          profileDirectory,
-          sessionId,
-          cwd,
-        }).pipe(
-          Effect.provideService(FileSystem.FileSystem, fileSystem),
-          Effect.provideService(Path.Path, path),
-        ),
-      );
       const runtime = yield* makeRuntime({
         cwd,
         mcpServers: [],
         ...(input.onAuthorizationUrl ? { onAuthorizationUrl: input.onAuthorizationUrl } : {}),
       });
-      return {
-        ...runtime,
-        start: () =>
-          runtime.start().pipe(
-            Effect.tap((started) =>
-              Effect.sync(() => {
-                sessionId = started.sessionId;
-              }),
-            ),
-          ),
-      };
+      return runtime;
     });
 
     // The agy CLI ignores T3's browser helper during ACP `authenticate`, so Google sign-in runs its
@@ -579,12 +552,7 @@ export const AntigravityDriver: ProviderDriver<
     const usage = yield* makeAntigravityUsageProbe({
       profileDirectory,
       authMethod: auth.authMethod,
-    }).pipe(
-      Effect.provideService(FileSystem.FileSystem, fileSystem),
-      Effect.provideService(Path.Path, path),
-      Effect.provideService(Digest.Digest, digest),
-      Effect.provideService(HttpClient.HttpClient, httpClient),
-    );
+    });
     const provider = yield* makeAntigravityProvider(settings, {
       environment: processEnvironment,
       stampIdentity: classifyModels,
