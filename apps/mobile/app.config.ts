@@ -293,7 +293,7 @@ const config: ExpoConfig = {
   android: {
     icon: variant.assets.appIcon,
     package: variant.androidPackage,
-    ...(APP_VARIANT === "preview" ? { versionCode: 4 } : {}),
+    ...(APP_VARIANT === "preview" ? { versionCode: 5 } : {}),
     ...(repoEnv.T3CODE_ANDROID_GOOGLE_SERVICES_FILE
       ? { googleServicesFile: repoEnv.T3CODE_ANDROID_GOOGLE_SERVICES_FILE }
       : {}),
