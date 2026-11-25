@@ -8,7 +8,6 @@ import { useScratchProject } from "../hooks/useScratchProject";
 import { usePrimaryEnvironmentId } from "../state/environments";
 import { Button } from "./ui/button";
 import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "./ui/empty";
-import { RuticoHeroBackdrop } from "./RuticoHeroBackdrop";
 import { SidebarInset } from "./ui/sidebar";
 import { WorkspacePageHeader } from "./WorkspacePageHeader";
 
@@ -25,8 +24,7 @@ export function NoProjectsHero() {
       role="main"
       className="h-dvh min-h-0 overflow-hidden overscroll-y-none"
     >
-      <div className="relative flex min-h-0 min-w-0 flex-1 flex-col overflow-x-hidden bg-background">
-        <RuticoHeroBackdrop />
+      <div className="relative flex min-h-0 min-w-0 flex-1 flex-col overflow-x-hidden bg-transparent">
         {/* The desktop window only moves where CSS opts in, so keep a titlebar strip. */}
         <div className="relative z-10 flex min-h-0 flex-1 flex-col">
           {isElectron ? <WorkspacePageHeader electron /> : null}
