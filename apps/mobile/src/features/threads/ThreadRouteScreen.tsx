@@ -22,6 +22,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
+import { Platform } from "react-native";
 import { useGT, useMessages } from "gt-react-native";
 import * as Option from "effect/Option";
 import {
@@ -89,6 +90,7 @@ import { ThreadScreenBinding, ThreadScreenFallback, ThreadScreenHost } from "./T
 import { draftRouteIdentity } from "./thread-route-state";
 import { NewTaskDraftRouteScreen, type NewTaskDraftRouteParams } from "./NewTaskDraftRouteScreen";
 import { GitOverviewSheet } from "./git/GitOverviewSheet";
+import { ThreadWorkbenchTerminalPane } from "./ThreadWorkbenchTerminalPane";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { useSelectedThreadGitActions } from "../../state/use-selected-thread-git-actions";
 import { useSelectedThreadGitState } from "../../state/use-selected-thread-git-state";
@@ -662,23 +664,53 @@ function ThreadRouteContent(
         }}
       />
     ) : null;
+  const renderTerminalInspector = () =>
+    selectedThread !== null ? (
+      <ThreadWorkbenchTerminalPane
+        key={`${selectedThread.environmentId}:${selectedThread.id}`}
+        environmentId={selectedThread.environmentId}
+        threadId={selectedThread.id}
+        workspaceRoot={selectedThreadProject?.workspaceRoot ?? null}
+        worktreePath={selectedThread.worktreePath ?? selectedThreadDetailWorktreePath}
+        onOpenFullTerminal={handleOpenTerminal}
+      />
+    ) : null;
+  const handleSelectInspectorPane = (key: string) => {
+    if (key === "git" || key === "files" || key === "terminal" || key === "preview") {
+      if (key !== "preview") {
+        navigation.setParams({ inspector: undefined });
+      }
+      setChosenInspectorMode(key);
+      showInspector();
+    }
+  };
+  const effectiveInspectorMode =
+    inspectorMode ??
+    (Platform.OS === "android" && selectedThread !== null && props.renderInspector === undefined
+      ? selectedThreadCwd !== null
+        ? "git"
+        : "terminal"
+      : null);
   const inspectorContent: InspectorContent | null =
-    inspectorMode === null
+    effectiveInspectorMode === null
       ? null
       : {
-          active: inspectorMode,
+          active: effectiveInspectorMode,
+          onSelectPane: handleSelectInspectorPane,
           resetKeys: [routeThreadIdentity, selectedThreadCwd],
           panes: [
             ...(inspectorMode === "preview"
               ? [
                   {
                     key: "preview",
+                    label: gt("Preview"),
                     render: renderPreviewInspector,
                   },
                 ]
               : []),
-            { key: "files", render: renderFilesInspector, prewarm: true },
-            { key: "git", render: renderGitInspector, prewarm: true },
+            { key: "git", label: gt("Changes"), render: renderGitInspector, prewarm: true },
+            { key: "files", label: gt("Files"), render: renderFilesInspector, prewarm: true },
+            { key: "terminal", label: gt("Terminal"), render: renderTerminalInspector },
             ...(props.renderInspector ? [{ key: "route", render: props.renderInspector }] : []),
           ],
         };

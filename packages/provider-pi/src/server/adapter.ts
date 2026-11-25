@@ -2526,6 +2526,9 @@ export const makePiAdapterV2 = Effect.fn("makePiAdapterV2")(function* (
         if (turn === null) return;
         state.activeTurn = null;
         ompPromptIds.clear();
+        for (const [id, task] of ompTasks) {
+          if (task.turn === turn) ompTasks.delete(id);
+        }
         const interrupted = turn.interrupted || turn.nativeAborted;
         const completedAt = yield* DateTime.now;
         yield* completeOpenStreamItems(turn);

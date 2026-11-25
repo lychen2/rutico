@@ -6,12 +6,13 @@ import {
 } from "@t3tools/contracts";
 import * as Context from "effect/Context";
 import * as Digest from "effect/crypto/Digest";
+import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import * as Option from "effect/Option";
 import * as Path from "effect/Path";
-
-import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as ServerConfig from "../config.ts";
+import * as ServerSettings from "../serverSettings.ts";
 import { readAntigravityChildWork } from "../provider/acp/AntigravityChildWork.ts";
 import { resolveAntigravityInstanceDirectories } from "../provider/antigravityAuthSupport.ts";
 import { resolveAntigravityUserHome } from "../provider/Drivers/AntigravitySkills.ts";
@@ -40,6 +41,7 @@ const make = Effect.gen(function* () {
   const platform = yield* HostProcess.Platform;
   const homeDirectory = yield* HostProcess.HomeDirectory;
   const processEnvironment = yield* HostProcess.Environment;
+  const serverSettings = yield* Effect.serviceOption(ServerSettings.ServerSettingsService);
 
   const getNativeChildWork = Effect.fn("NativeChildWorkQuery.getNativeChildWork")(
     function* (input: OrchestrationV2GetNativeChildWorkInput) {
@@ -98,7 +100,24 @@ const make = Effect.gen(function* () {
       if (!rootSessionId || providerThread?.providerInstanceId !== subagent.providerInstanceId) {
         return NO_CHILDREN;
       }
-      const userHome = resolveAntigravityUserHome(platform, processEnvironment, homeDirectory);
+      let instanceEnvironment = processEnvironment;
+      if (Option.isSome(serverSettings)) {
+        const settings = yield* serverSettings.value.getSettings.pipe(Effect.option);
+        const instance = Option.isSome(settings)
+          ? settings.value.providerInstances[subagent.providerInstanceId]
+          : undefined;
+        const targetKey = platform === "win32" ? "USERPROFILE" : "HOME";
+        const overrideHome = instance?.environment?.find(
+          (entry) =>
+            entry.name.toUpperCase() === targetKey &&
+            typeof entry.value === "string" &&
+            entry.value.length > 0,
+        );
+        if (overrideHome && typeof overrideHome.value === "string") {
+          instanceEnvironment = { ...processEnvironment, [targetKey]: overrideHome.value };
+        }
+      }
+      const userHome = resolveAntigravityUserHome(platform, instanceEnvironment, homeDirectory);
       const nativeGeminiHome = path.join(userHome, ".gemini");
       const queryInput = {
         rootSessionId,

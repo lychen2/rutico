@@ -2,6 +2,7 @@ import * as HttpServer from "effect/http/HttpServer";
 import {
   RelayClientAuth,
   RelayClientPrincipal,
+  RelayDpopClientAuth,
   type RelayClientDeviceRecord,
 } from "@t3tools/contracts/relay";
 import * as EnvironmentLinker from "../environments/EnvironmentLinker.ts";
@@ -439,6 +440,93 @@ describe("relay client authentication", () => {
       ),
     ),
   );
+
+  it.effect("keeps user.id and relay.auth.subject out of auth spans", () => {
+    const spans: Array<Tracer.NativeSpan> = [];
+    const tracer = Tracer.make({
+      span: (options) => {
+        const span = new Tracer.NativeSpan(options);
+        spans.push(span);
+        return span;
+      },
+    });
+    vi.mocked(verifyToken).mockResolvedValue({
+      sub: "user_secret_id",
+      aud: relaySettings.clerkJwtAudience,
+    } as never);
+
+    return Effect.gen(function* () {
+      const clientAuth = yield* RelayClientAuth;
+      const dpopAuth = yield* RelayDpopClientAuth;
+      const seenUsers: Array<string> = [];
+
+      const recordPrincipal = Effect.flatMap(RelayClientPrincipal, (principal) =>
+        Effect.sync(() => {
+          seenUsers.push(principal.userId);
+          return HttpServerResponse.empty({ status: 204 });
+        }),
+      );
+
+      yield* clientAuth.clientBearer(recordPrincipal, {
+        credential: Redacted.make("Bearer session-token"),
+        endpoint: {} as never,
+        group: {} as never,
+      });
+      yield* dpopAuth.relayDpop(recordPrincipal, {
+        credential: Redacted.make("DPoP access-token"),
+        endpoint: {} as never,
+        group: {} as never,
+      });
+
+      expect(seenUsers).toEqual(["user_secret_id", "user_secret_id"]);
+      expect(spans.length).toBeGreaterThanOrEqual(2);
+      for (const span of spans) {
+        expect(span.attributes.get("user.id")).toBeUndefined();
+        expect(span.attributes.get("relay.auth.subject")).toBeUndefined();
+      }
+    }).pipe(
+      Effect.provideService(
+        HttpServerRequest.HttpServerRequest,
+        HttpServerRequest.fromWeb(
+          new Request("https://relay.example.test/v1/client/devices", {
+            headers: { authorization: "DPoP access-token" },
+          }),
+        ),
+      ),
+      Effect.provideService(HttpServerRequest.ParsedSearchParams, {}),
+      Effect.provideService(HttpRouter.RouteContext, {
+        params: {},
+        route: {} as never,
+      }),
+      Effect.provide(
+        Layer.mergeAll(
+          RelayHttpApi.layerClientAuth.pipe(
+            Layer.provide(Layer.succeed(RelayConfiguration.RelayConfiguration, relaySettings)),
+          ),
+          RelayHttpApi.layerDpopClientAuth.pipe(
+            Layer.provide(
+              Layer.mock(RelayTokens.RelayTokens, {
+                resolveDpopAccessTokenScopes: () => null,
+                verifyDpopAccessToken: () =>
+                  Effect.succeed({
+                    sub: "user_secret_id",
+                    cnf: { jkt: "thumbprint" },
+                    scope: ["mobile:registration"],
+                  } as never),
+              }),
+            ),
+          ),
+          Layer.succeed(Tracer.Tracer, tracer),
+        ),
+      ),
+      Effect.scoped,
+      Effect.ensuring(
+        Effect.sync(() => {
+          vi.mocked(verifyToken).mockReset();
+        }),
+      ),
+    );
+  });
 });
 
 describe("relay DPoP failure mapping", () => {
@@ -1386,6 +1474,42 @@ describe("relay request tracing", () => {
         expect(Option.isNone(spans[0]!.parent)).toBe(true);
         expect(Option.getOrUndefined(spans[1]!.parent)?.spanId).toBe(spans[0]?.spanId);
       }),
+  );
+
+  it.effect("keeps the caller's address and user agent out of spans but not the route", () =>
+    Effect.gen(function* () {
+      const spans: Array<Tracer.NativeSpan> = [];
+      const tracer = Tracer.make({
+        span: (options) => {
+          const span = new Tracer.NativeSpan(options);
+          spans.push(span);
+          return span;
+        },
+      });
+      const seen: Array<{ remoteAddress: string | undefined; userAgent: string | undefined }> = [];
+      const endpoint = Effect.gen(function* () {
+        const routed = yield* HttpServerRequest.HttpServerRequest;
+        seen.push({
+          remoteAddress: Option.getOrUndefined(routed.remoteAddress),
+          userAgent: routed.headers["user-agent"],
+        });
+        return HttpServerResponse.empty({ status: 204 });
+      });
+      const request = HttpServerRequest.fromWeb(
+        new Request("https://relay.test/v1/mobile/devices", {
+          method: "POST",
+          headers: { "user-agent": "T3Code/2.3.0 iPhone" },
+        }),
+      ).modify({ remoteAddress: Option.some("203.0.113.9") });
+
+      yield* traceRelayHttpRequestWith(endpoint, Layer.succeed(Tracer.Tracer, tracer)).pipe(
+        Effect.provideService(HttpServerRequest.HttpServerRequest, request),
+      );
+
+      expect(spans[0]?.attributes.get("client.address")).toBeUndefined();
+      expect(spans[0]?.attributes.get("user_agent.original")).toBeUndefined();
+      expect(seen).toEqual([{ remoteAddress: "203.0.113.9", userAgent: "T3Code/2.3.0 iPhone" }]);
+    }),
   );
 });
 

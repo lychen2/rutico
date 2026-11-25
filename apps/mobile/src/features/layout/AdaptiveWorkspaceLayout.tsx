@@ -123,6 +123,7 @@ import {
 } from "./workspace/workspace-tabs-state";
 import { workspaceRoutesOf } from "./workspace-overlay-routes";
 import { SettingsWorkspaceLayout } from "../settings/SettingsWorkspaceLayout";
+import { AndroidPaseoPanels } from "./AndroidPaseoPanels";
 import { WorkspaceThreadSidebar } from "./workspace/WorkspaceThreadSidebar";
 
 export { useAdaptiveWorkspaceLayout, useWorkspacePaneState };
@@ -594,6 +595,12 @@ function AdaptiveWorkspaceLayoutContent(
   const projects = useProjects();
   const compactAndroidSettings =
     Platform.OS === "android" && androidSettingsOpen && !layout.usesSplitView;
+  const paseoPanelsEnabled =
+    Platform.OS === "android" &&
+    !layout.usesSplitView &&
+    !workspacePage &&
+    !compactAndroidSettings &&
+    !isWorkspaceListPath(pathname);
   // Reads the open page when pressed, so the layout context doesn't change on every navigation.
   const handleStartNewTask = () => {
     const state = rootStackState(navigation);
@@ -977,7 +984,7 @@ function AdaptiveWorkspaceLayoutContent(
 
   const inspectorSheet = (
     <WorkspaceInspectorSheet
-      open={inspectorSheetOpen}
+      open={inspectorSheetOpen && !paseoPanelsEnabled}
       onClose={dismissInspectorSheet}
       content={workspaceInspector?.content}
     />
@@ -1114,7 +1121,16 @@ function AdaptiveWorkspaceLayoutContent(
               >
                 <View className="flex-1">
                   <PaneContext value="content">
-                    <SettingsWorkspaceLayout>{children}</SettingsWorkspaceLayout>
+                    <AndroidPaseoPanels
+                      enabled={paseoPanelsEnabled}
+                      viewportWidth={viewportWidth}
+                      inspectorContent={workspaceInspector?.content}
+                      inspectorOpen={inspectorSheetOpen}
+                      onCloseInspector={dismissInspectorSheet}
+                      onStartNewTask={handleStartNewTask}
+                    >
+                      <SettingsWorkspaceLayout>{children}</SettingsWorkspaceLayout>
+                    </AndroidPaseoPanels>
                   </PaneContext>
                 </View>
               </SafeAreaInsetsContext>

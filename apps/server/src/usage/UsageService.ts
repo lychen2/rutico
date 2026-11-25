@@ -99,11 +99,19 @@ const STALE_TEMP_DIRECTORY_MS = 60 * 60 * 1000;
 
 const TRANSCRIPT_READ_CONCURRENCY = 4;
 
-const driverKindByProvider = new Map(
-  BUILT_IN_USAGE_DRIVERS.flatMap((driver) =>
-    driver.usage === undefined ? [] : [[driver.usage.provider, driver.driverKind] as const],
-  ),
-);
+const driverKindsByProvider = (() => {
+  const map = new Map<UsageProviderKind, string[]>();
+  for (const driver of BUILT_IN_USAGE_DRIVERS) {
+    if (driver.usage === undefined) continue;
+    const kinds = map.get(driver.usage.provider);
+    if (kinds === undefined) {
+      map.set(driver.usage.provider, [driver.driverKind]);
+    } else if (!kinds.includes(driver.driverKind)) {
+      kinds.push(driver.driverKind);
+    }
+  }
+  return map as ReadonlyMap<UsageProviderKind, ReadonlyArray<string>>;
+})();
 
 const providerByDriver = new Map<string, UsageProviderKind>(
   BUILT_IN_USAGE_DRIVERS.flatMap((driver) =>
@@ -1173,13 +1181,19 @@ export const make = Effect.gen(function* () {
         ? {}
         : {
             attributeProject: (record: UsageRecord, transcriptPath?: string) => {
-              const driverKind = driverKindByProvider.get(record.provider);
+              const driverKinds = driverKindsByProvider.get(record.provider);
               // Pi binds threads to the session file, rather than the header's display id.
               const nativeId = record.provider === "pi" ? transcriptPath : record.sessionId;
-              const project =
-                driverKind === undefined || nativeId === undefined || nativeId.length === 0
-                  ? undefined
-                  : sessionProjects.get(UsageProjectAttribution.sessionKey(driverKind, nativeId));
+              if (driverKinds === undefined || nativeId === undefined || nativeId.length === 0) {
+                return null;
+              }
+              let project: UsageProject | undefined;
+              for (const driverKind of driverKinds) {
+                project = sessionProjects.get(
+                  UsageProjectAttribution.sessionKey(driverKind, nativeId),
+                );
+                if (project !== undefined) break;
+              }
               if (project === undefined) return null;
               referencedProjects.set(project.projectId, project);
               return project.projectId;

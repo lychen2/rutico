@@ -14,7 +14,10 @@ import { layer, ThreadArtifacts } from "./ThreadArtifacts.ts";
 
 const testLayer = layer.pipe(
   Layer.provideMerge(
-    Layer.merge(Sqlite.layerMemory, ServerConfig.layerTest(process.cwd(), { prefix: "t3-artifacts-" })),
+    Layer.merge(
+      Sqlite.layerMemory,
+      ServerConfig.layerTest(process.cwd(), { prefix: "t3-artifacts-" }),
+    ),
   ),
   Layer.provideMerge(NodeServices.layer),
 );
@@ -70,7 +73,13 @@ it.effect("lists only existing artifacts recorded by this thread in its worktree
       creationSource: "provider",
       text: "The [report](report.pdf) and [missing](missing.md) are attached.",
       attachments: [
-        { type: "image", id: "saved-image", name: "supplied.png", mimeType: "image/png", sizeBytes: 16 },
+        {
+          type: "image",
+          id: "saved-image",
+          name: "supplied.png",
+          mimeType: "image/png",
+          sizeBytes: 16,
+        },
       ],
       streaming: false,
       createdAt: timestamp,
@@ -128,7 +137,9 @@ it.effect("lists only existing artifacts recorded by this thread in its worktree
         output: [
           {
             type: "text",
-            text: JSON.stringify({ htmlRender: { attachmentId: pageId, title: "Tool page", height: 300 } }),
+            text: JSON.stringify({
+              htmlRender: { attachmentId: pageId, title: "Tool page", height: 300 },
+            }),
           },
         ],
       },
@@ -153,12 +164,22 @@ it.effect("lists only existing artifacts recorded by this thread in its worktree
     expect(actual.find((artifact) => artifact.name === "report.pdf")).toMatchObject({
       kind: "document",
       sizeBytes: 13,
-      resource: { _tag: "media-file", threadId, path: path.join(worktree, "report.pdf"), hostOnly: true },
+      resource: {
+        _tag: "media-file",
+        threadId,
+        path: path.join(worktree, "report.pdf"),
+        hostOnly: true,
+      },
     });
     expect(actual.find((artifact) => artifact.name === "plot.png")).toMatchObject({
       kind: "image",
       modifiedAt: newer.getTime(),
-      resource: { _tag: "media-file", threadId, path: path.join(output, "plot.png"), hostOnly: true },
+      resource: {
+        _tag: "media-file",
+        threadId,
+        path: path.join(output, "plot.png"),
+        hostOnly: true,
+      },
     });
     expect(actual.find((artifact) => artifact.name === "supplied.png")).toMatchObject({
       kind: "image",

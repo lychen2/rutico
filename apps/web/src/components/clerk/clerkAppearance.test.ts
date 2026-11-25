@@ -5,6 +5,7 @@ import {
   GROVE_THEME,
   IRIS_THEME,
   OCEAN_THEME,
+  RUTICO_THEME,
   T3_CHAT_THEME,
   themeColorToHex,
   type ThemeColors,
@@ -41,6 +42,7 @@ function mixThemeColors(first: string, second: string, firstWeight: number): str
 }
 
 const builtInThemeModes = [
+  RUTICO_THEME,
   T3_CHAT_THEME,
   GROVE_THEME,
   OCEAN_THEME,

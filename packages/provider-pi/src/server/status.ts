@@ -164,7 +164,7 @@ const makePiDiscoveryConnection = Effect.fnUntraced(function* (
   });
   const connection = yield* makePiRpcConnection({
     omp,
-    command: piSettings.binaryPath || "pi",
+    command: piSettings.binaryPath || (omp ? "omp" : "pi"),
     args: launch.args,
     cwd,
     env: launch.env,
@@ -342,8 +342,9 @@ export const runPiVersionCommand = Effect.fn("PiProviderStatus.runPiVersionComma
   piSettings: PiSettings,
   environment: NodeJS.ProcessEnv,
   cwd?: string,
+  omp = false,
 ) {
-  const command = piSettings.binaryPath || "pi";
+  const command = piSettings.binaryPath || (omp ? "omp" : "pi");
   const spawnCommand = yield* resolveSpawnCommand(command, ["--version"], {
     env: environment,
   });
@@ -689,31 +690,43 @@ export const enrichPiSnapshot = (input: {
   );
 };
 
-export const discoverOmpInventory = Effect.fn("discoverOmpInventory")(function* (
-  settings: PiSettings,
-  environment: NodeJS.ProcessEnv,
-  cwd: string,
-) {
-  const launchArgs = resolveOmpLaunchArgs(settings.launchArgs);
-  if (!launchArgs.ok) {
-    return yield* new PiRpcError({ operation: "launch", detail: launchArgs.message });
-  }
-  const connection = yield* makePiDiscoveryConnection(
-    settings,
-    providerProbeEnvironment(environment),
-    launchArgs.args,
-    cwd,
-    false,
-    true,
-  );
-  const state = yield* connection.request({ type: "get_state" });
-  const models = yield* connection.request({ type: "get_available_models" });
-  const commands = yield* connection.request({ type: "get_available_commands" });
-  return {
-    models: yield* Effect.fromResult(parseDiscoveredModels(models, state, true)),
-    ...parsePiDiscoveredCommands(commands),
-  };
-}, Effect.scoped);
+export const discoverOmpInventory = Effect.fn("discoverOmpInventory")(
+  function* (settings: PiSettings, environment: NodeJS.ProcessEnv, cwd: string) {
+    const launchArgs = resolveOmpLaunchArgs(settings.launchArgs);
+    if (!launchArgs.ok) {
+      return yield* new PiRpcError({ operation: "launch", detail: launchArgs.message });
+    }
+    const connection = yield* makePiDiscoveryConnection(
+      settings,
+      providerProbeEnvironment(environment),
+      launchArgs.args,
+      cwd,
+      false,
+      true,
+    );
+    const state = yield* connection.request({ type: "get_state" });
+    const models = yield* connection.request({ type: "get_available_models" });
+    const commands = yield* connection.request({ type: "get_available_commands" });
+    return {
+      models: yield* Effect.fromResult(parseDiscoveredModels(models, state, true)),
+      ...parsePiDiscoveredCommands(commands),
+    };
+  },
+  Effect.scoped,
+  (effect, _settings, environment) => {
+    const timeoutMs = resolveProviderProbeTimeoutMs(
+      "omp",
+      PI_RPC_DISCOVERY_TIMEOUT_MS,
+      environment,
+    );
+    return effect.pipe(
+      Effect.timeoutOrElse({
+        duration: timeoutMs,
+        orElse: () => Effect.fail(new PiRpcTimeoutError({ operation: "discovery", timeoutMs })),
+      }),
+    );
+  },
+);
 
 export const buildInitialOmpSnapshot = Effect.fn("buildInitialOmpSnapshot")(function* (
   settings: PiSettings,
@@ -746,6 +759,7 @@ export const checkOmpStatus = Effect.fn("checkOmpStatus")(function* (
     settings,
     providerProbeEnvironment(environment),
     cwd,
+    true,
   ).pipe(
     Effect.timeoutOption(VERSION_PROBE_TIMEOUT_MS),
     Effect.orElseSucceed(() => Option.none()),

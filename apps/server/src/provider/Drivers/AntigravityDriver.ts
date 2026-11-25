@@ -254,6 +254,7 @@ export const AntigravityDriver: ProviderDriver<
         auth,
         userHome,
         tempDirectory: directories.runtimeTemp,
+        nativeProfile: true,
       }).pipe(
         Effect.provideService(FileSystem.FileSystem, fileSystem),
         Effect.provideService(Path.Path, path),
@@ -554,6 +555,7 @@ export const AntigravityDriver: ProviderDriver<
       authMethod: auth.authMethod,
       resolveExecutable: installation.resolve(settings.binaryPath, processEnvironment),
       environment: processEnvironment,
+      makeProbeCwd: fileSystem.makeTempDirectoryScoped({ prefix: "t3-antigravity-usage-" }),
     }).pipe(Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner));
     const provider = yield* makeAntigravityProvider(settings, {
       environment: processEnvironment,
@@ -564,10 +566,13 @@ export const AntigravityDriver: ProviderDriver<
       auth: { type: auth.authMethod, label: antigravityAuthLabel(auth.authMethod) },
       ...(rememberedRuntimeModes ? { rememberedRuntimeModes } : {}),
       rememberRuntimeModes: (modes) =>
-        writeFileStringAtomically({
-          filePath: runtimeModesPath,
-          contents: encodeRememberedRuntimeModes({ authMethod: auth.authMethod, modes }),
-        }).pipe(
+        fileSystem.makeDirectory(profileDirectory, { recursive: true }).pipe(
+          Effect.andThen(
+            writeFileStringAtomically({
+              filePath: runtimeModesPath,
+              contents: encodeRememberedRuntimeModes({ authMethod: auth.authMethod, modes }),
+            }),
+          ),
           Effect.provideService(FileSystem.FileSystem, fileSystem),
           Effect.provideService(Path.Path, path),
           Effect.catch(() => Effect.logWarning("Could not save Antigravity permission modes.")),

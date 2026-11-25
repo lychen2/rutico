@@ -2,6 +2,7 @@ import { useEffect, useState, type ReactNode } from "react";
 
 export interface InspectorPane {
   readonly key: string;
+  readonly label?: string;
   readonly render: () => ReactNode;
   /** Opening one of these panes soon mounts the others too, so switching between them is instant. */
   readonly prewarm?: boolean;
@@ -11,6 +12,7 @@ export interface InspectorPane {
 export interface InspectorContent {
   readonly panes: ReadonlyArray<InspectorPane>;
   readonly active: string;
+  readonly onSelectPane?: (key: string) => void;
   /** A failed pane renders again when one of these changes. */
   readonly resetKeys?: ReadonlyArray<unknown>;
 }

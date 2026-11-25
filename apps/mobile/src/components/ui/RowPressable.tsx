@@ -1,15 +1,30 @@
 import type { ComponentProps, ReactNode } from "react";
 import { Pressable, View } from "react-native";
 import { GestureDetector } from "react-native-gesture-handler";
+import Animated, {
+  ReduceMotion,
+  useAnimatedStyle,
+  useSharedValue,
+  withSpring,
+} from "react-native-reanimated";
 
 import { cn } from "../../lib/cn";
 import { useHoverGesture } from "../../lib/useHoverGesture";
+
+const PRESS_SPRING_CONFIG = {
+  damping: 20,
+  stiffness: 420,
+  mass: 0.6,
+  reduceMotion: ReduceMotion.System,
+} as const;
 
 export function RowPressable({
   children,
   className,
   interactionClassName = "bg-row-hover",
   interactionOpacity = 1,
+  onPressIn,
+  onPressOut,
   ...props
 }: Omit<ComponentProps<typeof Pressable>, "children"> & {
   readonly children: ReactNode;
@@ -17,20 +32,43 @@ export function RowPressable({
   readonly interactionOpacity?: number;
 }) {
   const { hovered, hoverGesture } = useHoverGesture(props.disabled ?? false);
+  const pressScale = useSharedValue(1);
+  const animatedScaleStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: pressScale.get() }],
+  }));
+  const fillsRowSlot = typeof className === "string" && /\bflex-(?:1|grow)\b/.test(className);
+
   return (
     <GestureDetector gesture={hoverGesture}>
-      <Pressable {...props} className={cn("relative overflow-hidden", className)}>
-        {() => (
-          <>
-            <View
-              pointerEvents="none"
-              className={cn("absolute inset-0", interactionClassName)}
-              style={{ opacity: props.disabled || !hovered ? 0 : interactionOpacity }}
-            />
-            {children}
-          </>
-        )}
-      </Pressable>
+      <Animated.View
+        style={[fillsRowSlot ? { flex: 1, minWidth: 0 } : { flexShrink: 1 }, animatedScaleStyle]}
+      >
+        <Pressable
+          {...props}
+          onPressIn={(event) => {
+            if (!props.disabled) {
+              pressScale.set(withSpring(0.984, PRESS_SPRING_CONFIG));
+            }
+            onPressIn?.(event);
+          }}
+          onPressOut={(event) => {
+            pressScale.set(withSpring(1, PRESS_SPRING_CONFIG));
+            onPressOut?.(event);
+          }}
+          className={cn("relative overflow-hidden", className)}
+        >
+          {() => (
+            <>
+              <View
+                pointerEvents="none"
+                className={cn("absolute inset-0", interactionClassName)}
+                style={{ opacity: props.disabled || !hovered ? 0 : interactionOpacity }}
+              />
+              {children}
+            </>
+          )}
+        </Pressable>
+      </Animated.View>
     </GestureDetector>
   );
 }

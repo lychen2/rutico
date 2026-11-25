@@ -51,6 +51,7 @@ import type { SidebarProviderEntry } from "./SidebarThreadRow";
 import {
   ATTENTION_PREVIEW_LIMIT,
   buildSidebarOverview,
+  collectDisconnectedEnvironmentIds,
   failedRunToken,
   previewActiveWork,
   selectOverviewProgress,
@@ -686,11 +687,13 @@ export function SidebarOverview({
   const localVisits = useUiStateStore((state) => state.threadLastVisitedAtById);
   const acknowledgedErrors = useUiStateStore((state) => state.acknowledgedErrorRunByThreadKey);
   const acknowledgeThreadError = useUiStateStore((state) => state.acknowledgeThreadError);
+  const disconnectedEnvironmentIds = collectDisconnectedEnvironmentIds(isReady, environments);
   const { active, activeKeys, attention, attentionCount, todayTasks } = buildSidebarOverview(
     threads,
     now,
     localVisits,
     acknowledgedErrors,
+    disconnectedEnvironmentIds,
   );
   const [showAllAttention, setShowAllAttention] = useState(false);
   const [showAllRunning, setShowAllRunning] = useState(false);

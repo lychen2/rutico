@@ -24,7 +24,7 @@ export function ThreadSideChatsRow(props: {
     <View
       className={cn(
         "flex-row items-center gap-2 py-2 pl-4",
-        Platform.OS === "android" ? "bg-thread-canvas" : "bg-screen",
+        Platform.OS === "android" ? "bg-transparent" : "bg-screen",
       )}
     >
       <SymbolView

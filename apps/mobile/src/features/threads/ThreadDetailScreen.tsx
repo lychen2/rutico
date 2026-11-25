@@ -1,4 +1,5 @@
 import { ChildThreadApprovals } from "./ChildThreadApprovals";
+import { RuticoMobileBackdrop } from "../../components/RuticoMobileBackdrop";
 import { errorDisplayMessage } from "@t3tools/client-runtime/errors";
 import { useOpenThreadInspector } from "./thread-inspector-navigation";
 import { useSidebarWorkspaceTabs } from "../layout/workspace/useSystemWorkspaceTabBar";
@@ -1499,11 +1500,14 @@ function ThreadDetailBody(
     <View className="flex-1" onLayout={handleScreenLayout}>
       {!usesNativeWorkspaceColumns ? <NativeLayoutObserver onChange={setScreenMetrics} /> : null}
       {props.draftMode ? (
-        props.draftMode.content(
-          navigationHeaderHeight,
-          liveKeyboardHeight + estimatedOverlayHeight + 24,
-          draftViewportHeight,
-        )
+        <View className="flex-1 bg-screen">
+          {Platform.OS === "android" ? <RuticoMobileBackdrop variant="hero" /> : null}
+          {props.draftMode.content(
+            navigationHeaderHeight,
+            liveKeyboardHeight + estimatedOverlayHeight + 24,
+            draftViewportHeight,
+          )}
+        </View>
       ) : showContent ? (
         <View
           style={{ flex: 1 }}
@@ -1512,14 +1516,11 @@ function ThreadDetailBody(
           onTouchEnd={handleFeedTouchEnd}
           onTouchCancel={handleFeedTouchCancel}
         >
-          <View
-            pointerEvents="none"
-            className={
-              Platform.OS === "android"
-                ? "absolute inset-0 bg-thread-canvas"
-                : "absolute inset-0 bg-screen"
-            }
-          />
+          {Platform.OS === "android" ? (
+            <RuticoMobileBackdrop variant="canvas" />
+          ) : (
+            <View pointerEvents="none" className="absolute inset-0 bg-screen" />
+          )}
           <RenderErrorBoundary
             key={selectedThreadKey}
             resetKeys={[props.threadCwd]}

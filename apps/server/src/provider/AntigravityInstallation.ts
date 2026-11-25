@@ -582,27 +582,59 @@ export const makeAntigravityInstallation = Effect.fn("AntigravityInstallation.ma
 
   // Resolve a verified external CLI outside versions/ without taking the managed lock, so a
   // read-only managed parent or active repair does not block unrelated external executables.
+  const verifiedExternalCache = new Map<
+    string,
+    {
+      readonly source: "override" | "path";
+      readonly size: number;
+      readonly mtimeMs: number | undefined;
+      readonly executable: AntigravityExecutable;
+    }
+  >();
   const findVerifiedExternal = Effect.fn("AntigravityInstallation.findVerifiedExternal")(function* (
     candidates: ReadonlyArray<string>,
     source: "override" | "path",
   ) {
     for (const candidate of candidates) {
-      if (!(yield* executableFile(candidate))) continue;
+      const info = yield* fs.stat(candidate).pipe(Effect.option);
+      if (
+        Option.isNone(info) ||
+        info.value.type !== "File" ||
+        (platform !== "win32" && (info.value.mode & 0o111) === 0)
+      ) {
+        continue;
+      }
+      const size = Number(info.value.size);
+      const mtimeMs = Option.getOrUndefined(info.value.mtime)?.getTime();
+      const cached = verifiedExternalCache.get(candidate);
+      if (
+        cached !== undefined &&
+        cached.source === source &&
+        cached.size === size &&
+        cached.mtimeMs === mtimeMs
+      ) {
+        return cached.executable;
+      }
       const resolved = yield* fs.realPath(candidate).pipe(Effect.option);
       if (Option.isNone(resolved)) return null;
       const executablePath = resolved.value;
       if (yield* isManagedVersionCandidate(executablePath)) return null;
       if (isAntigravityCli(candidate, executablePath)) {
-        return {
+        const executable = {
           executablePath: candidate,
           source,
           version: null,
           managedVersionDirectory: null,
         } satisfies AntigravityExecutable;
+        if (verifiedExternalCache.size >= 32) verifiedExternalCache.clear();
+        verifiedExternalCache.set(candidate, { source, size, mtimeMs, executable });
+        return executable;
       }
     }
     return null;
   });
+
+  const defaultPathCommands = platform === "win32" ? ["agy"] : ["agy", "antigravity"];
 
   const commandPath = (command: string, env: NodeJS.ProcessEnv) =>
     resolveCommandPath(command, { env }).pipe(
@@ -634,6 +666,16 @@ export const makeAntigravityInstallation = Effect.fn("AntigravityInstallation.ma
     return candidates;
   });
 
+  const defaultPathCandidates = Effect.fn("AntigravityInstallation.defaultPathCandidates")(
+    function* (processEnvironment = environment) {
+      const candidates: string[] = [];
+      for (const command of defaultPathCommands) {
+        candidates.push(...(yield* commandCandidates(command, processEnvironment)));
+      }
+      return candidates;
+    },
+  );
+
   const resolveUnlocked = Effect.fn("AntigravityInstallation.resolveUnlocked")(function* (
     binaryPath?: string,
     processEnvironment?: NodeJS.ProcessEnv,
@@ -649,7 +691,7 @@ export const makeAntigravityInstallation = Effect.fn("AntigravityInstallation.ma
         "The custom Antigravity executable is missing or not executable, or it is not the agy CLI.",
       );
     }
-    for (const candidate of yield* commandCandidates("agy", processEnvironment)) {
+    for (const candidate of yield* defaultPathCandidates(processEnvironment)) {
       const selected = yield* fromExternal(candidate, "path");
       if (selected) return selected;
     }
@@ -685,7 +727,7 @@ export const makeAntigravityInstallation = Effect.fn("AntigravityInstallation.ma
         if (external !== null) return external;
       } else {
         const external = yield* findVerifiedExternal(
-          yield* commandCandidates("agy", processEnvironment),
+          yield* defaultPathCandidates(processEnvironment),
           "path",
         );
         if (external !== null) return external;
@@ -697,7 +739,7 @@ export const makeAntigravityInstallation = Effect.fn("AntigravityInstallation.ma
           Effect.gen(function* () {
             if (!override && !(yield* fs.exists(activePath))) {
               const external = yield* findVerifiedExternal(
-                yield* commandCandidates("agy", processEnvironment),
+                yield* defaultPathCandidates(processEnvironment),
                 "path",
               );
               if (external !== null) return external;

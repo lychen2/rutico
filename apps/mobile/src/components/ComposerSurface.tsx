@@ -243,7 +243,8 @@ export function useComposerChrome() {
   return {
     usesLargeControls,
     controlSize: usesLargeControls ? ("large" as const) : ("regular" as const),
-    borderRadius: usesLargeControls ? 31 : 27,
+    borderRadius:
+      Platform.OS === "android" ? (usesLargeControls ? 28 : 24) : usesLargeControls ? 31 : 27,
     paddingVertical: usesLargeControls ? 9 : floatingSidebarComposer ? 6 : 2,
   };
 }

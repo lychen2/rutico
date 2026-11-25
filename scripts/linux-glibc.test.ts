@@ -133,4 +133,34 @@ describe.skipIf(HostProcess.Platform.defaultValue() !== "linux")("packaged ELF s
       }
     },
   );
+
+  it("allows T3CODE_LINUX_GLIBC_CEILING override only outside CI", async () => {
+    const root = await NodeFSP.mkdtemp(NodePath.join(NodeOS.tmpdir(), "t3-glibc-ceiling-"));
+    const previousCeiling = process.env.T3CODE_LINUX_GLIBC_CEILING;
+    const previousCi = process.env.CI;
+    try {
+      const app = NodePath.join(root, "app");
+      await NodeFSP.mkdir(app, { recursive: true });
+      await NodeFSP.writeFile(NodePath.join(app, "addon.node"), elfFixture(62, "2.42"));
+
+      delete process.env.CI;
+      process.env.T3CODE_LINUX_GLIBC_CEILING = "2.44";
+      expect(await scanGlibcNeeds(app)).toEqual({ minimum: "2.42", elfCount: 1 });
+
+      process.env.CI = "true";
+      await expect(scanGlibcNeeds(app)).rejects.toThrow(/GLIBC_2\.42.*2\.39/s);
+    } finally {
+      if (previousCeiling === undefined) {
+        delete process.env.T3CODE_LINUX_GLIBC_CEILING;
+      } else {
+        process.env.T3CODE_LINUX_GLIBC_CEILING = previousCeiling;
+      }
+      if (previousCi === undefined) {
+        delete process.env.CI;
+      } else {
+        process.env.CI = previousCi;
+      }
+      await NodeFSP.rm(root, { recursive: true, force: true });
+    }
+  });
 });

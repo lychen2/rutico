@@ -24,6 +24,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { AppText as Text } from "../../components/ui/AppText";
 import { Button } from "../../components/ui/Button";
+import { themeColorWithAlpha } from "../../lib/mobileTheme";
 import { scopedProjectKey, scopedThreadKey } from "../../lib/scopedEntities";
 import { useProjects } from "../../state/entities";
 import { steadyNavigationThreadShellsAtom } from "../../state/threads";
@@ -124,7 +125,7 @@ function ThreadNavigationSidebarPane(props: ThreadNavigationSidebarProps) {
   const gt = useGT();
   const messages = useMessages();
   const floatingTabsEnabled = useAndroidFloatingTabs();
-  const { themeVariables: materialTheme } = useAppearancePreferences();
+  const { themeAppearance, themeVariables: materialTheme } = useAppearancePreferences();
   const drawerColor = materialTheme["--color-drawer"];
 
   const insets = useSafeAreaInsets();
@@ -654,13 +655,19 @@ function ThreadNavigationSidebarPane(props: ThreadNavigationSidebarProps) {
 
   // Android: the bar floats below the list.
   return (
-    <View testID="thread-navigation-sidebar" className="flex-1 bg-header">
+    <View testID="thread-navigation-sidebar" className="flex-1">
       <View
         className="flex-1"
         style={{
           marginHorizontal: 4,
           paddingBottom: insets.bottom,
-          backgroundColor: drawerColor,
+          backgroundColor: themeColorWithAlpha(
+            drawerColor,
+            themeAppearance === "dark" ? 0.32 : 0.38,
+          ),
+          borderWidth: StyleSheet.hairlineWidth,
+          borderBottomWidth: 0,
+          borderColor: themeColorWithAlpha(materialTheme["--color-border"], 0.55),
           borderTopLeftRadius: 28,
           borderTopRightRadius: 28,
           overflow: "hidden",

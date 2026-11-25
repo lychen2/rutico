@@ -633,7 +633,10 @@ export function HomeScreen(props: HomeScreenProps) {
   if (!hasAnyThreads) {
     return (
       <View className={containerClassName}>
-        <ScreenContent surface={sidebarSurface ? "drawer" : "screen"}>
+        <ScreenContent
+          surface={sidebarSurface ? "drawer" : "screen"}
+          backdrop={Platform.OS === "android" ? "hero" : undefined}
+        >
           <View
             className={cn(
               "flex-1 items-center justify-center px-8",
@@ -750,7 +753,7 @@ export function HomeScreen(props: HomeScreenProps) {
 
   if (Platform.OS === "android" && threadListV2Items.length === 0) {
     return (
-      <ScreenContent surface="screen">
+      <ScreenContent surface="screen" backdrop="hero">
         <View
           className="flex-1 items-center justify-center px-4"
           style={{ paddingBottom: insets.bottom }}
@@ -763,7 +766,7 @@ export function HomeScreen(props: HomeScreenProps) {
 
   return (
     <View className={containerClassName}>
-      <ScreenContent surface="screen">
+      <ScreenContent surface="screen" backdrop={Platform.OS === "android" ? "canvas" : undefined}>
         <View className={cn("flex-1", Platform.OS !== "android" && contentBackground)}>
           <SwipeableScrollGateProvider enabled={swipeEnabled} activation={swipeRowActivation}>
             <GestureDetector gesture={homeScrollGesture}>

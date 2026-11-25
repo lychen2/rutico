@@ -132,6 +132,7 @@ describe("antigravityUsageLimits", () => {
               SSH_CONNECTION: "127.0.0.1 0 127.0.0.1 0",
               GEMINI_API_KEY: "must-not-pass",
             },
+            cwd: dir,
           }).pipe(Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner));
 
           const limits = yield* usage.probe;

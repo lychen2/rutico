@@ -90,7 +90,7 @@ export const makePiTextGeneration = Effect.fn("makePiTextGeneration")(function* 
       });
       const connection = yield* makePiRpcConnection({
         omp,
-        command: piSettings.binaryPath || "pi",
+        command: piSettings.binaryPath || (omp ? "omp" : "pi"),
         args: launch.args,
         cwd,
         env: launch.env,
@@ -165,7 +165,7 @@ export const makePiTextGeneration = Effect.fn("makePiTextGeneration")(function* 
       if (!text) {
         return yield* new TextGenerationError({
           operation,
-          detail: turnError ?? "Pi returned empty output.",
+          detail: turnError ?? `${omp ? "OMP" : "Pi"} returned empty output.`,
         });
       }
       return yield* TextGenerationOperations.decodeJsonReply(request, omp ? "OMP" : "Pi", text);

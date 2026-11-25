@@ -1,12 +1,13 @@
 <p align="center">
-  <a href="https://t3.codes">
-    <img src="./assets/prod/t3-black-web-icon-192x192.png" width="80" height="80" alt="T3 Code logo" />
-  </a>
+  <img src="./assets/prod/t3-black-web-icon-192x192.png" width="80" height="80" alt="Rutico logo" />
 </p>
 
-<h1 align="center">T3 Code</h1>
+<h1 align="center">Rutico</h1>
 
-<p align="center">The open-source control plane for coding agents.</p>
+<p align="center">Unofficial privacy-hardened fork of T3 Code with native Oh My Pi (OMP), Antigravity, Paseo-style mobile layout, and official T3 iPad compatibility.</p>
+
+> [!NOTE]
+> **Unofficial Fork Notice**: **Rutico** is an independent, unofficial fork of [T3 Code](https://github.com/pingdotgg/t3code) source code (MIT licensed) and is not affiliated with or endorsed by T3 Tools, Inc. See [Trademarks and forks](#trademarks-and-forks) and [TRADEMARK.md](./TRADEMARK.md).
 
 <p align="center">
   <a href="https://t3.codes/download"><strong>Download</strong></a> ·

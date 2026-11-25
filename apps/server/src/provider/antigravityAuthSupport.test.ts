@@ -146,6 +146,18 @@ describe("Antigravity process environment", () => {
     });
     expect(business.GEMINI_API_KEY).toBeUndefined();
     expect(business.GOOGLE_API_KEY).toBeUndefined();
+    expect(business.GOOGLE_GENAI_USE_VERTEXAI).toBeUndefined();
+
+    const vertexGcp = spawnFor({
+      authMethod: "agent-platform",
+      apiKey: "",
+      gcpProject: "vertex-proj",
+      gcpLocation: "us-central1",
+    });
+    expect(vertexGcp.GOOGLE_GENAI_USE_VERTEXAI).toBe("true");
+    expect(vertexGcp.GOOGLE_CLOUD_PROJECT).toBe("vertex-proj");
+    expect(vertexGcp.GOOGLE_CLOUD_LOCATION).toBe("us-central1");
+    expect(vertexGcp.GOOGLE_API_KEY).toBeUndefined();
 
     // Never inject a fake SSH_CONNECTION for any auth method.
     for (const env of [
@@ -902,6 +914,21 @@ it.layer(NodeServices.layer)("Antigravity profile preparation", (it) => {
         expect(Result.isFailure(result)).toBe(true);
         expect(yield* fs.exists(profileDirectory)).toBe(false);
       }
+    }),
+  );
+
+  it.effect("skips profile symlinks and settings.json writes when nativeProfile is true", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const temporaryDirectory = yield* fs.makeTempDirectoryScoped();
+      const profileDirectory = path.join(temporaryDirectory, "profile");
+      const profile = yield* prepareAntigravityProfile({
+        profileDirectory,
+        nativeProfile: true,
+      });
+      expect(yield* fs.exists(profile.tempDirectory)).toBe(true);
+      expect(yield* fs.exists(path.join(profile.acpDirectory, "settings.json"))).toBe(false);
     }),
   );
 });

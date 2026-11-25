@@ -1,12 +1,11 @@
 import { StackActions, useNavigation } from "@react-navigation/native";
 import { createContext, use } from "react";
-import { Platform } from "react-native";
 
 import { resolveMobileSideThreadPresentation } from "@t3tools/client-runtime/side-thread";
 
 import { useWorkspacePaneState } from "../layout/AdaptiveWorkspaceLayout";
 
-export type ThreadInspectorMode = "route" | "git" | "files" | "preview";
+export type ThreadInspectorMode = "route" | "git" | "files" | "terminal" | "preview";
 
 export type ThreadInspectorTarget = {
   /** "linkedThread" is a thread on a linked environment, read through `linked.viaEnvironmentId`. */
@@ -36,7 +35,7 @@ export function useOpenThreadInspector() {
     target: ThreadInspectorTarget,
   ) => {
     const presentation = resolveMobileSideThreadPresentation({
-      inspectorAvailable: Platform.OS === "ios" && fileInspector.supported,
+      inspectorAvailable: fileInspector.supported,
     });
     if (presentation === "full-screen") return false;
     if (openInInspector) openInInspector(target);

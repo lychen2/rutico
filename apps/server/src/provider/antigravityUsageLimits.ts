@@ -5,6 +5,7 @@ import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
+import type * as Scope from "effect/Scope";
 import * as Stream from "effect/Stream";
 import * as ChildProcess from "effect/process/ChildProcess";
 import * as ChildProcessSpawner from "effect/process/ChildProcessSpawner";
@@ -275,6 +276,8 @@ export const makeAntigravityUsageProbe = Effect.fn("makeAntigravityUsageProbe")(
   readonly authMethod: AntigravitySettings["authMethod"];
   readonly resolveExecutable: Effect.Effect<{ readonly executablePath: string }, unknown>;
   readonly environment: NodeJS.ProcessEnv;
+  readonly cwd?: string;
+  readonly makeProbeCwd?: Effect.Effect<string, unknown, Scope.Scope>;
 }) {
   const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
 
@@ -286,12 +289,16 @@ export const makeAntigravityUsageProbe = Effect.fn("makeAntigravityUsageProbe")(
     const executable = yield* input.resolveExecutable;
     const requestedAt = yield* Clock.currentTimeMillis;
     const stdout = yield* Effect.gen(function* () {
+      const probeCwd = input.makeProbeCwd
+        ? yield* input.makeProbeCwd.pipe(Effect.option, Effect.map(Option.getOrUndefined))
+        : input.cwd;
       const child = yield* spawner.spawn(
         ChildProcess.make(
           executable.executablePath,
           ["-p", "/usage", "--output-format", "json", "--print-timeout", "15s"],
           {
             env: buildCliUsageEnvironment(input.environment),
+            ...(probeCwd === undefined ? {} : { cwd: probeCwd }),
             extendEnv: false,
             shell: false,
             stdin: "ignore",

@@ -263,3 +263,128 @@ it("collects today's tasks with a 04:00 local rollover and excludes running and 
   const overviewAfterRollover = buildSidebarOverview(threads, afterRolloverNow, {});
   expect(overviewAfterRollover.todayTasks).toEqual([]);
 });
+
+it("excludes finished cross-environment delegated tasks from attention and today's tasks unless orphaned", () => {
+  const home = EnvironmentId.make("home");
+  const remote = EnvironmentId.make("remote");
+  const root = makeThreadFixture({
+    environmentId: home,
+    id: ThreadId.make("root"),
+    createdAt: start,
+    updatedAt: start,
+  });
+  const archivedRoot = makeThreadFixture({
+    environmentId: home,
+    id: ThreadId.make("archived-root"),
+    createdAt: start,
+    updatedAt: start,
+    archivedAt: now,
+  });
+  const finishedRemoteChild = makeThreadFixture({
+    environmentId: remote,
+    id: ThreadId.make("remote-done"),
+    delegatedFrom: { environmentId: home, threadId: root.id, title: root.title },
+    createdAt: end,
+    updatedAt: end,
+    lastVisitedAt: start,
+    latestRun: {
+      runId: RunId.make("run-done"),
+      status: "completed",
+      requestedAt: start,
+      startedAt: start,
+      completedAt: end,
+      assistantMessageId: null,
+    },
+  });
+  const failedRemoteChild = makeThreadFixture({
+    environmentId: remote,
+    id: ThreadId.make("remote-fail"),
+    delegatedFrom: { environmentId: home, threadId: root.id, title: root.title },
+    createdAt: end,
+    updatedAt: end,
+    lastVisitedAt: start,
+    latestRun: {
+      runId: RunId.make("run-fail"),
+      status: "failed",
+      requestedAt: start,
+      startedAt: start,
+      completedAt: end,
+      assistantMessageId: null,
+    },
+  });
+  const orphanedRemoteChild = makeThreadFixture({
+    environmentId: remote,
+    id: ThreadId.make("remote-orphan"),
+    delegatedFrom: {
+      environmentId: home,
+      threadId: archivedRoot.id,
+      title: archivedRoot.title,
+    },
+    createdAt: end,
+    updatedAt: end,
+    lastVisitedAt: start,
+    latestRun: {
+      runId: RunId.make("run-orphan"),
+      status: "completed",
+      requestedAt: start,
+      startedAt: start,
+      completedAt: end,
+      assistantMessageId: null,
+    },
+  });
+
+  const overview = buildSidebarOverview(
+    [root, archivedRoot, finishedRemoteChild, failedRemoteChild, orphanedRemoteChild],
+    now,
+    {},
+  );
+  expect(overview.attention.map((row) => [row.ref.threadId, row.status])).toEqual([
+    [orphanedRemoteChild.id, "unread"],
+  ]);
+  expect(overview.attentionCount).toBe(0);
+  expect(overview.todayTasks.map((row) => row.ref.threadId)).toEqual([root.id]);
+});
+
+it("suppresses stale running and approval states for disconnected environments until they reconnect", () => {
+  const home = EnvironmentId.make("home");
+  const remote = EnvironmentId.make("remote");
+  const root = makeThreadFixture({
+    environmentId: home,
+    id: ThreadId.make("home-root"),
+    createdAt: start,
+  });
+  const cachedRunningChild = makeThreadFixture({
+    environmentId: remote,
+    id: ThreadId.make("remote-running"),
+    delegatedFrom: { environmentId: home, threadId: root.id, title: root.title },
+    createdAt: end,
+    updatedAt: end,
+    hasPendingApprovals: true,
+    runtime: {
+      status: "running",
+      activeRunId: RunId.make("remote-run"),
+      providerInstanceId: root.providerInstanceId,
+      providerName: null,
+      lastError: null,
+      updatedAt: end,
+    },
+  });
+  const disconnected = new Set([remote]);
+  const threads = [root, cachedRunningChild];
+
+  const offlineOverview = buildSidebarOverview(threads, now, {}, {}, disconnected);
+  expect(offlineOverview.active).toEqual([]);
+  expect(offlineOverview.attention).toEqual([]);
+  expect(collectActiveOverviewKeys(threads, disconnected).size).toBe(0);
+
+  const reconnectedOverview = buildSidebarOverview(threads, now, {}, {}, undefined);
+  expect(reconnectedOverview.active).toHaveLength(1);
+  expect(reconnectedOverview.active[0]?.children.map((row) => row.ref.threadId)).toEqual([
+    cachedRunningChild.id,
+  ]);
+  expect(
+    collectActiveOverviewKeys(threads).has(
+      scopedThreadKey(scopeThreadRef(remote, cachedRunningChild.id)),
+    ),
+  ).toBe(true);
+});

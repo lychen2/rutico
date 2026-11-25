@@ -1,4 +1,5 @@
 import { useGT, useMessages } from "gt-react-native";
+import { use } from "react";
 
 import { AppBar } from "../../components/ui/AppBar";
 import type { AppBarAction, AppBarMenu } from "../../components/ui/AppBar.types";
@@ -6,6 +7,7 @@ import {
   useAdaptiveWorkspaceLayout,
   useWorkspacePaneState,
 } from "../layout/AdaptiveWorkspaceLayout";
+import { AndroidPaseoPanelsContext } from "../layout/android-paseo-panels-context";
 import type { ThreadInspectorMode } from "./thread-inspector-navigation";
 import { useWorkspaceBackNavigation } from "../layout/workspace/useAndroidWorkspaceNavigation";
 import {
@@ -29,21 +31,50 @@ export function ThreadHeader(props: {
   const goBack = useWorkspaceBackNavigation();
   const { toggleAuxiliaryPane, startNewTask } = useAdaptiveWorkspaceLayout();
   const { panes } = useWorkspacePaneState();
+  const paseoPanels = use(AndroidPaseoPanelsContext);
   const gitMenu = useThreadGitMenuDefinition(props.gitControls);
   const terminalMenu = threadTerminalMenu(props.gitControls, m);
   const filesVisible = props.inspectorMode === "files" && panes.auxiliaryPaneVisible;
-  const actions: AppBarAction[] = props.hasThreadCwd
-    ? [
-        {
-          accessibilityLabel: filesVisible ? gt("Close files") : gt("Open files"),
-          icon: "folder",
-          selected: filesVisible,
-          disabled: !props.gitControls.canOpenFiles,
-          separateBackground: false,
-          onPress: filesVisible ? toggleAuxiliaryPane : props.onOpenFilesInspector,
-        },
-      ]
-    : [];
+  const actions: AppBarAction[] = [
+    ...(paseoPanels !== null
+      ? [
+          {
+            accessibilityLabel: gt("Open agents drawer"),
+            icon: "sidebar.left" as const,
+            selected: paseoPanels.activePanel === -1,
+            separateBackground: false,
+            onPress: paseoPanels.openLeftDrawer,
+          },
+        ]
+      : []),
+    ...(props.hasThreadCwd
+      ? [
+          {
+            accessibilityLabel: filesVisible ? gt("Close files") : gt("Open files"),
+            icon: "folder" as const,
+            selected: filesVisible,
+            disabled: !props.gitControls.canOpenFiles,
+            separateBackground: false,
+            onPress: filesVisible ? toggleAuxiliaryPane : props.onOpenFilesInspector,
+          },
+        ]
+      : []),
+    ...(paseoPanels !== null
+      ? [
+          {
+            accessibilityLabel:
+              paseoPanels.activePanel === 1 ? gt("Close workbench") : gt("Open workbench"),
+            icon: "sidebar.right" as const,
+            selected: paseoPanels.activePanel === 1,
+            separateBackground: false,
+            onPress: () =>
+              paseoPanels.activePanel === 1
+                ? paseoPanels.closePanels()
+                : paseoPanels.openRightWorkbench(),
+          },
+        ]
+      : []),
+  ];
   const menus = [gitMenu, terminalMenu].filter((menu): menu is AppBarMenu => menu !== null);
 
   return (

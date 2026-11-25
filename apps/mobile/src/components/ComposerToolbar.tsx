@@ -295,7 +295,9 @@ export function ComposerActionButton(props: {
   readonly onTouchStart?: PressableProps["onTouchStart"];
 }) {
   const { scale, smallIconSize } = useAndroidControlSizing();
-  const circleSize = Math.round((props.size === "large" ? 44 : 30) * scale);
+  const circleSize = Math.round(
+    (props.size === "large" ? 44 : Platform.OS === "android" ? 36 : 30) * scale,
+  );
   const fadeIcon = props.disabled === true && props.variant !== "danger";
   return (
     <Pressable

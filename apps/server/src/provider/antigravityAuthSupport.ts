@@ -58,6 +58,8 @@ const browserHelperSource =
   `"${ANTIGRAVITY_AUTH_BROWSER_MARKER}"+JSON.stringify(process.argv[1])+"\\n",` +
   `()=>process.exit(0))`;
 const browserPreflightUrl = "https://example.invalid/t3-antigravity-browser-preflight";
+const MAX_CACHED_BROWSER_HELPERS = 32;
+const verifiedBrowserHelpers = new Set<string>();
 
 const removedEnvironmentKeys = new Set([
   "GEMINI_API_KEY",
@@ -210,12 +212,21 @@ function antigravityEnvironment(
     // Windows treats environment keys as case-insensitive. Remove aliases too.
     if (!removedEnvironmentKeys.has(key.toUpperCase())) environment[key] = value;
   }
-  // Put the GCP pair in settings.json because GOOGLE_API_KEY takes precedence in the environment.
+  // Pass Vertex AI project settings via environment as well so native (~/.gemini) runs use the configured GCP target.
   const credential =
     auth.authMethod === "gemini-api-key" && auth.apiKey
       ? { GEMINI_API_KEY: auth.apiKey }
-      : auth.authMethod === "agent-platform" && auth.apiKey
-        ? { GOOGLE_API_KEY: auth.apiKey }
+      : auth.authMethod === "agent-platform"
+        ? {
+            ...(auth.apiKey ? { GOOGLE_API_KEY: auth.apiKey } : {}),
+            ...(auth.gcpProject && auth.gcpLocation
+              ? {
+                  GOOGLE_GENAI_USE_VERTEXAI: "true",
+                  GOOGLE_CLOUD_PROJECT: auth.gcpProject,
+                  GOOGLE_CLOUD_LOCATION: auth.gcpLocation,
+                }
+              : {}),
+          }
         : {};
   // Each launch unpacks about 1 GB; use T3-owned temp so the driver can reclaim files after force-kill.
   const tempDirectory = runtimeTempDirectory ?? profile.tempDirectory;
@@ -391,6 +402,7 @@ export const prepareAntigravityProfile = Effect.fn("prepareAntigravityProfile")(
   readonly auth?: AntigravityAuthConfig;
   readonly userHome?: string;
   readonly tempDirectory?: string;
+  readonly nativeProfile?: boolean;
 }) {
   const auth = input.auth ?? ANTIGRAVITY_PERSONAL_AUTH;
   const fs = yield* FileSystem.FileSystem;
@@ -465,46 +477,61 @@ export const prepareAntigravityProfile = Effect.fn("prepareAntigravityProfile")(
     ...(caBundlePath === undefined ? {} : { caBundlePath }),
   };
   const environment = antigravityEnvironment(profile, input.baseEnv ?? process.env, auth);
-  yield* Effect.gen(function* () {
-    const child = yield* spawner.spawn(
-      ChildProcess.make(helperExecutable, ["-e", browserHelperSource, "--", browserPreflightUrl], {
-        env: environment,
-        extendEnv: false,
-        shell: false,
+  const browserHelperCacheKey = `${helperExecutable}\0${browserCommand}`;
+  if (!verifiedBrowserHelpers.has(browserHelperCacheKey)) {
+    yield* Effect.gen(function* () {
+      const child = yield* spawner.spawn(
+        ChildProcess.make(
+          helperExecutable,
+          ["-e", browserHelperSource, "--", browserPreflightUrl],
+          {
+            env: environment,
+            extendEnv: false,
+            shell: false,
+          },
+        ),
+      );
+      const [stdout, stderr, exitCode] = yield* Effect.all(
+        [
+          collectUint8StreamText({ stream: child.stdout, maxBytes: 4_096 }),
+          collectUint8StreamText({ stream: child.stderr, maxBytes: 4_096 }),
+          child.exitCode,
+        ],
+        { concurrency: "unbounded" },
+      );
+      if (
+        Number(exitCode) !== 0 ||
+        stdout.bytes !== 0 ||
+        stdout.truncated ||
+        stderr.truncated ||
+        stderr.text !== `${ANTIGRAVITY_AUTH_BROWSER_MARKER}"${browserPreflightUrl}"\n`
+      ) {
+        return yield* authSupportError("Antigravity browser suppression could not be verified.");
+      }
+    }).pipe(
+      Effect.scoped,
+      Effect.timeoutOrElse({
+        duration: "30 seconds",
+        orElse: () =>
+          Effect.fail(authSupportError("Antigravity browser suppression verification timed out.")),
       }),
+      Effect.mapError((error) =>
+        error._tag === "AcpTransportError"
+          ? error
+          : authSupportError("Antigravity browser suppression could not be verified."),
+      ),
     );
-    const [stdout, stderr, exitCode] = yield* Effect.all(
-      [
-        collectUint8StreamText({ stream: child.stdout, maxBytes: 4_096 }),
-        collectUint8StreamText({ stream: child.stderr, maxBytes: 4_096 }),
-        child.exitCode,
-      ],
-      { concurrency: "unbounded" },
-    );
-    if (
-      Number(exitCode) !== 0 ||
-      stdout.bytes !== 0 ||
-      stdout.truncated ||
-      stderr.truncated ||
-      stderr.text !== `${ANTIGRAVITY_AUTH_BROWSER_MARKER}"${browserPreflightUrl}"\n`
-    ) {
-      return yield* authSupportError("Antigravity browser suppression could not be verified.");
+    if (verifiedBrowserHelpers.size >= MAX_CACHED_BROWSER_HELPERS) {
+      const oldest = verifiedBrowserHelpers.values().next().value;
+      if (oldest !== undefined) verifiedBrowserHelpers.delete(oldest);
     }
-  }).pipe(
-    Effect.scoped,
-    Effect.timeoutOrElse({
-      duration: "30 seconds",
-      orElse: () =>
-        Effect.fail(authSupportError("Antigravity browser suppression verification timed out.")),
-    }),
-    Effect.mapError((error) =>
-      error._tag === "AcpTransportError"
-        ? error
-        : authSupportError("Antigravity browser suppression could not be verified."),
-    ),
-  );
+    verifiedBrowserHelpers.add(browserHelperCacheKey);
+  }
 
-  for (const directory of [geminiHome, acpDirectory, tempDirectory]) {
+  const directoriesToPrepare = input.nativeProfile
+    ? [tempDirectory]
+    : [geminiHome, acpDirectory, tempDirectory];
+  for (const directory of directoriesToPrepare) {
     yield* fs
       .makeDirectory(directory, { recursive: true, mode: 0o700 })
       .pipe(
@@ -522,16 +549,18 @@ export const prepareAntigravityProfile = Effect.fn("prepareAntigravityProfile")(
         );
     }
   }
-  yield* fs
-    .writeFileString(path.join(acpDirectory, "settings.json"), antigravityProfileSettings(auth))
-    .pipe(
-      Effect.mapError(() =>
-        authSupportError("The Antigravity profile settings could not be written."),
-      ),
-    );
-  yield* linkAntigravityUserConfig({ profileDirectory: geminiHome, userHome, platform });
-  if (platform === "win32") {
-    yield* copyAntigravityUserConfigFiles({ profileDirectory: geminiHome, userHome });
+  if (!input.nativeProfile) {
+    yield* fs
+      .writeFileString(path.join(acpDirectory, "settings.json"), antigravityProfileSettings(auth))
+      .pipe(
+        Effect.mapError(() =>
+          authSupportError("The Antigravity profile settings could not be written."),
+        ),
+      );
+    yield* linkAntigravityUserConfig({ profileDirectory: geminiHome, userHome, platform });
+    if (platform === "win32") {
+      yield* copyAntigravityUserConfigFiles({ profileDirectory: geminiHome, userHome });
+    }
   }
   return profile;
 });

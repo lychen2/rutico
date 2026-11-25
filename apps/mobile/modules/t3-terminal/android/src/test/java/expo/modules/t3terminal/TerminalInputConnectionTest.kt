@@ -1,5 +1,6 @@
 package expo.modules.t3terminal
 
+import android.text.InputType
 import android.view.inputmethod.EditorInfo
 import android.widget.EditText
 import org.junit.Assert.assertEquals
@@ -93,5 +94,20 @@ class TerminalInputConnectionTest {
     connection.deleteSurroundingText(1, 0)
 
     assertEquals(listOf(1, 1), deletes)
+  }
+
+  @Test
+  fun editorInfoDisablesPersonalizedKeyboardLearning() {
+    val outAttrs = EditorInfo()
+    configureTerminalEditorInfo(outAttrs)
+
+    assertEquals(
+      EditorInfo.IME_FLAG_NO_PERSONALIZED_LEARNING,
+      outAttrs.imeOptions and EditorInfo.IME_FLAG_NO_PERSONALIZED_LEARNING,
+    )
+    assertEquals(
+      InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS,
+      outAttrs.inputType and InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS,
+    )
   }
 }

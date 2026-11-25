@@ -401,6 +401,7 @@ describe("ApnsClient", () => {
       expect(recorded).toContain("relay.apns.send_live_activity_request");
       expect(recorded).toContain("ApnsHttpRequestError");
       expect(recorded).not.toContain("device-token");
+      expect(recorded).not.toContain("ce-token");
       ApnsProviderTokens.__resetApnsProviderTokenCacheForTest();
     }).pipe(Effect.provide(layer));
   });

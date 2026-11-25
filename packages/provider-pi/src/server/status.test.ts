@@ -12,7 +12,7 @@ import * as Stream from "effect/Stream";
 import * as ChildProcess from "effect/process/ChildProcess";
 import * as ChildProcessSpawner from "effect/process/ChildProcessSpawner";
 
-import { checkPiProviderStatus } from "./status.ts";
+import { checkOmpStatus, checkPiProviderStatus } from "./status.ts";
 
 const encoder = new TextEncoder();
 const decodeRpcRequest = Schema.decodeSync(
@@ -507,6 +507,32 @@ describe("PiProvider", () => {
       );
       assert.equal(snapshot.status, "ready");
       assert.equal(snapshot.auth.status, "unknown");
+    }).pipe(Effect.provide(NodeServices.layer)),
+  );
+
+  it.effect("defaults empty binaryPath to 'omp' when probing OMP status", () =>
+    Effect.gen(function* () {
+      const spawnedCommands: Array<string> = [];
+      const spawner = ChildProcessSpawner.make((command) => {
+        if (ChildProcess.isStandardCommand(command)) {
+          spawnedCommands.push(command.command);
+        }
+        const args = ChildProcess.isStandardCommand(command) ? command.args : [];
+        return Effect.succeed(
+          args.includes("--version")
+            ? processHandle({ stdout: "omp 19.1.1\n" })
+            : processHandle({ stderr: "RPC unavailable", exitCode: 1 }),
+        );
+      });
+      const snapshot = yield* checkOmpStatus(
+        { enabled: true, binaryPath: "", launchArgs: "", customModels: [] },
+        {},
+        "/tmp/omp-probe",
+      ).pipe(Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner));
+      assert.equal(snapshot.installed, true);
+      assert.equal(snapshot.version, "19.1.1");
+      assert.isTrue(spawnedCommands.length > 0);
+      assert.isTrue(spawnedCommands.every((cmd) => cmd.endsWith("omp")));
     }).pipe(Effect.provide(NodeServices.layer)),
   );
 });

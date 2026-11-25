@@ -136,6 +136,7 @@ import { useCopyToClipboard } from "../hooks/useCopyToClipboard";
 import { useLocalStorage } from "../hooks/useLocalStorage";
 import { useNowMinute } from "../hooks/useNowMinute";
 import {
+  useEnvironments,
   useEnvironmentIdentities,
   useConnectedEnvironmentIds,
   useEnvironmentMachines,
@@ -252,7 +253,10 @@ import {
 import { SidebarContent, SidebarGroup, useSidebar } from "./ui/sidebar";
 import { SidebarChromeFooter, SidebarChromeHeader } from "./sidebar/SidebarChrome";
 import { SidebarOverview, type SidebarOverviewActions } from "./sidebar/SidebarOverview";
-import { collectActiveOverviewKeys } from "./sidebar/SidebarOverview.logic";
+import {
+  collectActiveOverviewKeys,
+  collectDisconnectedEnvironmentIds,
+} from "./sidebar/SidebarOverview.logic";
 import { SidebarHeaderIconButton, SidebarThreadHeader } from "./sidebar/SidebarThreadHeader";
 import { TooltipProvider } from "./ui/tooltip";
 import {
@@ -1184,7 +1188,12 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
     clearSelection();
     setPersistedProjectScopeKeys([]);
   }, [clearSelection, revealWidensScope, setPersistedProjectScopeKeys]);
-  const activeOverviewKeys = collectActiveOverviewKeys(listedThreads);
+  const environmentsState = useEnvironments();
+  const disconnectedEnvironmentIds = collectDisconnectedEnvironmentIds(
+    environmentsState.isReady,
+    environmentsState.environments,
+  );
+  const activeOverviewKeys = collectActiveOverviewKeys(listedThreads, disconnectedEnvironmentIds);
   const isRouteRunningInOverview =
     routeRowThreadKey !== null && activeOverviewKeys.has(routeRowThreadKey);
   const revealActiveRow = useActiveRowReveal(

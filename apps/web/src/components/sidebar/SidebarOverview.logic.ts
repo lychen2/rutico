@@ -7,7 +7,7 @@ import {
 import { effectiveSnoozed } from "@t3tools/client-runtime/state/thread-settled";
 import { resolveListedAncestorThreadRef } from "@t3tools/client-runtime/state/threads";
 import { backgroundWorkHoldsCompletion } from "@t3tools/shared/orchestrationV2PendingBackgroundWork";
-import type { ScopedThreadRef } from "@t3tools/contracts";
+import type { EnvironmentId, ScopedThreadRef } from "@t3tools/contracts";
 import * as DateTime from "effect/DateTime";
 import { hasUnseenCompletion, resolveThreadLastVisitedAt } from "../Sidebar.logic";
 
@@ -112,11 +112,42 @@ const attentionRank: Record<AttentionStatus, number> = {
   unread: 2,
 };
 
+export function collectDisconnectedEnvironmentIds(
+  isReady: boolean,
+  environments: ReadonlyArray<{
+    readonly environmentId: EnvironmentId;
+    readonly entry: { readonly enabled: boolean };
+    readonly connection: { readonly phase: string };
+  }>,
+): ReadonlySet<EnvironmentId> | undefined {
+  if (!isReady || environments.length === 0) return undefined;
+  const disconnected = new Set<EnvironmentId>();
+  for (const environment of environments) {
+    if (environment.entry.enabled && environment.connection.phase !== "connected") {
+      disconnected.add(environment.environmentId);
+    }
+  }
+  return disconnected.size > 0 ? disconnected : undefined;
+}
+
+function isDelegatedUnderListedParent(
+  thread: EnvironmentThreadShell,
+  ref: ScopedThreadRef,
+  key: string,
+  liveThreads: readonly EnvironmentThreadShell[],
+): boolean {
+  return (
+    thread.delegatedFrom !== null &&
+    scopedThreadKey(resolveListedAncestorThreadRef(ref, liveThreads)) !== key
+  );
+}
+
 export function buildSidebarOverview(
   threads: readonly EnvironmentThreadShell[],
   now: string,
   localVisits: Readonly<Record<string, string | undefined>>,
   acknowledgedErrors: Readonly<Record<string, string | undefined>> = {},
+  disconnectedEnvironmentIds?: ReadonlySet<EnvironmentId>,
 ) {
   const liveThreads = threads.filter((thread) => thread.deletedAt === null);
   const byKey = new Map<string, EnvironmentThreadShell>();
@@ -127,13 +158,19 @@ export function buildSidebarOverview(
     const ref = scopeThreadRef(thread.environmentId, thread.id);
     const key = scopedThreadKey(ref);
     byKey.set(key, thread);
-    const request = thread.hasPendingApprovals
-      ? "approval"
-      : thread.hasPendingUserInput
-        ? "input"
-        : null;
+    const isDisconnectedEnvironment =
+      disconnectedEnvironmentIds?.has(thread.environmentId) === true;
+    const request = isDisconnectedEnvironment
+      ? null
+      : thread.hasPendingApprovals
+        ? "approval"
+        : thread.hasPendingUserInput
+          ? "input"
+          : null;
     const waitsForBackground = backgroundWorkHoldsCompletion(thread.pendingBackgroundTasks);
-    const status = activeStatus(thread, request, waitsForBackground);
+    const status = isDisconnectedEnvironment
+      ? null
+      : activeStatus(thread, request, waitsForBackground);
     const run = thread.latestRun;
     if (status !== null) {
       const started = resolveThreadWorkingStartedAt(thread);
@@ -171,6 +208,7 @@ export function buildSidebarOverview(
       status !== null ||
       thread.archivedAt !== null ||
       thread.lineage.relationshipToParent === "subagent" ||
+      isDelegatedUnderListedParent(thread, ref, key, liveThreads) ||
       thread.pendingBackgroundTasks.some((task) => task.kind === "monitor")
     ) {
       continue;
@@ -244,15 +282,16 @@ export function buildSidebarOverview(
   const todayTasks: OverviewRow<TodayStatus>[] = [];
   if (todayStartMs !== null) {
     for (const thread of liveThreads) {
+      const ref = scopeThreadRef(thread.environmentId, thread.id);
+      const key = scopedThreadKey(ref);
       if (
         thread.archivedAt !== null ||
         thread.lineage.relationshipToParent === "subagent" ||
+        isDelegatedUnderListedParent(thread, ref, key, liveThreads) ||
         effectiveSnoozed(thread, { now })
       ) {
         continue;
       }
-      const ref = scopeThreadRef(thread.environmentId, thread.id);
-      const key = scopedThreadKey(ref);
       if (shownTopKeys.has(key)) continue;
       const timestamp = resolveTodayTaskTimestamp(thread);
       if (timestamp === null || timestamp < todayStartMs) continue;
@@ -270,10 +309,12 @@ export function buildSidebarOverview(
 
 export function collectActiveOverviewKeys(
   threads: readonly EnvironmentThreadShell[],
+  disconnectedEnvironmentIds?: ReadonlySet<EnvironmentId>,
 ): ReadonlySet<string> {
   const liveThreads = threads.filter((thread) => thread.deletedAt === null);
   const keys = new Set<string>();
   for (const thread of liveThreads) {
+    if (disconnectedEnvironmentIds?.has(thread.environmentId) === true) continue;
     const request = thread.hasPendingApprovals
       ? "approval"
       : thread.hasPendingUserInput

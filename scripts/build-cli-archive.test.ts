@@ -9,7 +9,11 @@ import * as Sink from "effect/Sink";
 import * as Stream from "effect/Stream";
 import { ChildProcess, ChildProcessSpawner } from "effect/process";
 
-import { awaitCliNotarization, signMacArchiveContents } from "./build-cli-archive.ts";
+import {
+  awaitCliNotarization,
+  bundleLinuxLibatomic,
+  signMacArchiveContents,
+} from "./build-cli-archive.ts";
 
 const signedEnv = {
   T3CODE_CLI_MAC_SIGN_IDENTITY: "Developer ID Application: Test (TEAM)",
@@ -18,17 +22,17 @@ const signedEnv = {
   APPLE_API_ISSUER: "issuer",
 };
 
-type NotaryReply = { readonly exitCode: number; readonly stdout?: string };
+type CommandReply = { readonly exitCode: number; readonly stdout?: string };
 
-/** Stands in for `xcrun notarytool`, codesign and ditto; records each invocation. */
-function stubSpawner(notary: (subcommand: string) => NotaryReply) {
+/** Stands in for external CLI tools; records each invocation. */
+function stubCommandSpawner(handle: (argv: ReadonlyArray<string>) => CommandReply) {
   const calls: Array<ReadonlyArray<string>> = [];
   const spawner = ChildProcessSpawner.make((command) => {
     const argv = ChildProcess.isStandardCommand(command)
       ? [command.command, ...command.args.map(String)]
       : [];
     calls.push(argv);
-    const reply = argv[1] === "notarytool" ? notary(argv[2] ?? "") : { exitCode: 0 };
+    const reply = handle(argv);
     return Effect.succeed(
       ChildProcessSpawner.makeHandle({
         pid: ChildProcessSpawner.ProcessId(1),
@@ -48,9 +52,15 @@ function stubSpawner(notary: (subcommand: string) => NotaryReply) {
   return { calls, spawner };
 }
 
+function stubSpawner(notary: (subcommand: string) => CommandReply) {
+  return stubCommandSpawner((argv) =>
+    argv[1] === "notarytool" ? notary(argv[2] ?? "") : { exitCode: 0 },
+  );
+}
+
 const withStubs = <A, E, R>(
   effect: Effect.Effect<A, E, R>,
-  stub: ReturnType<typeof stubSpawner>,
+  stub: ReturnType<typeof stubCommandSpawner>,
   env: Record<string, string> = signedEnv,
 ) =>
   effect.pipe(
@@ -114,7 +124,7 @@ it.layer(NodeServices.layer)("build-cli-archive notarization", (it) => {
       const fs = yield* FileSystem.FileSystem;
       const cases: ReadonlyArray<{
         readonly name: string;
-        readonly wait: NotaryReply;
+        readonly wait: CommandReply;
         readonly submitted?: boolean;
         readonly env?: Record<string, string>;
         readonly error: string | undefined;
@@ -211,6 +221,105 @@ it.layer(NodeServices.layer)("build-cli-archive notarization", (it) => {
       ).pipe(Effect.flip);
       assert.equal(error._tag, "CliArchiveNotarizationRejectedError");
       assert.isTrue(notarySubcommands(stub.calls)[0]?.includes("--wait"));
+    }).pipe(Effect.scoped),
+  );
+});
+
+it.layer(NodeServices.layer)("build-cli-archive linux libatomic", (it) => {
+  it.effect("skips bundling when executable does not link libatomic.so.1", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const content = yield* makeContent();
+      const stub = stubCommandSpawner((argv) =>
+        argv[0] === "ldd"
+          ? { exitCode: 0, stdout: "\tlibc.so.6 => /usr/lib/libc.so.6 (0x00007f0000000000)\n" }
+          : { exitCode: 0 },
+      );
+
+      yield* withStubs(
+        bundleLinuxLibatomic({
+          repoRoot: content.root,
+          contentDir: content.contentDir,
+          executablePath: content.executablePath,
+        }),
+        stub,
+        {},
+      );
+      assert.deepEqual(stub.calls, [["ldd", content.executablePath]]);
+      assert.isFalse(yield* fs.exists(path.join(content.contentDir, "lib")));
+    }).pipe(Effect.scoped),
+  );
+
+  it.effect("fails with CliArchiveInputMissingError when libatomic.so.1 is not found", () =>
+    Effect.gen(function* () {
+      const content = yield* makeContent();
+      const stub = stubCommandSpawner((argv) =>
+        argv[0] === "ldd"
+          ? { exitCode: 0, stdout: "\tlibatomic.so.1 => not found\n" }
+          : { exitCode: 0 },
+      );
+
+      const error = yield* withStubs(
+        bundleLinuxLibatomic({
+          repoRoot: content.root,
+          contentDir: content.contentDir,
+          executablePath: content.executablePath,
+        }),
+        stub,
+        {},
+      ).pipe(Effect.flip);
+      assert.equal(error._tag, "CliArchiveInputMissingError");
+    }).pipe(Effect.scoped),
+  );
+
+  it.effect("falls back to pacman metadata locally when dpkg-query and patchelf are absent", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const content = yield* makeContent();
+      const fakeLib = path.join(content.root, "libatomic.so.1");
+      yield* fs.writeFileString(fakeLib, "elf");
+      yield* fs.makeDirectory(path.join(content.root, "scripts/licenses"), { recursive: true });
+      yield* fs.writeFileString(
+        path.join(content.root, "scripts/licenses/libatomic.LICENSE"),
+        "GCC EXCEPTION\n",
+      );
+
+      const stub = stubCommandSpawner((argv) => {
+        if (argv[0] === "ldd") {
+          return { exitCode: 0, stdout: `\tlibatomic.so.1 => ${fakeLib} (0x00007f0000000000)\n` };
+        }
+        if (argv[0] === "dpkg-query" || argv[0] === "patchelf") {
+          return { exitCode: 127 };
+        }
+        if (argv[0] === "pacman" && argv[1] === "-Qoq") {
+          return { exitCode: 0, stdout: "gcc-libs\n" };
+        }
+        if (argv[0] === "pacman" && argv[1] === "-Q") {
+          return { exitCode: 0, stdout: "gcc-libs 14.2.1-1\n" };
+        }
+        return { exitCode: 0 };
+      });
+
+      yield* withStubs(
+        bundleLinuxLibatomic({
+          repoRoot: content.root,
+          contentDir: content.contentDir,
+          executablePath: content.executablePath,
+        }),
+        stub,
+        {},
+      );
+      const licenseText = yield* fs.readFileString(
+        path.join(content.contentDir, "lib/libatomic.so.1.LICENSE"),
+      );
+      assert.include(
+        licenseText,
+        "libatomic.so.1 is copied from the host package gcc-libs 14.2.1-1.",
+      );
+      assert.include(licenseText, "GCC EXCEPTION");
+      assert.isTrue(yield* fs.exists(path.join(content.contentDir, "lib/libatomic.so.1")));
     }).pipe(Effect.scoped),
   );
 });

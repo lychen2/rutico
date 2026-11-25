@@ -41,14 +41,17 @@ const MIME_TYPES: Readonly<Record<string, string | undefined>> = {
   ".csv": "text/csv",
   ".txt": "text/plain",
 };
-const extensions = `\\.(?:${Object.keys(MIME_TYPES).map((key) => key.slice(1)).join("|")})`;
+const extensions = `\\.(?:${Object.keys(MIME_TYPES)
+  .map((key) => key.slice(1))
+  .join("|")})`;
 const referencePattern = new RegExp(
   String.raw`\]\(<?([^\n<>]*?${extensions})(?::\d+)?>?\)|[\x60"']([^\n\x60"']*?${extensions})[\x60"']|(?:^|[\s=(：，。；！？、（）【】《》「」『』“”‘’])((?:[a-z]:[/\\])?[^\s<>\x60"'()[\]{}:,;：，。；！？、（）【】《》「」『』“”‘’]+${extensions})(?=$|[\s)\],;:.：，。；！？、（）【】《》」』“”‘’])`,
   "gimu",
 );
 const commandDirectoryPattern =
   /(?:^|&&|\|\||[;\n])\s*cd\s+(?:--\s+)?(?:"([^"\n]+)"|'([^'\n]+)'|([^\s;&|]+))/g;
-const excludedPath = /(?:^|[/\\])(?:\.git|\.cache|node_modules|caches?|browser-artifacts)(?:[/\\]|$)/iu;
+const excludedPath =
+  /(?:^|[/\\])(?:\.git|\.cache|node_modules|caches?|browser-artifacts)(?:[/\\]|$)/iu;
 const excludedToolFields = { data: true, base64: true, diffStr: true, oldStr: true, newStr: true };
 const isAssetResource = Schema.is(AssetResource);
 const decodeMessage = Schema.decodeUnknownEffect(
@@ -61,7 +64,7 @@ const MAX_COMMAND_DIRECTORIES = 50;
 function pathReferences(value: unknown, visit: (path: string) => void, depth = 0) {
   if (depth > 12) return;
   if (typeof value === "string") {
-    if (/^\s*[\[{]/.test(value)) {
+    if (/^\s*[[{]/.test(value)) {
       try {
         const parsed: unknown = JSON.parse(value);
         pathReferences(parsed, visit, depth + 1);
@@ -108,10 +111,9 @@ type AttachmentResource = Extract<AssetResource, { readonly _tag: "attachment" }
 export class ThreadArtifacts extends Context.Service<
   ThreadArtifacts,
   {
-    readonly list: (threadId: ThreadId) => Effect.Effect<
-      { readonly artifacts: readonly ThreadArtifact[] },
-      ThreadArtifactsListError
-    >;
+    readonly list: (
+      threadId: ThreadId,
+    ) => Effect.Effect<{ readonly artifacts: readonly ThreadArtifact[] }, ThreadArtifactsListError>;
   }
 >()("t3/assets/ThreadArtifacts") {}
 
@@ -262,7 +264,10 @@ const make = Effect.gen(function* () {
         ([reference, fresh]) =>
           Effect.gen(function* () {
             if (isWindowsDrivePath(reference) && !path.isAbsolute(reference)) return null;
-            if (isNetworkPath(reference) && workspaceRelativeFilePath(reference, thread.cwd) === null) {
+            if (
+              isNetworkPath(reference) &&
+              workspaceRelativeFilePath(reference, thread.cwd) === null
+            ) {
               return null;
             }
             const inWorkspace = yield* probeReference(path.resolve(thread.cwd, reference), fresh);

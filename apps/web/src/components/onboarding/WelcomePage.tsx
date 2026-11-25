@@ -43,6 +43,7 @@ import { useEffect, useEffectEvent, useRef, useState, type ReactNode } from "rea
 import { TYPOGRAPHY_ADVANCED_STORAGE_KEY } from "../../appearanceFonts";
 import { MOBILE_APP_URL } from "../../branding";
 import { isElectron } from "../../env";
+import { RuticoHeroBackdrop } from "../RuticoHeroBackdrop";
 import { useLocalStorage } from "../../hooks/useLocalStorage";
 import { usePersistEnvironmentProviderInstanceMutation } from "../../hooks/useSettings";
 import { useCloudLinkState } from "../../cloud/cloudLinkState";
@@ -273,65 +274,68 @@ export function WelcomePage({
       role="main"
       className="h-dvh min-h-0 overflow-hidden overscroll-y-none"
     >
-      <div className="flex min-h-0 min-w-0 flex-1 flex-col bg-background">
+      <div className="relative flex min-h-0 min-w-0 flex-1 flex-col bg-background">
+        <RuticoHeroBackdrop />
         {/* The desktop window only moves where CSS opts in, so keep a titlebar strip. */}
-        {isElectron ? <WorkspacePageHeader electron /> : null}
-        <div className="min-h-0 flex-1 overflow-y-auto scrollbar-gutter-both">
-          <div className="mx-auto flex min-h-full w-full max-w-3xl flex-col px-6 pt-12 pb-8 sm:pt-20">
-            <h1 className="text-2xl font-semibold tracking-tight text-foreground">
-              <T>Welcome to T3 Code</T>
-            </h1>
-            <p className="mt-1.5 text-sm text-muted-foreground">
-              <T>
-                Setting up{" "}
-                <span className="text-foreground">
-                  <Var>{label}</Var>
-                </span>
-                .
-              </T>
-            </p>
-            <div className="mt-10 border-t border-border/60">
-              <AgentsSection
-                environmentId={environmentId}
-                label={label}
-                isPrimary={isPrimary}
-                onImportSourceEnabled={() => scans[0]?.refresh()}
-              />
-              <ProjectsSection
-                scan={scans[0]}
-                projectImport={projectImport}
-                isImporting={isImporting}
-              />
-              {showPhone ? <PhoneSection environmentId={environmentId} /> : null}
-            </div>
-            <div className="mt-6 flex flex-wrap items-center justify-between gap-3">
-              {agentReady ? (
-                <span />
-              ) : (
-                <Button variant="ghost-muted" disabled={isImporting} onClick={start}>
-                  <T>Start without an agent</T>
-                </Button>
-              )}
-              <div className="flex items-center gap-3">
-                {agentReady ? null : (
-                  <span className="text-xs text-muted-foreground">
-                    <T>Set up one agent to start.</T>
+        <div className="relative z-10 flex min-h-0 flex-1 flex-col">
+          {isElectron ? <WorkspacePageHeader electron /> : null}
+          <div className="min-h-0 flex-1 overflow-y-auto scrollbar-gutter-both">
+            <div className="mx-auto flex min-h-full w-full max-w-3xl flex-col px-6 pt-12 pb-8 sm:pt-20">
+              <h1 className="text-2xl font-semibold tracking-tight text-foreground">
+                <T>Welcome to Rutico</T>
+              </h1>
+              <p className="mt-1.5 text-sm text-muted-foreground">
+                <T>
+                  Setting up{" "}
+                  <span className="text-foreground">
+                    <Var>{label}</Var>
                   </span>
+                  .
+                </T>
+              </p>
+              <div className="mt-10 border-t border-border/60">
+                <AgentsSection
+                  environmentId={environmentId}
+                  label={label}
+                  isPrimary={isPrimary}
+                  onImportSourceEnabled={() => scans[0]?.refresh()}
+                />
+                <ProjectsSection
+                  scan={scans[0]}
+                  projectImport={projectImport}
+                  isImporting={isImporting}
+                />
+                {showPhone ? <PhoneSection environmentId={environmentId} /> : null}
+              </div>
+              <div className="mt-6 flex flex-wrap items-center justify-between gap-3">
+                {agentReady ? (
+                  <span />
+                ) : (
+                  <Button variant="ghost-muted" disabled={isImporting} onClick={start}>
+                    <T>Start without an agent</T>
+                  </Button>
                 )}
-                <Button disabled={!agentReady || isImporting} onClick={start}>
-                  {isImporting
-                    ? selected.length > 0
-                      ? gt("Importing…")
-                      : gt("Starting…")
-                    : newCount > 0
-                      ? gt(
-                          "{count, plural, one {Import {count} project and start} other {Import {count} projects and start}}",
-                          { count: newCount },
-                        )
-                      : selected.length > 0
-                        ? gt("Import threads and start")
-                        : gt("Start", { $context: "verb, finishes setup" })}
-                </Button>
+                <div className="flex items-center gap-3">
+                  {agentReady ? null : (
+                    <span className="text-xs text-muted-foreground">
+                      <T>Set up one agent to start.</T>
+                    </span>
+                  )}
+                  <Button disabled={!agentReady || isImporting} onClick={start}>
+                    {isImporting
+                      ? selected.length > 0
+                        ? gt("Importing…")
+                        : gt("Starting…")
+                      : newCount > 0
+                        ? gt(
+                            "{count, plural, one {Import {count} project and start} other {Import {count} projects and start}}",
+                            { count: newCount },
+                          )
+                        : selected.length > 0
+                          ? gt("Import threads and start")
+                          : gt("Start", { $context: "verb, finishes setup" })}
+                  </Button>
+                </div>
               </div>
             </div>
           </div>

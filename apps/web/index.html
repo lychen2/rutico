@@ -52,6 +52,20 @@
         // Keep this small boot-time copy in sync with the built-in palettes so
         // the selected theme is visible before the app has mounted.
         const BUILT_IN_THEME_PALETTES = {
+          rutico: {
+            light: {
+              background: "oklch(0.982 0.007 300)",
+              foreground: "oklch(0.220 0.036 296)",
+              accent: "oklch(0.515 0.180 289)",
+              chrome: "oklch(0.982 0.007 300)",
+            },
+            dark: {
+              background: "oklch(0.215 0.032 292)",
+              foreground: "oklch(0.970 0.012 298)",
+              accent: "oklch(0.765 0.128 292)",
+              chrome: "oklch(0.215 0.032 292)",
+            },
+          },
           "t3-chat": {
             light: {
               background: "oklch(0.982446 0.010114 325.653)",
@@ -133,6 +147,7 @@
           "system",
           "light",
           "dark",
+          "rutico",
           "t3-chat",
           "grove",
           "ocean",
@@ -681,13 +696,13 @@
       if (desktopDisplayName) document.title = desktopDisplayName;
     </script>
     <!-- vite.config.ts stamps the web build's channel into this title. -->
-    <title>T3 Code</title>
+    <title>Rutico</title>
   </head>
   <body>
     <div id="root">
       <div id="boot-shell">
-        <div id="boot-shell-card" aria-label="T3 Code splash screen">
-          <img id="boot-shell-logo" src="/apple-touch-icon.png" alt="T3 Code" />
+        <div id="boot-shell-card" aria-label="Rutico splash screen">
+          <img id="boot-shell-logo" src="/apple-touch-icon.png" alt="Rutico" />
         </div>
       </div>
     </div>

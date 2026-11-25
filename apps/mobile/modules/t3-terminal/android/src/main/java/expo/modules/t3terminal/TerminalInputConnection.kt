@@ -1,7 +1,21 @@
 package expo.modules.t3terminal
 
+import android.text.InputType
+import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.InputConnection
 import android.view.inputmethod.InputConnectionWrapper
+
+internal fun configureTerminalEditorInfo(outAttrs: EditorInfo) {
+  outAttrs.inputType =
+    InputType.TYPE_CLASS_TEXT or
+    InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD or
+    InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS
+  outAttrs.imeOptions =
+    outAttrs.imeOptions or
+    EditorInfo.IME_FLAG_NO_PERSONALIZED_LEARNING or
+    EditorInfo.IME_FLAG_NO_FULLSCREEN or
+    EditorInfo.IME_FLAG_NO_EXTRACT_UI
+}
 
 private const val MAX_DELETE_LENGTH = 1024
 

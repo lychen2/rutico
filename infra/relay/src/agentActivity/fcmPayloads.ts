@@ -1,9 +1,24 @@
+import { sha256 } from "@noble/hashes/sha2";
 import type { RelayAgentActivityAggregateState } from "@t3tools/contracts/relay";
+import * as Hex from "effect/encoding/Hex";
 import {
   activityPhasePriority,
   TERMINAL_AGENT_ACTIVITY_DISPLAY_TTL_MS,
 } from "./agentActivityAggregate.ts";
 import { agentActivityExpiresAt } from "./agentActivityPayloads.ts";
+
+const textEncoder = new TextEncoder();
+
+/**
+ * Lets the device ignore pushes for an account it no longer has without FCM
+ * seeing the raw account id. Salted per-device with `deviceId`.
+ */
+export function androidRecipientData(userId: string, deviceId: string) {
+  return {
+    device_id: deviceId,
+    user_hash: Hex.encode(sha256(textEncoder.encode(`${userId}:${deviceId}`))),
+  };
+}
 
 export function androidActivityData(aggregate: RelayAgentActivityAggregateState | null) {
   const rows = [...(aggregate?.activities ?? [])].sort(

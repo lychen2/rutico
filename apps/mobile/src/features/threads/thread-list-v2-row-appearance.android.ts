@@ -2,7 +2,7 @@ import { msg } from "gt-react-native";
 import type { ViewStyle } from "react-native";
 
 import { m, type MessageResolver } from "../../i18n/messages";
-import type { MobileThemeVariables } from "../../lib/mobileTheme";
+import { themeColorWithAlpha, type MobileThemeVariables } from "../../lib/mobileTheme";
 
 export const THREAD_LIST_V2_MONO_FONT = "monospace";
 export const THREAD_LIST_V2_ROW_CONTENT_CLASS_NAME = "px-3 py-2.5";
@@ -34,11 +34,20 @@ export function getThreadListV2RowAppearance(
   theme: MobileThemeVariables,
   sidebarPane: boolean,
   selected: boolean,
+  options?: { readonly translucent?: boolean },
 ) {
   const selectedBackgroundColor = theme["--color-thread-selected"];
   const backgroundColor = theme[sidebarPane ? "--color-drawer" : "--color-screen"];
+  const translucent = options?.translucent === true;
+  const resolvedBackgroundColor = selected
+    ? translucent
+      ? themeColorWithAlpha(selectedBackgroundColor, 0.88)
+      : selectedBackgroundColor
+    : translucent
+      ? themeColorWithAlpha(backgroundColor, sidebarPane ? 0.38 : 0.34)
+      : backgroundColor;
   const style: ViewStyle = {
-    backgroundColor: selected ? selectedBackgroundColor : backgroundColor,
+    backgroundColor: resolvedBackgroundColor,
     borderRadius: THREAD_LIST_V2_SIDEBAR_ROW_STYLE.borderRadius,
   };
   const swipeContainerStyle = THREAD_LIST_V2_SIDEBAR_ROW_CONTAINER_STYLE;
@@ -63,7 +72,9 @@ export function getThreadListV2RowAppearance(
     style,
     cardStyle: sidebarPane ? { ...style, ...THREAD_LIST_V2_SIDEBAR_ROW_STYLE } : style,
     swipeContainerStyle,
-    swipeBackgroundColor: backgroundColor,
+    swipeBackgroundColor: translucent
+      ? themeColorWithAlpha(backgroundColor, 0.84)
+      : backgroundColor,
     providerIconSurfaceColor: selected ? selectedBackgroundColor : backgroundColor,
   };
 }

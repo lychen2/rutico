@@ -29,12 +29,14 @@ class T3TerminalView(context: Context, appContext: AppContext) : ExpoView(contex
   private val inputView = object : EditText(context) {
     override fun getAutofillType(): Int = View.AUTOFILL_TYPE_NONE
 
-    override fun onCreateInputConnection(outAttrs: EditorInfo): InputConnection? =
-      super.onCreateInputConnection(outAttrs)?.let { connection ->
+    override fun onCreateInputConnection(outAttrs: EditorInfo): InputConnection? {
+      configureTerminalEditorInfo(outAttrs)
+      return super.onCreateInputConnection(outAttrs)?.let { connection ->
         TerminalInputConnection(connection, sentText, { !readOnly }) { count ->
           if (!readOnly) onInput(mapOf("data" to "\u007F".repeat(count)))
         }
       }
+    }
   }
   private val onInput by EventDispatcher()
   private val onResize by EventDispatcher()

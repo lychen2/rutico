@@ -261,8 +261,73 @@ const stageWebClient = Effect.fn("stageWebClient")(function* (source: string, ta
   }
 });
 
+const readOptionalStdout = Effect.fn("readOptionalStdout")(
+  function* (command: ChildProcess.Command) {
+    const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
+    const child = yield* spawner.spawn(command);
+    const [stdout, exitCode] = yield* Effect.all(
+      [Stream.mkString(Stream.decodeText(child.stdout)), child.exitCode],
+      { concurrency: "unbounded" },
+    );
+    return Number(exitCode) === 0 ? Option.some(stdout) : Option.none<string>();
+  },
+  Effect.scoped,
+  Effect.orElseSucceed(() => Option.none<string>()),
+);
+
+const resolveLibatomicPackageHeader = Effect.fn("resolveLibatomicPackageHeader")(function* (
+  source: string,
+  realSource: string,
+  isCi: boolean,
+) {
+  const ownerOpt = yield* readOptionalStdout(ChildProcess.make("dpkg-query", ["-S", realSource]));
+  if (Option.isSome(ownerOpt)) {
+    // Keep the arch qualifier so a second installed arch cannot add its own line.
+    const [, qualifiedPkg, pkg] = /^(([^:\s]+)(?::[^:\s]+)?): /.exec(ownerOpt.value) ?? [];
+    const versionsOpt = qualifiedPkg
+      ? yield* readOptionalStdout(
+          ChildProcess.make("dpkg-query", [
+            "-W",
+            "-f=${Version} ${source:Package} ${source:Version}",
+            qualifiedPkg,
+          ]),
+        )
+      : Option.none<string>();
+    const [version, sourcePackage, sourceVersion] = (Option.getOrUndefined(versionsOpt) ?? "")
+      .trim()
+      .split(" ");
+    if (pkg && version && sourcePackage && sourceVersion) {
+      return [
+        `libatomic.so.1 is copied from the Ubuntu package ${pkg} ${version}.`,
+        `Source: https://launchpad.net/ubuntu/+source/${sourcePackage}/${sourceVersion}`,
+      ].join("\n");
+    }
+  }
+
+  if (!isCi) {
+    const pacmanPkgOpt = yield* readOptionalStdout(
+      ChildProcess.make("pacman", ["-Qoq", realSource]),
+    );
+    const pacmanPkg = Option.getOrUndefined(pacmanPkgOpt)?.trim();
+    if (pacmanPkg) {
+      const pacmanVersionOpt = yield* readOptionalStdout(
+        ChildProcess.make("pacman", ["-Q", pacmanPkg]),
+      );
+      const [pkgName, pkgVer] = (Option.getOrUndefined(pacmanVersionOpt) ?? "").trim().split(/\s+/);
+      if (pkgName && pkgVer) {
+        return `libatomic.so.1 is copied from the host package ${pkgName} ${pkgVer}.`;
+      }
+    }
+  }
+
+  return yield* new CliArchiveInputMissingError({
+    inputPath: `dpkg package for ${source}`,
+    hint: "The archive copies libatomic's license and source reference from its Ubuntu package.",
+  });
+});
+
 /** Node links libatomic.so.1, which Ubuntu server and container images lack, so t3 carries its own. */
-const bundleLinuxLibatomic = Effect.fn("bundleLinuxLibatomic")(function* (input: {
+export const bundleLinuxLibatomic = Effect.fn("bundleLinuxLibatomic")(function* (input: {
   readonly repoRoot: string;
   readonly contentDir: string;
   readonly executablePath: string;
@@ -270,7 +335,14 @@ const bundleLinuxLibatomic = Effect.fn("bundleLinuxLibatomic")(function* (input:
   const fs = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
   const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
+  const isCi = yield* Config.Boolean("CI").pipe(Config.withDefault(false));
   const ldd = yield* spawner.string(ChildProcess.make("ldd", [input.executablePath]));
+  if (!/\blibatomic\.so\.1\b/.test(ldd)) {
+    yield* Effect.log(
+      "[cli-archive] Executable does not link libatomic.so.1; skipping libatomic bundle.",
+    );
+    return;
+  }
   const source = /libatomic\.so\.1 => (\/\S+)/.exec(ldd)?.[1];
   if (source === undefined) {
     return yield* new CliArchiveInputMissingError({
@@ -282,31 +354,7 @@ const bundleLinuxLibatomic = Effect.fn("bundleLinuxLibatomic")(function* (input:
   yield* fs.copyFile(source, path.join(input.contentDir, "lib/libatomic.so.1"));
 
   // libatomic is GPL-3.0-or-later WITH GCC-exception-3.1, so its terms and source travel with it.
-  const owner = yield* spawner.string(
-    ChildProcess.make("dpkg-query", ["-S", yield* fs.realPath(source)]),
-  );
-  // Keep the arch qualifier so a second installed arch cannot add its own line.
-  const [, qualifiedPkg, pkg] = /^(([^:\s]+)(?::[^:\s]+)?): /.exec(owner) ?? [];
-  const versions = qualifiedPkg
-    ? yield* spawner.string(
-        ChildProcess.make("dpkg-query", [
-          "-W",
-          "-f=${Version} ${source:Package} ${source:Version}",
-          qualifiedPkg,
-        ]),
-      )
-    : "";
-  const [version, sourcePackage, sourceVersion] = versions.trim().split(" ");
-  if (!pkg || !version || !sourcePackage || !sourceVersion) {
-    return yield* new CliArchiveInputMissingError({
-      inputPath: `dpkg package for ${source}`,
-      hint: "The archive copies libatomic's license and source reference from its Ubuntu package.",
-    });
-  }
-  const header = [
-    `libatomic.so.1 is copied from the Ubuntu package ${pkg} ${version}.`,
-    `Source: https://launchpad.net/ubuntu/+source/${sourcePackage}/${sourceVersion}`,
-  ].join("\n");
+  const header = yield* resolveLibatomicPackageHeader(source, yield* fs.realPath(source), isCi);
   // Vendored because CI runner images strip /usr/share/doc.
   const license = yield* fs.readFileString(
     path.join(input.repoRoot, "scripts/licenses/libatomic.LICENSE"),
@@ -317,10 +365,23 @@ const bundleLinuxLibatomic = Effect.fn("bundleLinuxLibatomic")(function* (input:
   );
 
   // RUNPATH resolves through symlinks and is not inherited by child processes, unlike LD_LIBRARY_PATH.
-  yield* runCommand(
-    ChildProcess.make("patchelf", ["--set-rpath", "$ORIGIN/lib", input.executablePath]),
-    "patchelf --set-rpath",
-  );
+  const hasPatchelf =
+    isCi ||
+    Option.isSome(
+      yield* runCommand(ChildProcess.make("patchelf", ["--version"]), "patchelf --version").pipe(
+        Effect.option,
+      ),
+    );
+  if (hasPatchelf) {
+    yield* runCommand(
+      ChildProcess.make("patchelf", ["--set-rpath", "$ORIGIN/lib", input.executablePath]),
+      "patchelf --set-rpath",
+    );
+  } else {
+    yield* Effect.logWarning(
+      "[cli-archive] patchelf not found; skipping $ORIGIN/lib RUNPATH rewrite for local build.",
+    );
+  }
   yield* Effect.log(`[cli-archive] Bundled ${source} as lib/libatomic.so.1.`);
 });
 

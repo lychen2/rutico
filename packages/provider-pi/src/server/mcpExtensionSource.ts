@@ -18,10 +18,57 @@ const buildT3McpExtensionSource = (omp: boolean) => `\
 ${
   omp
     ? `import { loadSkillPromptBody, type ExtensionAPI, type ExtensionContext } from "@oh-my-pi/pi-coding-agent";
-import { getModelMatchPreferences, parseModelPattern, resolveConfiguredModelPatterns } from "@oh-my-pi/pi-coding-agent/config/model-resolver";
-import { AgentRegistry } from "@oh-my-pi/pi-coding-agent/registry/agent-registry";
-import { isLocalAgentSession } from "@oh-my-pi/pi-coding-agent/session/agent-session-handle";
-import { cfgTaskAgentModelOverrides } from "@oh-my-pi/pi-coding-agent/task/settings";`
+
+type OmpInternals = {
+  readonly getModelMatchPreferences: (settings: unknown) => unknown;
+  readonly parseModelPattern: (
+    selector: string,
+    models: unknown,
+    preferences: unknown,
+    options: { readonly allowInvalidThinkingSelectorFallback: boolean },
+  ) => {
+    readonly model?: { readonly provider: string; readonly id: string };
+    readonly thinkingLevel?: string;
+    readonly explicitThinkingLevel?: boolean;
+  };
+  readonly resolveConfiguredModelPatterns: (pattern: string, settings: unknown) => ReadonlyArray<string>;
+  readonly AgentRegistry: {
+    readonly global: () => {
+      readonly list: () => ReadonlyArray<{
+        readonly session?: { readonly sessionManager: unknown; readonly settings: unknown };
+      }>;
+    };
+  };
+  readonly isLocalAgentSession: (session: unknown) => boolean;
+  readonly cfgTaskAgentModelOverrides: {
+    readonly get: (settings: unknown) => Record<string, string>;
+  };
+};
+
+let ompInternalsPromise: Promise<OmpInternals | null> | undefined;
+let ompInternals: OmpInternals | null = null;
+
+function loadOmpInternals(): Promise<OmpInternals | null> {
+  ompInternalsPromise ??= Promise.all([
+    import("@oh-my-pi/pi-coding-agent/config/model-resolver"),
+    import("@oh-my-pi/pi-coding-agent/registry/agent-registry"),
+    import("@oh-my-pi/pi-coding-agent/session/agent-session-handle"),
+    import("@oh-my-pi/pi-coding-agent/task/settings"),
+  ]).then(
+    ([modelResolver, registry, sessionHandle, taskSettings]) => {
+      const loaded = {
+        ...modelResolver,
+        ...registry,
+        ...sessionHandle,
+        ...taskSettings,
+      } as unknown as OmpInternals;
+      ompInternals = loaded;
+      return loaded;
+    },
+    () => null,
+  );
+  return ompInternalsPromise;
+}`
     : 'import { stripFrontmatter, type ExtensionAPI, type ExtensionContext } from "@earendil-works/pi-coding-agent";'
 }
 import * as NodeCrypto from "node:crypto";
@@ -263,6 +310,7 @@ function createMcpClient(endpoint: string, token: string) {
 }
 
 export default async function t3McpExtension(pi: ExtensionAPI) {
+  ${omp ? "await loadOmpInternals();" : ""}
   // RPC has no trust prompt, so Pi skips an untrusted folder's protected resources. Session
   // replacement reruns this factory without project_trust, and T3 drops notices outside a turn,
   // so check each session's first turn. An explicit --no-approve is deliberate and stays quiet.
@@ -426,6 +474,15 @@ export default async function t3McpExtension(pi: ExtensionAPI) {
     omp
       ? `
   const ompRoutes = (ctx: ExtensionContext) => {
+    if (!ompInternals) return undefined;
+    const {
+      AgentRegistry,
+      isLocalAgentSession,
+      getModelMatchPreferences,
+      cfgTaskAgentModelOverrides,
+      resolveConfiguredModelPatterns,
+      parseModelPattern,
+    } = ompInternals;
     const file = ctx.sessionManager.getSessionFile();
     for (const ref of AgentRegistry.global().list()) {
       const session = ref.session;
@@ -444,6 +501,7 @@ export default async function t3McpExtension(pi: ExtensionAPI) {
     return undefined;
   };
   const checkOmpDelegate = (ctx: ExtensionContext, params: Record<string, unknown>) => {
+    if (!ompInternals) return undefined;
     const { agent, target, mode } = params;
     if (typeof agent !== "string" || agent.length === 0) return "Set agent to an exact key of OMP task.agentModelOverrides.";
     if (mode !== "async") return 'Set mode to "async"; the child completion wakes this thread.';
@@ -500,15 +558,10 @@ export default async function t3McpExtension(pi: ExtensionAPI) {
                       agent: {
                         type: "string",
                         minLength: 1,
-                        description: "Exact OMP task.agentModelOverrides key.",
+                        description:
+                          "Optional OMP task.agentModelOverrides key when delegating to this OMP instance; omit when delegating to another provider.",
                       },
                     },
-                    required: [
-                      ...(Array.isArray(tool.inputSchema?.required)
-                        ? tool.inputSchema.required
-                        : []),
-                      "agent",
-                    ],
                   }
                 : tool.inputSchema,
           ),
@@ -528,8 +581,16 @@ export default async function t3McpExtension(pi: ExtensionAPI) {
             ${
               omp
                 ? `if (name === "delegate_task") {
-              const reason = checkOmpDelegate(ctx, resolvedParams);
-              if (reason !== undefined) return { content: [{ type: "text", text: reason }], details: {}, isError: true };
+              if (
+                typeof resolvedParams.agent === "string" &&
+                resolvedParams.agent.trim().length > 0 &&
+                ompInternals !== null
+              ) {
+                const reason = checkOmpDelegate(ctx, resolvedParams);
+                if (reason !== undefined) {
+                  return { content: [{ type: "text", text: reason }], details: {}, isError: true };
+                }
+              }
               const { agent: _agent, ...forwarded } = resolvedParams;
               resolvedParams = forwarded;
             }`

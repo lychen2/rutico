@@ -27,6 +27,7 @@ import {
   GROVE_THEME,
   IRIS_THEME,
   OCEAN_THEME,
+  RUTICO_THEME,
 } from "../../themePalette";
 import {
   AlertDialog,
@@ -56,6 +57,7 @@ import { ThemeWireframe } from "./ThemeWireframe";
 import { T, useGT } from "gt-react";
 
 const MAINTAINER_THEMES: ReadonlyArray<ThemeDefinition> = [
+  RUTICO_THEME,
   T3_CHAT_THEME,
   GROVE_THEME,
   OCEAN_THEME,

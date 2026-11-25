@@ -8,6 +8,7 @@ import { useScratchProject } from "../hooks/useScratchProject";
 import { usePrimaryEnvironmentId } from "../state/environments";
 import { Button } from "./ui/button";
 import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "./ui/empty";
+import { RuticoHeroBackdrop } from "./RuticoHeroBackdrop";
 import { SidebarInset } from "./ui/sidebar";
 import { WorkspacePageHeader } from "./WorkspacePageHeader";
 
@@ -24,39 +25,42 @@ export function NoProjectsHero() {
       role="main"
       className="h-dvh min-h-0 overflow-hidden overscroll-y-none"
     >
-      <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-x-hidden bg-background">
+      <div className="relative flex min-h-0 min-w-0 flex-1 flex-col overflow-x-hidden bg-background">
+        <RuticoHeroBackdrop />
         {/* The desktop window only moves where CSS opts in, so keep a titlebar strip. */}
-        {isElectron ? <WorkspacePageHeader electron /> : null}
-        <Empty size="hero" className="flex-1">
-          <div className="w-full max-w-lg px-8 py-12">
-            <EmptyHeader className="max-w-none">
-              <EmptyTitle>
-                <T>What should we work on?</T>
-              </EmptyTitle>
-              <EmptyDescription>
-                {scratchTargetEnvironmentId === null
-                  ? gt("Add a project to start your first thread.")
-                  : gt("Add a project, or start without one.")}
-              </EmptyDescription>
-              <div className="mt-6 flex justify-center gap-2">
-                <Button size="sm" onClick={() => openCommandPalette({ open: "add-project" })}>
-                  <PlusIcon className="size-4" />
-                  <T>Add project</T>
-                </Button>
-                {scratchTargetEnvironmentId === null ? null : (
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() => void startScratchThread(scratchTargetEnvironmentId)}
-                  >
-                    <MessageSquareDashedIcon className="size-4" />
-                    <T>Start without a project</T>
+        <div className="relative z-10 flex min-h-0 flex-1 flex-col">
+          {isElectron ? <WorkspacePageHeader electron /> : null}
+          <Empty size="hero" className="flex-1">
+            <div className="w-full max-w-lg px-8 py-12">
+              <EmptyHeader className="max-w-none">
+                <EmptyTitle>
+                  <T>What should we work on?</T>
+                </EmptyTitle>
+                <EmptyDescription>
+                  {scratchTargetEnvironmentId === null
+                    ? gt("Add a project to start your first thread.")
+                    : gt("Add a project, or start without one.")}
+                </EmptyDescription>
+                <div className="mt-6 flex justify-center gap-2">
+                  <Button size="sm" onClick={() => openCommandPalette({ open: "add-project" })}>
+                    <PlusIcon className="size-4" />
+                    <T>Add project</T>
                   </Button>
-                )}
-              </div>
-            </EmptyHeader>
-          </div>
-        </Empty>
+                  {scratchTargetEnvironmentId === null ? null : (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => void startScratchThread(scratchTargetEnvironmentId)}
+                    >
+                      <MessageSquareDashedIcon className="size-4" />
+                      <T>Start without a project</T>
+                    </Button>
+                  )}
+                </div>
+              </EmptyHeader>
+            </div>
+          </Empty>
+        </div>
       </div>
     </SidebarInset>
   );

@@ -359,6 +359,24 @@ function SelectedThreadArtifact({
   );
 }
 
+async function downloadArtifactFile(
+  refreshUrl: () => Promise<string | null>,
+  artifact: ThreadArtifact,
+  signal: AbortSignal,
+): Promise<File | null> {
+  const url = await refreshUrl();
+  if (signal.aborted) return null;
+  if (url === null) throw new Error("Missing artifact URL");
+  const response = await fetch(url, { credentials: "omit", signal });
+  if (!response.ok) throw new Error(`Artifact download failed: ${response.status}`);
+  const blob = await response.blob();
+  if (signal.aborted) return null;
+  return new File([blob], artifact.name, {
+    type: artifact.mimeType,
+    lastModified: artifact.modifiedAt,
+  });
+}
+
 function AttachArtifactButton({
   environmentId,
   artifact,
@@ -386,27 +404,17 @@ function AttachArtifactButton({
     controllerRef.current = controller;
     setStatus("loading");
     try {
-      const url = await refreshUrl();
-      if (controller.signal.aborted) return;
-      if (url === null) throw new Error("Missing artifact URL");
-      const response = await fetch(url, { credentials: "omit", signal: controller.signal });
-      if (!response.ok) throw new Error(`Artifact download failed: ${response.status}`);
-      const blob = await response.blob();
-      if (controller.signal.aborted) return;
-      onAttachFiles([
-        new File([blob], artifact.name, {
-          type: artifact.mimeType,
-          lastModified: artifact.modifiedAt,
-        }),
-      ]);
-      setStatus("idle");
+      const file = await downloadArtifactFile(refreshUrl, artifact, controller.signal);
+      if (file !== null) {
+        onAttachFiles([file]);
+        setStatus("idle");
+      }
     } catch {
       if (!controller.signal.aborted) {
         setStatus("error");
       }
-    } finally {
-      controllerRef.current = null;
     }
+    controllerRef.current = null;
   }
 
   return (

@@ -1,6 +1,6 @@
 import { Toolbar } from "@base-ui/react/toolbar";
 import { type ProviderInstanceId } from "@t3tools/contracts";
-import { memo, useCallback } from "react";
+import { memo, useLayoutEffect, useRef } from "react";
 import { msg, T, useMessages } from "gt-react";
 import { StarIcon } from "lucide-react";
 import { ProviderInstanceIcon } from "./ProviderInstanceIcon";
@@ -67,19 +67,25 @@ export const ModelPickerSidebar = memo(function ModelPickerSidebar(props: {
   const { horizontal } = props;
   const rowClassName = horizontal ? HORIZONTAL_PROVIDER_ROW_CLASS_NAME : PROVIDER_ROW_CLASS_NAME;
   const tooltipSide = horizontal ? "top" : PICKER_TOOLTIP_SIDE;
-  const revealSelected = useCallback(
-    (strip: HTMLDivElement | null) => {
-      if (!horizontal || !strip) return;
-      const selected = strip.querySelector(`[aria-pressed="true"]`);
-      if (!selected) return;
-      const viewport = strip.getBoundingClientRect();
-      const button = selected.getBoundingClientRect();
-      if (button.left < viewport.left) strip.scrollLeft += button.left - viewport.left;
-      else if (button.right > viewport.right) strip.scrollLeft += button.right - viewport.right;
-    },
-    // A new selection must be brought into view without resetting manual scroll on other renders.
-    [horizontal, props.selectedInstanceId],
-  );
+  const stripRef = useRef<HTMLDivElement | null>(null);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- scrolls the newly selected provider button into view without resetting manual scroll on other renders
+  useLayoutEffect(() => {
+    const strip = stripRef.current;
+    if (!horizontal || !strip) return;
+    let selectedItem: HTMLElement | null = null;
+    for (const item of strip.querySelectorAll<HTMLElement>("[data-model-picker-provider]")) {
+      if (item.dataset.modelPickerProvider === props.selectedInstanceId) {
+        selectedItem = item;
+        break;
+      }
+    }
+    const selected = selectedItem?.querySelector("button") ?? selectedItem;
+    if (!selected) return;
+    const viewport = strip.getBoundingClientRect();
+    const button = selected.getBoundingClientRect();
+    if (button.left < viewport.left) strip.scrollLeft += button.left - viewport.left;
+    else if (button.right > viewport.right) strip.scrollLeft += button.right - viewport.right;
+  }, [horizontal, props.selectedInstanceId]);
 
   return (
     <Toolbar.Root
@@ -114,7 +120,7 @@ export const ModelPickerSidebar = memo(function ModelPickerSidebar(props: {
             ? "overflow-x-auto overscroll-x-contain [scrollbar-width:thin]"
             : "h-full overflow-y-auto overscroll-contain [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
         }
-        ref={revealSelected}
+        ref={stripRef}
         onFocus={(event) => {
           if (horizontal && event.target instanceof HTMLButtonElement) {
             event.target.scrollIntoView({ block: "nearest", inline: "nearest" });

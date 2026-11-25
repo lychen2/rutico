@@ -485,7 +485,9 @@ export const ThreadListV2PendingRow = memo(function ThreadListV2PendingRow(props
   const theme = useUniwindTheme();
   const sidebarPane = props.pane === "sidebar";
   const selected = props.selected ?? false;
-  const rowAppearance = getThreadListV2RowAppearance(theme, sidebarPane, selected);
+  const rowAppearance = getThreadListV2RowAppearance(theme, sidebarPane, selected, {
+    translucent: Platform.OS === "android",
+  });
   const gt = useGT();
   const m = useMessages();
   const isDraft = pendingTask.kind === "draft";
@@ -865,7 +867,9 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
   const theme = useUniwindTheme();
   const sidebarPane = props.pane === "sidebar";
   const selected = props.selected === true;
-  const rowAppearance = getThreadListV2RowAppearance(theme, sidebarPane, selected);
+  const rowAppearance = getThreadListV2RowAppearance(theme, sidebarPane, selected, {
+    translucent: Platform.OS === "android",
+  });
 
   const rawStatus = resolveThreadListV2Status(thread);
   const status = resolveThreadListV2RowStatus(thread);

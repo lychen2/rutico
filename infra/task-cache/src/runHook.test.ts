@@ -1,6 +1,7 @@
 // @effect-diagnostics nodeBuiltinImport:off - exercises the real native runner and local HTTP collector.
 import * as NodeChildProcess from "node:child_process";
 import * as NodeDiagnosticsChannel from "node:diagnostics_channel";
+import * as NodeFS from "node:fs";
 import * as NodeFSP from "node:fs/promises";
 import * as NodeHttp from "node:http";
 import * as NodeOS from "node:os";
@@ -8,27 +9,19 @@ import * as NodePath from "node:path";
 import { expect, it, vi } from "vite-plus/test";
 import startRunHook from "./runHook.ts";
 
-it("sends telemetry from a detached flusher that the task runner does not wait for", async () => {
+it("returns remoteCache config without spawning a detached telemetry flusher or sending telemetry", async () => {
   const root = await NodeFSP.mkdtemp(NodePath.join(NodeOS.tmpdir(), "task-cache-flusher-"));
   const reports: string[] = [];
-  let finishReturned!: () => void;
-  const returned = new Promise<void>((resolve) => {
-    finishReturned = resolve;
-  });
-  let disconnected = false;
   const server = NodeHttp.createServer(async (request, response) => {
     let body = "";
     for await (const chunk of request) body += chunk;
     reports.push(body);
-    await returned;
-    disconnected = response.destroyed;
     response.writeHead(204).end();
   });
-  // The hook detaches and unrefs its flusher, so only this channel lets cleanup wait for it.
-  const flushers: Promise<void>[] = [];
+  const flushers: NodeChildProcess.ChildProcess[] = [];
   const onSpawn = (message: unknown) => {
     const { process: flusher } = message as { process: NodeChildProcess.ChildProcess };
-    flushers.push(new Promise((resolve) => flusher.once("close", () => resolve())));
+    flushers.push(flusher);
   };
   NodeDiagnosticsChannel.subscribe("child_process", onSpawn);
   try {
@@ -46,7 +39,10 @@ it("sends telemetry from a detached flusher that the task runner does not wait f
     vi.stubEnv("GITHUB_ACTIONS", undefined);
     vi.stubEnv("T3_TASK_CACHE_TELEMETRY", undefined);
     vi.stubEnv("VITE_CACHE_PATH", undefined);
+    vi.stubEnv("VP_REMOTE_CACHE", undefined);
+    vi.stubEnv("VP_T3_TASK_CACHE_MODE", undefined);
     const finish = startRunHook({ root });
+    expect(finish?.remoteCache).toBe("read-write");
     const summary = NodePath.join(root, "node_modules/.vite/task-cache/run/last-summary.json");
     await NodeFSP.mkdir(NodePath.dirname(summary), { recursive: true });
     await NodeFSP.writeFile(
@@ -56,16 +52,10 @@ it("sends telemetry from a detached flusher that the task runner does not wait f
       }),
     );
     await finish?.();
-    finishReturned();
-    await Promise.all(flushers);
-    expect(flushers).toHaveLength(1);
-    expect(reports.map((report) => JSON.parse(report).tasks)).toEqual([
-      [{ package: "fixture", task: "build", source: "executed", savedMs: 0 }],
-    ]);
-    expect(disconnected).toBe(false);
+    expect(flushers).toHaveLength(0);
+    expect(reports).toEqual([]);
+    expect(NodeFS.existsSync(NodePath.join(root, ".cache/t3-task-cache/telemetry"))).toBe(false);
   } finally {
-    finishReturned();
-    await Promise.all(flushers);
     NodeDiagnosticsChannel.unsubscribe("child_process", onSpawn);
     vi.unstubAllEnvs();
     await new Promise<void>((resolve, reject) =>

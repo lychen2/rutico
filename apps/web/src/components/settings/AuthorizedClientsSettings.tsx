@@ -28,6 +28,7 @@ import {
 import { useCopyToClipboard } from "../../hooks/useCopyToClipboard";
 import { cn } from "../../lib/utils";
 import { formatElapsedDurationLabel, formatExpiresInLabel } from "../../timestampFormat";
+import { buildPairingAppLink, buildRuticoPairingAppLink } from "@t3tools/shared/remote";
 import { resolveDesktopPairingUrl, resolveHostedPairingUrl } from "./pairingUrls";
 import {
   canRevokeOtherClients,
@@ -472,9 +473,28 @@ const PairingLinkListRow = memo(function PairingLinkListRow({
                 <T>Copy link</T>
               </Button>
             </div>
-            <Button size="xs" variant="ghost" onClick={handleCopyCode}>
-              <T>Copy code only</T>
-            </Button>
+            <div className="flex flex-wrap items-center gap-1.5">
+              <Button size="xs" variant="ghost" onClick={handleCopyCode}>
+                <T>Copy code only</T>
+              </Button>
+              <Button
+                size="xs"
+                variant="ghost"
+                onClick={() => copyPairingValue(buildRuticoPairingAppLink(qrPairingUrl), "link")}
+              >
+                <T>Copy Rutico app link</T>
+              </Button>
+              <Button
+                size="xs"
+                variant="ghost"
+                onClick={() => copyPairingValue(buildPairingAppLink(qrPairingUrl), "link")}
+              >
+                <T>Copy T3 iPad app link</T>
+              </Button>
+            </div>
+            <p className="text-muted-foreground text-xs">
+              <T>Scan with Rutico Mobile or the official T3 Code iPad app to pair immediately.</T>
+            </p>
           </div>
           {canRenderQrForSelection ? (
             <div className="w-fit shrink-0 self-center rounded-xl bg-white p-3 sm:self-start">

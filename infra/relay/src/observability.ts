@@ -21,9 +21,8 @@ const relayRecentSpansQuery = (dataset: string) =>
   [
     `['${dataset}']`,
     `| where isnotnull(span_id) or isnotnull(trace_id)`,
-    `| extend requestMethod = column_ifexists('attributes.http.request.method', ''), path = column_ifexists('attributes.url.path', ''), endpoint = column_ifexists('attributes.http.route', ''), statusCode = column_ifexists('attributes.http.response.status_code', 0), customAttributes = column_ifexists('attributes.custom', dynamic({}))`,
-    `| extend userId = customAttributes['user']['id']`,
-    `| project _time, name, trace_id, span_id, duration, requestMethod, path, statusCode, endpoint, userId`,
+    `| extend requestMethod = column_ifexists('attributes.http.request.method', ''), path = column_ifexists('attributes.url.path', ''), endpoint = column_ifexists('attributes.http.route', ''), statusCode = column_ifexists('attributes.http.response.status_code', 0)`,
+    `| project _time, name, trace_id, span_id, duration, requestMethod, path, statusCode, endpoint`,
     `| order by _time desc`,
     `| limit 200`,
   ].join("\n");

@@ -53,7 +53,7 @@ abstract class AgentNotificationsFixture {
 
   protected fun update(alertId: String, active: Boolean) = mapOf(
     "device_id" to "device",
-    "user_id" to "user",
+    "user_hash" to "60a4ea94a99303630c40fff23f4de5c06a8f978289a3889f31edfac3b89f85d7",
     "updated_at" to System.currentTimeMillis().toString(),
     "active" to active.toString(),
     "activity_title" to "1 active agent",
@@ -85,6 +85,20 @@ class AgentNotificationsTest : AgentNotificationsFixture() {
   fun alertsStackByThreadGroup() {
     AgentNotifications.receive(context, update("grouped", false))
     assertEquals("environment/thread", manager.activeNotifications.single().notification.group)
+  }
+
+  @Test
+  fun rejectsRawUserIdWithoutMatchingUserHash() {
+    val rawOnly = update("raw-user-id", false) - "user_hash" + ("user_id" to "user")
+    AgentNotifications.receive(context, rawOnly)
+    assertTrue(manager.activeNotifications.isEmpty())
+
+    val wrongHash = update("wrong-hash", false) + ("user_hash" to "0".repeat(64))
+    AgentNotifications.receive(context, wrongHash)
+    assertTrue(manager.activeNotifications.isEmpty())
+
+    AgentNotifications.receive(context, update("valid-hash", false))
+    assertEquals(1, manager.activeNotifications.size)
   }
 
   @Test
@@ -664,7 +678,7 @@ class AgentNotificationChannelsTest {
     AgentNotifications.configure(context, "device", "user", "t3code-dev", true)
     val running = mapOf(
       "device_id" to "device",
-      "user_id" to "user",
+      "user_hash" to "60a4ea94a99303630c40fff23f4de5c06a8f978289a3889f31edfac3b89f85d7",
       "updated_at" to System.currentTimeMillis().toString(),
       "active" to "true",
       "activity_title" to "Agent activity"

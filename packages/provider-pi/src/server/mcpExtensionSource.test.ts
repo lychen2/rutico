@@ -7,7 +7,11 @@ import * as NodeVM from "node:vm";
 import { assert, describe, it } from "@effect/vitest";
 import { PULL_REQUEST_LINKING_INSTRUCTIONS } from "@t3tools/provider-core/server/runtimeInstructions";
 
-import { PI_T3_MCP_EXTENSION_SOURCE, PI_T3_SERVICE_TIER_COMMAND } from "./mcpExtensionSource.ts";
+import {
+  OMP_T3_MCP_EXTENSION_SOURCE,
+  PI_T3_MCP_EXTENSION_SOURCE,
+  PI_T3_SERVICE_TIER_COMMAND,
+} from "./mcpExtensionSource.ts";
 import { loadMcpBridge } from "./mcpBridge.testkit.ts";
 
 type RequestHook = (
@@ -749,5 +753,23 @@ describe("Pi skill references", () => {
     } finally {
       await NodeFSP.rm(directory, { recursive: true });
     }
+  });
+});
+
+describe("OMP MCP delegate_task flexibility", () => {
+  it("loads without static deep internal imports and keeps agent optional for cross-provider delegation", () => {
+    assert.notInclude(
+      OMP_T3_MCP_EXTENSION_SOURCE,
+      'from "@oh-my-pi/pi-coding-agent/config/model-resolver"',
+    );
+    assert.include(
+      OMP_T3_MCP_EXTENSION_SOURCE,
+      'import("@oh-my-pi/pi-coding-agent/config/model-resolver")',
+    );
+    assert.include(
+      OMP_T3_MCP_EXTENSION_SOURCE,
+      "Optional OMP task.agentModelOverrides key when delegating to this OMP instance; omit when delegating to another provider.",
+    );
+    assert.notInclude(OMP_T3_MCP_EXTENSION_SOURCE, '  "agent",\n                    ],');
   });
 });

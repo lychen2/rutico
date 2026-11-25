@@ -2,6 +2,7 @@ import { describe, expect, it } from "vite-plus/test";
 
 import {
   buildPairingAppLink,
+  buildRuticoPairingAppLink,
   readPairingAppLink,
   RemoteBackendUrlMissingError,
   RemotePairingTokenMissingError,
@@ -147,9 +148,16 @@ describe("remote", () => {
   it("round-trips pairing urls through app links on every channel scheme", () => {
     const pairingUrl = "https://vps.example.com/pair#token=ABC123";
     const appLink = buildPairingAppLink(pairingUrl);
+    const ruticoAppLink = buildRuticoPairingAppLink(pairingUrl);
     expect(appLink.startsWith("t3code://pair?")).toBe(true);
+    expect(ruticoAppLink.startsWith("rutico://pair?")).toBe(true);
     expect(readPairingAppLink(appLink)).toBe(pairingUrl);
+    expect(readPairingAppLink(ruticoAppLink)).toBe(pairingUrl);
     expect(readPairingAppLink(appLink.replace("t3code:", "t3code-dev:"))).toBe(pairingUrl);
+    expect(readPairingAppLink(ruticoAppLink.replace("rutico:", "rutico-dev:"))).toBe(pairingUrl);
+    expect(readPairingAppLink(ruticoAppLink.replace("rutico:", "rutico-nightly:"))).toBe(
+      pairingUrl,
+    );
     expect(readPairingAppLink("t3code://pair")).toBeNull();
     expect(readPairingAppLink(appLink.replace("//pair?", "//pair/other?"))).toBeNull();
     expect(

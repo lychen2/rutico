@@ -11,7 +11,7 @@ import * as ChildProcessSpawner from "effect/process/ChildProcessSpawner";
 
 import * as ProviderLatestVersions from "@t3tools/provider-core/server/ProviderLatestVersions";
 import * as ProviderHost from "@t3tools/provider-core/server/ProviderHost";
-import { piUsageReader } from "./usage.ts";
+import { ompUsageReader, piUsageReader } from "./usage.ts";
 import { makePiTextGeneration } from "./textGeneration.ts";
 import {
   OMP_PROVIDER,
@@ -73,116 +73,118 @@ export type PiDriverEnv =
 const OmpAdapterV2Driver = makePiAdapterDriver(OMP_PROVIDER, OmpSettings);
 const decodeOmpSettings = Schema.decodeSync(OmpSettings);
 
-export const OmpDriver: ProviderDriver<PiSettings, PiDriverEnv> = {
-  driverKind: OMP_PROVIDER,
-  metadata: { displayName: "OMP", supportsMultipleInstances: true },
-  configSchema: OmpSettings,
-  defaultConfig: () => decodeOmpSettings({}),
-  create: Effect.fn("OmpDriver.create")(
-    function* (input) {
-      const host = yield* ProviderHost.ProviderHost;
-      const fs = yield* FileSystem.FileSystem;
-      const path = yield* Path.Path;
-      const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
-      const probeCwd = path.join(host.paths.providerStatusCacheDir, "omp-status-probe");
-      const environment = yield* mergeProviderInstanceEnvironment(input.environment);
-      const settings = { ...input.config, enabled: input.enabled };
-      const continuationIdentity = defaultProviderContinuationIdentity({
-        driverKind: OMP_PROVIDER,
-        instanceId: input.instanceId,
-      });
-      const stampIdentity = withInstanceIdentity(
-        {
-          ...input,
+export const OmpDriver: ProviderDriver<PiSettings, PiDriverEnv, FileSystem.FileSystem | Path.Path> =
+  {
+    driverKind: OMP_PROVIDER,
+    metadata: { displayName: "OMP", supportsMultipleInstances: true },
+    usage: ompUsageReader,
+    configSchema: OmpSettings,
+    defaultConfig: () => decodeOmpSettings({}),
+    create: Effect.fn("OmpDriver.create")(
+      function* (input) {
+        const host = yield* ProviderHost.ProviderHost;
+        const fs = yield* FileSystem.FileSystem;
+        const path = yield* Path.Path;
+        const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
+        const probeCwd = path.join(host.paths.providerStatusCacheDir, "omp-status-probe");
+        const environment = yield* mergeProviderInstanceEnvironment(input.environment);
+        const settings = { ...input.config, enabled: input.enabled };
+        const continuationIdentity = defaultProviderContinuationIdentity({
+          driverKind: OMP_PROVIDER,
+          instanceId: input.instanceId,
+        });
+        const stampIdentity = withInstanceIdentity(
+          {
+            ...input,
+            accentColor: input.accentColor,
+            continuationGroupKey: continuationIdentity.continuationKey,
+          },
+          OMP_PROVIDER,
+        );
+        const snapshotSettings = yield* makeProviderSnapshotSettingsSource(settings);
+        const orchestrationAdapter = yield* OmpAdapterV2Driver.create(input);
+        const snapshot = yield* makeManagedServerProvider({
+          resolveMaintenance: () =>
+            Effect.succeed({ provider: OMP_PROVIDER, packageName: null, update: null }),
+          getSettings: snapshotSettings.getSettings,
+          streamSettings: snapshotSettings.streamSettings,
+          haveSettingsChanged: haveProviderSnapshotSettingsChanged,
+          initialSnapshot: (current) =>
+            buildInitialOmpSnapshot(current.provider).pipe(Effect.map(stampIdentity)),
+          checkProvider: fs
+            .makeDirectory(probeCwd, { recursive: true })
+            .pipe(
+              Effect.ignore,
+              Effect.andThen(checkOmpStatus(settings, environment, probeCwd)),
+              Effect.map(stampIdentity),
+              Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner),
+            ),
+        });
+        const textGeneration = yield* makePiTextGeneration(
+          settings,
+          environment,
+          host.compatibility,
+          true,
+        );
+        return {
+          instanceId: input.instanceId,
+          driverKind: OMP_PROVIDER,
+          continuationIdentity,
+          displayName: input.displayName,
           accentColor: input.accentColor,
-          continuationGroupKey: continuationIdentity.continuationKey,
-        },
-        OMP_PROVIDER,
-      );
-      const snapshotSettings = yield* makeProviderSnapshotSettingsSource(settings);
-      const orchestrationAdapter = yield* OmpAdapterV2Driver.create(input);
-      const snapshot = yield* makeManagedServerProvider({
-        resolveMaintenance: () =>
-          Effect.succeed({ provider: OMP_PROVIDER, packageName: null, update: null }),
-        getSettings: snapshotSettings.getSettings,
-        streamSettings: snapshotSettings.streamSettings,
-        haveSettingsChanged: haveProviderSnapshotSettingsChanged,
-        initialSnapshot: (current) =>
-          buildInitialOmpSnapshot(current.provider).pipe(Effect.map(stampIdentity)),
-        checkProvider: fs
-          .makeDirectory(probeCwd, { recursive: true })
-          .pipe(
-            Effect.ignore,
-            Effect.andThen(checkOmpStatus(settings, environment, probeCwd)),
-            Effect.map(stampIdentity),
-            Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner),
+          enabled: input.enabled,
+          snapshot,
+          orchestrationAdapter,
+          textGeneration,
+          snapshotForCwd: (cwd: string) =>
+            !settings.enabled
+              ? snapshot.getSnapshot
+              : Effect.all([
+                  snapshot.getSnapshot,
+                  discoverOmpInventory(settings, environment, cwd).pipe(
+                    Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner),
+                  ),
+                ]).pipe(
+                  Effect.map(([base, inventory]) => {
+                    const workspaceModels = providerModelsFromSettings(
+                      [
+                        ...base.models.filter((model) => model.slug === "default"),
+                        ...inventory.models,
+                      ],
+                      settings.customModels,
+                      EMPTY_PI_MODEL_CAPABILITIES,
+                    );
+                    return {
+                      ...base,
+                      slashCommands: inventory.slashCommands,
+                      skills: inventory.skills,
+                      ...(Equal.equals(base.models, workspaceModels) ? {} : { workspaceModels }),
+                    };
+                  }),
+                  Effect.catch(() =>
+                    Effect.map(snapshot.getSnapshot, (base) => ({
+                      ...base,
+                      slashCommandsPending: true,
+                      workspaceModelsPending: true,
+                    })),
+                  ),
+                ),
+        };
+      },
+      (effect, input) =>
+        effect.pipe(
+          Effect.mapError(
+            (cause) =>
+              new ProviderDriverError({
+                driver: OMP_PROVIDER,
+                instanceId: input.instanceId,
+                detail: "Failed to create OMP provider.",
+                cause,
+              }),
           ),
-      });
-      const textGeneration = yield* makePiTextGeneration(
-        settings,
-        environment,
-        host.compatibility,
-        true,
-      );
-      return {
-        instanceId: input.instanceId,
-        driverKind: OMP_PROVIDER,
-        continuationIdentity,
-        displayName: input.displayName,
-        accentColor: input.accentColor,
-        enabled: input.enabled,
-        snapshot,
-        orchestrationAdapter,
-        textGeneration,
-        snapshotForCwd: (cwd: string) =>
-          !settings.enabled
-            ? snapshot.getSnapshot
-            : Effect.all([
-                snapshot.getSnapshot,
-                discoverOmpInventory(settings, environment, cwd).pipe(
-                  Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner),
-                ),
-              ]).pipe(
-                Effect.map(([base, inventory]) => {
-                  const workspaceModels = providerModelsFromSettings(
-                    [
-                      ...base.models.filter((model) => model.slug === "default"),
-                      ...inventory.models,
-                    ],
-                    settings.customModels,
-                    EMPTY_PI_MODEL_CAPABILITIES,
-                  );
-                  return {
-                    ...base,
-                    slashCommands: inventory.slashCommands,
-                    skills: inventory.skills,
-                    ...(Equal.equals(base.models, workspaceModels) ? {} : { workspaceModels }),
-                  };
-                }),
-                Effect.catch(() =>
-                  Effect.map(snapshot.getSnapshot, (base) => ({
-                    ...base,
-                    slashCommandsPending: true,
-                    workspaceModelsPending: true,
-                  })),
-                ),
-              ),
-      };
-    },
-    (effect, input) =>
-      effect.pipe(
-        Effect.mapError(
-          (cause) =>
-            new ProviderDriverError({
-              driver: OMP_PROVIDER,
-              instanceId: input.instanceId,
-              detail: "Failed to create OMP provider.",
-              cause,
-            }),
         ),
-      ),
-  ),
-};
+    ),
+  };
 
 const decodePiSettings = Schema.decodeSync(PiSettings);
 const withInstanceIdentity =
