@@ -20,8 +20,8 @@ const MOBILE_HERO_WEBP_PATH = "apps/mobile/assets/rutico-hero-mobile.webp";
 // Replicate the rightmost lavender edge before cropping so the 72dp safe zone stays centered while
 // the 108dp adaptive canvas fills every launcher mask seamlessly with pastel background pixels.
 const ADAPTIVE_PORTRAIT_RIGHT_EXTEND = 140;
-const ADAPTIVE_PORTRAIT_CROP = { left: 350, top: 635, width: 660, height: 660 } as const;
-const LEGACY_ICON_CROP = { left: 420, top: 705, width: 520, height: 520 } as const;
+const ADAPTIVE_PORTRAIT_CROP = { left: 353, top: 745, width: 680, height: 680 } as const;
+const LEGACY_ICON_CROP = { left: 423, top: 863, width: 540, height: 540 } as const;
 
 const ADAPTIVE_CANVAS = 432;
 const LEGACY_CANVAS = 1024;

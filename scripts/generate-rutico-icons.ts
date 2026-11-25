@@ -12,7 +12,7 @@ type Variant = "prod" | "dev" | "nightly";
 
 const DESKTOP_WALLPAPER_ENV_PATH = process.env.RUTICO_DESKTOP_WALLPAPER_PATH?.trim() || null;
 const DESKTOP_HERO_WEBP_PATH = "apps/web/public/rutico-hero-desktop.webp";
-const PORTRAIT_CROP = { left: 990, top: 8, width: 540, height: 540 } as const;
+const PORTRAIT_CROP = { left: 1015, top: 4, width: 540, height: 540 } as const;
 
 const STEM_PATH =
   "M35 34C35 29.5817 38.5817 26 43 26H66.5C80.5833 26 90 34.4 90 46.5C90 57.6 82.05 65.4 69.8 66.8H51V54.2H65.2C71.7 54.2 75.6 51.3 75.6 46.5C75.6 41.7 71.7 38.8 65.2 38.8H50.2V94C50.2 98.4183 46.6183 102 42.2 102H40.5C37.4624 102 35 99.5376 35 96.5V34Z";
