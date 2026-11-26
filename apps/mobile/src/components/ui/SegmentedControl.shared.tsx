@@ -1,10 +1,12 @@
+import * as Haptics from "expo-haptics";
 import { useState } from "react";
-import { I18nManager, Platform, Pressable, View } from "react-native";
+import { I18nManager, Platform, Pressable, StyleSheet, View } from "react-native";
 import Animated, {
+  ReduceMotion,
   useAnimatedStyle,
   useDerivedValue,
   useReducedMotion,
-  withTiming,
+  withSpring,
 } from "react-native-reanimated";
 
 import { segmentedControlColors } from "./segmentedControlColors";
@@ -13,6 +15,13 @@ import { useControlTheme } from "./useControlTheme";
 import type { SegmentedControlProps } from "./SegmentedControl.types";
 
 export type { SegmentedControlProps } from "./SegmentedControl.types";
+
+const THUMB_SPRING_CONFIG = {
+  damping: 32,
+  stiffness: 360,
+  mass: 0.7,
+  reduceMotion: ReduceMotion.System,
+} as const;
 
 export function SegmentedControl<Value extends string | number>(
   props: SegmentedControlProps<Value>,
@@ -26,11 +35,11 @@ export function SegmentedControl<Value extends string | number>(
   const direction = I18nManager.isRTL ? -1 : 1;
   // The index animates, not the offset, so a resize moves the selection without sliding it.
   const selectedPosition = useDerivedValue(() =>
-    withTiming(selectedIndex, { duration: reduceMotion ? 0 : 160 }),
+    reduceMotion ? selectedIndex : withSpring(selectedIndex, THUMB_SPRING_CONFIG),
   );
   const selectionStyle = useAnimatedStyle(() => ({
     width: segmentWidth,
-    transform: [{ translateX: selectedPosition.value * segmentWidth * direction }],
+    transform: [{ translateX: selectedPosition.get() * segmentWidth * direction }],
   }));
   const { trackColor, selectedColor, selectedTextColor, mutedColor } = segmentedControlColors(
     colors,
@@ -40,6 +49,19 @@ export function SegmentedControl<Value extends string | number>(
     themeId,
   );
   const minHeight = props.size === "compact" ? 32 : Platform.OS === "android" ? 40 : 36;
+  const targetHitHeight = Platform.OS === "android" ? 48 : 44;
+  const verticalHitSlop = Math.max(0, Math.ceil((targetHitHeight - (minHeight - 6)) / 2));
+  const thumbRimColor =
+    colorScheme === "dark" ? "rgba(255, 255, 255, 0.09)" : "rgba(0, 0, 0, 0.06)";
+  const thumbElevationStyle =
+    Platform.OS === "android"
+      ? { elevation: 1 }
+      : {
+          shadowColor: "#000000",
+          shadowOpacity: colorScheme === "dark" ? 0.18 : 0.06,
+          shadowRadius: 3,
+          shadowOffset: { width: 0, height: 1 },
+        };
 
   return (
     <View collapsable={false} className={props.className}>
@@ -58,7 +80,10 @@ export function SegmentedControl<Value extends string | number>(
             style={[
               {
                 backgroundColor: selectedColor,
+                borderWidth: StyleSheet.hairlineWidth,
+                borderColor: thumbRimColor,
               },
+              thumbElevationStyle,
               selectionStyle,
             ]}
           />
@@ -71,7 +96,13 @@ export function SegmentedControl<Value extends string | number>(
               accessibilityRole={props.role ?? "button"}
               accessibilityLabel={option.accessibilityLabel ?? option.label}
               accessibilityState={{ selected }}
-              onPress={() => props.onSelect(option.value)}
+              hitSlop={{ top: verticalHitSlop, bottom: verticalHitSlop }}
+              onPress={() => {
+                if (!selected) {
+                  void Haptics.selectionAsync().catch(() => undefined);
+                }
+                props.onSelect(option.value);
+              }}
               className="flex-1 items-center justify-center rounded-full px-2 py-1 active:opacity-70"
               style={{ minHeight: minHeight - 6 }}
             >
