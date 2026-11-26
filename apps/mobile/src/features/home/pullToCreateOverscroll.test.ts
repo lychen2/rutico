@@ -19,6 +19,7 @@ import {
   PULL_CREATE_DETENT_DP,
   PULL_MAX_OVERSCROLL_DP,
   PULL_REFRESH_DETENT_DP,
+  resolvePullToCreateOverscroll,
   resolvePullToCreateStage,
 } from "./pullToCreateOverscroll";
 
@@ -61,5 +62,35 @@ describe("pullToCreateOverscroll", () => {
       expect(samples[index]!).toBeGreaterThan(samples[index - 1]!);
     }
     expect(samples[samples.length - 1]!).toBeLessThan(PULL_MAX_OVERSCROLL_DP);
+  });
+
+  it("measures only true overscroll past scrollOffset <= 0 (200dp down + 210dp pull = 10dp)", () => {
+    // Gesture starts 200dp down the list; scrolling back to top consumes 200dp.
+    const midScroll = resolvePullToCreateOverscroll({
+      scrollOffsetY: 100,
+      translationY: 100,
+      overscrollOriginY: 200,
+    });
+    expect(midScroll).toEqual({ overscrollOriginY: 200, overscrollY: 0 });
+
+    // Reached top at 200dp and pulled 10dp past top -> only 10dp true overscroll.
+    const justPastTop = resolvePullToCreateOverscroll({
+      scrollOffsetY: 0,
+      translationY: 210,
+      overscrollOriginY: midScroll.overscrollOriginY,
+    });
+    expect(justPastTop).toEqual({ overscrollOriginY: 200, overscrollY: 10 });
+    const dampedMidList = computePullToCreateDistance(justPastTop.overscrollY);
+    expect(dampedMidList).toBe(10);
+    expect(resolvePullToCreateStage(dampedMidList)).toBe(0);
+
+    // Starting at top (0dp) and pulling 210dp counts the full 210dp as true overscroll.
+    const fromTop = resolvePullToCreateOverscroll({
+      scrollOffsetY: 0,
+      translationY: 210,
+      overscrollOriginY: 0,
+    });
+    expect(fromTop).toEqual({ overscrollOriginY: 0, overscrollY: 210 });
+    expect(resolvePullToCreateStage(computePullToCreateDistance(fromTop.overscrollY))).toBe(2);
   });
 });

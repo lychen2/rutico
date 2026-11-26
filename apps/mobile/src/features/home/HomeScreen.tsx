@@ -69,6 +69,7 @@ import {
   computePullToCreateDistance,
   PULL_CREATE_DETENT_DP,
   PULL_REFRESH_DETENT_DP,
+  resolvePullToCreateOverscroll,
   resolvePullToCreateStage,
   type PullToCreateStage,
 } from "./pullToCreateOverscroll";
@@ -360,7 +361,8 @@ export function HomeScreen(props: HomeScreenProps) {
   const queuedThreadKeys = useQueuedThreadKeys();
   const openSwipeableRef = useRef<SwipeableMethods | null>(null);
   const homeScrollGesture = useNativeGesture();
-  const isAtTop = useSharedValue(true);
+  const scrollOffsetY = useSharedValue(Math.max(0, initialScrollOffset));
+  const overscrollOriginY = useSharedValue<number | null>(null);
   const pullDistance = useSharedValue(0);
   const pullDetentStage = useSharedValue<PullToCreateStage>(0);
   const { onStartNewTask } = props;
@@ -380,16 +382,26 @@ export function HomeScreen(props: HomeScreenProps) {
     activeOffsetY: 10,
     failOffsetY: -6,
     failOffsetX: [-16, 16],
+    onBegin: () => {
+      "worklet";
+      overscrollOriginY.set(Math.max(0, scrollOffsetY.get()));
+    },
     onUpdate: (event) => {
       "worklet";
-      if (!isAtTop.get() || event.translationY <= 0) {
+      const { overscrollOriginY: nextOrigin, overscrollY } = resolvePullToCreateOverscroll({
+        scrollOffsetY: scrollOffsetY.get(),
+        translationY: event.translationY,
+        overscrollOriginY: overscrollOriginY.get(),
+      });
+      overscrollOriginY.set(nextOrigin);
+      if (overscrollY <= 0) {
         if (pullDistance.get() !== 0) {
           pullDistance.set(0);
           pullDetentStage.set(0);
         }
         return;
       }
-      const damped = computePullToCreateDistance(event.translationY);
+      const damped = computePullToCreateDistance(overscrollY);
       pullDistance.set(damped);
       const nextStage = resolvePullToCreateStage(damped);
       if (nextStage !== pullDetentStage.get()) {
@@ -401,7 +413,9 @@ export function HomeScreen(props: HomeScreenProps) {
     },
     onDeactivate: (event) => {
       "worklet";
-      const shouldCreate = !event.canceled && pullDistance.get() >= PULL_CREATE_DETENT_DP;
+      const shouldCreate =
+        !event.canceled && scrollOffsetY.get() <= 0 && pullDistance.get() >= PULL_CREATE_DETENT_DP;
+      overscrollOriginY.set(null);
       pullDetentStage.set(0);
       pullDistance.set(withSpring(0, SPRING_SPATIAL_SNAPPY));
       if (shouldCreate) {
@@ -410,6 +424,7 @@ export function HomeScreen(props: HomeScreenProps) {
     },
     onFinalize: () => {
       "worklet";
+      overscrollOriginY.set(null);
       if (pullDistance.get() !== 0) {
         pullDetentStage.set(0);
         pullDistance.set(withSpring(0, SPRING_SPATIAL_SNAPPY));
@@ -503,7 +518,7 @@ export function HomeScreen(props: HomeScreenProps) {
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- clears the row activation timer on unmount
   useEffect(() => () => clearTimeout(activationTimerRef.current), []);
   const handleListScroll = (event: NativeSyntheticEvent<NativeScrollEvent>) => {
-    isAtTop.set(event.nativeEvent.contentOffset.y <= 2);
+    scrollOffsetY.set(Math.max(0, event.nativeEvent.contentOffset.y));
     onFabScroll?.(event);
     if (workspace)
       workspace.recordScrollOffset(

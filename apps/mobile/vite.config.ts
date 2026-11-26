@@ -74,6 +74,7 @@ const reactTests = [
 const androidReactTests = [
   "src/features/pull-requests/PullRequestMergeControls.test.tsx",
   "src/features/layout/AdaptiveWorkspaceLayout.tabletop.test.tsx",
+  "src/features/home/HomeScreen.pullToCreate.test.tsx",
 ];
 
 const sourceRoot = `${normalizePath(NodeURL.fileURLToPath(new URL("./src", import.meta.url)))}/`;
