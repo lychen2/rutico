@@ -194,10 +194,8 @@ function AndroidSlideToMergeTrack(props: {
         })
         .onUpdate((event) => {
           if (locked.get()) return;
-          const maxTravel = Math.max(
-            1,
-            trackWidth.get() - SLIDE_THUMB_SIZE - SLIDE_TRACK_PADDING * 2,
-          );
+          const maxTravel = trackWidth.get() - SLIDE_THUMB_SIZE - SLIDE_TRACK_PADDING * 2;
+          if (maxTravel <= 0) return;
           const nextX = Math.max(0, Math.min(maxTravel, event.translationX));
           thumbX.set(nextX);
           const bucket = Math.floor(nextX / maxTravel / SLIDE_BUCKET_STEP);
@@ -208,14 +206,11 @@ function AndroidSlideToMergeTrack(props: {
             }
           }
         })
-        .onEnd(() => {
+        .onEnd((_event, success) => {
           if (locked.get()) return;
-          const maxTravel = Math.max(
-            1,
-            trackWidth.get() - SLIDE_THUMB_SIZE - SLIDE_TRACK_PADDING * 2,
-          );
-          const progress = thumbX.get() / maxTravel;
-          if (progress >= SLIDE_COMMIT_THRESHOLD) {
+          const maxTravel = trackWidth.get() - SLIDE_THUMB_SIZE - SLIDE_TRACK_PADDING * 2;
+          const progress = maxTravel > 0 ? thumbX.get() / maxTravel : 0;
+          if (success === true && progress >= SLIDE_COMMIT_THRESHOLD) {
             locked.set(true);
             thumbX.set(withSpring(maxTravel, SPRING_DETENT_SNAP));
             runOnJS(handleSlideCommit)();
