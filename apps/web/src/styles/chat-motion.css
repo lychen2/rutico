@@ -836,3 +836,103 @@
     animation: none;
   }
 }
+
+/* ==========================================================================
+   D10 / C033: Bidirectional Step-Carousel & Reactive Kbd Press Feedback
+   ========================================================================== */
+
+@keyframes chat-question-step-forward {
+  from {
+    opacity: 0;
+    transform: translate3d(16px, 0, 0);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+@keyframes chat-question-step-backward {
+  from {
+    opacity: 0;
+    transform: translate3d(-16px, 0, 0);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+@keyframes chat-question-option-ripple {
+  from {
+    opacity: 0.48;
+    transform: scaleX(0.25);
+  }
+  to {
+    opacity: 0;
+    transform: scaleX(1);
+  }
+}
+
+[data-question-option-row="true"]::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  opacity: 0;
+  transform-origin: left center;
+  background-image: linear-gradient(
+    90deg,
+    color-mix(in oklch, var(--primary) 16%, transparent) 0%,
+    transparent 100%
+  );
+}
+
+[dir="rtl"] [data-question-option-row="true"]::after {
+  transform-origin: right center;
+}
+
+[data-question-kbd-slot="true"] {
+  transition: transform 90ms ease-out;
+}
+
+[data-question-kbd-slot="true"][data-kbd-pressed="true"] {
+  transform: translate3d(0, 1.5px, 0) scale(0.92);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  [data-question-step-direction="forward"] {
+    animation: chat-question-step-forward 220ms var(--spring-snappy) both;
+  }
+
+  [data-question-step-direction="backward"] {
+    animation: chat-question-step-backward 220ms var(--spring-snappy) both;
+  }
+
+  [dir="rtl"] [data-question-step-direction="forward"] {
+    animation-name: chat-question-step-backward;
+  }
+
+  [dir="rtl"] [data-question-step-direction="backward"] {
+    animation-name: chat-question-step-forward;
+  }
+
+  [data-question-option-row="true"][data-option-ripple="true"]::after {
+    animation: chat-question-option-ripple 240ms ease-out both;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-question-step-direction="forward"],
+  [data-question-step-direction="backward"],
+  [data-question-option-row="true"][data-option-ripple="true"]::after {
+    animation: none;
+  }
+
+  [data-question-kbd-slot="true"],
+  [data-question-kbd-slot="true"][data-kbd-pressed="true"] {
+    transition: none;
+    transform: none;
+  }
+}
