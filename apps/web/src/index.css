@@ -803,12 +803,25 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
   ):focus-visible {
     @apply outline-none ring-0;
   }
+  html {
+    -webkit-tap-highlight-color: transparent;
+  }
   html,
   body {
     background-color: var(--app-chrome-background);
   }
   body {
     @apply text-foreground relative;
+    text-autospace: normal;
+  }
+  pre,
+  code,
+  kbd,
+  samp,
+  input,
+  textarea,
+  [contenteditable="true"] {
+    text-autospace: no-autospace;
   }
 }
 
