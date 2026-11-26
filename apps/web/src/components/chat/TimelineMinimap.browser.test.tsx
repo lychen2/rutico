@@ -296,3 +296,77 @@ it("scrubs directly via GPU translate3d with zero per-frame React re-renders and
   expect(onScrub.mock.calls.at(-1)?.[0]).toEqual(semanticItems[2]);
   expect(renderCount).toBe(1);
 });
+
+it("renders amber find heatmap dots on TimelineMinimap and shakes ThreadFindBar on 0-match Enter", async () => {
+  const onNext = vi.fn();
+  const findItems: readonly TimelineMinimapItem[] = [
+    {
+      id: "row-turn-1",
+      rowIndex: 0,
+      userText: "First",
+      assistantText: "Reply",
+      findMatchCount: 4,
+      hasActiveFindMatch: true,
+    },
+    {
+      id: "row-turn-2",
+      rowIndex: 2,
+      userText: "Second",
+      assistantText: "Reply",
+      findMatchCount: 1,
+    },
+    {
+      id: "row-turn-3",
+      rowIndex: 4,
+      userText: "Third",
+      assistantText: "Reply",
+    },
+  ];
+  await using screen = await render(
+    <div data-assistant-citation-viewport="true" className="relative h-96 w-full">
+      <TimelineMinimap
+        hasPersistentGutter
+        hitStrip={{ left: 0, width: 24 }}
+        currentIndex={0}
+        atEnd={false}
+        items={findItems}
+        stripMap={new Map()}
+        onWheel={() => {}}
+        onSelect={() => {}}
+      />
+      <ThreadFindBar
+        open
+        query="nope"
+        matchCount={0}
+        counting={false}
+        status={null}
+        onRetry={() => {}}
+        activeIndex={0}
+        navigationId={1}
+        settled
+        focusRequestId={1}
+        onQueryChange={() => {}}
+        onNext={onNext}
+        onPrevious={() => {}}
+        onClose={() => {}}
+      />
+    </div>,
+    { router: false },
+  );
+
+  const dots = screen.container.querySelectorAll('[data-minimap-find-dot="true"]');
+  expect(dots).toHaveLength(2);
+  expect(dots[0]?.getAttribute("data-minimap-find-active")).toBe("true");
+  expect(dots[0]?.getAttribute("data-minimap-find-dense")).toBe("true");
+  expect(dots[1]?.getAttribute("data-minimap-find-active")).toBe("false");
+
+  const bar = screen.container.querySelector<HTMLElement>("[data-thread-find-bar]")!;
+  const shakeSpy = vi.spyOn(bar, "animate");
+  const input = screen.getByRole("searchbox", { name: "Find in thread" }).element();
+  input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+
+  expect(onNext).not.toHaveBeenCalled();
+  expect(shakeSpy).toHaveBeenCalledOnce();
+  expect(shakeSpy.mock.calls[0]?.[1]).toEqual({ duration: 220, easing: "ease-out" });
+  expect(bar.dataset.threadFindShaking).toBe("true");
+});

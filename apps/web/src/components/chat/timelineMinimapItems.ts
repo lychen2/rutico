@@ -21,6 +21,62 @@ export interface TimelineMinimapItem {
   readonly userText: string | null;
   readonly assistantText: string | null;
   readonly semantic?: TimelineMinimapSemantic | null;
+  readonly findMatchCount?: number;
+  readonly hasActiveFindMatch?: boolean;
+}
+
+export function annotateTimelineMinimapFindMatches(
+  items: ReadonlyArray<TimelineMinimapItem>,
+  rows: ReadonlyArray<MessagesTimelineRow>,
+  findMatchNavigation: ReadonlyArray<{ readonly entryId: string; readonly count: number }> | null,
+  activeEntryId: string | null,
+): ReadonlyArray<TimelineMinimapItem> {
+  if (
+    items.length === 0 ||
+    ((!findMatchNavigation || findMatchNavigation.length === 0) && activeEntryId === null)
+  ) {
+    return items;
+  }
+
+  // Map every row id to its enclosing user turn index in O(rows).
+  const turnIndexByRowId = new Map<string, number>();
+  let currentTurn = -1;
+  for (let rowIdx = 0; rowIdx < rows.length; rowIdx += 1) {
+    const row = rows[rowIdx];
+    if (!row) continue;
+    if (row.kind === "message" && row.message.role === "user") {
+      currentTurn += 1;
+    }
+    if (currentTurn >= 0 && currentTurn < items.length) {
+      turnIndexByRowId.set(row.id, currentTurn);
+    }
+  }
+
+  const countByTurn = new Map<number, number>();
+  if (findMatchNavigation) {
+    for (const entry of findMatchNavigation) {
+      if (entry.count <= 0) continue;
+      const turnIndex = turnIndexByRowId.get(entry.entryId);
+      if (turnIndex === undefined) continue;
+      countByTurn.set(turnIndex, (countByTurn.get(turnIndex) ?? 0) + entry.count);
+    }
+  }
+  const activeTurnIndex = activeEntryId === null ? undefined : turnIndexByRowId.get(activeEntryId);
+  if (activeTurnIndex !== undefined && !countByTurn.has(activeTurnIndex)) {
+    countByTurn.set(activeTurnIndex, 1);
+  }
+  if (countByTurn.size === 0) return items;
+
+  return items.map((item, index) => {
+    const count = countByTurn.get(index);
+    const isActive = activeTurnIndex === index;
+    if (count === undefined && !isActive) return item;
+    return {
+      ...item,
+      ...(count !== undefined ? { findMatchCount: count } : {}),
+      ...(isActive ? { hasActiveFindMatch: true } : {}),
+    };
+  });
 }
 
 export function deriveTimelineMinimapItems(

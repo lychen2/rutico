@@ -1426,3 +1426,35 @@
     animation: none;
   }
 }
+
+/* ==========================================================================
+   D12 / C042: Synchronized Find Match Heatmap Dots on TimelineMinimap
+   ========================================================================== */
+
+[data-minimap-find-dot="true"] {
+  width: 4px;
+  height: 4px;
+  background-color: color-mix(in oklch, var(--warning) 85%, #f59e0b);
+  box-shadow: 0 0 0 1px color-mix(in oklch, var(--background) 85%, transparent);
+  transition:
+    transform 160ms var(--spring-snappy),
+    background-color 140ms ease-out;
+}
+
+[data-minimap-find-dot="true"][data-minimap-find-dense="true"] {
+  width: 5px;
+  height: 5px;
+}
+
+[data-minimap-find-dot="true"][data-minimap-find-active="true"] {
+  width: 6px;
+  height: 6px;
+  background-color: var(--warning);
+  box-shadow: 0 0 0 2px color-mix(in oklch, var(--warning) 28%, transparent);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-minimap-find-dot="true"] {
+    transition: none;
+  }
+}

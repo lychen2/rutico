@@ -12,7 +12,11 @@ import { useChatCanvas } from "./ChatCanvasContext";
 import { WorkLogBlock } from "./WorkLog";
 import { TimelinePendingApprovalRow } from "./TimelinePendingApprovalRow";
 import type { WorktreeSetupSnapshot } from "@t3tools/contracts";
-import { deriveTimelineMinimapItems } from "./timelineMinimapItems";
+import {
+  annotateTimelineMinimapFindMatches,
+  deriveTimelineMinimapItems,
+} from "./timelineMinimapItems";
+import type { TimelineFindMatchEntry } from "./useThreadFind";
 import {
   type AssistantCitation,
   type EnvironmentId,
@@ -369,6 +373,7 @@ interface MessagesTimelineProps {
   findQuery?: string;
   activeFindMatch?: ThreadFindMatch | null;
   findNavigationId?: number;
+  findMatchNavigation?: ReadonlyArray<TimelineFindMatchEntry> | null;
 }
 
 export function MessagesTimeline(props: MessagesTimelineProps) {
@@ -418,6 +423,7 @@ const ConversationTimeline = memo(function ConversationTimeline({
   findQuery = "",
   activeFindMatch = null,
   findNavigationId = 0,
+  findMatchNavigation = null,
   latestRun,
   usageLimitRunId = null,
   announcedRun = null,
@@ -839,7 +845,13 @@ const ConversationTimeline = memo(function ConversationTimeline({
   // Run status/timestamps change per stream event; keep them out of shared row context.
   const runs = useStableHandoffRuns(runsProp);
   const revertPreviewMessageId = useRevertPreviewMessageId(routeThreadKey);
-  const minimapItems = deriveTimelineMinimapItems(rows);
+  const baseMinimapItems = deriveTimelineMinimapItems(rows);
+  const minimapItems = annotateTimelineMinimapFindMatches(
+    baseMinimapItems,
+    rows,
+    findActive ? findMatchNavigation : null,
+    findActive ? (activeFindMatch?.entryId ?? null) : null,
+  );
   const revertPreviewRowIndex =
     revertPreviewMessageId === null
       ? -1

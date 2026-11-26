@@ -695,6 +695,16 @@ export function TimelineMinimap({
                       className="pointer-events-none absolute -right-1.5 top-1/2 size-0.5 -translate-y-1/2 rounded-full"
                     />
                   ) : null}
+                  {(item.findMatchCount ?? 0) > 0 || item.hasActiveFindMatch ? (
+                    <span
+                      aria-hidden="true"
+                      data-minimap-find-dot="true"
+                      data-minimap-find-active={item.hasActiveFindMatch ? "true" : "false"}
+                      data-minimap-find-count={item.findMatchCount ?? 1}
+                      data-minimap-find-dense={(item.findMatchCount ?? 0) >= 3 ? "true" : undefined}
+                      className="pointer-events-none absolute -right-2.5 top-1/2 -translate-y-1/2 rounded-full"
+                    />
+                  ) : null}
                 </span>
               );
             })}

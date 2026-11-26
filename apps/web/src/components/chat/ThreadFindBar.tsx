@@ -1,10 +1,12 @@
 import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 import { T, useGT } from "gt-react";
 import { ChevronDownIcon, ChevronUpIcon, XIcon } from "lucide-react";
+import { AnimatedNumber } from "../ui/animated-number";
 import { Button } from "../ui/button";
 import { InputGroup, InputGroupAddon, InputGroupInput } from "../ui/input-group";
 import { Kbd, KbdGroup } from "../ui/kbd";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
+import { prefersReducedMotion } from "~/lib/motion/springs";
 import { cn } from "~/lib/utils";
 import {
   formatThreadFindCount,
@@ -35,7 +37,11 @@ interface ThreadFindBarProps {
 
 export const THREAD_FIND_BAR_RESERVED_HEIGHT = 36 + THREAD_DETAILS_CARD_GAP;
 
+const FIND_NO_MATCH_SHAKE_MS = 220;
+
 export function ThreadFindBar(props: ThreadFindBarProps) {
+  const barRef = useRef<HTMLDivElement | null>(null);
+  const shakeAnimationRef = useRef<Animation | null>(null);
   const inputRef = useRef<HTMLInputElement | null>(null);
   const lastHighlightedRef = useRef<{ navigationId: number; rowId: string | null }>({
     navigationId: -1,
@@ -119,6 +125,36 @@ export function ThreadFindBar(props: ThreadFindBarProps) {
 
   if (!props.open) return null;
 
+  const triggerNoMatchShake = () => {
+    const node = barRef.current;
+    if (!node || prefersReducedMotion() || typeof node.animate !== "function") return;
+    shakeAnimationRef.current?.cancel();
+    node.dataset.threadFindShaking = "true";
+    const animation = node.animate(
+      [
+        { transform: "translate3d(0, 0, 0)" },
+        { transform: "translate3d(-3px, 0, 0)", offset: 0.2 },
+        { transform: "translate3d(3px, 0, 0)", offset: 0.45 },
+        { transform: "translate3d(-2px, 0, 0)", offset: 0.7 },
+        { transform: "translate3d(1px, 0, 0)", offset: 0.88 },
+        { transform: "translate3d(0, 0, 0)" },
+      ],
+      {
+        duration: FIND_NO_MATCH_SHAKE_MS,
+        easing: "ease-out",
+      },
+    );
+    shakeAnimationRef.current = animation;
+    const clear = () => {
+      delete node.dataset.threadFindShaking;
+      if (shakeAnimationRef.current === animation) {
+        shakeAnimationRef.current = null;
+      }
+    };
+    animation.addEventListener("finish", clear, { once: true });
+    animation.addEventListener("cancel", clear, { once: true });
+  };
+
   const navigationDisabled =
     props.matchCount === 0 || props.status === "loading" || props.counting === true;
   const handleKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
@@ -126,13 +162,21 @@ export function ThreadFindBar(props: ThreadFindBarProps) {
     if (event.key === "Enter") {
       event.preventDefault();
       event.stopPropagation();
+      if (noResults) {
+        triggerNoMatchShake();
+        return;
+      }
       if (event.shiftKey) props.onPrevious();
       else props.onNext();
     }
   };
 
+  const showAnimatedCount =
+    hasQuery && props.status === null && props.counting !== true && props.matchCount > 0;
+
   return (
     <div
+      ref={barRef}
       data-thread-find-bar
       data-thread-find-no-results={noResults ? "true" : undefined}
       className={cn(
@@ -169,11 +213,18 @@ export function ThreadFindBar(props: ThreadFindBarProps) {
           <span
             aria-hidden
             className={cn(
-              "min-w-10 text-center text-xs tabular-nums",
+              "inline-flex min-w-10 items-baseline justify-center text-center text-xs tabular-nums",
               noResults ? "text-destructive" : "text-muted-foreground",
             )}
           >
-            {label}
+            {showAnimatedCount ? (
+              <>
+                <AnimatedNumber value={props.activeIndex + 1} />
+                <span>/{props.matchCount}</span>
+              </>
+            ) : (
+              label
+            )}
           </span>
           {props.status === "error" ? (
             <Button size="xs" variant="ghost" onClick={props.onRetry}>
