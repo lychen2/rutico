@@ -7,6 +7,7 @@ import { cn } from "~/lib/utils";
 import { environmentIdsKey } from "~/state/environmentAtomList";
 import { environmentUpdateStatesAtom } from "~/state/server";
 import { useServerUpdate } from "../ServerUpdateAction";
+import { AnimatedNumber } from "../ui/animated-number";
 import { Button } from "../ui/button";
 import { Popover, PopoverPopup, PopoverTrigger } from "../ui/popover";
 import {
@@ -179,7 +180,14 @@ export function SidebarUpdateCapsule({
               "rounded-full text-xs font-medium tabular-nums ring-1 ring-current/22 ring-inset",
           )}
         >
-          {restartSeconds !== null ? m(msg("{seconds}s", { seconds: restartSeconds })) : icon}
+          {restartSeconds !== null ? (
+            <AnimatedNumber
+              value={restartSeconds}
+              format={(seconds) => m(msg("{seconds}s", { seconds }))}
+            />
+          ) : (
+            icon
+          )}
         </span>
       </div>
       <PopoverPopup side="top" align="end" padding="compact" width="sm">

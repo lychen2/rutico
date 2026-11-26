@@ -295,3 +295,56 @@
     will-change: var(--visible-animation-will-change, transform);
   }
 }
+
+/* Mechanical digit-rolling mask for AnimatedNumber slots. */
+[data-slot="animated-number-reel"] {
+  -webkit-mask-image: linear-gradient(
+    to bottom,
+    transparent 0%,
+    black 14%,
+    black 86%,
+    transparent 100%
+  );
+  mask-image: linear-gradient(to bottom, transparent 0%, black 14%, black 86%, transparent 100%);
+}
+
+/* Benji 3-line MorphingIcon & Jakub contextual icon swap. */
+[data-slot="morphing-icon-group"],
+[data-slot="morphing-icon-line"] {
+  transition:
+    transform var(--duration-snappy) var(--spring-snappy),
+    opacity 120ms ease-out;
+}
+
+[data-slot="contextual-icon-swap-item"] {
+  transition:
+    transform var(--duration-snappy) var(--spring-snappy),
+    opacity 150ms ease-out,
+    filter 150ms ease-out;
+}
+
+[data-slot="contextual-icon-swap-item"][data-active="true"] {
+  opacity: 1;
+  transform: scale(1);
+  filter: blur(0px);
+}
+
+[data-slot="contextual-icon-swap-item"][data-active="false"] {
+  pointer-events: none;
+  opacity: 0;
+  transform: scale(0.25);
+  filter: blur(4px);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-slot="morphing-icon-group"],
+  [data-slot="morphing-icon-line"],
+  [data-slot="contextual-icon-swap-item"] {
+    transition: none;
+  }
+
+  [data-slot="contextual-icon-swap-item"][data-active="false"] {
+    transform: none;
+    filter: none;
+  }
+}
