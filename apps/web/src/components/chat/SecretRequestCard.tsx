@@ -41,9 +41,11 @@ import { useId, useRef, useState, type FormEvent } from "react";
 import { serverEnvironment } from "../../state/server";
 import { useEnvironmentScope } from "../../state/session";
 import { useAtomCommand } from "../../state/use-atom-command";
+import { AnimatedHeight } from "../AnimatedHeight";
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
 import { InputGroup, InputGroupAddon, InputGroupInput } from "../ui/input-group";
+import { ContextualIconSwap } from "../ui/morphing-icon";
 import { SecretSourceSelect } from "../settings/SecretSourceInput";
 import { WorkLogRow } from "./WorkLog";
 
@@ -56,16 +58,18 @@ export function SecretRequestCard(props: {
   const messages = useMessages();
   const display = secretRequestDisplay(item, props.visibility, messages);
   if (display.kind === "answered" || display.kind === "pending-elsewhere") {
-    const Icon =
-      display.kind === "pending-elsewhere"
-        ? LockIcon
-        : display.outcome === "saved"
-          ? CheckIcon
-          : MinusIcon;
+    const isSaved = display.kind === "answered" && display.outcome === "saved";
+    const Icon = display.kind === "pending-elsewhere" ? LockIcon : isSaved ? CheckIcon : MinusIcon;
     return (
       <WorkLogRow
         data-v2-item-type={item.type}
-        icon={<Icon className="size-3.5 text-icon-muted" aria-hidden />}
+        data-vault-sealed-row={isSaved ? "saved" : display.kind}
+        icon={
+          <Icon
+            className={isSaved ? "size-3.5 text-success-foreground" : "size-3.5 text-icon-muted"}
+            aria-hidden
+          />
+        }
         label={
           <>
             {item.label} · {display.label}
@@ -110,9 +114,11 @@ function PendingSecretRequestForm(props: {
   const sources = multiple ? NO_SOURCES : configuredSources;
   const [sourceId, setSourceId] = useState<SecretProviderId | null>(null);
   const source = sources.find((candidate) => candidate.id === sourceId) ?? null;
+  const gt = useGT();
   const [values, setValues] = useState<Readonly<Record<string, string>>>({});
   const [reference, setReference] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [sealedOutcome, setSealedOutcome] = useState<"saved" | "declined" | null>(null);
   const [error, setError] = useState<string | null>(null);
   // Enter and click can both submit before a render.
   const inFlight = useRef(false);
@@ -140,6 +146,7 @@ function PendingSecretRequestForm(props: {
     });
     if (result._tag === "Success") {
       setReference("");
+      setSealedOutcome(reply.type === "decline" ? "declined" : "saved");
       return;
     }
     setValues(typed);
@@ -154,6 +161,7 @@ function PendingSecretRequestForm(props: {
 
   const onSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    if (sealedOutcome !== null) return;
     if (source === null) {
       void send({ type: "save", values });
     } else if (secretRequestReference(source, reference) === undefined) {
@@ -172,22 +180,51 @@ function PendingSecretRequestForm(props: {
       // A single input is labelled by the card title.
       label={multiple ? input.label : undefined}
       value={secretRequestValue(values, input.key)}
-      disabled={submitting}
+      disabled={submitting || sealedOutcome !== null}
       invalid={error !== null}
       describedBy={describedBy}
       onChange={(value) => setValues((current) => ({ ...current, [input.key]: value }))}
     />
   );
-  const saveButton = (
-    <Button type="submit" disabled={submitting || !canSave}>
-      <T>Save securely</T>
-    </Button>
-  );
+  const saveButton =
+    sealedOutcome !== null ? (
+      <span
+        role="status"
+        data-vault-sealed-pill={sealedOutcome}
+        className={
+          sealedOutcome === "saved"
+            ? "inline-flex items-center gap-1.5 rounded-full border border-success/35 bg-success/12 px-2.5 py-1 text-xs font-medium text-success-foreground"
+            : "inline-flex items-center gap-1.5 rounded-full border border-border/80 bg-muted/75 px-2.5 py-1 text-xs font-medium text-muted-foreground"
+        }
+      >
+        {sealedOutcome === "saved" ? (
+          <svg aria-hidden="true" viewBox="0 0 14 14" fill="none" className="size-3 shrink-0">
+            <path
+              d="M2.8 7.3l2.8 2.8 5.6-6"
+              stroke="currentColor"
+              strokeWidth="1.8"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              pathLength={100}
+              data-vault-seal-check="true"
+            />
+          </svg>
+        ) : (
+          <MinusIcon aria-hidden="true" className="size-3 shrink-0" />
+        )}
+        <span>{sealedOutcome === "saved" ? gt("Sealed") : gt("Declined")}</span>
+      </span>
+    ) : (
+      <Button type="submit" disabled={submitting || !canSave}>
+        <T>Save securely</T>
+      </Button>
+    );
 
   return (
     <form
       data-v2-item-type={item.type}
-      className="flex min-w-0 flex-col gap-3 rounded-xl border border-border/60 bg-card p-4"
+      data-vault-card="secret"
+      className="flex min-w-0 flex-col gap-3 rounded-xl border border-border/75 bg-card p-4 shadow-xs"
       onSubmit={onSubmit}
       autoComplete="off"
       // On click, not pointerdown: the mousedown that follows a pointerdown
@@ -201,17 +238,25 @@ function PendingSecretRequestForm(props: {
         document.getElementById(inputId(Math.max(empty, 0)))?.focus();
       }}
     >
-      <div className="flex min-w-0 flex-col gap-1">
-        {multiple ? (
-          <p className="text-sm font-medium text-foreground">{item.label}</p>
-        ) : (
-          <label htmlFor={inputId(0)} className="text-sm font-medium text-foreground">
-            {item.label}
-          </label>
-        )}
-        {item.reason.trim() ? (
-          <p className="text-sm wrap-anywhere text-muted-foreground">{item.reason}</p>
-        ) : null}
+      <div className="flex min-w-0 items-start gap-2.5">
+        <span
+          aria-hidden="true"
+          className="mt-0.5 inline-flex size-6 shrink-0 items-center justify-center rounded-lg border border-border/75 bg-muted/60 text-muted-foreground"
+        >
+          <LockIcon className="size-3.5" />
+        </span>
+        <div className="flex min-w-0 flex-1 flex-col gap-1">
+          {multiple ? (
+            <p className="text-sm font-medium text-foreground">{item.label}</p>
+          ) : (
+            <label htmlFor={inputId(0)} className="text-sm font-medium text-foreground">
+              {item.label}
+            </label>
+          )}
+          {item.reason.trim() ? (
+            <p className="text-sm wrap-anywhere text-muted-foreground">{item.reason}</p>
+          ) : null}
+        </div>
       </div>
       {link !== null ? (
         <div className="flex min-w-0 flex-col items-start gap-1.5">
@@ -240,7 +285,7 @@ function PendingSecretRequestForm(props: {
               value={source?.id ?? null}
               sources={sources}
               label={item.label}
-              disabled={submitting}
+              disabled={submitting || sealedOutcome !== null}
               onValueChange={(next) => {
                 setSourceId(next);
                 setError(null);
@@ -248,27 +293,29 @@ function PendingSecretRequestForm(props: {
             />
           ) : null}
           <div className="min-w-0 flex-1">
-            {source === null ? (
-              inputs.map(field)
-            ) : (
-              <Input
-                id={inputId(0)}
-                font="mono"
-                autoComplete="off"
-                autoCorrect="off"
-                autoCapitalize="off"
-                spellCheck={false}
-                placeholder={source.referencePlaceholder}
-                value={reference}
-                disabled={submitting}
-                aria-invalid={error !== null || undefined}
-                aria-describedby={describedBy}
-                onChange={(event) => {
-                  setReference(event.currentTarget.value);
-                  setError(null);
-                }}
-              />
-            )}
+            <AnimatedHeight contentKey={source?.id ?? "manual"}>
+              {source === null ? (
+                inputs.map(field)
+              ) : (
+                <Input
+                  id={inputId(0)}
+                  font="mono"
+                  autoComplete="off"
+                  autoCorrect="off"
+                  autoCapitalize="off"
+                  spellCheck={false}
+                  placeholder={source.referencePlaceholder}
+                  value={reference}
+                  disabled={submitting || sealedOutcome !== null}
+                  aria-invalid={error !== null || undefined}
+                  aria-describedby={describedBy}
+                  onChange={(event) => {
+                    setReference(event.currentTarget.value);
+                    setError(null);
+                  }}
+                />
+              )}
+            </AnimatedHeight>
           </div>
           {saveButton}
         </div>
@@ -287,15 +334,17 @@ function PendingSecretRequestForm(props: {
           {secretRequestPrivacyNote(item, messages)}
         </p>
         <div className="ms-auto flex shrink-0 items-center gap-2">
-          <Button
-            type="button"
-            size="xs"
-            variant="ghost-muted"
-            disabled={submitting}
-            onClick={() => void send({ type: "decline" })}
-          >
-            <T>Decline</T>
-          </Button>
+          {sealedOutcome === null ? (
+            <Button
+              type="button"
+              size="xs"
+              variant="ghost-muted"
+              disabled={submitting}
+              onClick={() => void send({ type: "decline" })}
+            >
+              <T>Decline</T>
+            </Button>
+          ) : null}
           {multiple ? saveButton : null}
         </div>
       </div>
@@ -350,7 +399,13 @@ function SecretRequestField(props: {
             onMouseDown={(event) => event.preventDefault()}
             onClick={() => setRevealed((current) => !current)}
           >
-            {revealed ? <EyeOffIcon aria-hidden /> : <EyeIcon aria-hidden />}
+            <ContextualIconSwap
+              activeKey={revealed ? "hide" : "show"}
+              items={[
+                { key: "show", icon: <EyeIcon aria-hidden /> },
+                { key: "hide", icon: <EyeOffIcon aria-hidden /> },
+              ]}
+            />
           </Button>
         </InputGroupAddon>
       ) : null}

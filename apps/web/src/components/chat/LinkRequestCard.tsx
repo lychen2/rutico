@@ -67,10 +67,11 @@ export function LinkRequestCard(props: {
     messages,
   );
   if (display.kind === "answered" || display.kind === "pending-elsewhere") {
+    const isLinked = display.kind === "answered" && display.outcome === "linked";
     const Icon =
       display.kind === "pending-elsewhere"
         ? LinkIcon
-        : display.outcome === "linked"
+        : isLinked
           ? CheckIcon
           : display.outcome === "failed"
             ? XIcon
@@ -78,7 +79,13 @@ export function LinkRequestCard(props: {
     return (
       <WorkLogRow
         data-v2-item-type={item.type}
-        icon={<Icon className="size-3.5 text-icon-muted" aria-hidden />}
+        data-vault-sealed-row={isLinked ? "linked" : display.kind}
+        icon={
+          <Icon
+            className={isLinked ? "size-3.5 text-success-foreground" : "size-3.5 text-icon-muted"}
+            aria-hidden
+          />
+        }
         label={display.label}
       />
     );
@@ -95,6 +102,7 @@ function PendingLinkRequest(props: {
   const messages = useMessages();
   const [open, setOpen] = useState(false);
   const [declining, setDeclining] = useState(false);
+  const [sealedOutcome, setSealedOutcome] = useState<"linked" | "declined" | null>(null);
   const [error, setError] = useState<string | null>(null);
   const answer = useAtomCommand(peerLinkEnvironment.answerRequest, {
     label: "decline link request",
@@ -114,7 +122,11 @@ function PendingLinkRequest(props: {
     const result = await answer({ environmentId: props.environmentId, input }).finally(() =>
       setDeclining(false),
     );
-    if (result._tag === "Failure" && !isAtomCommandInterrupted(result)) {
+    if (result._tag === "Success") {
+      setSealedOutcome("declined");
+      return;
+    }
+    if (!isAtomCommandInterrupted(result)) {
       pipe(
         squashAtomCommandFailure(result),
         (failure) => linkRequestFailureMessage(failure, messages),
@@ -126,22 +138,62 @@ function PendingLinkRequest(props: {
   return (
     <div
       data-v2-item-type={item.type}
-      className="flex min-w-0 flex-col gap-3 rounded-xl border border-border/60 bg-card p-4"
+      data-vault-card="link"
+      className="flex min-w-0 flex-col gap-3 rounded-xl border border-border/75 bg-card p-4 shadow-xs"
     >
-      <div className="flex min-w-0 flex-col gap-1">
-        <p className="text-sm font-medium text-foreground">
-          {item.url === undefined
-            ? gt("Link a machine to this environment")
-            : gt("Link {target} to this environment", { target })}
-        </p>
-        {item.reason.trim() ? <p className="text-sm text-muted-foreground">{item.reason}</p> : null}
+      <div className="flex min-w-0 items-start gap-2.5">
+        <span
+          aria-hidden="true"
+          className="mt-0.5 inline-flex size-6 shrink-0 items-center justify-center rounded-lg border border-border/75 bg-muted/60 text-muted-foreground"
+        >
+          <LinkIcon className="size-3.5" />
+        </span>
+        <div className="flex min-w-0 flex-1 flex-col gap-1">
+          <p className="text-sm font-medium text-foreground">
+            {item.url === undefined
+              ? gt("Link a machine to this environment")
+              : gt("Link {target} to this environment", { target })}
+          </p>
+          {item.reason.trim() ? (
+            <p className="text-sm text-muted-foreground">{item.reason}</p>
+          ) : null}
+        </div>
       </div>
       {error !== null ? (
         <p role="alert" className="text-xs text-destructive">
           {error}
         </p>
       ) : null}
-      {canAnswer ? (
+      {sealedOutcome !== null ? (
+        <div className="flex items-center justify-end">
+          <span
+            role="status"
+            data-vault-sealed-pill={sealedOutcome}
+            className={
+              sealedOutcome === "linked"
+                ? "inline-flex items-center gap-1.5 rounded-full border border-success/35 bg-success/12 px-2.5 py-1 text-xs font-medium text-success-foreground"
+                : "inline-flex items-center gap-1.5 rounded-full border border-border/80 bg-muted/75 px-2.5 py-1 text-xs font-medium text-muted-foreground"
+            }
+          >
+            {sealedOutcome === "linked" ? (
+              <svg aria-hidden="true" viewBox="0 0 14 14" fill="none" className="size-3 shrink-0">
+                <path
+                  d="M2.8 7.3l2.8 2.8 5.6-6"
+                  stroke="currentColor"
+                  strokeWidth="1.8"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  pathLength={100}
+                  data-vault-seal-check="true"
+                />
+              </svg>
+            ) : (
+              <MinusIcon aria-hidden="true" className="size-3 shrink-0" />
+            )}
+            <span>{sealedOutcome === "linked" ? gt("Linked") : gt("Declined")}</span>
+          </span>
+        </div>
+      ) : canAnswer ? (
         <div className="flex min-w-0 items-center justify-end gap-2">
           <Button
             type="button"
@@ -166,6 +218,7 @@ function PendingLinkRequest(props: {
         item={item}
         open={open}
         onOpenChange={setOpen}
+        onLinked={() => setSealedOutcome("linked")}
       />
     </div>
   );
@@ -179,6 +232,7 @@ function LinkRequestDialog(props: {
   readonly item: LinkRequestItem;
   readonly open: boolean;
   readonly onOpenChange: (open: boolean) => void;
+  readonly onLinked?: () => void;
 }) {
   const { item } = props;
   const gt = useGT();
@@ -296,6 +350,7 @@ function LinkRequestDialog(props: {
     if (result === null) return;
     if (result._tag === "Success") {
       // The card switches to its answered row once the item updates.
+      props.onLinked?.();
       close();
     } else if (!isAtomCommandInterrupted(result)) {
       pipe(
