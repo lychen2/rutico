@@ -298,7 +298,7 @@ import {
 } from "../state/entities";
 import { useEnvironmentShellHasSnapshot } from "../state/shell";
 import { ChatComposer, type ChatComposerHandle } from "./chat/ChatComposer";
-import { DraftHeroHeadline } from "./chat/DraftHeroHeadline";
+import { DraftHeroHeadline, DraftHeroStarterPills } from "./chat/DraftHeroHeadline";
 import { ExpandedImageDialogHost, openExpandedImagePreview } from "./chat/ExpandedImageDialog";
 import {
   BranchRestoreConfirmHost,
@@ -3878,6 +3878,7 @@ export default function ChatView(props: ChatViewProps) {
               }}
               inert={isRevertingCheckpoint}
               data-chat-composer-overlay="true"
+              data-draft-hero-overlay={isDraftHeroState ? "true" : undefined}
               className={
                 isDraftHeroState
                   ? "pointer-events-none absolute inset-0 z-20 flex items-center [@media(max-height:34rem)]:items-end"
@@ -4226,12 +4227,30 @@ export default function ChatView(props: ChatViewProps) {
                           </div>
                         </div>
                       </ComposerSurface.Shell>
-                      {isDraftHeroState && composerBannerItems.length > 0 ? (
-                        // Out of flow, like the headline, so a notice never moves the centered composer.
-                        // Short windows pin the composer to the bottom, where an out-of-flow notice
-                        // would fall off-screen, so there it takes space and lifts the composer.
-                        <div className="absolute inset-x-0 top-full flex flex-col gap-1 pt-4 [@media(max-height:34rem)]:static">
-                          <ComposerBannerStack items={composerBannerItems} detached />
+                      {isDraftHeroState && (composerBannerItems.length > 0 || draftId !== null) ? (
+                        // Out of flow, like the headline, so notices and starters never shift the centered composer.
+                        // Short windows pin the composer to the bottom, where out-of-flow notices take space.
+                        <div className="absolute inset-x-0 top-full flex flex-col gap-2 pt-3 [@media(max-height:34rem)]:static">
+                          {draftId !== null ? (
+                            <div className="[@media(max-height:34rem)]:hidden">
+                              <DraftHeroStarterPills
+                                draftId={draftId}
+                                isGitRepo={isGitRepo}
+                                activeBranch={activeThreadBranch ?? null}
+                                activeProjectTitle={activeProject?.title ?? null}
+                                isScratchDraft={activeProject?.isScratch === true}
+                                onSelectStarter={(starterPrompt) => {
+                                  useComposerDraftStore
+                                    .getState()
+                                    .setPrompt(draftId, starterPrompt);
+                                  scheduleComposerFocusStable();
+                                }}
+                              />
+                            </div>
+                          ) : null}
+                          {composerBannerItems.length > 0 ? (
+                            <ComposerBannerStack items={composerBannerItems} detached />
+                          ) : null}
                         </div>
                       ) : null}
                     </div>

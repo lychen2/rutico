@@ -1,12 +1,12 @@
 import { useStableCallback } from "../../hooks/useStableCallback";
 import { useLayoutEffect, useRef } from "react";
+import { getSpringWaapiTiming, prefersReducedMotion } from "~/lib/motion/springs";
 import {
   DRAFT_HERO_AGENT_IGNITE_DELAY_RATIO,
   DRAFT_HERO_AGENT_IGNITE_OFFSET_PX,
   DRAFT_HERO_MESSAGE_ENTER_OFFSET_PX,
   DRAFT_HERO_MESSAGE_ENTER_SCALE,
   DRAFT_HERO_TRANSITION_ANIMATION_ID,
-  DRAFT_HERO_TRANSITION_EASING,
 } from "./draftHeroTransition";
 
 export function useDraftHeroLayoutTransition(
@@ -45,6 +45,7 @@ export function useDraftHeroLayoutTransition(
     if (
       stateChanged &&
       animationsActive &&
+      !prefersReducedMotion() &&
       !mobileComposerTransitionActive &&
       transitionGroup &&
       previousComposerRect &&
@@ -52,6 +53,8 @@ export function useDraftHeroLayoutTransition(
       typeof transitionGroup.animate === "function"
     ) {
       const activeAnimations: Animation[] = [];
+      const spatialSpring = getSpringWaapiTiming("spatial");
+      const snappySpring = getSpringWaapiTiming("snappy");
       const translateX = previousComposerRect.left - nextComposerRect.left;
       const translateY = previousComposerRect.top - nextComposerRect.top;
       if (Math.abs(translateX) >= 0.5 || Math.abs(translateY) >= 0.5) {
@@ -61,8 +64,8 @@ export function useDraftHeroLayoutTransition(
             { transform: "translate3d(0, 0, 0)" },
           ],
           {
-            duration: animationDurationMs,
-            easing: DRAFT_HERO_TRANSITION_EASING,
+            duration: Math.max(animationDurationMs, Math.round(spatialSpring.duration * 0.85)),
+            easing: spatialSpring.easing,
           },
         );
         composerAnimation.id = DRAFT_HERO_TRANSITION_ANIMATION_ID;
@@ -95,7 +98,7 @@ export function useDraftHeroLayoutTransition(
               ],
               {
                 duration: Math.max(160, Math.round(animationDurationMs * 0.92)),
-                easing: DRAFT_HERO_TRANSITION_EASING,
+                easing: snappySpring.easing,
               },
             );
             messageAnimation.id = DRAFT_HERO_TRANSITION_ANIMATION_ID;
@@ -125,7 +128,7 @@ export function useDraftHeroLayoutTransition(
               {
                 duration: Math.max(150, Math.round(animationDurationMs * 0.85)),
                 delay: baseDelay + index * 32,
-                easing: DRAFT_HERO_TRANSITION_EASING,
+                easing: snappySpring.easing,
                 fill: "backwards",
               },
             );

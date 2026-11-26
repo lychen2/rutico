@@ -4,9 +4,17 @@ import { resolveEnvironmentMachineKind, type ScopedProjectRef } from "@t3tools/c
 import { scopedProjectKey, scopeProjectRef } from "@t3tools/client-runtime/environment";
 import { isScratchProject } from "@t3tools/client-runtime/state/projects";
 import { T, useGT, Var } from "gt-react";
-import { FolderPlusIcon } from "lucide-react";
+import {
+  BugIcon,
+  CompassIcon,
+  FileDiffIcon,
+  FolderPlusIcon,
+  ListChecksIcon,
+  TerminalIcon,
+  XIcon,
+} from "lucide-react";
 import { useAtomValue } from "@effect/atom-react";
-import { useRef, useState } from "react";
+import { useRef, useState, type CSSProperties } from "react";
 
 import { openCommandPalette } from "~/commandPaletteBus";
 import { shortcutLabelForCommand } from "~/keybindings";
@@ -238,6 +246,7 @@ export function DraftHeroHeadline({
             <ComboboxTrigger
               render={<InlineButton tone="picker" />}
               data-draft-project-trigger=""
+              data-draft-project-capsule="true"
               className="pointer-events-auto min-w-0 max-w-full align-baseline"
             />
           }
@@ -358,7 +367,10 @@ export function DraftHeroHeadline({
   }
 
   return (
-    <div className="mx-auto flex w-full max-w-5xl flex-col items-center">
+    <div
+      data-draft-hero-stage="true"
+      className="mx-auto flex w-full max-w-5xl flex-col items-center"
+    >
       {hasResolvedProject && !isScratchDraft ? (
         <div className="t3-draft-hero-title w-full">
           <DraftHeroProjectHeading projectName={activeProjectTitle ?? gt("Choose a project")}>
@@ -383,6 +395,148 @@ export function DraftHeroHeadline({
           {isScratchDraft ? projectSelector : orStartWithoutProject}
         </p>
       )}
+    </div>
+  );
+}
+
+interface DraftHeroStarterPillsProps {
+  readonly draftId: DraftId;
+  readonly isGitRepo: boolean;
+  readonly activeBranch: string | null;
+  readonly activeProjectTitle: string | null;
+  readonly isScratchDraft: boolean;
+  readonly onSelectStarter: (prompt: string) => void;
+}
+
+export function DraftHeroStarterPills({
+  draftId,
+  isGitRepo,
+  activeBranch,
+  activeProjectTitle,
+  isScratchDraft,
+  onSelectStarter,
+}: DraftHeroStarterPillsProps) {
+  const gt = useGT();
+  const hasPrompt = useComposerDraftStore(
+    (store) => (store.getComposerDraft(draftId)?.prompt ?? "").length > 0,
+  );
+  const isTriage = useComposerDraftStore((store) =>
+    isTriagePrompt(store.getComposerDraft(draftId)?.prompt ?? ""),
+  );
+  const [dismissedDraftId, setDismissedDraftId] = useState<DraftId | null>(null);
+  const dismissed = dismissedDraftId === draftId;
+
+  if (isTriage) return null;
+
+  const hasProject = activeProjectTitle !== null && !isScratchDraft;
+  const starters =
+    hasProject && isGitRepo
+      ? [
+          {
+            id: "review",
+            icon: FileDiffIcon,
+            label: activeBranch
+              ? gt("Review {branch}", { branch: activeBranch })
+              : gt("Review changes"),
+            prompt: activeBranch
+              ? gt(
+                  "Review the current changes on {branch} and flag any bugs, regressions, or missing edge cases.",
+                  { branch: activeBranch },
+                )
+              : gt(
+                  "Review the current working tree changes and flag any bugs, regressions, or missing edge cases.",
+                ),
+          },
+          {
+            id: "explain",
+            icon: CompassIcon,
+            label: gt("Explain architecture"),
+            prompt: gt(
+              "Walk me through the architecture of {project} and point out where the core logic lives.",
+              { project: activeProjectTitle },
+            ),
+          },
+          {
+            id: "tests",
+            icon: BugIcon,
+            label: gt("Fix failing tests"),
+            prompt: gt(
+              "Run the relevant tests, diagnose any failures, and propose a minimal verified fix.",
+            ),
+          },
+          {
+            id: "plan",
+            icon: ListChecksIcon,
+            label: gt("Plan a feature"),
+            prompt: gt(
+              "Help me design a concise implementation plan and check trade-offs before editing code.",
+            ),
+          },
+        ]
+      : [
+          {
+            id: "explore",
+            icon: CompassIcon,
+            label: gt("Explore codebase"),
+            prompt: gt("Map out the workspace structure and summarize the key entry points."),
+          },
+          {
+            id: "debug",
+            icon: BugIcon,
+            label: gt("Debug an issue"),
+            prompt: gt(
+              "Help me trace the root cause of a bug and verify the fix with a regression test.",
+            ),
+          },
+          {
+            id: "script",
+            icon: TerminalIcon,
+            label: gt("Automate a task"),
+            prompt: gt("Write a clean, reusable script to automate a repetitive workflow task."),
+          },
+          {
+            id: "plan",
+            icon: ListChecksIcon,
+            label: gt("Plan a task"),
+            prompt: gt("Break down my goal into clear, ordered implementation steps."),
+          },
+        ];
+
+  const visible = !hasPrompt && !dismissed;
+
+  return (
+    <div
+      data-draft-starter-rail="true"
+      data-starters-visible={visible ? "true" : "false"}
+      aria-hidden={!visible}
+      inert={!visible}
+      className="pointer-events-none flex flex-wrap items-center justify-center gap-1.5 px-2"
+    >
+      {starters.map((starter, index) => {
+        const Icon = starter.icon;
+        return (
+          <button
+            key={starter.id}
+            type="button"
+            data-draft-starter-pill="true"
+            style={{ "--starter-index": index } as CSSProperties}
+            onClick={() => onSelectStarter(starter.prompt)}
+            className="pointer-events-auto inline-flex max-w-52 cursor-pointer items-center gap-1.5 rounded-full border border-border/75 bg-card/85 px-2.5 py-1 text-xs text-muted-foreground shadow-xs transition-[background-color,border-color,color,transform] duration-150 ease-out hover:border-foreground/25 hover:bg-card hover:text-foreground focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring active:scale-[0.97] motion-reduce:transition-none"
+          >
+            <Icon aria-hidden className="size-3 shrink-0 opacity-75" />
+            <span className="truncate">{starter.label}</span>
+          </button>
+        );
+      })}
+      <button
+        type="button"
+        data-draft-starter-dismiss="true"
+        aria-label={gt("Hide suggestions")}
+        onClick={() => setDismissedDraftId(draftId)}
+        className="pointer-events-auto inline-flex size-6 cursor-pointer items-center justify-center rounded-full text-muted-foreground/65 transition-[background-color,color,transform] duration-150 ease-out hover:bg-accent/70 hover:text-foreground focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring active:scale-95 motion-reduce:transition-none"
+      >
+        <XIcon aria-hidden className="size-3" />
+      </button>
     </div>
   );
 }
