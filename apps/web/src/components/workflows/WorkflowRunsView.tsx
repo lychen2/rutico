@@ -493,7 +493,11 @@ function WorkflowRunListItem({
   const about = run.subject;
   const m = useMessages();
   return (
-    <li className={cn("rounded-lg", current ? "bg-accent" : undefined)}>
+    <li
+      data-workflow-run-item="true"
+      data-current={current ? "true" : "false"}
+      className={cn("rounded-lg", current ? "bg-accent" : undefined)}
+    >
       <button
         type="button"
         aria-current={current ? "true" : undefined}

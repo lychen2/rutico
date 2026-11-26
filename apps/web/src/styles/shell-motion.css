@@ -3,3 +3,218 @@
    Reserved modular stylesheet pre-imported by index.css for conflict-free
    parallel Stage 3 edits.
    ========================================================================== */
+
+/* ==========================================================================
+   D24 / C079: Workflows Living Execution Spine, Parallel Branch Tracks,
+   Amber Decision Halo, and Resizable Spring WorkflowPane
+   ========================================================================== */
+
+@keyframes workflow-spine-pulse-travel {
+  0% {
+    opacity: 0;
+    transform: translate3d(0, -100%, 0);
+  }
+  18% {
+    opacity: 0.95;
+  }
+  82% {
+    opacity: 0.95;
+  }
+  100% {
+    opacity: 0;
+    transform: translate3d(0, 260%, 0);
+  }
+}
+
+@keyframes workflow-decision-halo-breathe {
+  0%,
+  100% {
+    opacity: 0.45;
+  }
+  50% {
+    opacity: 0.9;
+  }
+}
+
+@keyframes workflow-pane-enter {
+  from {
+    opacity: 0;
+    transform: translate3d(14px, 0, 0);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+@keyframes workflow-detail-enter {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 6px, 0);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+@keyframes workflow-beat-arrive {
+  from {
+    opacity: 0;
+    transform: translate3d(-6px, 4px, 0);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+[data-workflow-spine-rail] {
+  overflow: hidden;
+}
+
+[data-workflow-spine-pulse] {
+  position: absolute;
+  inset-inline: -0.5px;
+  top: 0;
+  height: 44%;
+  min-height: 16px;
+  border-radius: 9999px;
+  pointer-events: none;
+  background: linear-gradient(
+    to bottom,
+    transparent 0%,
+    color-mix(in oklch, var(--info) 85%, white) 52%,
+    transparent 100%
+  );
+  opacity: 0;
+  will-change: var(--visible-animation-will-change, auto);
+  animation: workflow-spine-pulse-travel 1.65s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+  animation-play-state: var(--visible-animation-state, paused);
+}
+
+[data-workflow-spine-pulse="input"] {
+  background: linear-gradient(
+    to bottom,
+    transparent 0%,
+    color-mix(in oklch, var(--warning) 90%, white) 52%,
+    transparent 100%
+  );
+}
+
+[data-workflow-mark-glow] {
+  position: absolute;
+  inset: -2px;
+  border-radius: 9999px;
+  pointer-events: none;
+  border: 1.5px solid color-mix(in oklch, var(--info) 55%, transparent);
+  will-change: var(--visible-animation-will-change, auto);
+  animation: workflow-decision-halo-breathe 2.1s ease-in-out infinite;
+  animation-play-state: var(--visible-animation-state, paused);
+}
+
+[data-workflow-mark-glow="input"] {
+  border-color: color-mix(in oklch, var(--warning) 65%, transparent);
+}
+
+[data-workflow-parallel-tracks="true"] {
+  position: relative;
+}
+
+[data-workflow-parallel-tracks="true"]::before {
+  content: "";
+  position: absolute;
+  inset-block: 10px;
+  inset-inline-start: 10px;
+  width: 1px;
+  border-radius: 9999px;
+  background: color-mix(in oklch, var(--border) 78%, transparent);
+  pointer-events: none;
+}
+
+[data-workflow-parallel-tracks="true"][data-workflow-parallel-active="true"]::before {
+  background: color-mix(in oklch, var(--info) 45%, var(--border));
+}
+
+[data-workflow-decision-card="true"] {
+  position: relative;
+  box-shadow:
+    0 0 0 1px color-mix(in oklch, var(--warning) 32%, transparent),
+    0 6px 20px -10px color-mix(in oklch, var(--warning) 35%, transparent),
+    inset 0 1px 0 color-mix(in oklch, var(--warning) 28%, white);
+}
+
+[data-workflow-decision-card="true"]::before {
+  content: "";
+  position: absolute;
+  inset: -1px;
+  border-radius: inherit;
+  pointer-events: none;
+  box-shadow: 0 0 0 2px color-mix(in oklch, var(--warning) 24%, transparent);
+  animation: workflow-decision-halo-breathe 2.4s ease-in-out infinite;
+  animation-play-state: var(--visible-animation-state, paused);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  [data-workflow-beat-enter="true"] {
+    animation: workflow-beat-arrive var(--duration-snappy) var(--spring-snappy) both;
+  }
+
+  [data-workflow-detail-enter="true"] {
+    animation: workflow-detail-enter var(--duration-micro) var(--ease-out-expo) both;
+  }
+
+  [data-workflow-pane-aside="true"] {
+    animation: workflow-pane-enter var(--duration-fluid) var(--spring-spatial) both;
+  }
+
+  @starting-style {
+    [data-workflow-beat-enter="true"] {
+      opacity: 0;
+      transform: translate3d(-6px, 4px, 0);
+    }
+  }
+}
+
+[data-workflow-run-item="true"] {
+  position: relative;
+}
+
+[data-workflow-run-item="true"]::before {
+  content: "";
+  position: absolute;
+  inset-inline-start: 0;
+  inset-block: 6px;
+  width: 2.5px;
+  border-radius: 9999px;
+  background-color: var(--primary);
+  opacity: 0;
+  transform: scaleY(0.45);
+  transition:
+    opacity var(--duration-micro) ease-out,
+    transform var(--duration-snappy) var(--spring-snappy);
+}
+
+[data-workflow-run-item="true"][data-current="true"]::before {
+  opacity: 1;
+  transform: scaleY(1);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-workflow-spine-pulse],
+  [data-workflow-mark-glow],
+  [data-workflow-decision-card="true"]::before {
+    animation: none;
+    opacity: 0;
+  }
+
+  [data-workflow-beat-enter="true"],
+  [data-workflow-detail-enter="true"],
+  [data-workflow-pane-aside="true"] {
+    animation: none;
+  }
+
+  [data-workflow-run-item="true"]::before {
+    transition: none;
+  }
+}

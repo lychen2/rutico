@@ -1,9 +1,11 @@
+import { useRef } from "react";
 import { scopeThreadRef } from "@t3tools/client-runtime/environment";
 import { workflowReferenceLabel } from "@t3tools/client-runtime/workflows";
 import { EnvironmentId, ThreadId, type WorkflowRunReference } from "@t3tools/contracts";
 import { useGT } from "gt-react";
 import { BotIcon, Maximize2Icon, XIcon } from "lucide-react";
 
+import { useSharedIndicator } from "../../lib/motion/useSharedIndicator";
 import { cn } from "../../lib/utils";
 import { useEnvironmentQuery } from "../../state/query";
 import { serverEnvironment } from "../../state/server";
@@ -50,6 +52,22 @@ export default function WorkflowPane({
   const tabs = state.pane ?? [];
   const activeIndex = activeWorkflowPaneIndex(state);
   const active = tabs[activeIndex];
+  const tabListRef = useRef<HTMLDivElement | null>(null);
+  const tabIndicatorRef = useRef<HTMLSpanElement | null>(null);
+  const activeTabKey =
+    active === undefined
+      ? null
+      : "thread" in active
+        ? `thread:${active.env ?? ""}:${active.thread}`
+        : `${active.kind}:${active.key}`;
+  useSharedIndicator({
+    containerRef: tabListRef,
+    indicatorRef: tabIndicatorRef,
+    activeSelector: '[data-workflow-pane-tab="true"][data-active="true"]',
+    activeKey: activeTabKey,
+    preset: "fluid",
+    axis: "x",
+  });
   const threadOf = (tab: Extract<WorkflowPaneTab, { thread: string }>) =>
     scopeThreadRef(
       tab.env === undefined ? environmentId : EnvironmentId.make(tab.env),
@@ -85,19 +103,28 @@ export default function WorkflowPane({
     <div className="flex h-full min-h-0 flex-col">
       <div className="flex h-(--workspace-topbar-height) shrink-0 items-center gap-1 border-b ps-2 pe-2">
         <div
+          ref={tabListRef}
           role="tablist"
           aria-label={gt("Open beside the run")}
-          className="flex min-w-0 flex-1 gap-0.5 overflow-x-auto"
+          className="relative flex min-w-0 flex-1 gap-0.5 overflow-x-auto"
         >
+          <span
+            ref={tabIndicatorRef}
+            aria-hidden="true"
+            data-slot="workflow-pane-tab-indicator"
+            className="pointer-events-none absolute top-0 left-0 z-0 rounded-md bg-muted opacity-0 ring-1 ring-inset ring-border/70 will-change-transform dark:ring-white/10"
+          />
           {tabs.map((tab, index) => (
             <div
               key={
                 "thread" in tab ? `thread:${tab.env ?? ""}:${tab.thread}` : `${tab.kind}:${tab.key}`
               }
+              data-workflow-pane-tab="true"
+              data-active={index === activeIndex ? "true" : "false"}
               className={cn(
-                "flex max-w-56 min-w-0 shrink-0 items-center rounded-md text-xs",
+                "relative z-1 flex max-w-56 min-w-0 shrink-0 items-center rounded-md text-xs transition-colors duration-150",
                 index === activeIndex
-                  ? "bg-muted text-foreground"
+                  ? "text-foreground"
                   : "text-muted-foreground hover:text-foreground",
               )}
             >
@@ -153,7 +180,12 @@ export default function WorkflowPane({
           <XIcon />
         </Button>
       </div>
-      <div role="tabpanel" className="flex min-h-0 flex-1 flex-col overflow-y-auto">
+      <div
+        key={activeTabKey ?? "empty"}
+        role="tabpanel"
+        data-workflow-detail-enter="true"
+        className="flex min-h-0 flex-1 flex-col overflow-y-auto"
+      >
         {active === undefined ? null : "thread" in active ? (
           <WorkflowThreadPane
             key={`${active.env ?? ""}:${active.thread}`}

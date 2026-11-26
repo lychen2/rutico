@@ -3,9 +3,12 @@ import { EnvironmentId, type WorkflowRunSubject } from "@t3tools/contracts";
 import { Link, useNavigate, useSearch } from "@tanstack/react-router";
 import { T, useGT } from "gt-react";
 import { FileCode2Icon } from "lucide-react";
-import { lazy, Suspense, useState, type MouseEvent } from "react";
+import { lazy, Suspense, useState, type CSSProperties, type MouseEvent } from "react";
 
 import { isElectron } from "~/env";
+import { RightPanelResizeHandle } from "~/components/preview/RightPanelResizeHandle";
+import { RESIZABLE_WIDTH_PROPERTY, useResizableWidth } from "~/hooks/useResizableWidth";
+import { observeResize } from "~/lib/observeResize";
 import { type FileContextMenuAction, useFileContextMenu } from "../../fileContextMenu";
 import { cn } from "../../lib/utils";
 import { readLocalApi } from "../../localApi";
@@ -37,6 +40,11 @@ import {
 } from "./workflowPane.logic";
 
 const COPY_PATH = "copy-path";
+const WORKFLOW_PANE_WIDTH_STORAGE_KEY = "t3code:workflows:pane-width";
+const WORKFLOW_PANE_DEFAULT_WIDTH = 520;
+const WORKFLOW_PANE_MIN_WIDTH = 320;
+const WORKFLOW_PANE_MAX_WIDTH = 880;
+const WORKFLOW_FEED_MIN_WIDTH = 360;
 
 // The editor brings the code view's highlighter with it, which the run list has no use for.
 const WorkflowDefinitionEditor = lazy(() => import("./WorkflowDefinitionEditor"));
@@ -130,6 +138,19 @@ export function WorkflowsPage() {
         : { pane: search.pane, tab: search.tab };
   const paneOpen = pane.pane !== undefined;
   const shownTab = activeWorkflowPaneTab(pane);
+  const [paneMaxWidth, setPaneMaxWidth] = useState(WORKFLOW_PANE_MAX_WIDTH);
+  const {
+    width: paneWidth,
+    setWidth: setPaneWidth,
+    handlers: paneResizeHandlers,
+  } = useResizableWidth({
+    storageKey: WORKFLOW_PANE_WIDTH_STORAGE_KEY,
+    defaultWidth: WORKFLOW_PANE_DEFAULT_WIDTH,
+    minWidth: WORKFLOW_PANE_MIN_WIDTH,
+    maxWidth: paneMaxWidth,
+    edge: "left",
+    magneticSnap: true,
+  });
   // Opening something pins the run it is from, so the address keeps naming the run it belongs to.
   // A tab of another run's starts a pane of that run's own.
   const togglePane = (runId: string, tab: Parameters<typeof toggleWorkflowPaneTab>[1]) =>
@@ -331,9 +352,56 @@ export function WorkflowsPage() {
         </div>
         {environmentId === null || !paneOpen ? null : (
           <aside
+            ref={(host) => {
+              const row = host?.parentElement;
+              if (!row) return;
+              const measure = () => {
+                const available = Math.max(
+                  WORKFLOW_PANE_MIN_WIDTH,
+                  row.clientWidth - WORKFLOW_FEED_MIN_WIDTH,
+                );
+                setPaneMaxWidth(Math.min(WORKFLOW_PANE_MAX_WIDTH, available));
+              };
+              measure();
+              return observeResize(row, measure);
+            }}
             aria-label={gt("Beside the run")}
-            className="min-h-0 w-full shrink-0 bg-background md:w-1/2 md:max-w-2xl md:border-s"
+            data-workflow-pane-aside="true"
+            className="relative min-h-0 w-full shrink-0 bg-background md:w-(--resizable-width) md:max-w-[72%] md:border-s"
+            style={{ [RESIZABLE_WIDTH_PROPERTY]: `${paneWidth}px` } as CSSProperties}
           >
+            <RightPanelResizeHandle
+              className="hidden md:block"
+              handlers={paneResizeHandlers}
+              label={gt("Resize workflow pane")}
+              tabIndex={0}
+              aria-valuenow={paneWidth}
+              aria-valuemin={WORKFLOW_PANE_MIN_WIDTH}
+              aria-valuemax={paneMaxWidth}
+              onKeyDown={(event) => {
+                if (event.altKey || event.ctrlKey || event.metaKey) return;
+                let nextWidth: number;
+                switch (event.key) {
+                  case "ArrowLeft":
+                    nextWidth = paneWidth + 24;
+                    break;
+                  case "ArrowRight":
+                    nextWidth = paneWidth - 24;
+                    break;
+                  case "Home":
+                    nextWidth = WORKFLOW_PANE_MIN_WIDTH;
+                    break;
+                  case "End":
+                    nextWidth = paneMaxWidth;
+                    break;
+                  default:
+                    return;
+                }
+                event.preventDefault();
+                event.stopPropagation();
+                setPaneWidth(nextWidth);
+              }}
+            />
             <WorkflowPane
               environmentId={environmentId}
               runId={search.run ?? null}

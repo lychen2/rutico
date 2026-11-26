@@ -40,6 +40,7 @@ import {
 import { requestConfirmDialog } from "../../confirmDialog";
 import { useNowMinute } from "../../hooks/useNowMinute";
 import { cn } from "../../lib/utils";
+import { observeVisibleAnimation } from "../../lib/visibleAnimation";
 import { useQuietThreadShell } from "../../state/entities";
 import { useEnvironmentProviders } from "../../state/environments";
 import { type MessageResolver } from "../../i18n/messages";
@@ -590,7 +591,11 @@ export function WorkflowRunFeed({
             >
               {shownBeat !== undefined ? (
                 // Keyed by the step: a reason typed for one question must not follow to the next.
-                <div key={shownBeat.name} data-step={shownBeat.name}>
+                <div
+                  key={shownBeat.name}
+                  data-step={shownBeat.name}
+                  data-workflow-detail-enter="true"
+                >
                   {beatCard(shownBeat)}
                   {(() => {
                     // With one reference, the header already says it.
@@ -675,6 +680,9 @@ function StepMark({
   const live = tone === "working" || tone === "input";
   return (
     <span aria-hidden className="relative z-10 grid size-5 shrink-0 place-items-center">
+      {live ? (
+        <span ref={observeVisibleAnimation} data-workflow-mark-glow={tone} aria-hidden="true" />
+      ) : null}
       {live && pulse ? (
         <span
           className={cn(
@@ -785,6 +793,7 @@ function TimelineRow({
     <button
       type="button"
       aria-current={selected}
+      data-workflow-beat-enter={enters ? "true" : undefined}
       className={cn(
         "group/row relative flex w-full min-w-0 cursor-pointer items-center gap-2.5 pe-2 text-left",
         sub ? "py-1 ps-1" : "py-1.5",
@@ -866,24 +875,42 @@ function TimelineRow({
 }
 
 /** The rail beside a row: from the row above to this mark, and on to the next unless it is last. */
-function Rail({ first, last }: { readonly first: boolean; readonly last: boolean }) {
+function Rail({
+  first,
+  last,
+  activeTone = null,
+}: {
+  readonly first: boolean;
+  readonly last: boolean;
+  readonly activeTone?: "working" | "input" | null;
+}) {
   return (
     <span
       aria-hidden
+      data-workflow-spine-rail={activeTone ?? "idle"}
       className={cn(
-        "pointer-events-none absolute start-[9px] w-0.5 bg-border",
+        "pointer-events-none absolute start-[9px] w-0.5 transition-colors duration-200",
+        activeTone === "working"
+          ? "bg-info/45"
+          : activeTone === "input"
+            ? "bg-warning/50"
+            : "bg-border",
         first ? "top-4" : "top-0",
         last ? "h-4" : "bottom-0",
         first && last ? "hidden" : null,
       )}
-    />
+    >
+      {activeTone === null ? null : (
+        <span ref={observeVisibleAnimation} data-workflow-spine-pulse={activeTone} />
+      )}
+    </span>
   );
 }
 
 // A fork leaves the rail under its mark, runs through each step's dot, and rejoins the rail.
 // The rail's centre is 10px in and a step's dot 39px in; the mark ends 26px down, the first dot
 // sits 46px down, and each dot is 14px below its own row's top.
-function BranchOut() {
+function BranchOut({ activeTone = null }: { readonly activeTone?: "working" | "input" | null }) {
   return (
     <svg
       aria-hidden
@@ -894,13 +921,20 @@ function BranchOut() {
         d="M1 0V1Q1 7 7 7H24Q30 7 30 13V20"
         fill="none"
         strokeWidth={2}
-        className="stroke-border"
+        className={cn(
+          "transition-colors duration-200",
+          activeTone === "working"
+            ? "stroke-info/60"
+            : activeTone === "input"
+              ? "stroke-warning/65"
+              : "stroke-border",
+        )}
       />
     </svg>
   );
 }
 
-function BranchBack() {
+function BranchBack({ activeTone = null }: { readonly activeTone?: "working" | "input" | null }) {
   return (
     <>
       <svg
@@ -912,13 +946,32 @@ function BranchBack() {
           d="M30 0Q30 7 24 7H7Q1 7 1 13V14"
           fill="none"
           strokeWidth={2}
-          className="stroke-border"
+          className={cn(
+            "transition-colors duration-200",
+            activeTone === "working"
+              ? "stroke-info/60"
+              : activeTone === "input"
+                ? "stroke-warning/65"
+                : "stroke-border",
+          )}
         />
       </svg>
       <span
         aria-hidden
-        className="pointer-events-none absolute -start-4 top-7 bottom-0 w-0.5 bg-border"
-      />
+        data-workflow-spine-rail={activeTone ?? "idle"}
+        className={cn(
+          "pointer-events-none absolute -start-4 top-7 bottom-0 w-0.5 transition-colors duration-200",
+          activeTone === "working"
+            ? "bg-info/45"
+            : activeTone === "input"
+              ? "bg-warning/50"
+              : "bg-border",
+        )}
+      >
+        {activeTone === null ? null : (
+          <span ref={observeVisibleAnimation} data-workflow-spine-pulse={activeTone} />
+        )}
+      </span>
     </>
   );
 }
@@ -994,6 +1047,8 @@ function WorkflowTimeline({
     readonly body: ReactNode;
     /** Its steps hang off a branch, which carries the rail past them. */
     readonly branch?: boolean;
+    /** Active spine pulse tone when this node or branch is currently executing or awaiting input. */
+    readonly activeTone?: "working" | "input" | null;
   }> = [];
   for (const row of rows) {
     if (row.kind === "quick") {
@@ -1043,9 +1098,15 @@ function WorkflowTimeline({
       const startMs = Math.min(...row.beats.map((beat) => beat.startMs));
       const endMs = Math.max(...row.beats.map((beat) => beat.endMs));
       const first = row.beats[0];
+      const parallelActiveTone: "working" | "input" | null = asks
+        ? "input"
+        : working
+          ? "working"
+          : null;
       items.push({
         key: first?.name ?? "together",
         branch: true,
+        activeTone: parallelActiveTone,
         body: (
           <>
             <div className="flex items-center gap-2.5 py-1.5 pe-2">
@@ -1082,24 +1143,50 @@ function WorkflowTimeline({
               </span>
               <span aria-hidden className="hidden w-3 shrink-0 @2xl/feed:block" />
             </div>
-            <BranchOut />
-            <ol className="relative ms-[9px] ps-4">
+            <BranchOut activeTone={parallelActiveTone} />
+            <ol
+              data-workflow-parallel-tracks="true"
+              data-workflow-parallel-active={parallelActiveTone !== null ? "true" : "false"}
+              className="relative ms-[9px] ps-4"
+            >
               {row.beats.map((beat, index) => {
                 const firstBeat = index === 0;
                 const lastBeat = index === row.beats.length - 1;
                 const asked = question(beat);
+                const beatActiveTone: "working" | "input" | null =
+                  asked !== null || (beat.kind === "ask" && beat.status === "running")
+                    ? "input"
+                    : beat.status === "running" &&
+                        beat.kind !== "sleep" &&
+                        beat.kind !== "wait" &&
+                        beat.kind !== "queue"
+                      ? "working"
+                      : null;
                 return (
                   <li key={beat.name} className="relative">
                     <span
                       aria-hidden
+                      data-workflow-spine-rail={beatActiveTone ?? "idle"}
                       className={cn(
-                        "pointer-events-none absolute start-[13px] w-0.5 bg-border",
+                        "pointer-events-none absolute start-[13px] w-0.5 transition-colors duration-200",
+                        beatActiveTone === "working"
+                          ? "bg-info/55"
+                          : beatActiveTone === "input"
+                            ? "bg-warning/60"
+                            : "bg-border",
                         firstBeat ? "top-3.5" : "top-0",
                         lastBeat ? "h-3.5" : "bottom-0",
                         firstBeat && lastBeat ? "hidden" : null,
                       )}
-                    />
-                    {lastBeat ? <BranchBack /> : null}
+                    >
+                      {beatActiveTone === null ? null : (
+                        <span
+                          ref={observeVisibleAnimation}
+                          data-workflow-spine-pulse={beatActiveTone}
+                        />
+                      )}
+                    </span>
+                    {lastBeat ? <BranchBack activeTone={parallelActiveTone} /> : null}
                     {beatRow(beat, true)}
                     {asked === null ? null : ask(asked)}
                   </li>
@@ -1112,8 +1199,18 @@ function WorkflowTimeline({
       continue;
     }
     const asked = question(row);
+    const rowActiveTone: "working" | "input" | null =
+      asked !== null || (row.kind === "ask" && row.status === "running")
+        ? "input"
+        : row.status === "running" &&
+            row.kind !== "sleep" &&
+            row.kind !== "wait" &&
+            row.kind !== "queue"
+          ? "working"
+          : null;
     items.push({
       key: row.name,
+      activeTone: rowActiveTone,
       body: (
         <>
           {beatRow(row)}
@@ -1126,6 +1223,7 @@ function WorkflowTimeline({
     // Keyed like its step's row, which replaces it once the step arrives, so it does not arrive twice.
     items.push({
       key: asked.name,
+      activeTone: "input",
       body: (
         <>
           <TimelineRow
@@ -1184,15 +1282,20 @@ function WorkflowTimeline({
   return (
     <nav aria-label={gt("Steps so far")} className="w-full shrink-0 @2xl/feed:w-96">
       <ol>
-        {items.map((item, index) => (
-          <li key={item.key} className="relative">
-            <Rail
-              first={index === 0}
-              last={item.branch === true || (index === items.length - 1 && !live)}
-            />
-            {item.body}
-          </li>
-        ))}
+        {items.map((item, index) => {
+          const nextActiveTone = items[index + 1]?.activeTone ?? null;
+          const railActiveTone = item.activeTone ?? nextActiveTone;
+          return (
+            <li key={item.key} className="relative">
+              <Rail
+                first={index === 0}
+                last={item.branch === true || (index === items.length - 1 && !live)}
+                activeTone={railActiveTone}
+              />
+              {item.body}
+            </li>
+          );
+        })}
       </ol>
       {live ? (
         <div className="flex items-start gap-2.5">
@@ -1392,10 +1495,19 @@ function FeedCard({
   readonly reveal?: boolean;
   readonly children: ReactNode;
 }) {
+  const isDecisionCard = tone === "ask";
   return (
     <section
-      ref={reveal ? revealOnMount : undefined}
+      ref={
+        reveal || isDecisionCard
+          ? (element) => {
+              if (reveal) revealOnMount(element);
+              return isDecisionCard ? observeVisibleAnimation(element) : undefined;
+            }
+          : undefined
+      }
       aria-label={label}
+      data-workflow-decision-card={isDecisionCard ? "true" : undefined}
       className={cn("min-w-0", CARD_TONE[tone])}
     >
       {children}
