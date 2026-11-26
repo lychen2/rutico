@@ -11,10 +11,12 @@ import {
 } from "react";
 
 import { TextFieldSpeechControls, useTextFieldSpeech } from "~/speech/useTextFieldSpeech";
+import { isMacPlatform } from "~/lib/utils";
 import { textDirection } from "~/textDirection";
 
 import { ComposerContextActionsContext } from "../composerContextActions";
 import { Button } from "../ui/button";
+import { Kbd } from "../ui/kbd";
 
 /** Lets the popover finish a running dictation, instead of discarding it, when it is dismissed. */
 export type AssistantCitationCommentDictation = {
@@ -90,6 +92,9 @@ export function AssistantCitationCommentEditor({
     });
   };
 
+  const quoteExcerpt = citation.text.replace(/\s+/g, " ").trim();
+  const sendShortcut = isMacPlatform(navigator.platform) ? "⌘↵" : "Ctrl↵";
+
   return (
     <div
       data-citation-comment-editor="true"
@@ -103,6 +108,15 @@ export function AssistantCitationCommentEditor({
         }
       }}
     >
+      {quoteExcerpt ? (
+        <p
+          data-citation-quote-preview="true"
+          dir={textDirection(quoteExcerpt)}
+          className="mb-1.5 line-clamp-2 border-s-2 border-primary/50 ps-2 text-xs italic text-muted-foreground"
+        >
+          “{quoteExcerpt}”
+        </p>
+      ) : null}
       <textarea
         ref={textareaRef}
         readOnly={speech.freezesEditor}
@@ -141,30 +155,40 @@ export function AssistantCitationCommentEditor({
           </T>
         </p>
       ) : null}
-      <div className="mt-2 flex flex-wrap items-center justify-end gap-2">
-        <TextFieldSpeechControls speech={speech} />
-        {/* Wrap as a pair so the recording pill never pushes Save alone onto a new row under Cancel. */}
-        <div className="flex gap-2">
-          <Button
-            variant="outline"
-            size="xs"
-            // Escape cancels; keep Tab from the comment on Save so Enter cannot discard a new citation.
-            tabIndex={-1}
-            onPointerDown={(event) => event.preventDefault()}
-            onClick={onCancel}
-          >
-            <T>Cancel</T>
-          </Button>
-          <Button
-            size="xs"
-            disabled={speech.preparing || (commentTooLong && !speech.blocksSubmission)}
-            onPointerDown={(event) => event.preventDefault()}
-            onClick={submit}
-          >
-            {commentTooLong
-              ? gt("Shorten comment")
-              : gt("Save", { $context: "verb, saves the comment" })}
-          </Button>
+      <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
+        <span
+          aria-hidden="true"
+          className="hidden items-center gap-1 text-3xs text-muted-foreground/75 sm:inline-flex"
+        >
+          <Kbd variant="outline">↵</Kbd>
+          <span className="text-muted-foreground/45">/</span>
+          <Kbd variant="outline">{sendShortcut}</Kbd>
+        </span>
+        <div className="ms-auto flex flex-wrap items-center justify-end gap-2">
+          <TextFieldSpeechControls speech={speech} />
+          {/* Wrap as a pair so the recording pill never pushes Save alone onto a new row under Cancel. */}
+          <div className="flex gap-2">
+            <Button
+              variant="outline"
+              size="xs"
+              // Escape cancels; keep Tab from the comment on Save so Enter cannot discard a new citation.
+              tabIndex={-1}
+              onPointerDown={(event) => event.preventDefault()}
+              onClick={onCancel}
+            >
+              <T>Cancel</T>
+            </Button>
+            <Button
+              size="xs"
+              disabled={speech.preparing || (commentTooLong && !speech.blocksSubmission)}
+              onPointerDown={(event) => event.preventDefault()}
+              onClick={submit}
+            >
+              {commentTooLong
+                ? gt("Shorten comment")
+                : gt("Save", { $context: "verb, saves the comment" })}
+            </Button>
+          </div>
         </div>
       </div>
     </div>

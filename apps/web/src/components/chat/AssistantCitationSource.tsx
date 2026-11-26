@@ -7,17 +7,25 @@ import {
   type AssistantCitationSourceAnchor,
 } from "~/lib/assistantTextSelection";
 import { m } from "~/i18n/messages";
+import { getSpringWaapiTiming, prefersReducedMotion } from "~/lib/motion/springs";
 import { toastManager } from "../ui/toast";
 import { observeResize } from "~/lib/observeResize";
 
-const CITATION_PULSE_DURATION_MS = 650;
-const CITATION_HIGHLIGHT_HOLD_MS = 1575;
+const CITATION_PULSE_DURATION_MS = 500;
+const CITATION_HIGHLIGHT_HOLD_MS = 1650;
 const CITATION_HIGHLIGHT_FADE_MS = 450;
 const CITATION_HIGHLIGHT_TOTAL_MS =
   1.5 * CITATION_PULSE_DURATION_MS + CITATION_HIGHLIGHT_HOLD_MS + CITATION_HIGHLIGHT_FADE_MS;
 const CITATION_HIGHLIGHT_OPACITY = "--assistant-citation-highlight-opacity";
 const CITATION_HIGHLIGHT_PEAK = 0.45;
+const CITATION_LOCK_DURATION_MS = 360;
 const COMMENT_HIGHLIGHT_NAME = "t3-assistant-citation-comment";
+
+function getCssHighlightsRegistry(): HighlightRegistry | undefined {
+  return typeof Highlight !== "undefined" && typeof CSS !== "undefined"
+    ? CSS.highlights
+    : undefined;
+}
 
 export function observeAssistantCitationCommentSource({
   anchor,
@@ -29,29 +37,59 @@ export function observeAssistantCitationCommentSource({
   onUnavailable: () => void;
 }): () => void {
   const { source, range, viewport } = anchor;
-  const registry = typeof CSS !== "undefined" ? CSS.highlights : undefined;
+  const registry = getCssHighlightsRegistry();
   let highlight: Highlight | null = null;
+  let activeRange: Range | null = null;
+  let lockAnimation: Animation | null = null;
   let stopped = false;
+
+  const detachRange = () => {
+    if (!highlight || !activeRange) return;
+    highlight.delete(activeRange);
+    activeRange = null;
+    if (highlight.size === 0 && registry?.get(COMMENT_HIGHLIGHT_NAME) === highlight) {
+      registry.delete(COMMENT_HIGHLIGHT_NAME);
+    }
+  };
+
+  const attachFreshRange = (nextRange: Range) => {
+    if (!registry) {
+      source.dataset.citationCommentFallback = "true";
+      return;
+    }
+    detachRange();
+    const existing = registry.get(COMMENT_HIGHLIGHT_NAME);
+    highlight = existing ?? new Highlight();
+    activeRange = nextRange.cloneRange();
+    highlight.add(activeRange);
+    if (!existing) registry.set(COMMENT_HIGHLIGHT_NAME, highlight);
+    source.dataset.citationCommentActive = "true";
+  };
+
   const observer = new MutationObserver((records) => {
     if (stopped) return;
     const sourceChanged = records.some((record) => source.contains(record.target));
     validate(sourceChanged);
   });
+
   const dispose = () => {
     if (stopped) return;
     stopped = true;
     observer.disconnect();
-    if (!highlight) return;
-    highlight.delete(range);
-    if (highlight.size === 0 && registry?.get(COMMENT_HIGHLIGHT_NAME) === highlight) {
-      registry.delete(COMMENT_HIGHLIGHT_NAME);
-    }
+    lockAnimation?.cancel();
+    lockAnimation = null;
+    detachRange();
+    highlight = null;
+    delete source.dataset.citationCommentActive;
+    delete source.dataset.citationCommentFallback;
   };
+
   const unavailable = () => {
     if (stopped) return;
     dispose();
     onUnavailable();
   };
+
   const validate = (sourceChanged: boolean): boolean => {
     if (!source.isConnected || !viewport.contains(source)) {
       unavailable();
@@ -70,16 +108,28 @@ export function observeAssistantCitationCommentSource({
       }
       range.setStart(repaired.startContainer, repaired.startOffset);
       range.setEnd(repaired.endContainer, repaired.endOffset);
+      // Astra P1-4: delete stale Range and recreate a fresh Range after streaming/DOM updates.
+      attachFreshRange(repaired);
     }
     return true;
   };
 
   if (!validate(false)) return dispose;
-  if (typeof Highlight !== "undefined" && registry) {
-    const existing = registry.get(COMMENT_HIGHLIGHT_NAME);
-    highlight = existing ?? new Highlight();
-    highlight.add(range);
-    if (!existing) registry.set(COMMENT_HIGHLIGHT_NAME, highlight);
+  attachFreshRange(range);
+  if (
+    registry &&
+    !prefersReducedMotion(source.ownerDocument.defaultView ?? undefined) &&
+    typeof source.animate === "function"
+  ) {
+    const timing = getSpringWaapiTiming("snappy");
+    lockAnimation = source.animate(
+      [
+        { [CITATION_HIGHLIGHT_OPACITY]: 0 },
+        { [CITATION_HIGHLIGHT_OPACITY]: 0.56, offset: 0.45 },
+        { [CITATION_HIGHLIGHT_OPACITY]: CITATION_HIGHLIGHT_PEAK },
+      ],
+      { duration: CITATION_LOCK_DURATION_MS, easing: timing.easing },
+    );
   }
   observer.observe(viewport, { childList: true, subtree: true, characterData: true });
   return dispose;
@@ -134,8 +184,10 @@ function observeAssistantCitationSource({
     selected.range.endContainer === selected.snapshot.endContainer &&
     selected.range.endOffset === selected.snapshot.endOffset;
   const clear = () => {
-    if (highlighted && CSS.highlights.get("t3-assistant-citation") === highlighted) {
-      CSS.highlights.delete("t3-assistant-citation");
+    const registry = getCssHighlightsRegistry();
+    if (highlighted && registry?.get("t3-assistant-citation") === highlighted) {
+      if (ownedRange) highlighted.delete(ownedRange);
+      registry.delete("t3-assistant-citation");
     }
     highlighted = null;
     ownedRange = null;
@@ -226,10 +278,16 @@ function observeAssistantCitationSource({
       finishHighlight();
       return;
     }
-    if (typeof Highlight !== "undefined" && typeof CSS !== "undefined" && CSS.highlights) {
-      highlighted = new Highlight(range);
-      CSS.highlights.set("t3-assistant-citation", highlighted);
-      ownedRange = range;
+    const registry = getCssHighlightsRegistry();
+    if (registry) {
+      // Astra P1-4: always delete stale Range and install a fresh Range on arrival/re-resolve.
+      if (highlighted && ownedRange) {
+        highlighted.delete(ownedRange);
+      }
+      const freshRange = range.cloneRange();
+      highlighted = new Highlight(freshRange);
+      registry.set("t3-assistant-citation", highlighted);
+      ownedRange = freshRange;
       root.dataset.citationHighlighted = "true";
     } else {
       const selection = root.ownerDocument.getSelection();
@@ -252,6 +310,7 @@ function observeAssistantCitationSource({
       });
       const at = (milliseconds: number) => milliseconds / CITATION_HIGHLIGHT_TOTAL_MS;
       const holdEnd = at(CITATION_HIGHLIGHT_TOTAL_MS - CITATION_HIGHLIGHT_FADE_MS);
+      const arrivalSpringEasing = getSpringWaapiTiming("snappy").easing;
       pulseAnimation = root.animate(
         pulse.reducedMotion
           ? [
@@ -260,20 +319,30 @@ function observeAssistantCitationSource({
               { offset: 1, [CITATION_HIGHLIGHT_OPACITY]: 0 },
             ]
           : [
-              { offset: 0, [CITATION_HIGHLIGHT_OPACITY]: 0 },
+              { offset: 0, [CITATION_HIGHLIGHT_OPACITY]: 0, easing: arrivalSpringEasing },
               {
                 offset: at(CITATION_PULSE_DURATION_MS * 0.5),
-                [CITATION_HIGHLIGHT_OPACITY]: CITATION_HIGHLIGHT_PEAK,
+                [CITATION_HIGHLIGHT_OPACITY]: 0.52,
+                easing: "ease-out",
               },
-              { offset: at(CITATION_PULSE_DURATION_MS), [CITATION_HIGHLIGHT_OPACITY]: 0 },
+              {
+                offset: at(CITATION_PULSE_DURATION_MS),
+                [CITATION_HIGHLIGHT_OPACITY]: 0.16,
+                easing: arrivalSpringEasing,
+              },
               {
                 offset: at(CITATION_PULSE_DURATION_MS * 1.5),
                 [CITATION_HIGHLIGHT_OPACITY]: CITATION_HIGHLIGHT_PEAK,
+                easing: "linear",
               },
-              { offset: holdEnd, [CITATION_HIGHLIGHT_OPACITY]: CITATION_HIGHLIGHT_PEAK },
+              {
+                offset: holdEnd,
+                [CITATION_HIGHLIGHT_OPACITY]: CITATION_HIGHLIGHT_PEAK,
+                easing: "ease-out",
+              },
               { offset: 1, [CITATION_HIGHLIGHT_OPACITY]: 0 },
             ],
-        { duration: CITATION_HIGHLIGHT_TOTAL_MS, easing: "ease-in-out" },
+        { duration: CITATION_HIGHLIGHT_TOTAL_MS },
       );
       pulseAnimation.id = "t3-assistant-citation-pulse";
       pulseAnimation.currentTime = Math.max(0, performance.now() - pulse.startedAt);

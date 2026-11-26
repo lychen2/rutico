@@ -2053,3 +2053,30 @@
     transform: none;
   }
 }
+
+/* ==========================================================================
+   D16 / C053: Selection Toolbar Capsule, Quote Preview & Citation Fallback
+   ========================================================================== */
+
+[data-citation-comment-fallback="true"] {
+  box-shadow: inset 2px 0 0 color-mix(in oklch, var(--primary) 62%, transparent);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  [data-assistant-selection-capsule="true"] {
+    transition:
+      opacity 140ms ease-out,
+      transform 180ms var(--spring-snappy);
+    @starting-style {
+      opacity: 0;
+      transform: translate3d(0, 4px, 0) scale(0.94);
+    }
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-assistant-selection-capsule="true"] {
+    transition: none;
+    transform: none;
+  }
+}
