@@ -10,9 +10,13 @@ import android.view.ViewGroup
 import androidx.activity.BackEventCompat
 import androidx.activity.ComponentActivity
 import androidx.activity.OnBackPressedCallback
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.snap
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -20,6 +24,7 @@ import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
@@ -27,6 +32,7 @@ import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -50,6 +56,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.draw.scale
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.onSizeChanged
@@ -480,9 +487,13 @@ class T3WorkspaceNavigationView(
                 windowInsets = WindowInsets(0),
               ) {
                 tabs.forEach { tab ->
+                  val isSelected = selectedTab == tab
                   NavigationBarItem(
-                    selected = selectedTab == tab,
-                    onClick = { onTabSelected(mapOf("tab" to tab)) },
+                    selected = isSelected,
+                    onClick = {
+                      if (!isSelected) performSelectionHaptic()
+                      onTabSelected(mapOf("tab" to tab))
+                    },
                     icon = { Icon(tabIconPainter(tab), contentDescription = null) },
                     label = { Text(tabTitle(tab), fontSize = (12 * textScale).sp) },
                     colors = NavigationBarItemDefaults.colors(
@@ -503,48 +514,102 @@ class T3WorkspaceNavigationView(
     )
   }
 
+  private fun performSelectionHaptic() {
+    val constant = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+      HapticFeedbackConstants.SEGMENT_TICK
+    } else {
+      HapticFeedbackConstants.CLOCK_TICK
+    }
+    performHapticFeedback(constant)
+  }
+
+  @OptIn(ExperimentalMaterial3ExpressiveApi::class)
+  @Composable
+  private fun rememberSelectedIconScale(selected: Boolean, reducedMotion: Boolean): Float {
+    val scale = remember { Animatable(1f) }
+    val motionSpec = MaterialTheme.motionScheme.defaultSpatialSpec<Float>()
+    LaunchedEffect(selected, reducedMotion) {
+      if (selected && !reducedMotion) {
+        scale.snapTo(1f)
+        scale.animateTo(1.12f, animationSpec = motionSpec)
+        scale.animateTo(1f, animationSpec = motionSpec)
+      } else {
+        scale.snapTo(1f)
+      }
+    }
+    return scale.value
+  }
+
+  @OptIn(ExperimentalMaterial3ExpressiveApi::class)
   @Composable
   private fun floatingTabs() {
+    val reducedMotion = isAnimatorScaleDisabled(context)
     Surface(
       modifier = Modifier.fillMaxSize().padding(8.dp),
       shape = CircleShape,
       color = Color(containerColor),
       shadowElevation = 6.dp,
     ) {
-      Row(
-        modifier = Modifier.fillMaxSize().selectableGroup(),
-        verticalAlignment = Alignment.CenterVertically,
-      ) {
-        tabs.forEach { tab ->
-          val selected = selectedTab == tab
-          val tint = Color(if (selected) selectedColor else unselectedColor)
-          Box(
-            modifier = Modifier
-              .weight(1f)
-              .fillMaxHeight()
-              .clip(CircleShape)
-              .selectable(
-                selected = selected,
-                role = Role.Tab,
-                onClick = { onTabSelected(mapOf("tab" to tab)) },
+      BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
+        val tabCount = tabs.size.coerceAtLeast(1)
+        val slotWidth = maxWidth / tabCount
+        val selectedIndex = tabs.indexOf(selectedTab).coerceAtLeast(0)
+        val pillOffsetX by animateDpAsState(
+          targetValue = slotWidth * selectedIndex,
+          animationSpec = if (reducedMotion) {
+            snap()
+          } else {
+            MaterialTheme.motionScheme.defaultSpatialSpec()
+          },
+          label = "floatingTabPillOffset",
+        )
+        Box(
+          modifier = Modifier
+            .offset(x = pillOffsetX)
+            .width(slotWidth)
+            .fillMaxHeight()
+            .padding(4.dp)
+            .background(Color(indicatorColor), CircleShape),
+        )
+        Row(
+          modifier = Modifier.fillMaxSize().selectableGroup(),
+          verticalAlignment = Alignment.CenterVertically,
+        ) {
+          tabs.forEach { tab ->
+            val selected = selectedTab == tab
+            val tint = Color(if (selected) selectedColor else unselectedColor)
+            val iconScale = rememberSelectedIconScale(selected, reducedMotion)
+            Box(
+              modifier = Modifier
+                .weight(1f)
+                .fillMaxHeight()
+                .clip(CircleShape)
+                .selectable(
+                  selected = selected,
+                  role = Role.Tab,
+                  onClick = {
+                    if (!selected) performSelectionHaptic()
+                    onTabSelected(mapOf("tab" to tab))
+                  },
+                )
+                .semantics { contentDescription = expandedTabTitle(tab) }
+                .padding(4.dp),
+              contentAlignment = Alignment.Center,
+            ) {
+              Icon(
+                tabIconPainter(tab),
+                contentDescription = null,
+                modifier = Modifier.size((24 * textScale).dp).scale(iconScale),
+                tint = tint,
               )
-              .semantics { contentDescription = expandedTabTitle(tab) }
-              .padding(4.dp)
-              .background(if (selected) Color(indicatorColor) else Color.Transparent, CircleShape),
-            contentAlignment = Alignment.Center,
-          ) {
-            Icon(
-              tabIconPainter(tab),
-              contentDescription = null,
-              modifier = Modifier.size((24 * textScale).dp),
-              tint = tint,
-            )
+            }
           }
         }
       }
     }
   }
 
+  @OptIn(ExperimentalMaterial3ExpressiveApi::class)
   @Composable
   private fun rail() {
     // One rail surface widens in place over the list. Material's ModalWideNavigationRail
@@ -697,10 +762,35 @@ class T3WorkspaceNavigationView(
           Spacer(Modifier.padding(top = 12.dp).height(FAB_SIZE))
         }
         Spacer(Modifier.weight(1f))
-        tabs.forEach { tab ->
-          railItem(tab, fraction) {
-            expanded = false
-            onTabSelected(mapOf("tab" to tab))
+        val selectedRailIndex = tabs.indexOf(selectedTab).coerceAtLeast(0)
+        val railPillOffsetY by animateDpAsState(
+          targetValue = (ITEM_HEIGHT + ITEM_SPACING) * selectedRailIndex,
+          animationSpec = if (reducedMotion) {
+            snap()
+          } else {
+            MaterialTheme.motionScheme.defaultSpatialSpec()
+          },
+          label = "railIndicatorOffsetY",
+        )
+        Box {
+          if (tabs.isNotEmpty()) {
+            Box(
+              Modifier
+                .offset(x = RAIL_INSET, y = railPillOffsetY)
+                .height(ITEM_HEIGHT)
+                .width(lerp(ITEM_HEIGHT, EXPANDED_RAIL_WIDTH - RAIL_INSET * 2, fraction))
+                .clip(CircleShape)
+                .background(Color(indicatorColor)),
+            )
+          }
+          Column {
+            tabs.forEach { tab ->
+              railItem(tab, fraction, reducedMotion) {
+                if (selectedTab != tab) performSelectionHaptic()
+                expanded = false
+                onTabSelected(mapOf("tab" to tab))
+              }
+            }
           }
         }
         Spacer(Modifier.weight(1f))
@@ -746,18 +836,24 @@ class T3WorkspaceNavigationView(
    * A destination whose indicator stretches from a circle around the icon into a pill around
    * the icon and label. The icon never moves, so the collapsed and expanded rails share it.
    */
+  @OptIn(ExperimentalMaterial3ExpressiveApi::class)
   @Composable
-  private fun railItem(tab: String, fraction: Float, onClick: () -> Unit) {
+  private fun railItem(
+    tab: String,
+    fraction: Float,
+    reducedMotion: Boolean,
+    onClick: () -> Unit,
+  ) {
     val selected = selectedTab == tab
     val title = expandedTabTitle(tab)
     val tint = Color(if (selected) selectedColor else unselectedColor)
+    val iconScale = rememberSelectedIconScale(selected, reducedMotion)
     Box(
       Modifier
-        .padding(start = RAIL_INSET, bottom = 4.dp)
+        .padding(start = RAIL_INSET, bottom = ITEM_SPACING)
         .height(ITEM_HEIGHT)
         .width(lerp(ITEM_HEIGHT, EXPANDED_RAIL_WIDTH - RAIL_INSET * 2, fraction))
         .clip(CircleShape)
-        .background(if (selected) Color(indicatorColor) else Color.Transparent)
         .selectable(selected = selected, role = Role.Tab, onClick = onClick)
         .semantics { contentDescription = title },
     ) {
@@ -765,7 +861,12 @@ class T3WorkspaceNavigationView(
         Modifier.fillMaxHeight().padding(start = (ITEM_HEIGHT - ICON_SIZE) / 2).clipToBounds(),
         verticalAlignment = Alignment.CenterVertically,
       ) {
-        Icon(tabIconPainter(tab), contentDescription = null, tint = tint)
+        Icon(
+          tabIconPainter(tab),
+          contentDescription = null,
+          modifier = Modifier.scale(iconScale),
+          tint = tint,
+        )
         Text(
           title,
           Modifier.padding(start = 12.dp).alpha(labelAlpha(fraction)).clearAndSetSemantics {},
@@ -809,6 +910,7 @@ class T3WorkspaceNavigationView(
     val EXPANDED_RAIL_WIDTH = 240.dp
     val RAIL_INSET = 12.dp
     val ITEM_HEIGHT = 48.dp
+    val ITEM_SPACING = 4.dp
     val FAB_SIZE = 48.dp
     val ICON_SIZE = 24.dp
     val RAIL_SHADOW = 6.dp

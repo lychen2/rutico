@@ -6,6 +6,7 @@ import {
 import { requireNativeView } from "expo";
 import { msg, useGT, useMessages } from "gt-react-native";
 import { CommonActions, useNavigation } from "@react-navigation/native";
+import { useMemo } from "react";
 import {
   Keyboard,
   processColor,
@@ -103,7 +104,15 @@ export function AndroidWorkspaceNavigation(props: {
   const window = useWindowDimensions();
   const rail = Boolean(props.rail);
   const floating = !rail && Boolean(props.floating);
-  const tabs = [...visibleNavigationTabs(order, hidden, rail ? 5 : 4), "settings" as const];
+  const tabs = useMemo(
+    () => [...visibleNavigationTabs(order, hidden, rail ? 5 : 4), "settings" as const],
+    [hidden, order, rail],
+  );
+  const tabTitles = useMemo(
+    () => Object.fromEntries(tabs.map((tab) => [tab, m(TAB_TITLES[tab])])),
+    [m, tabs],
+  );
+  const expandedTabTitles = useMemo(() => ({ pullRequests: gt("Pull requests") }), [gt]);
   const { containerColor, indicatorColor, selectedColor, unselectedColor } =
     androidWorkspaceNavigationColors(colors, rail, floating);
   const selectedTab = selectedNavigationTab(
@@ -136,8 +145,8 @@ export function AndroidWorkspaceNavigation(props: {
         rail={rail}
         floating={floating}
         tabs={tabs}
-        tabTitles={Object.fromEntries(tabs.map((tab) => [tab, m(TAB_TITLES[tab])]))}
-        expandedTabTitles={{ pullRequests: gt("Pull requests") }}
+        tabTitles={tabTitles}
+        expandedTabTitles={expandedTabTitles}
         newThreadTitle={gt("New thread")}
         selectedTab={selectedTab}
         dark={themeAppearance === "dark"}
