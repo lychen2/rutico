@@ -124,3 +124,35 @@
     transparent 100%
   );
 }
+
+/* --------------------------------------------------------------------------
+   D18 / C059: Velocity-Tilted Multi-File Stack Drag Flight Card
+   -------------------------------------------------------------------------- */
+
+.drag-flight-card {
+  transform-origin: 18% 22%;
+  transition:
+    opacity var(--duration-micro) ease-out,
+    transform var(--duration-snappy) var(--spring-snappy);
+}
+
+@starting-style {
+  .drag-flight-card {
+    opacity: 0;
+    transform: scale(0.92);
+  }
+}
+
+.drag-flight-stack-card-1 {
+  transform: translate3d(3px, 4px, 0) rotate(2.4deg);
+}
+
+.drag-flight-stack-card-2 {
+  transform: translate3d(-3px, 7px, 0) rotate(-3.2deg);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .drag-flight-card {
+    transition: none;
+  }
+}

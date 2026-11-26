@@ -1,7 +1,10 @@
 import { describe, expect, it } from "@effect/vitest";
 
 import { COMPOSER_MENTION_DRAG_TYPE } from "~/components/chat/composerMentionDrag";
-import { createFileTreeDragMentionController } from "./fileTreeDragMention.ts";
+import {
+  computeDragFlightTiltDeg,
+  createFileTreeDragMentionController,
+} from "./fileTreeDragMention.ts";
 
 const makeTransfer = (plainText = "") => {
   const data = new Map<string, string>([["text/plain", plainText]]);
@@ -51,5 +54,15 @@ describe("createFileTreeDragMentionController", () => {
     );
     controller.handleDragEnd(deselect);
     expect(deselected).toEqual(["docs/index.md", "docs/api.md", "src/app.ts"]);
+  });
+
+  it("clamps horizontal drag velocity tilt to ±5 degrees with a micro deadzone", () => {
+    expect(computeDragFlightTiltDeg(0)).toBe(0);
+    expect(computeDragFlightTiltDeg(0.2)).toBe(0);
+    expect(computeDragFlightTiltDeg(20)).toBeCloseTo(3, 5);
+    expect(computeDragFlightTiltDeg(-20)).toBeCloseTo(-3, 5);
+    expect(computeDragFlightTiltDeg(100)).toBe(5);
+    expect(computeDragFlightTiltDeg(-100)).toBe(-5);
+    expect(computeDragFlightTiltDeg(Number.NaN)).toBe(0);
   });
 });
