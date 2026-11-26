@@ -1,6 +1,14 @@
 import type { ReactNode } from "react";
 
 import { T, useGT } from "gt-react";
+import { CircleAlertIcon, RotateCwIcon, TriangleAlertIcon } from "lucide-react";
+import {
+  Empty,
+  EmptyContent,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyMedia,
+} from "~/components/ui/empty";
 import { Spinner } from "~/components/ui/spinner";
 import { Button } from "~/components/ui/button";
 import { Toggle } from "~/components/ui/toggle";
@@ -107,9 +115,10 @@ export function FileSurfaceNotice(props: { readonly children: ReactNode }) {
   return (
     <div
       role="status"
-      className="shrink-0 border-b border-warning/20 bg-warning-surface px-3 py-1.5 text-2xs text-warning-foreground"
+      className="flex shrink-0 items-center gap-1.5 border-b border-warning/20 bg-warning-surface px-3 py-1.5 text-2xs text-warning-foreground"
     >
-      {props.children}
+      <TriangleAlertIcon aria-hidden="true" className="size-3.5 shrink-0" />
+      <span className="min-w-0">{props.children}</span>
     </div>
   );
 }
@@ -135,20 +144,23 @@ export function FileSurfaceFailure(props: {
   readonly onRetry?: () => void;
 }) {
   return (
-    <div
-      role="alert"
-      className="flex min-h-0 flex-1 flex-col items-center justify-center gap-3 px-6 text-center text-xs leading-relaxed"
-    >
-      <p className="text-destructive">{props.message}</p>
+    <Empty size="compact" role="alert" className="min-h-0">
+      <EmptyMedia variant="icon">
+        <CircleAlertIcon className="size-4.5 text-destructive" />
+      </EmptyMedia>
+      <EmptyHeader>
+        <EmptyDescription>
+          <span className="text-destructive">{props.message}</span>
+        </EmptyDescription>
+      </EmptyHeader>
       {props.onRetry ? (
-        <button
-          type="button"
-          onClick={props.onRetry}
-          className="rounded-md border border-input px-2.5 py-1 text-xs text-foreground hover:bg-accent focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
-        >
-          <T>Try again</T>
-        </button>
+        <EmptyContent>
+          <Button size="xs" variant="outline" onClick={props.onRetry}>
+            <RotateCwIcon />
+            <T>Try again</T>
+          </Button>
+        </EmptyContent>
       ) : null}
-    </div>
+    </Empty>
   );
 }
