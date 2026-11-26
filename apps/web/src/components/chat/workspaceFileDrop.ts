@@ -1,9 +1,16 @@
+export interface WorkspaceFileDragSummary {
+  readonly total: number;
+  readonly imageCount: number;
+  readonly fileCount: number;
+}
+
 interface WorkspaceFileDragEvent {
   readonly dataTransfer: {
     readonly types: ReadonlyArray<string>;
     readonly files: Iterable<File>;
     readonly items?: Iterable<{
       readonly kind: string;
+      readonly type?: string;
       getAsFile(): File | null;
       webkitGetAsEntry(): { readonly isDirectory: boolean } | null;
     }>;
@@ -20,6 +27,7 @@ interface WorkspaceFileDropHost {
   setDragActive(active: boolean): void;
   addFiles(files: File[]): void;
   addFolders(folders: File[]): void;
+  onDragSummary?: (summary: WorkspaceFileDragSummary | null) => void;
 }
 
 function isFileDrag(event: WorkspaceFileDragEvent): boolean {
@@ -28,6 +36,30 @@ function isFileDrag(event: WorkspaceFileDragEvent): boolean {
 
 function movedWithinDropTarget(event: WorkspaceFileDragEvent): boolean {
   return event.relatedTarget !== null && event.currentTarget.contains(event.relatedTarget as Node);
+}
+
+export function summarizeDraggedItems(
+  dataTransfer: Pick<WorkspaceFileDragEvent["dataTransfer"], "files" | "items">,
+): WorkspaceFileDragSummary {
+  let total = 0;
+  let imageCount = 0;
+  if (dataTransfer.items !== undefined) {
+    for (const item of dataTransfer.items) {
+      if (item.kind !== "file") continue;
+      total += 1;
+      if (typeof item.type === "string" && item.type.startsWith("image/")) {
+        imageCount += 1;
+      }
+    }
+  } else {
+    for (const file of dataTransfer.files) {
+      total += 1;
+      if (file.type.startsWith("image/")) {
+        imageCount += 1;
+      }
+    }
+  }
+  return { total, imageCount, fileCount: total - imageCount };
 }
 
 export function splitTransferredFiles(
@@ -60,23 +92,27 @@ export function makeWorkspaceFileDropHandlers(host: WorkspaceFileDropHost) {
       if (!isFileDrag(event)) return;
       event.preventDefault();
       if (movedWithinDropTarget(event)) return;
+      host.onDragSummary?.(summarizeDraggedItems(event.dataTransfer));
       host.setDragActive(true);
     },
     onDragOver(event: WorkspaceFileDragEvent) {
       if (!isFileDrag(event)) return;
       event.preventDefault();
       event.dataTransfer.dropEffect = "copy";
+      host.onDragSummary?.(summarizeDraggedItems(event.dataTransfer));
       host.setDragActive(true);
     },
     onDragLeave(event: WorkspaceFileDragEvent) {
       if (!isFileDrag(event)) return;
       event.preventDefault();
       if (movedWithinDropTarget(event)) return;
+      host.onDragSummary?.(null);
       host.setDragActive(false);
     },
     onDrop(event: WorkspaceFileDragEvent) {
       if (!isFileDrag(event)) return;
       event.preventDefault();
+      host.onDragSummary?.(null);
       host.setDragActive(false);
       const { files, folders } = splitTransferredFiles(event.dataTransfer);
       if (files.length > 0) host.addFiles(files);

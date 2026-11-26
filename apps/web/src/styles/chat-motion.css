@@ -1684,3 +1684,115 @@
     opacity: 0;
   }
 }
+
+/* ==========================================================================
+   D14 / C046: Zero-Blur Cursor-Reactive Dropzone Corner Reticle
+   ========================================================================== */
+
+[data-chat-workspace-drop-overlay="true"] {
+  --drop-x: 50%;
+  --drop-y: 50%;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+[data-dropzone-halo="true"] {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: radial-gradient(
+    340px circle at var(--drop-x) var(--drop-y),
+    color-mix(in oklch, var(--primary) 14%, transparent) 0%,
+    transparent 70%
+  );
+}
+
+[data-dropzone-corner] {
+  position: absolute;
+  width: 22px;
+  height: 22px;
+  pointer-events: none;
+  border-color: color-mix(in oklch, var(--primary) 82%, transparent);
+  transition:
+    transform 190ms var(--spring-snappy),
+    opacity 150ms ease-out;
+}
+
+[data-dropzone-corner="tl"] {
+  top: 12px;
+  left: 12px;
+  border-top: 2px solid;
+  border-left: 2px solid;
+  border-top-left-radius: 6px;
+}
+
+[data-dropzone-corner="tr"] {
+  top: 12px;
+  right: 12px;
+  border-top: 2px solid;
+  border-right: 2px solid;
+  border-top-right-radius: 6px;
+}
+
+[data-dropzone-corner="bl"] {
+  bottom: 12px;
+  left: 12px;
+  border-bottom: 2px solid;
+  border-left: 2px solid;
+  border-bottom-left-radius: 6px;
+}
+
+[data-dropzone-corner="br"] {
+  bottom: 12px;
+  right: 12px;
+  border-bottom: 2px solid;
+  border-right: 2px solid;
+  border-bottom-right-radius: 6px;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  [data-dropzone-corner="tl"] {
+    @starting-style {
+      opacity: 0;
+      transform: translate3d(-10px, -10px, 0);
+    }
+  }
+
+  [data-dropzone-corner="tr"] {
+    @starting-style {
+      opacity: 0;
+      transform: translate3d(10px, -10px, 0);
+    }
+  }
+
+  [data-dropzone-corner="bl"] {
+    @starting-style {
+      opacity: 0;
+      transform: translate3d(-10px, 10px, 0);
+    }
+  }
+
+  [data-dropzone-corner="br"] {
+    @starting-style {
+      opacity: 0;
+      transform: translate3d(10px, 10px, 0);
+    }
+  }
+
+  [data-dropzone-pill="true"] {
+    transition:
+      transform 200ms var(--spring-bouncy),
+      opacity 140ms ease-out;
+    @starting-style {
+      opacity: 0;
+      transform: scale(0.92);
+    }
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-dropzone-corner],
+  [data-dropzone-pill="true"] {
+    transition: none;
+  }
+}

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "@effect/vitest";
-import { splitTransferredFiles } from "./workspaceFileDrop";
+import { splitTransferredFiles, summarizeDraggedItems } from "./workspaceFileDrop";
 
 describe("splitTransferredFiles", () => {
   it("separates copied folders from files before attachment validation", () => {
@@ -49,5 +49,31 @@ describe("splitTransferredFiles", () => {
         ],
       }),
     ).toEqual({ files: [], folders: [] });
+  });
+});
+
+describe("summarizeDraggedItems", () => {
+  it("counts images and non-image files from dragged items", () => {
+    expect(
+      summarizeDraggedItems({
+        files: [],
+        items: [
+          {
+            kind: "string",
+            type: "text/plain",
+            getAsFile: () => null,
+            webkitGetAsEntry: () => null,
+          },
+          { kind: "file", type: "image/png", getAsFile: () => null, webkitGetAsEntry: () => null },
+          { kind: "file", type: "image/jpeg", getAsFile: () => null, webkitGetAsEntry: () => null },
+          {
+            kind: "file",
+            type: "application/pdf",
+            getAsFile: () => null,
+            webkitGetAsEntry: () => null,
+          },
+        ],
+      }),
+    ).toEqual({ total: 3, imageCount: 2, fileCount: 1 });
   });
 });

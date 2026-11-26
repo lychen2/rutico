@@ -217,7 +217,10 @@ import { GuestPendingMessages } from "./chat/GuestShareControls";
 import { useDeviceState } from "~/state/device";
 import { BranchToolbar, type BranchToolbarHandle } from "./BranchToolbar";
 import { ComposerContextPermissions } from "./ComposerContextPermissions";
-import { makeWorkspaceFileDropHandlers } from "./chat/workspaceFileDrop";
+import {
+  makeWorkspaceFileDropHandlers,
+  type WorkspaceFileDragSummary,
+} from "./chat/workspaceFileDrop";
 import { isEditableFocused } from "../lib/editableFocus";
 import { DEFAULT_RESOLVED_KEYBINDINGS } from "@t3tools/shared/keybindings";
 import { shortcutLabelForCommand } from "../keybindings";
@@ -722,6 +725,12 @@ export default function ChatView(props: ChatViewProps) {
     return accepted;
   });
   const [isWorkspaceFileDragActive, setIsWorkspaceFileDragActive] = useState(false);
+  const [workspaceDropSummary, setWorkspaceDropSummary] = useState<WorkspaceFileDragSummary | null>(
+    null,
+  );
+  const workspaceDropOverlayRef = useRef<HTMLDivElement>(null);
+  const workspaceDropFrameRef = useRef<number | null>(null);
+  const workspaceDropCoordsRef = useRef<{ readonly x: number; readonly y: number } | null>(null);
   const [optimisticBlobPreviews] = useState(createOptimisticBlobPreviews);
   const [heldOptimisticUserMessages, setHeldOptimisticUserMessages] = useState(() =>
     emptyOptimisticUserMessages(threadId),
@@ -767,14 +776,24 @@ export default function ChatView(props: ChatViewProps) {
   if (workspaceFileDragRoute !== workspaceFileDragRouteKey) {
     setWorkspaceFileDragRoute(workspaceFileDragRouteKey);
     setIsWorkspaceFileDragActive(false);
+    setWorkspaceDropSummary(null);
   }
 
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- window dragend listener that clears the workspace file drag state
   useEffect(() => {
     if (!isWorkspaceFileDragActive) return;
-    const clearWorkspaceFileDrag = () => setIsWorkspaceFileDragActive(false);
+    const clearWorkspaceFileDrag = () => {
+      setIsWorkspaceFileDragActive(false);
+      setWorkspaceDropSummary(null);
+    };
     window.addEventListener("dragend", clearWorkspaceFileDrag);
-    return () => window.removeEventListener("dragend", clearWorkspaceFileDrag);
+    return () => {
+      window.removeEventListener("dragend", clearWorkspaceFileDrag);
+      if (workspaceDropFrameRef.current !== null) {
+        window.cancelAnimationFrame(workspaceDropFrameRef.current);
+        workspaceDropFrameRef.current = null;
+      }
+    };
   }, [isWorkspaceFileDragActive]);
   const prefersPlanSidebarSheet = useMediaQuery(RIGHT_PANEL_INLINE_LAYOUT_MEDIA_QUERY);
   const isMobileViewport = useMediaQuery("max-sm");
@@ -3642,7 +3661,33 @@ export default function ChatView(props: ChatViewProps) {
     setDragActive: setIsWorkspaceFileDragActive,
     addFiles: addDroppedFilesToComposer,
     addFolders: addDroppedFoldersToComposer,
+    onDragSummary: (next) => {
+      setWorkspaceDropSummary((current) =>
+        current?.total === next?.total &&
+        current?.imageCount === next?.imageCount &&
+        current?.fileCount === next?.fileCount
+          ? current
+          : next,
+      );
+    },
   });
+  const syncWorkspaceDropPointer = (event: React.DragEvent<HTMLElement>) => {
+    if (!event.dataTransfer.types.includes("Files")) return;
+    const rect = event.currentTarget.getBoundingClientRect();
+    workspaceDropCoordsRef.current = {
+      x: Math.round(event.clientX - rect.left),
+      y: Math.round(event.clientY - rect.top),
+    };
+    if (workspaceDropFrameRef.current !== null) return;
+    workspaceDropFrameRef.current = window.requestAnimationFrame(() => {
+      workspaceDropFrameRef.current = null;
+      const overlay = workspaceDropOverlayRef.current;
+      const pending = workspaceDropCoordsRef.current;
+      if (!overlay || !pending) return;
+      overlay.style.setProperty("--drop-x", `${pending.x}px`);
+      overlay.style.setProperty("--drop-y", `${pending.y}px`);
+    });
+  };
 
   const content = (
     <div
@@ -3734,13 +3779,24 @@ export default function ChatView(props: ChatViewProps) {
             detailsCardTopInset={isThreadFindActive ? THREAD_FIND_BAR_RESERVED_HEIGHT : 0}
             composerOverlayElement={isDraftHeroState ? null : composerOverlayElement}
             data-chat-workspace-drop-target="true"
-            onDragEnter={workspaceFileDropHandlers.onDragEnter}
-            onDragOver={workspaceFileDropHandlers.onDragOver}
+            onDragEnter={(event) => {
+              syncWorkspaceDropPointer(event);
+              workspaceFileDropHandlers.onDragEnter(event);
+            }}
+            onDragOver={(event) => {
+              syncWorkspaceDropPointer(event);
+              workspaceFileDropHandlers.onDragOver(event);
+            }}
             onDragLeave={workspaceFileDropHandlers.onDragLeave}
             onDrop={workspaceFileDropHandlers.onDrop}
           >
             <ThreadFind onClose={focusComposerStable} />
-            {isWorkspaceFileDragActive ? <WorkspaceFileDropOverlay /> : null}
+            {isWorkspaceFileDragActive ? (
+              <WorkspaceFileDropOverlay
+                overlayRef={workspaceDropOverlayRef}
+                summary={workspaceDropSummary}
+              />
+            ) : null}
             <ChatBannerLane
               environmentId={activeThread.environmentId}
               providerStatus={visibleProviderStatus}

@@ -2,7 +2,7 @@ import "~/index.css";
 import { expect, it, vi } from "vite-plus/test";
 import { page } from "vite-plus/test/browser";
 import { render } from "../../../test/render";
-import { ScrollToEndButton } from "./TimelineOverlays";
+import { ScrollToEndButton, WorkspaceFileDropOverlay } from "./TimelineOverlays";
 
 it("keeps the jump button on the right of the composer lane at both widths", async () => {
   const jump = vi.fn();
@@ -78,4 +78,26 @@ it("morphs into an expanded live-status capsule while the agent is working and c
   const collapsed = screen.getByRole("button", { name: "Scroll to end" });
   expect(collapsed.element().getAttribute("data-scroll-to-end-expanded")).toBe("false");
   expect(screen.container.querySelector('[data-scroll-to-end-indicator="true"]')).toBeNull();
+});
+
+it("renders the zero-blur dropzone corner reticle with live image/file counts", async () => {
+  await using screen = await render(
+    <div className="relative h-80 w-96">
+      <WorkspaceFileDropOverlay summary={{ total: 2, imageCount: 2, fileCount: 0 }} />
+    </div>,
+  );
+  const overlay = screen.container.querySelector<HTMLElement>(
+    '[data-chat-workspace-drop-overlay="true"]',
+  )!;
+  expect(overlay).not.toBeNull();
+  expect(getComputedStyle(overlay).backdropFilter).toBe("none");
+  expect(overlay.querySelectorAll("[data-dropzone-corner]").length).toBe(4);
+  expect(screen.getByRole("status").element().textContent).toContain("Drop to attach 2 images");
+
+  await screen.rerender(
+    <div className="relative h-80 w-96">
+      <WorkspaceFileDropOverlay summary={{ total: 3, imageCount: 1, fileCount: 2 }} />
+    </div>,
+  );
+  expect(screen.getByRole("status").element().textContent).toContain("Drop to attach 3 files");
 });
