@@ -7,6 +7,7 @@ import * as Option from "effect/Option";
 import { NoProjectsHero } from "../components/NoProjectsHero";
 import { WelcomePage } from "../components/onboarding/WelcomePage";
 import { useNewThreadHandler } from "../hooks/useHandleNewThread";
+import { runSpatialRouteTransition } from "../lib/motion/themeTransition";
 import { useEnvironments, usePrimaryEnvironmentId } from "../state/environments";
 
 const decodeEnvironmentId = Schema.decodeOption(EnvironmentId);
@@ -48,14 +49,19 @@ function WelcomeRouteView() {
       key={environmentId}
       environmentId={environmentId}
       onDone={async (projectRef) => {
-        setDismissed(true);
-        if (projectRef !== undefined) {
-          await openNewThread(projectRef, { replace: true }).catch(() =>
-            navigate({ to: "/", replace: true }),
-          );
-          return;
-        }
-        await navigate({ to: "/", replace: true });
+        await runSpatialRouteTransition(
+          async () => {
+            setDismissed(true);
+            if (projectRef !== undefined) {
+              await openNewThread(projectRef, { replace: true }).catch(() =>
+                navigate({ to: "/", replace: true }),
+              );
+              return;
+            }
+            await navigate({ to: "/", replace: true });
+          },
+          { transitionName: "welcome-to-workspace" },
+        );
       }}
     />
   );

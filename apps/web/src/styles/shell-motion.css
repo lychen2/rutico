@@ -1033,3 +1033,86 @@ html[data-palette-dragging="true"] [data-slot="thread-context-drag-ghost"] .drag
     opacity: 0;
   }
 }
+
+/* ==========================================================================
+   D32 / C106: FirstRunGate 180ms-Delayed Breathing Loader & Welcome-to-
+   Workspace View Transition Handoff
+   ========================================================================== */
+
+@keyframes first-run-loader-appear {
+  from {
+    opacity: 0;
+    transform: scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes first-run-loader-breathe {
+  0%,
+  100% {
+    opacity: 0.72;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.03);
+  }
+}
+
+@keyframes spatial-route-old-recede {
+  from {
+    opacity: 1;
+    transform: scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: scale(0.985);
+  }
+}
+
+@keyframes spatial-route-new-reveal {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 8px, 0) scale(0.992);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+}
+
+/* Pure-CSS 180ms delay prevents flash on fast hydrated startups (zero JS timer). */
+[data-slot="first-run-loader"] {
+  opacity: 0;
+  animation: first-run-loader-appear 220ms var(--ease-out-expo) 180ms forwards;
+}
+
+[data-slot="first-run-loader-mark"] {
+  will-change: var(--visible-animation-will-change, auto);
+  animation: first-run-loader-breathe 2.2s ease-in-out 420ms infinite;
+  animation-play-state: var(--visible-animation-state, paused);
+}
+
+:root[data-spatial-route-transition="welcome-to-workspace"]::view-transition-old(root) {
+  animation: spatial-route-old-recede 200ms var(--ease-exit, ease-out) both;
+}
+
+:root[data-spatial-route-transition="welcome-to-workspace"]::view-transition-new(root) {
+  animation: spatial-route-new-reveal 340ms var(--spring-spatial) both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-slot="first-run-loader"] {
+    opacity: 1;
+    animation: none;
+  }
+
+  [data-slot="first-run-loader-mark"],
+  :root[data-spatial-route-transition="welcome-to-workspace"]::view-transition-old(root),
+  :root[data-spatial-route-transition="welcome-to-workspace"]::view-transition-new(root) {
+    animation: none;
+  }
+}

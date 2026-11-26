@@ -107,6 +107,7 @@ import { ProviderInstanceIcon } from "../chat/ProviderInstanceIcon";
 import { AnimatedHeight } from "../AnimatedHeight";
 import { ACPRegistryIcon } from "../Icons";
 import { T3Wordmark } from "../T3Wordmark";
+import { prefersReducedMotion } from "../../lib/motion/springs";
 import { observeVisibleAnimation } from "../../lib/visibleAnimation";
 import { Button } from "../ui/button";
 import { Checkbox } from "../ui/checkbox";
@@ -124,6 +125,24 @@ const AGENT_ONBOARDING_THREAD_ID = ThreadId.make("onboarding-agent-setup");
 const SCAN_LIMIT_MESSAGE = msg(
   "Scan limit reached. Some projects or conversations may be missing.",
 );
+
+function fireOnboardingCompletionBurst(): void {
+  if (typeof window === "undefined" || prefersReducedMotion()) return;
+  void import("canvas-confetti")
+    .then(({ default: confetti }) => {
+      void confetti({
+        particleCount: 28,
+        spread: 58,
+        startVelocity: 26,
+        scalar: 0.78,
+        ticks: 70,
+        origin: { x: 0.5, y: 0.68 },
+        colors: ["#94a3b8", "#38bdf8", "#34d399", "#a78bfa"],
+        disableForReducedMotion: true,
+      });
+    })
+    .catch(() => undefined);
+}
 
 /**
  * First-run page for one computer: its agents, the projects found in agent history, and the
@@ -206,6 +225,9 @@ export function WelcomePage({
         }
         // Release before onDone so its own navigation is not blocked.
         holdPageRef.current = false;
+        if (!importWarning) {
+          fireOnboardingCompletionBurst();
+        }
         await onDone(projectRef);
         if (!keepChoicesRef.current) setImportSelection(null);
         if (importWarning) {

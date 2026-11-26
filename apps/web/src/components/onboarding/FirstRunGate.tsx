@@ -26,6 +26,8 @@ import { primaryServerConfigAtom, primaryServerWelcomeAtom } from "../../state/s
 import { environmentShell } from "../../state/shell";
 import { environmentThreadShells } from "../../state/threads";
 import { Button } from "../ui/button";
+import { T3Wordmark } from "../T3Wordmark";
+import { observeVisibleAnimation } from "../../lib/visibleAnimation";
 
 /** Pending blocks all rendering, including EventRouter welcome navigation. */
 
@@ -176,9 +178,30 @@ export function FirstRunGate({
     return children;
   }
   if (decision !== "app") {
-    return stalled ? <FirstRunRecovery reason="connection" /> : null;
+    return stalled ? <FirstRunRecovery reason="connection" /> : <FirstRunPendingLoader />;
   }
   return children;
+}
+
+function FirstRunPendingLoader() {
+  const gt = useGT();
+  return (
+    <main
+      aria-label={gt("Loading workspace")}
+      className="flex h-dvh min-h-0 items-center justify-center bg-background px-6 text-foreground"
+      data-slot="first-run-loader"
+    >
+      <div
+        ref={observeVisibleAnimation}
+        className="flex flex-col items-center gap-3"
+        data-slot="first-run-loader-mark"
+      >
+        <div className="inline-flex size-12 items-center justify-center rounded-2xl border border-border/60 bg-card/80 dark:border-white/10 dark:bg-card/60">
+          <T3Wordmark aria-hidden className="h-6 w-auto text-foreground" />
+        </div>
+      </div>
+    </main>
+  );
 }
 
 function FirstRunRecovery({
@@ -191,15 +214,21 @@ function FirstRunRecovery({
   const settingsReadFailed = reason === "settings";
   const gt = useGT();
   return (
-    <main className="flex h-dvh min-h-0 items-center justify-center bg-background px-6 text-foreground">
-      <div className="flex max-w-sm flex-col items-center text-center">
+    <main
+      className="flex h-dvh min-h-0 items-center justify-center bg-background px-6 text-foreground"
+      data-slot="first-run-recovery"
+    >
+      <div className="flex max-w-sm flex-col items-center rounded-2xl border border-border/65 bg-card/85 px-8 py-8 text-center dark:border-white/10 dark:bg-card/65">
+        <div className="mb-4 inline-flex size-10 items-center justify-center rounded-xl border border-border/60 bg-background/80 dark:border-white/10">
+          <T3Wordmark aria-hidden className="h-5 w-auto text-foreground" />
+        </div>
         <h1 className="text-lg font-semibold">
           {settingsReadFailed ? gt("Could not read settings") : gt("Still connecting")}
         </h1>
         <p className="mt-2 text-sm text-muted-foreground">
           {settingsReadFailed
             ? gt("Your saved settings could not be loaded.")
-            : gt("T3 Code could not confirm this workspace.")}
+            : gt("Rutico could not confirm this workspace.")}
         </p>
         <Button
           className="mt-5"

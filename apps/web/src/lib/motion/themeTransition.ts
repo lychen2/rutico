@@ -202,6 +202,86 @@ export function runThemeViewTransition(
   return true;
 }
 
+/**
+ * Single-document spatial View Transition for major shell handoffs (e.g. /welcome → workspace);
+ * guards unsupported browsers, hidden tabs, transparent roots, re-entrancy, and reduced motion.
+ */
+export async function runSpatialRouteTransition(
+  commitRoute: () => void | Promise<void>,
+  options?: {
+    readonly transitionName?: string;
+    readonly doc?: DocumentWithViewTransition;
+    readonly win?: Window;
+  },
+): Promise<boolean> {
+  const doc = (options?.doc ??
+    (typeof document === "undefined" ? undefined : (document as DocumentWithViewTransition))) as
+    | DocumentWithViewTransition
+    | undefined;
+  const win = options?.win ?? (typeof window === "undefined" ? undefined : window);
+  if (!doc || !win) {
+    await commitRoute();
+    return false;
+  }
+
+  const root = doc.documentElement;
+  const canAnimate =
+    typeof doc.startViewTransition === "function" &&
+    doc.visibilityState !== "hidden" &&
+    !prefersReducedMotion(win) &&
+    root.dataset.mobileComposerRouteTransition !== "true";
+
+  if (!canAnimate) {
+    await commitRoute();
+    return false;
+  }
+
+  const rootBg =
+    typeof win.getComputedStyle === "function"
+      ? win.getComputedStyle(root).backgroundColor
+      : "rgb(0, 0, 0)";
+  if (isTransparentColor(rootBg)) {
+    await commitRoute();
+    return false;
+  }
+
+  if (activeTransition) {
+    try {
+      activeTransition.skipTransition?.();
+    } catch {
+      // Ignore already-settled transitions.
+    }
+    activeTransition = null;
+  }
+
+  const transitionName = options?.transitionName ?? "welcome-to-workspace";
+  root.dataset.spatialRouteTransition = transitionName;
+
+  let transition: ViewTransitionLike;
+  try {
+    transition = doc.startViewTransition!(async () => {
+      await commitRoute();
+    });
+  } catch {
+    delete root.dataset.spatialRouteTransition;
+    await commitRoute();
+    return false;
+  }
+
+  activeTransition = transition;
+  try {
+    await transition.finished;
+  } catch {
+    // Skipped or aborted transitions are expected if the user navigates again immediately.
+  } finally {
+    if (activeTransition === transition) {
+      activeTransition = null;
+      delete root.dataset.spatialRouteTransition;
+    }
+  }
+  return true;
+}
+
 if (typeof window !== "undefined") {
   ensurePointerOriginTracker();
 }
