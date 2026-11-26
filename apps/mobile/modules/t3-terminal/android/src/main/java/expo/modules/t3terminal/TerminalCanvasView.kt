@@ -8,6 +8,8 @@ import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.Rect
 import android.graphics.Typeface
+import android.os.Build
+import android.provider.Settings
 import android.util.Log
 import android.view.ActionMode
 import android.view.GestureDetector
@@ -15,11 +17,15 @@ import android.view.HapticFeedbackConstants
 import android.view.Menu
 import android.view.MenuItem
 import android.view.MotionEvent
+import android.view.ScaleGestureDetector
 import android.view.View
+import android.widget.EdgeEffect
 import android.widget.OverScroller
+import kotlin.math.abs
 import kotlin.math.ceil
 import kotlin.math.max
 import kotlin.math.min
+import kotlin.math.roundToInt
 
 internal object TerminalTypefaces {
   private var loaded = false
@@ -67,6 +73,9 @@ internal class TerminalCanvasView(context: Context) : View(context) {
     const val FLAG_UNDERLINE = 1 shl 7
     const val FLAG_SELECTED = 1 shl 8
 
+    const val MIN_PINCH_FONT_SIZE_SP = 8f
+    const val MAX_PINCH_FONT_SIZE_SP = 20f
+
     private const val MENU_COPY = 1
     private const val MENU_SELECT_ALL = 2
     private const val HANDLE_COLOR = 0xFF7AA2F7.toInt()
@@ -85,11 +94,20 @@ internal class TerminalCanvasView(context: Context) : View(context) {
   private val italicTypeface = Typeface.create(TerminalTypefaces.regular, Typeface.ITALIC)
   private val boldItalicTypeface = Typeface.create(TerminalTypefaces.bold, Typeface.ITALIC)
   private val gestureDetector = GestureDetector(context, TerminalGestureListener())
+  private val scaleDetector = ScaleGestureDetector(context, TerminalScaleListener()).apply {
+    isQuickScaleEnabled = false
+  }
+  private val topEdge = EdgeEffect(context)
+  private val bottomEdge = EdgeEffect(context)
   private val contentPadding = 8f * density
   private var frame: TerminalFrame? = null
   private var scrollRemainder = 0f
   private val scroller = OverScroller(context)
   private var flingLastY = 0
+  private var isPinching = false
+  private var pinchConsumedGesture = false
+  private var pinchChangedStep = false
+  private var pinchFloatSp = 10f
   private val flingRunnable = object : Runnable {
     override fun run() {
       if (!scroller.computeScrollOffset()) return
@@ -100,7 +118,13 @@ internal class TerminalCanvasView(context: Context) : View(context) {
       val rows = scrollRemainder.toInt()
       if (rows != 0) {
         scrollRemainder -= rows
-        onScrollRows?.invoke(rows)
+        val moved = onScrollRows?.invoke(rows) ?: true
+        if (!moved) {
+          val velocity = scroller.currVelocity.toInt().coerceAtLeast(1)
+          absorbEdge(if (rows < 0) topEdge else bottomEdge, velocity)
+          scroller.forceFinished(true)
+          return
+        }
       }
       postOnAnimation(this)
     }
@@ -116,10 +140,15 @@ internal class TerminalCanvasView(context: Context) : View(context) {
     }
   }
 
-  var onScrollRows: ((Int) -> Unit)? = null
+  /** Returns true when scrollback offset moved, false when clamped at top/bottom boundary. */
+  var onScrollRows: ((Int) -> Boolean)? = null
   var onRequestKeyboard: (() -> Unit)? = null
   var onCellMetricsChanged: (() -> Unit)? = null
+  var onPinchZoomChange: ((fontSizeSp: Float, isFinal: Boolean) -> Unit)? = null
   var selectionDelegate: TerminalSelectionDelegate? = null
+
+  val isPinchZooming: Boolean
+    get() = isPinching
 
   private val handlePaint = Paint(Paint.ANTI_ALIAS_FLAG)
   private var selectionActive = false
@@ -190,6 +219,12 @@ internal class TerminalCanvasView(context: Context) : View(context) {
   fun usableWidth(): Float = max(width - contentPadding * 2f, 1f)
   fun usableHeight(): Float = max(height - contentPadding * 2f, 1f)
 
+  override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
+    super.onSizeChanged(w, h, oldw, oldh)
+    topEdge.setSize(w, h)
+    bottomEdge.setSize(w, h)
+  }
+
   @Suppress("NestedBlockDepth", "ComplexCondition")
   override fun onDraw(canvas: Canvas) {
     super.onDraw(canvas)
@@ -243,23 +278,46 @@ internal class TerminalCanvasView(context: Context) : View(context) {
     }
     canvas.restore()
     drawSelectionHandles(canvas)
+    drawEdgeEffects(canvas)
   }
 
+  @Suppress("CyclomaticComplexMethod", "ReturnCount")
   override fun onTouchEvent(event: MotionEvent): Boolean {
-    if (event.actionMasked == MotionEvent.ACTION_DOWN) {
+    val action = event.actionMasked
+    if (action == MotionEvent.ACTION_DOWN) {
+      pinchConsumedGesture = false
       parent?.requestDisallowInterceptTouchEvent(true)
       // Touch-down always stops momentum, even when the event is consumed by
       // a selection-handle grab and never reaches the gesture detector.
       scroller.forceFinished(true)
       removeCallbacks(flingRunnable)
-    } else if (event.actionMasked == MotionEvent.ACTION_UP ||
-      event.actionMasked == MotionEvent.ACTION_CANCEL
-    ) {
-      parent?.requestDisallowInterceptTouchEvent(false)
     }
-    return when {
+
+    if (!dragSelecting) {
+      scaleDetector.onTouchEvent(event)
+    }
+
+    if (event.pointerCount > 1 || scaleDetector.isInProgress || isPinching) {
+      if (!pinchConsumedGesture) {
+        pinchConsumedGesture = true
+        cancelSingleFingerGesture(event)
+      }
+      if (action == MotionEvent.ACTION_UP || action == MotionEvent.ACTION_CANCEL) {
+        finishTouchSession()
+      }
+      return true
+    }
+
+    if (pinchConsumedGesture) {
+      if (action == MotionEvent.ACTION_UP || action == MotionEvent.ACTION_CANCEL) {
+        finishTouchSession()
+      }
+      return true
+    }
+
+    val handled = when {
       dragSelecting -> {
-        when (event.actionMasked) {
+        when (action) {
           MotionEvent.ACTION_MOVE -> extendSelectionTo(event.x, event.y)
           MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
             dragSelecting = false
@@ -268,16 +326,120 @@ internal class TerminalCanvasView(context: Context) : View(context) {
         }
         true
       }
-      event.actionMasked == MotionEvent.ACTION_DOWN && grabHandleAt(event.x, event.y) -> true
+      action == MotionEvent.ACTION_DOWN && grabHandleAt(event.x, event.y) -> true
       else -> gestureDetector.onTouchEvent(event) || super.onTouchEvent(event)
     }
+
+    if (action == MotionEvent.ACTION_UP || action == MotionEvent.ACTION_CANCEL) {
+      finishTouchSession()
+    }
+    return handled
   }
 
   override fun onDetachedFromWindow() {
     removeCallbacks(cursorBlink)
     removeCallbacks(flingRunnable)
+    topEdge.finish()
+    bottomEdge.finish()
     actionMode?.finish()
     super.onDetachedFromWindow()
+  }
+
+  private fun cancelSingleFingerGesture(event: MotionEvent) {
+    scroller.forceFinished(true)
+    removeCallbacks(flingRunnable)
+    scrollRemainder = 0f
+    dragSelecting = false
+    draggingHandle = false
+    releaseEdges()
+    val cancelEvent = MotionEvent.obtain(event).apply {
+      action = MotionEvent.ACTION_CANCEL
+    }
+    gestureDetector.onTouchEvent(cancelEvent)
+    cancelEvent.recycle()
+  }
+
+  private fun finishTouchSession() {
+    releaseEdges()
+    isPinching = false
+    pinchConsumedGesture = false
+    parent?.requestDisallowInterceptTouchEvent(false)
+  }
+
+  private fun isReducedMotion(): Boolean =
+    Settings.Global.getFloat(
+      context.contentResolver,
+      Settings.Global.ANIMATOR_DURATION_SCALE,
+      1f,
+    ) == 0f
+
+  private fun supportsStretchEdgeEffect(): Boolean =
+    Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && !isReducedMotion()
+
+  private fun edgeDistance(edge: EdgeEffect): Float =
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) edge.distance else 0f
+
+  private fun pullEdge(edge: EdgeEffect, deltaDistance: Float, displacement: Float): Float {
+    if (!supportsStretchEdgeEffect()) return 0f
+    val consumed = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+      edge.onPullDistance(deltaDistance, displacement)
+    } else {
+      0f
+    }
+    postInvalidateOnAnimation()
+    return consumed
+  }
+
+  private fun absorbEdge(edge: EdgeEffect, velocity: Int) {
+    if (!supportsStretchEdgeEffect() || velocity <= 0) return
+    edge.onAbsorb(velocity)
+    postInvalidateOnAnimation()
+  }
+
+  private fun releaseEdges() {
+    var needsInvalidate = false
+    if (!topEdge.isFinished) {
+      topEdge.onRelease()
+      needsInvalidate = true
+    }
+    if (!bottomEdge.isFinished) {
+      bottomEdge.onRelease()
+      needsInvalidate = true
+    }
+    if (needsInvalidate) {
+      postInvalidateOnAnimation()
+    }
+  }
+
+  private fun drawEdgeEffects(canvas: Canvas) {
+    if (!supportsStretchEdgeEffect() || width <= 0 || height <= 0) return
+    var needsInvalidate = false
+    if (!topEdge.isFinished) {
+      val save = canvas.save()
+      topEdge.setSize(width, height)
+      if (topEdge.draw(canvas)) needsInvalidate = true
+      canvas.restoreToCount(save)
+    }
+    if (!bottomEdge.isFinished) {
+      val save = canvas.save()
+      canvas.translate(width.toFloat(), height.toFloat())
+      canvas.rotate(180f)
+      bottomEdge.setSize(width, height)
+      if (bottomEdge.draw(canvas)) needsInvalidate = true
+      canvas.restoreToCount(save)
+    }
+    if (needsInvalidate) {
+      postInvalidateOnAnimation()
+    }
+  }
+
+  private fun performZoomTickHaptic() {
+    val constant = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+      HapticFeedbackConstants.SEGMENT_TICK
+    } else {
+      HapticFeedbackConstants.CLOCK_TICK
+    }
+    performHapticFeedback(constant)
   }
 
   private fun updateCellMetrics() {
@@ -356,6 +518,7 @@ internal class TerminalCanvasView(context: Context) : View(context) {
   }
 
   private fun startWordSelection(px: Float, py: Float) {
+    if (isPinching || pinchConsumedGesture) return
     val delegate = selectionDelegate ?: return
     val col = columnAt(px)
     val row = rowAt(py)
@@ -574,6 +737,46 @@ internal class TerminalCanvasView(context: Context) : View(context) {
     )
   }
 
+  private inner class TerminalScaleListener : ScaleGestureDetector.SimpleOnScaleGestureListener() {
+    override fun onScaleBegin(detector: ScaleGestureDetector): Boolean {
+      isPinching = true
+      pinchConsumedGesture = true
+      pinchChangedStep = false
+      pinchFloatSp = fontSizeSp
+      scroller.forceFinished(true)
+      removeCallbacks(flingRunnable)
+      scrollRemainder = 0f
+      releaseEdges()
+      return true
+    }
+
+    override fun onScale(detector: ScaleGestureDetector): Boolean {
+      pinchFloatSp = (pinchFloatSp * detector.scaleFactor).coerceIn(
+        MIN_PINCH_FONT_SIZE_SP,
+        MAX_PINCH_FONT_SIZE_SP,
+      )
+      val steppedSp = pinchFloatSp.roundToInt().toFloat().coerceIn(
+        MIN_PINCH_FONT_SIZE_SP,
+        MAX_PINCH_FONT_SIZE_SP,
+      )
+      if (abs(steppedSp - fontSizeSp) >= 0.5f) {
+        pinchChangedStep = true
+        fontSizeSp = steppedSp
+        performZoomTickHaptic()
+        onPinchZoomChange?.invoke(fontSizeSp, false)
+      }
+      return true
+    }
+
+    override fun onScaleEnd(detector: ScaleGestureDetector) {
+      isPinching = false
+      if (pinchChangedStep) {
+        pinchChangedStep = false
+        onPinchZoomChange?.invoke(fontSizeSp, true)
+      }
+    }
+  }
+
   private inner class TerminalGestureListener : GestureDetector.SimpleOnGestureListener() {
     override fun onDown(event: MotionEvent): Boolean {
       scroller.forceFinished(true)
@@ -595,17 +798,40 @@ internal class TerminalCanvasView(context: Context) : View(context) {
       startWordSelection(event.x, event.y)
     }
 
+    @Suppress("ReturnCount")
     override fun onScroll(
       first: MotionEvent?,
       current: MotionEvent,
       distanceX: Float,
       distanceY: Float
     ): Boolean {
+      if (isPinching || pinchConsumedGesture) return true
+      val viewportHeight = max(height.toFloat(), 1f)
+      val displacementX = (current.x / max(width.toFloat(), 1f)).coerceIn(0f, 1f)
+
+      // Release active stretch before resuming scrollback movement.
+      if (edgeDistance(topEdge) > 0f && distanceY > 0f) {
+        pullEdge(topEdge, -distanceY / viewportHeight, displacementX)
+        return true
+      }
+      if (edgeDistance(bottomEdge) > 0f && distanceY < 0f) {
+        pullEdge(bottomEdge, distanceY / viewportHeight, 1f - displacementX)
+        return true
+      }
+
       scrollRemainder += distanceY / cellHeightPx
       val rows = scrollRemainder.toInt()
       if (rows != 0) {
         scrollRemainder -= rows
-        onScrollRows?.invoke(rows)
+        val moved = onScrollRows?.invoke(rows) ?: true
+        if (!moved) {
+          val delta = abs(distanceY) / viewportHeight
+          if (distanceY < 0f) {
+            pullEdge(topEdge, delta, displacementX)
+          } else {
+            pullEdge(bottomEdge, delta, 1f - displacementX)
+          }
+        }
       }
       return true
     }
@@ -616,6 +842,8 @@ internal class TerminalCanvasView(context: Context) : View(context) {
       velocityX: Float,
       velocityY: Float
     ): Boolean {
+      if (isPinching || pinchConsumedGesture) return true
+      if (edgeDistance(topEdge) > 0f || edgeDistance(bottomEdge) > 0f) return true
       flingLastY = 0
       scroller.fling(0, 0, 0, velocityY.toInt(), 0, 0, Int.MIN_VALUE / 2, Int.MAX_VALUE / 2)
       postOnAnimation(flingRunnable)

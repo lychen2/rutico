@@ -25,6 +25,13 @@ interface TerminalResizeEvent {
   readonly rows: number;
 }
 
+export interface TerminalFontSizeZoomEvent {
+  readonly fontSize: number;
+  readonly cols: number;
+  readonly rows: number;
+  readonly final: boolean;
+}
+
 export interface NativeTerminalSurfaceProps extends ViewProps {
   readonly ref?: Ref<NativeTerminalSurfaceHandle>;
   readonly appearanceScheme?: "light" | "dark";
@@ -46,6 +53,8 @@ export interface NativeTerminalSurfaceProps extends ViewProps {
   /** iOS only: clipboard text from a system paste (edit menu, ⌘V, shortcut bar). */
   readonly onPaste?: (event: NativeSyntheticEvent<TerminalPasteEvent>) => void;
   readonly onResize?: (event: NativeSyntheticEvent<TerminalResizeEvent>) => void;
+  /** Android only: native pinch-to-zoom font step and coalesced grid preview. */
+  readonly onFontSizeZoom?: (event: NativeSyntheticEvent<TerminalFontSizeZoomEvent>) => void;
 }
 
 export interface NativeTerminalSurfaceHandle {

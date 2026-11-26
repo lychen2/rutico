@@ -12,7 +12,7 @@ import * as Clipboard from "expo-clipboard";
 import * as Haptics from "expo-haptics";
 import { useGT, useMessages } from "gt-react-native";
 import { useMemo, useRef, useState } from "react";
-import { Pressable, ScrollView, StyleSheet, View } from "react-native";
+import { Platform, Pressable, ScrollView, StyleSheet, View } from "react-native";
 
 import { AppText as Text } from "../../components/ui/AppText";
 import { IconButton } from "../../components/ui/IconButton";
@@ -37,8 +37,13 @@ import {
   hostPlatformFromOs,
   resolveModifiedTerminalInput,
   type HostPlatform,
-  type PendingModifier,
 } from "../terminal/terminalInput";
+import {
+  TerminalTrackpadScrubber,
+  TerminalZoomHud,
+  useStickyTerminalModifier,
+  useTerminalZoomHud,
+} from "../terminal/TerminalAndroidOverlay";
 import { resolveTerminalOpenLocation } from "../terminal/terminalLaunchContext";
 import {
   buildTerminalMenuSessions,
@@ -296,11 +301,17 @@ function ThreadWorkbenchTerminalSession(props: {
   const gt = useGT();
   const writeTerminal = useAtomCommand(terminalEnvironment.write, "workbench terminal write");
   const serverConfigs = useServerConfigs();
-  const { appearance, themeAppearance, themeId } = useAppearancePreferences();
+  const { appearance, themeAppearance, themeId, setTerminalFontSize } = useAppearancePreferences();
   const terminalTheme = getMobileTerminalTheme(themeId, themeAppearance);
   const surfaceRef = useRef<TerminalSurfaceHandle>(null);
   const [pasteSession] = useState(createTerminalPasteSession);
-  const [pendingModifier, setPendingModifier] = useState<PendingModifier | null>(null);
+  const {
+    modifierState,
+    toggle: toggleModifier,
+    consume: consumeModifier,
+    clear: clearModifier,
+  } = useStickyTerminalModifier();
+  const { hud: zoomHud, handleFontSizeZoom } = useTerminalZoomHud(setTerminalFontSize);
   const [initialGridSize] = useState(
     () =>
       getCachedTerminalGridSize({
@@ -419,12 +430,12 @@ function ThreadWorkbenchTerminalSession(props: {
 
   const handleInput = (data: string) => {
     if (data.length === 0) return;
-    if (pendingModifier === null) {
+    if (modifierState === null) {
       void writeInput(data);
       return;
     }
-    const modifier = pendingModifier;
-    setPendingModifier(null);
+    const modifier = modifierState.modifier;
+    consumeModifier();
     const resolved = resolveModifiedTerminalInput({
       data,
       modifier,
@@ -457,11 +468,13 @@ function ThreadWorkbenchTerminalSession(props: {
     );
   }
 
+  const ctrlLocked = modifierState?.modifier === "ctrl" && modifierState.locked;
   const quickKeys: ReadonlyArray<{
     readonly key: string;
     readonly label: string;
     readonly accessibilityLabel: string;
     readonly active?: boolean;
+    readonly locked?: boolean;
     readonly onPress: () => void;
   }> = [
     {
@@ -469,7 +482,7 @@ function ThreadWorkbenchTerminalSession(props: {
       label: "Esc",
       accessibilityLabel: gt("Escape"),
       onPress: () => {
-        setPendingModifier(null);
+        clearModifier();
         void writeInput("\u001b");
       },
     },
@@ -483,11 +496,12 @@ function ThreadWorkbenchTerminalSession(props: {
     },
     {
       key: "ctrl",
-      label: "Ctrl",
-      accessibilityLabel: gt("Control modifier"),
-      active: pendingModifier === "ctrl",
+      label: ctrlLocked ? "Ctrl •" : "Ctrl",
+      accessibilityLabel: ctrlLocked ? gt("Control locked") : gt("Control modifier"),
+      active: modifierState?.modifier === "ctrl",
+      locked: ctrlLocked,
       onPress: () => {
-        setPendingModifier((current) => (current === "ctrl" ? null : "ctrl"));
+        toggleModifier("ctrl");
       },
     },
     {
@@ -525,10 +539,12 @@ function ThreadWorkbenchTerminalSession(props: {
           void pasteText(async () => text);
         }}
         onResize={handleResize}
+        onFontSizeZoom={handleFontSizeZoom}
         style={{ flex: 1 }}
         terminalKey={`${props.environmentId}:${props.threadId}:${props.terminalId}:workbench`}
         theme={terminalTheme}
       />
+      <TerminalZoomHud hud={zoomHud} />
       {props.canOperate && isRunning ? (
         <View
           className="flex-row items-center gap-1.5 px-2 py-1.5"
@@ -551,19 +567,37 @@ function ThreadWorkbenchTerminalSession(props: {
               }}
               className={cn(
                 "min-h-[36px] min-w-[40px] items-center justify-center rounded-lg border px-2.5 active:opacity-65",
-                item.active ? "border-primary bg-primary/15" : "border-border/60 bg-card/40",
+                item.locked
+                  ? "border-primary bg-primary/25"
+                  : item.active
+                    ? "border-primary bg-primary/15"
+                    : "border-border/60 bg-card/40",
               )}
             >
               <Text
                 className={cn(
                   "text-xs font-t3-medium",
-                  item.active ? "text-foreground" : "text-foreground-muted",
+                  item.locked
+                    ? "font-t3-bold text-primary"
+                    : item.active
+                      ? "text-foreground"
+                      : "text-foreground-muted",
                 )}
               >
                 {item.label}
               </Text>
             </Pressable>
           ))}
+          {Platform.OS === "android" ? (
+            <View className="ml-auto">
+              <TerminalTrackpadScrubber
+                compact
+                onScrubSequence={(sequence) => {
+                  handleInput(sequence);
+                }}
+              />
+            </View>
+          ) : null}
         </View>
       ) : null}
     </View>
