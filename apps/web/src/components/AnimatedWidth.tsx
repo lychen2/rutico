@@ -13,21 +13,23 @@ export function AnimatedWidth({
   const contentRef = useRef<HTMLSpanElement>(null);
   const [width, setWidth] = useState<number | null>(null);
 
-  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- observes the content element's width before paint to animate width
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- observes the content element's unscaled offsetWidth before paint to animate width
   useLayoutEffect(() => {
     const element = contentRef.current;
     if (!element) return;
-    return observeResize(element, (entries) => {
-      const nextWidth = Math.ceil(entries.at(-1)?.contentRect.width ?? 0);
+    const measure = () => {
+      const nextWidth = Math.ceil(element.offsetWidth || element.scrollWidth);
       if (nextWidth > 0) setWidth(nextWidth);
-    });
+    };
+    measure();
+    return observeResize(element, measure);
   }, []);
 
   return (
     <span
       data-slot="animated-width"
       className={cn(
-        "inline-block overflow-hidden transition-[width] duration-150 ease-(--ease-drawer) motion-reduce:transition-none",
+        "inline-block overflow-clip transition-[width] duration-(--duration-fluid) ease-(--spring-fluid) motion-reduce:transition-none [overflow-clip-margin:2px]",
         className,
       )}
       style={width === null ? undefined : { width }}

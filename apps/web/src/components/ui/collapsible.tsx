@@ -24,9 +24,9 @@ function CollapsiblePanel({
   return (
     <CollapsiblePrimitive.Panel
       className={cn(
-        "overflow-hidden",
+        "overflow-clip [overflow-clip-margin:2px]",
         animate &&
-          "h-(--collapsible-panel-height) transition-[height,opacity] duration-200 ease-(--ease-drawer) motion-reduce:transition-none data-ending-style:h-0 data-ending-style:opacity-0 data-starting-style:h-0 data-starting-style:opacity-0 data-open:data-ending-style:[height:var(--collapsible-panel-height)]",
+          "h-(--collapsible-panel-height) transition-[height,opacity] duration-(--duration-spatial) ease-(--spring-spatial) motion-reduce:transition-none data-ending-style:h-0 data-ending-style:opacity-0 data-starting-style:h-0 data-starting-style:opacity-0 data-open:data-ending-style:[height:var(--collapsible-panel-height)]",
         className,
       )}
       data-slot="collapsible-panel"
