@@ -471,11 +471,11 @@ function AdaptiveWorkspaceLayoutContent(
     workspaceInspector?.active === true &&
     workspaceInspector.routeKey === inspectorSheetRoute;
   const inspectorActive = workspaceInspector?.active ?? false;
+  const inspectorOpen = fileInspector.supported
+    ? !workspacePage && inspectorActive && fileInspectorPreferredVisible
+    : inspectorSheetOpen;
   const tabletopInspectorSplit =
-    tabletopFold !== null &&
-    !workspacePage &&
-    inspectorActive &&
-    (workspaceInspector?.content.panes.length ?? 0) > 0;
+    tabletopFold !== null && inspectorOpen && (workspaceInspector?.content.panes.length ?? 0) > 0;
   const panes = useMemo(
     () =>
       deriveWorkspacePaneLayout({
@@ -661,7 +661,8 @@ function AdaptiveWorkspaceLayoutContent(
     !layout.usesSplitView &&
     !workspacePage &&
     !compactAndroidSettings &&
-    !isWorkspaceListPath(pathname);
+    !isWorkspaceListPath(pathname) &&
+    tabletopFold === null;
   // Reads the open page when pressed, so the layout context doesn't change on every navigation.
   const handleStartNewTask = () => {
     const state = rootStackState(navigation);
@@ -733,9 +734,8 @@ function AdaptiveWorkspaceLayoutContent(
     return true;
   });
 
-  const inspectorColumnTargetWidth = panes.auxiliaryPaneVisible
-    ? (panes.auxiliaryPaneWidth ?? 0)
-    : 0;
+  const inspectorColumnTargetWidth =
+    !tabletopInspectorSplit && panes.auxiliaryPaneVisible ? (panes.auxiliaryPaneWidth ?? 0) : 0;
   // Android's split content is a rounded card: keep it off the screen edge like the list card.
   const contentEndGap = Platform.OS === "android" && layout.usesSplitView ? 4 : 0;
   // Android's split is one strip: a sidebar slot of fixed width, then the detail pane. The
@@ -1193,14 +1193,32 @@ function AdaptiveWorkspaceLayoutContent(
                       : safeAreaInsets
                 }
               >
-                <View className="flex-1">
+                <View
+                  className={tabletopInspectorSplit ? "flex-1 flex-col" : "flex-1"}
+                  testID={tabletopInspectorSplit ? "tabletop-split-container" : undefined}
+                >
+                  <View
+                    style={
+                      tabletopInspectorSplit && tabletopFold !== null
+                        ? { height: tabletopFold.y, overflow: "hidden" }
+                        : { flex: 1 }
+                    }
+                  >
+                    <PaneContext value="content">
+                      <AndroidPaseoPanels
+                        enabled={paseoPanelsEnabled}
+                        viewportWidth={viewportWidth}
+                        inspectorContent={workspaceInspector?.content}
+                        inspectorOpen={inspectorSheetOpen && !tabletopInspectorSplit}
+                        onCloseInspector={dismissInspectorSheet}
+                        onStartNewTask={handleStartNewTask}
+                      >
+                        <SettingsWorkspaceLayout>{children}</SettingsWorkspaceLayout>
+                      </AndroidPaseoPanels>
+                    </PaneContext>
+                  </View>
                   {tabletopInspectorSplit && tabletopFold !== null && workspaceInspector ? (
-                    <View className="flex-1 flex-col" testID="tabletop-split-container">
-                      <View style={{ height: tabletopFold.y, overflow: "hidden" }}>
-                        <PaneContext value="content">
-                          <SettingsWorkspaceLayout>{children}</SettingsWorkspaceLayout>
-                        </PaneContext>
-                      </View>
+                    <>
                       <View
                         className="bg-border/60"
                         style={{ height: Math.max(2, tabletopFold.height) }}
@@ -1216,21 +1234,8 @@ function AdaptiveWorkspaceLayoutContent(
                           />
                         </PaneContext>
                       </View>
-                    </View>
-                  ) : (
-                    <PaneContext value="content">
-                      <AndroidPaseoPanels
-                        enabled={paseoPanelsEnabled}
-                        viewportWidth={viewportWidth}
-                        inspectorContent={workspaceInspector?.content}
-                        inspectorOpen={inspectorSheetOpen}
-                        onCloseInspector={dismissInspectorSheet}
-                        onStartNewTask={handleStartNewTask}
-                      >
-                        <SettingsWorkspaceLayout>{children}</SettingsWorkspaceLayout>
-                      </AndroidPaseoPanels>
-                    </PaneContext>
-                  )}
+                    </>
+                  ) : null}
                 </View>
               </SafeAreaInsetsContext>
               {floatingTabsEnabled &&

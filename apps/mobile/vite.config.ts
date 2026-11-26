@@ -71,7 +71,10 @@ const reactTests = [
   "src/features/threads/PendingApprovalCard.test.tsx",
 ];
 
-const androidReactTests = ["src/features/pull-requests/PullRequestMergeControls.test.tsx"];
+const androidReactTests = [
+  "src/features/pull-requests/PullRequestMergeControls.test.tsx",
+  "src/features/layout/AdaptiveWorkspaceLayout.tabletop.test.tsx",
+];
 
 const sourceRoot = `${normalizePath(NodeURL.fileURLToPath(new URL("./src", import.meta.url)))}/`;
 const require = NodeModule.createRequire(import.meta.url);
