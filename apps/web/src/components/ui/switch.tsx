@@ -1,5 +1,5 @@
 import { Switch as SwitchPrimitive } from "@base-ui/react/switch";
-import { useRef } from "react";
+import { useEffect, useRef, type Ref } from "react";
 
 import { rubberbandClamp } from "~/lib/motion/rubberBand";
 import { prefersReducedMotion } from "~/lib/motion/springs";
@@ -9,12 +9,23 @@ const DRAG_ACTIVATION_PX = 4;
 
 type SwitchPointerEvent = Parameters<NonNullable<SwitchPrimitive.Root.Props["onPointerDown"]>>[0];
 type SwitchClickEvent = Parameters<NonNullable<SwitchPrimitive.Root.Props["onClick"]>>[0];
+type SwitchKeyDownEvent = Parameters<NonNullable<SwitchPrimitive.Root.Props["onKeyDown"]>>[0];
+
+function assignRef<T>(ref: Ref<T> | undefined, value: T | null) {
+  if (typeof ref === "function") {
+    ref(value);
+  } else if (ref && "current" in ref) {
+    (ref as { current: T | null }).current = value;
+  }
+}
 
 function Switch({
   className,
   size = "default",
   mixed = false,
+  inputRef,
   onClick,
+  onKeyDown,
   onPointerDown,
   onPointerMove,
   onPointerUp,
@@ -22,6 +33,7 @@ function Switch({
   ...props
 }: SwitchPrimitive.Root.Props & { size?: "default" | "sm"; mixed?: boolean }) {
   const thumbRef = useRef<HTMLSpanElement | null>(null);
+  const internalInputRef = useRef<HTMLInputElement | null>(null);
   const dragRef = useRef<{
     pointerId: number;
     startX: number;
@@ -31,6 +43,50 @@ function Switch({
     lastOffset: number;
   } | null>(null);
   const suppressClickRef = useRef(false);
+  const suppressClickTimerRef = useRef<number | null>(null);
+
+  const clearSuppressedClick = () => {
+    suppressClickRef.current = false;
+    if (suppressClickTimerRef.current !== null) {
+      window.clearTimeout(suppressClickTimerRef.current);
+      suppressClickTimerRef.current = null;
+    }
+  };
+
+  const suppressNextClick = () => {
+    clearSuppressedClick();
+    suppressClickRef.current = true;
+    suppressClickTimerRef.current = window.setTimeout(() => {
+      suppressClickRef.current = false;
+      suppressClickTimerRef.current = null;
+    }, 0);
+  };
+
+  const assignInputRef = (node: HTMLInputElement | null) => {
+    internalInputRef.current = node;
+    assignRef(inputRef, node);
+  };
+
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- attaches a capture listener to Base UI's hidden checkbox input to suppress native click activation (e.g. via enclosing <label>) after a drag-back cancel
+  useEffect(() => {
+    const input = internalInputRef.current;
+    if (!input) return;
+    const handleNativeInputClick = (event: MouseEvent) => {
+      if (!suppressClickRef.current) return;
+      suppressClickRef.current = false;
+      if (suppressClickTimerRef.current !== null) {
+        window.clearTimeout(suppressClickTimerRef.current);
+        suppressClickTimerRef.current = null;
+      }
+      event.preventDefault();
+      event.stopPropagation();
+      event.stopImmediatePropagation();
+    };
+    input.addEventListener("click", handleNativeInputClick, true);
+    return () => {
+      input.removeEventListener("click", handleNativeInputClick, true);
+    };
+  }, []);
 
   const resetThumbInlineStyle = () => {
     const thumb = thumbRef.current;
@@ -40,6 +96,7 @@ function Switch({
   };
 
   const handlePointerDown = (event: SwitchPointerEvent) => {
+    clearSuppressedClick();
     onPointerDown?.(event);
     if (event.defaultPrevented || event.button !== 0) return;
     const root = event.currentTarget;
@@ -92,26 +149,34 @@ function Switch({
     dragRef.current = null;
     resetThumbInlineStyle();
 
-    if (!drag.moved || cancelled) return;
+    if (!drag.moved) return;
+    if (cancelled) {
+      suppressNextClick();
+      return;
+    }
     const targetChecked = drag.lastOffset >= drag.travel * 0.5;
-    // Base UI toggles on the trailing click event; suppress click only if the drag settled back
-    // to the starting side so dragging halfway and pulling back does not flip the switch.
+    // Base UI toggles on the trailing click event; suppress Base UI's internal click handler
+    // (and any native checkbox click) when the drag settled back to the starting side so
+    // dragging halfway and pulling back does not flip the switch.
     if (targetChecked === drag.wasChecked) {
-      suppressClickRef.current = true;
-      window.setTimeout(() => {
-        suppressClickRef.current = false;
-      }, 0);
+      suppressNextClick();
     }
   };
 
   const handleClick = (event: SwitchClickEvent) => {
     if (suppressClickRef.current) {
-      suppressClickRef.current = false;
+      clearSuppressedClick();
+      event.preventBaseUIHandler();
       event.preventDefault();
       event.stopPropagation();
       return;
     }
     onClick?.(event);
+  };
+
+  const handleKeyDown = (event: SwitchKeyDownEvent) => {
+    clearSuppressedClick();
+    onKeyDown?.(event);
   };
 
   return (
@@ -126,7 +191,9 @@ function Switch({
       data-size={size}
       data-slot="switch"
       data-mixed={mixed ? "" : undefined}
+      inputRef={assignInputRef}
       onClick={handleClick}
+      onKeyDown={handleKeyDown}
       onPointerDown={handlePointerDown}
       onPointerMove={handlePointerMove}
       onPointerUp={(event) => {
