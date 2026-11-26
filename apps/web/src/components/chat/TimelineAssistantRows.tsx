@@ -9,7 +9,13 @@ import ChatMarkdown from "../ChatMarkdown";
 import { GitForkIcon, ReplyIcon } from "lucide-react";
 import { captureAssistantMessageOpening } from "~/lib/assistantTextSelection";
 import { responseContextRecord } from "~/lib/composerContextRecords";
+import { getSpringWaapiTiming, prefersReducedMotion } from "~/lib/motion/springs";
 import { observeResize } from "~/lib/observeResize";
+import {
+  assistantLandingKey,
+  claimAssistantLandingAnimation,
+  markAssistantMessageStreaming,
+} from "./turnLandingChoreography";
 import { Button } from "../ui/button";
 import { Spinner } from "../ui/spinner";
 import { ProposedPlanCard } from "./ProposedPlanCard";
@@ -41,12 +47,14 @@ export function AssistantTimelineRow({ row }: { row: Extract<TimelineRow, { kind
   const messageText =
     text || (row.message.streaming || row.suppressEmptyResponse ? "" : gt("(empty response)"));
   const streamingProseRef = useRef<HTMLDivElement | null>(null);
+  const metaRailRef = useRef<HTMLDivElement | null>(null);
   const streamingFloorRef = useRef<{ readonly key: string; height: number }>({
     key: "",
     height: 0,
   });
-  const streamingFloorKey = `${ctx.routeThreadKey}:${row.message.id}`;
+  const streamingFloorKey = assistantLandingKey(ctx.routeThreadKey, row.message.id);
   const isStreamingMessage = Boolean(row.message.streaming);
+  const isLandedMessage = row.showAssistantMeta && !isStreamingMessage;
 
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- holds a monotonic downward-only min-height floor while streaming to eliminate jitter and clears immediately on settle or LegendList row recycle
   useLayoutEffect(() => {
@@ -78,6 +86,46 @@ export function AssistantTimelineRow({ row }: { row: Extract<TimelineRow, { kind
     };
   }, [isStreamingMessage, streamingFloorKey]);
 
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- plays one-shot action-rail lift keyed by stable thread+message identity so LegendList recycling never replays landing animations
+  useLayoutEffect(() => {
+    const metaRail = metaRailRef.current;
+    if (isStreamingMessage) {
+      markAssistantMessageStreaming(streamingFloorKey);
+      if (metaRail) {
+        delete metaRail.dataset.resultJustLanded;
+      }
+      return;
+    }
+    if (!isLandedMessage || !metaRail) return;
+    if (!claimAssistantLandingAnimation(streamingFloorKey)) {
+      delete metaRail.dataset.resultJustLanded;
+      return;
+    }
+    if (prefersReducedMotion() || typeof metaRail.animate !== "function") {
+      return;
+    }
+    metaRail.dataset.resultJustLanded = "true";
+    const timing = getSpringWaapiTiming("snappy");
+    const animation = metaRail.animate(
+      [
+        { opacity: 0, transform: "translate3d(0, 3px, 0)" },
+        { opacity: 1, transform: "translate3d(0, 0, 0)" },
+      ],
+      {
+        duration: Math.min(240, timing.duration),
+        easing: timing.easing,
+      },
+    );
+    const cleanup = () => {
+      delete metaRail.dataset.resultJustLanded;
+    };
+    animation.addEventListener("finish", cleanup, { once: true });
+    return () => {
+      animation.cancel();
+      cleanup();
+    };
+  }, [isLandedMessage, isStreamingMessage, streamingFloorKey]);
+
   return (
     <>
       <div
@@ -85,7 +133,7 @@ export function AssistantTimelineRow({ row }: { row: Extract<TimelineRow, { kind
         data-assistant-response-state={
           row.message.streaming ? "streaming" : row.showAssistantMeta ? "landed" : "progress"
         }
-        data-result-landed={row.showAssistantMeta && !row.message.streaming ? "true" : undefined}
+        data-result-landed={isLandedMessage ? "true" : undefined}
       >
         {/* oxlint-disable-next-line t3code/no-untranslated-copy -- product name stays English */}
         <MessageAuthorHeading>Rutico</MessageAuthorHeading>
@@ -123,13 +171,15 @@ export function AssistantTimelineRow({ row }: { row: Extract<TimelineRow, { kind
           </div>
         ) : null}
         {row.showAssistantMeta ? (
-          <AssistantMessageMeta
-            className="mt-1.5"
-            projectedItem={row.projectedItem}
-            message={row.message}
-            showCopyButton={row.showAssistantCopyButton}
-            copyStreaming={row.assistantCopyStreaming}
-          />
+          <div ref={metaRailRef} data-assistant-meta-rail="true">
+            <AssistantMessageMeta
+              className="mt-1.5"
+              projectedItem={row.projectedItem}
+              message={row.message}
+              showCopyButton={row.showAssistantCopyButton}
+              copyStreaming={row.assistantCopyStreaming}
+            />
+          </div>
         ) : null}
       </div>
     </>

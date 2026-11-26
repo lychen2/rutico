@@ -27,8 +27,17 @@ import { parseScopedThreadKey } from "@t3tools/client-runtime/environment";
 import { resolveWorkGroupScrollAnchor } from "@t3tools/client-runtime/work-log/scroll-anchor";
 import type { WorkflowOpening } from "@t3tools/client-runtime/state/subagentRuntime";
 import { observeResize } from "~/lib/observeResize";
+import {
+  getSpringWaapiTiming,
+  prefersReducedMotion as prefersReducedMotionSetting,
+} from "~/lib/motion/springs";
 import { preserveReadingPosition } from "~/lib/preserveReadingPosition";
 import { useStableCallback } from "~/hooks/useStableCallback";
+import {
+  claimTurnFoldLandingAnimation,
+  markTurnRunActive,
+  turnFoldLandingKey,
+} from "./turnLandingChoreography";
 
 const NOOP_USE_ARTIFACT_TEMPLATE = () => {};
 const EMPTY_PENDING_APPROVALS: ReadonlyArray<PendingApproval> = [];
@@ -62,7 +71,6 @@ import { formatDiffCount } from "@t3tools/client-runtime/diff-count";
 import {
   ArrowRightIcon,
   BotIcon,
-  CheckCircle2Icon,
   ChevronRightIcon,
   CircleAlertIcon,
   CircleDotIcon,
@@ -655,6 +663,15 @@ const ConversationTimeline = memo(function ConversationTimeline({
       }
     }
   }
+
+  const activeRunIdToObserve =
+    runningRunId ?? (latestRun?.status === "running" ? latestRun.runId : null);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- records currently running turn identities so TurnFoldTimelineRow animates only newly completed turns, never recycled history
+  useLayoutEffect(() => {
+    if (activeRunIdToObserve !== null) {
+      markTurnRunActive(turnFoldLandingKey(routeThreadKey, activeRunIdToObserve));
+    }
+  }, [activeRunIdToObserve, routeThreadKey]);
 
   const preferredToolCallVisibility = useClientSettings((settings) => settings.toolCallVisibility);
   const screenReaderAnnouncements = useClientSettings(
@@ -1917,17 +1934,61 @@ function TurnFoldTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "turn-
   const ctx = use(TimelineRowCtx);
   const { turnFoldStatsByRunId } = use(TimelineRowActivityCtx);
   const stats = turnFoldStatsByRunId?.get(row.runId);
+  const rowRef = useRef<HTMLDivElement | null>(null);
   const { loading, error, toggle } = useDeferredWorkLoading(row, () =>
     ctx.onToggleTurnFold(row.runId),
   );
   const showSettledSummary =
     !row.expanded && stats !== undefined && (stats.toolCallCount > 0 || stats.changedFileCount > 0);
+  const turnLandingKey = turnFoldLandingKey(ctx.routeThreadKey, row.runId);
+  const isInterrupted = stats?.interrupted === true;
+
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- plays one-shot check-draw & decaying stat stagger strictly for turns observed active before landing; resets immediately on LegendList recycling
+  useLayoutEffect(() => {
+    const container = rowRef.current;
+    if (!container) return;
+    delete container.dataset.turnJustLanded;
+    if (isInterrupted || !claimTurnFoldLandingAnimation(turnLandingKey)) return;
+    if (prefersReducedMotionSetting()) return;
+
+    container.dataset.turnJustLanded = "true";
+    const timing = getSpringWaapiTiming("snappy");
+    const pills = Array.from(container.querySelectorAll<HTMLElement>("[data-turn-fold-pill]"));
+    const delays = [0, 38, 66];
+    const animations: Animation[] = [];
+    for (const [index, pill] of pills.entries()) {
+      if (typeof pill.animate !== "function") continue;
+      animations.push(
+        pill.animate(
+          [
+            { opacity: 0, transform: "translate3d(0, 4px, 0) scale(0.94)" },
+            { opacity: 1, transform: "translate3d(0, 0, 0) scale(1)" },
+          ],
+          {
+            duration: Math.min(260, timing.duration),
+            delay: delays[index] ?? 72,
+            easing: timing.easing,
+            fill: "backwards",
+          },
+        ),
+      );
+    }
+    const timer = window.setTimeout(() => {
+      delete container.dataset.turnJustLanded;
+    }, 380);
+    return () => {
+      window.clearTimeout(timer);
+      for (const animation of animations) animation.cancel();
+      delete container.dataset.turnJustLanded;
+    };
+  }, [isInterrupted, turnLandingKey]);
 
   return (
     <div
+      ref={rowRef}
       className="group/timeline-row border-b border-border/60 pb-2 pe-0.5 pt-1"
       data-turn-fold-row="true"
-      data-turn-fold-state={stats?.interrupted ? "interrupted" : "completed"}
+      data-turn-fold-state={isInterrupted ? "interrupted" : "completed"}
     >
       <div className="relative flex items-center gap-1.5">
         <button
@@ -1938,18 +1999,32 @@ function TurnFoldTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "turn-
           className="group/fold flex cursor-pointer select-none items-center gap-1 rounded-md px-1 text-sm leading-relaxed text-muted-foreground tabular-nums transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/70"
           aria-busy={loading}
         >
-          {stats?.interrupted ? (
+          {isInterrupted ? (
             <CircleDotIcon
               aria-hidden="true"
               data-turn-fold-icon="interrupted"
               className="size-3.5 shrink-0 text-warning-foreground/80 transition-colors group-hover/fold:text-warning-foreground"
             />
           ) : (
-            <CheckCircle2Icon
+            <svg
               aria-hidden="true"
+              viewBox="0 0 16 16"
+              fill="none"
               data-turn-fold-icon="completed"
+              data-turn-fold-check="true"
               className="size-3.5 shrink-0 text-success-foreground/80 transition-colors group-hover/fold:text-success-foreground"
-            />
+            >
+              <circle cx="8" cy="8" r="6.25" stroke="currentColor" strokeWidth="1.5" />
+              <path
+                d="M5.2 8.2l1.9 1.9 3.7-3.9"
+                stroke="currentColor"
+                strokeWidth="1.6"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                pathLength={100}
+                data-turn-fold-check-mark="true"
+              />
+            </svg>
           )}
           <span>
             {row.label}
@@ -1969,8 +2044,9 @@ function TurnFoldTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "turn-
           >
             {stats.toolCallCount > 0 ? (
               <span
+                data-turn-fold-pill="tools"
                 data-turn-fold-tools={stats.toolCallCount}
-                className="inline-flex items-center gap-1 rounded-full bg-muted/60 px-1.5 py-0.5 font-medium"
+                className="inline-flex items-center gap-1 rounded-full bg-muted/60 px-1.5 py-0.5 font-medium tabular-nums"
               >
                 <WrenchIcon className="size-2.5 shrink-0 opacity-75" />
                 <span>{stats.toolCallCount}</span>
@@ -1978,8 +2054,9 @@ function TurnFoldTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "turn-
             ) : null}
             {stats.changedFileCount > 0 ? (
               <span
+                data-turn-fold-pill="files"
                 data-turn-fold-files={stats.changedFileCount}
-                className="inline-flex items-center gap-1 rounded-full bg-muted/60 px-1.5 py-0.5 font-mono text-2xs"
+                className="inline-flex items-center gap-1 rounded-full bg-muted/60 px-1.5 py-0.5 font-mono text-2xs tabular-nums"
               >
                 {stats.additions > 0 || stats.deletions > 0 ? (
                   <>

@@ -185,3 +185,54 @@
     animation: none;
   }
 }
+
+/* ==========================================================================
+   D06 / C020: Turn-Completion Landing Choreography (SVG Check-Draw & Stagger)
+   ========================================================================== */
+
+@keyframes chat-turn-check-draw {
+  from {
+    stroke-dashoffset: 100;
+  }
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+@keyframes chat-turn-check-ring-pop {
+  0% {
+    opacity: 0.4;
+    transform: scale(0.84);
+  }
+  60% {
+    opacity: 1;
+    transform: scale(1.06);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  [data-turn-fold-row="true"][data-turn-just-landed="true"] [data-turn-fold-check="true"] {
+    animation: chat-turn-check-ring-pop 280ms var(--spring-bouncy) both;
+  }
+
+  [data-turn-fold-row="true"][data-turn-just-landed="true"] [data-turn-fold-check-mark="true"] {
+    stroke-dasharray: 100;
+    animation: chat-turn-check-draw 260ms var(--spring-snappy) 60ms both;
+  }
+
+  [data-assistant-meta-rail="true"][data-result-just-landed="true"] > div {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-turn-fold-row="true"][data-turn-just-landed="true"] [data-turn-fold-check="true"],
+  [data-turn-fold-row="true"][data-turn-just-landed="true"] [data-turn-fold-check-mark="true"] {
+    animation: none;
+  }
+}
