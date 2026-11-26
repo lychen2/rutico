@@ -12,7 +12,7 @@ import {
 import { useLocation, useRouter, type AnyRouter } from "@tanstack/react-router";
 
 import { moveWorkspaceFocus, workspaceAreaProps } from "../lib/workspaceFocus";
-import { isCommandPaletteOpen } from "../commandPaletteBus";
+import { isCommandPaletteOpen, openCommandPalette } from "../commandPaletteBus";
 import { isElectron } from "../env";
 import {
   releaseThreadUndoShortcut,
@@ -432,6 +432,29 @@ function registerAppShellCommands(router: AnyRouter, shellElement: Element): () 
       if (!/^\/settings(\/|$)/.test(router.state.location.pathname))
         void router.navigate({ to: "/settings" });
     }),
+    registerMenuAction("command-palette", () => {
+      openCommandPalette({});
+    }),
+    registerMenuAction("new-thread", () => {
+      openCommandPalette({ open: "new-thread-in" });
+    }),
+    ...(typeof window.desktopBridge?.onMenuAction === "function"
+      ? [
+          window.desktopBridge.onMenuAction((action) => {
+            if (!action.startsWith("open-thread:")) return;
+            const [, rawEnvId, rawThreadId] = action.split(":");
+            if (!rawEnvId || !rawThreadId) return;
+            try {
+              const environmentId = decodeURIComponent(rawEnvId);
+              const threadId = decodeURIComponent(rawThreadId);
+              void router.navigate({
+                to: "/$environmentId/$threadId",
+                params: { environmentId, threadId },
+              });
+            } catch {}
+          }),
+        ]
+      : []),
   ];
   return () => {
     for (const dispose of disposers) dispose();

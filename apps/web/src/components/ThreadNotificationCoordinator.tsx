@@ -8,7 +8,14 @@ import {
 import { isShownUnderParent } from "@t3tools/client-runtime/state/threads";
 import type { AnyRouter } from "@tanstack/react-router";
 import { parseThreadKey, threadKey } from "@t3tools/client-runtime/state/entities";
-import type { EnvironmentId, OrchestrationV2ThreadShell, ThreadId } from "@t3tools/contracts";
+import type {
+  DesktopTrayAgentStatus,
+  DesktopTrayState,
+  DesktopTrayThreadItem,
+  EnvironmentId,
+  OrchestrationV2ThreadShell,
+  ThreadId,
+} from "@t3tools/contracts";
 import { monitorHoldsWakeCompletion } from "@t3tools/shared/orchestrationV2PendingBackgroundWork";
 import type { ClientSettings } from "@t3tools/contracts/settings";
 import * as Option from "effect/Option";
@@ -72,6 +79,103 @@ export function startThreadNotifications(
     { environmentId: EnvironmentId; threadId: ThreadId; notification: Notification }
   >();
   const watched = new Map<EnvironmentId, WatchedEnvironment>();
+  let lastTraySignature = "";
+
+  const trayStatusForThread = (state: NotificationState): DesktopTrayAgentStatus => {
+    if (state.status === "approval" || state.status === "input" || state.status === "request") {
+      return "approval";
+    }
+    if (state.status === "failed" || state.status === "limited") {
+      return "error";
+    }
+    if (state.status === "working" || state.status === "preparing" || state.status === "waiting") {
+      return "running";
+    }
+    if (state.settled) {
+      return "completed";
+    }
+    return "idle";
+  };
+
+  const syncDesktopTray = () => {
+    const setTrayState = window.desktopBridge?.setTrayState;
+    if (typeof setTrayState !== "function") return;
+
+    let runningCount = 0;
+    let approvalCount = 0;
+    let errorCount = 0;
+    const rankedThreads: Array<{
+      readonly priority: number;
+      readonly item: DesktopTrayThreadItem;
+    }> = [];
+
+    for (const [environmentId, entry] of watched) {
+      for (const state of entry.previous.values()) {
+        if (state.thread.archivedAt !== null) continue;
+        const itemStatus = trayStatusForThread(state);
+        if (itemStatus === "approval") {
+          approvalCount += 1;
+          rankedThreads.push({
+            priority: 4,
+            item: {
+              environmentId,
+              threadId: state.thread.id,
+              title: state.thread.title.slice(0, 120),
+              status: itemStatus,
+            },
+          });
+        } else if (itemStatus === "error") {
+          errorCount += 1;
+          rankedThreads.push({
+            priority: 3,
+            item: {
+              environmentId,
+              threadId: state.thread.id,
+              title: state.thread.title.slice(0, 120),
+              status: itemStatus,
+            },
+          });
+        } else if (itemStatus === "running") {
+          runningCount += 1;
+          rankedThreads.push({
+            priority: 2,
+            item: {
+              environmentId,
+              threadId: state.thread.id,
+              title: state.thread.title.slice(0, 120),
+              status: itemStatus,
+            },
+          });
+        }
+      }
+    }
+
+    rankedThreads.sort((left, right) => right.priority - left.priority);
+    const threads = rankedThreads.slice(0, 5).map((entry) => entry.item);
+    const unreadCount = pending.size;
+    const status: DesktopTrayAgentStatus =
+      approvalCount > 0
+        ? "approval"
+        : errorCount > 0
+          ? "error"
+          : runningCount > 0
+            ? "running"
+            : unreadCount > 0
+              ? "completed"
+              : "idle";
+
+    const payload: DesktopTrayState = {
+      status,
+      runningCount,
+      approvalCount,
+      unreadCount,
+      threads,
+    };
+    const signature = JSON.stringify(payload);
+    if (signature === lastTraySignature) return;
+    lastTraySignature = signature;
+    void setTrayState(payload).catch(() => undefined);
+  };
 
   const trackNotification = (
     environmentId: EnvironmentId,
@@ -81,6 +185,7 @@ export function startThreadNotifications(
     pending.get(notification.tag)?.notification.close();
     pending.set(notification.tag, { environmentId, threadId, notification });
     setNotificationBadge(pending.size);
+    syncDesktopTray();
   };
   // Toast ids by thread key, so hiding or opening a thread, or removing its environment, closes them.
   const openToasts = new Map<string, Array<ToastId>>();
@@ -128,6 +233,7 @@ export function startThreadNotifications(
     for (const { notification } of pending.values()) notification.close();
     pending.clear();
     setNotificationBadge(0);
+    syncDesktopTray();
   };
 
   const present = (
@@ -311,6 +417,7 @@ export function startThreadNotifications(
         snoozed: isSnoozedForNotification(state.thread, state.completedAt, now),
       });
     }
+    syncDesktopTray();
   };
 
   const watchEnvironment = (environmentId: EnvironmentId): WatchedEnvironment => {
@@ -362,8 +469,9 @@ export function startThreadNotifications(
 
   const syncEnvironments = () => {
     const { notificationMode, inAppNotificationsEnabled } = getClientSettings();
-    const enabled = notificationMode !== "off" || inAppNotificationsEnabled;
-    if (!enabled) closeToasts(() => true);
+    const trayEnabled = typeof window.desktopBridge?.setTrayState === "function";
+    const enabled = notificationMode !== "off" || inAppNotificationsEnabled || trayEnabled;
+    if (notificationMode === "off" && !inAppNotificationsEnabled) closeToasts(() => true);
     const environmentIds = enabled ? registry.get(environmentSummaries.environmentIdsAtom) : [];
     const activeIds = new Set(environmentIds);
     for (const [environmentId, entry] of watched) {
@@ -374,6 +482,7 @@ export function startThreadNotifications(
     for (const environmentId of environmentIds) {
       if (!watched.has(environmentId)) watched.set(environmentId, watchEnvironment(environmentId));
     }
+    syncDesktopTray();
   };
 
   const pruneRemovedEnvironments = () => {

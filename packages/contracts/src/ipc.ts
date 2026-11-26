@@ -1152,6 +1152,43 @@ export type DesktopWindowZoomState = typeof DesktopWindowZoomStateSchema.Type;
 export const MainWindowZoomDirectionSchema = Schema.Literals(["in", "out", "reset"]);
 export type MainWindowZoomDirection = typeof MainWindowZoomDirectionSchema.Type;
 
+const DesktopTrayAgentStatusSchema = Schema.Literals([
+  "idle",
+  "running",
+  "approval",
+  "completed",
+  "error",
+]);
+export type DesktopTrayAgentStatus = typeof DesktopTrayAgentStatusSchema.Type;
+
+const DesktopTrayThreadItemSchema = Schema.Struct({
+  environmentId: Schema.String.check(
+    Schema.isTrimmed(),
+    Schema.isNonEmpty(),
+    Schema.isMaxLength(128),
+  ),
+  threadId: Schema.String.check(Schema.isTrimmed(), Schema.isNonEmpty(), Schema.isMaxLength(128)),
+  title: Schema.String.check(Schema.isMaxLength(120)),
+  status: DesktopTrayAgentStatusSchema,
+});
+export type DesktopTrayThreadItem = typeof DesktopTrayThreadItemSchema.Type;
+
+export const DesktopTrayStateSchema = Schema.Struct({
+  status: DesktopTrayAgentStatusSchema,
+  runningCount: Schema.optionalKey(
+    Schema.Int.check(Schema.isBetween({ minimum: 0, maximum: 999 })),
+  ),
+  approvalCount: Schema.optionalKey(
+    Schema.Int.check(Schema.isBetween({ minimum: 0, maximum: 999 })),
+  ),
+  unreadCount: Schema.optionalKey(Schema.Int.check(Schema.isBetween({ minimum: 0, maximum: 999 }))),
+  summary: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(160))),
+  threads: Schema.optionalKey(
+    Schema.Array(DesktopTrayThreadItemSchema).check(Schema.isMaxLength(5)),
+  ),
+});
+export type DesktopTrayState = typeof DesktopTrayStateSchema.Type;
+
 export interface DesktopBridge {
   getAppBranding: () => DesktopAppBranding | null;
   getPathForFile: (file: File) => string;
@@ -1270,6 +1307,7 @@ export interface DesktopBridge {
   getWindowZoomState?: () => DesktopWindowZoomState | null;
   onWindowZoomStateChange?: (listener: (state: DesktopWindowZoomState) => void) => () => void;
   setWindowZoom?: (direction: MainWindowZoomDirection) => Promise<void>;
+  setTrayState?: (state: DesktopTrayState) => Promise<void>;
   getUpdateState: () => Promise<DesktopUpdateState>;
   /** `minimumVersion` is a track switch's checked release; nothing older is offered after. */
   setUpdateChannel: (

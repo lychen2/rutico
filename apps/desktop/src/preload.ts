@@ -434,6 +434,7 @@ contextBridge.exposeInMainWorld("desktopBridge", {
     };
   },
   setWindowZoom: (direction) => ipcRenderer.invoke(IpcChannels.SET_WINDOW_ZOOM_CHANNEL, direction),
+  setTrayState: (state) => ipcRenderer.invoke(IpcChannels.SET_TRAY_STATE_CHANNEL, state),
   onWindowFullscreenStateChange: (listener) => {
     const wrappedListener = (_event: Electron.IpcRendererEvent, fullscreen: unknown) => {
       if (typeof fullscreen !== "boolean") return;

@@ -28,6 +28,7 @@ export const LINUX_PORTAL_APPEARANCE_CHANNEL = "desktop:linux-portal-appearance"
 export const GET_WINDOW_ZOOM_STATE_CHANNEL = "desktop:get-window-zoom-state";
 export const WINDOW_ZOOM_STATE_CHANNEL = "desktop:window-zoom-state";
 export const SET_WINDOW_ZOOM_CHANNEL = "desktop:set-window-zoom";
+export const SET_TRAY_STATE_CHANNEL = "desktop:set-tray-state";
 export const SYNC_HTML_FULLSCREEN_CHANNEL = "desktop:sync-html-fullscreen";
 export const DESKTOP_APP_ACTIVATION_READY_CHANNEL = "desktop:app-activation-ready";
 export const DESKTOP_APP_ACTIVATION_COMPLETE_CHANNEL = "desktop:app-activation-complete";

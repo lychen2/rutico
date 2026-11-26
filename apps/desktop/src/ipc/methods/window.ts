@@ -5,6 +5,7 @@ import {
   DesktopEnvironmentBootstrapSchema,
   DesktopMediaReadSchema,
   DesktopThemeSchema,
+  DesktopTrayStateSchema,
   DesktopWindowZoomStateSchema,
   EDITORS,
   EditorId,
@@ -45,6 +46,7 @@ import * as ElectronMenu from "../../electron/ElectronMenu.ts";
 import * as ElectronShell from "../../electron/ElectronShell.ts";
 import * as ElectronTheme from "../../electron/ElectronTheme.ts";
 import * as ElectronWindow from "../../electron/ElectronWindow.ts";
+import * as DesktopTray from "../../window/DesktopTray.ts";
 import * as DesktopWindow from "../../window/DesktopWindow.ts";
 import { buildDesktopWindowZoomState, buildLinuxWindowState } from "../../window/DesktopWindow.ts";
 import * as Electron from "electron";
@@ -218,6 +220,28 @@ export const setWindowZoom = DesktopIpc.makeIpcMethod({
     }
     const desktopWindow = yield* DesktopWindow.DesktopWindow;
     yield* desktopWindow.zoomMain(direction);
+  }),
+});
+
+export const setTrayState = DesktopIpc.makeIpcMethod({
+  channel: IpcChannels.SET_TRAY_STATE_CHANNEL,
+  payload: DesktopTrayStateSchema,
+  result: Schema.Void,
+  handler: Effect.fn("desktop.ipc.window.setTrayState")(function* (state, event) {
+    const electronWindow = yield* ElectronWindow.ElectronWindow;
+    const main = yield* electronWindow.main;
+    if (
+      event === undefined ||
+      Option.isNone(main) ||
+      main.value.isDestroyed() ||
+      main.value.webContents.id !== event.sender.id
+    ) {
+      return;
+    }
+    const tray = yield* Effect.serviceOption(DesktopTray.DesktopTray);
+    if (Option.isSome(tray)) {
+      yield* tray.value.updateState(state);
+    }
   }),
 });
 

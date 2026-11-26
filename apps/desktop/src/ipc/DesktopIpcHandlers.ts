@@ -64,6 +64,7 @@ import {
   pickProjectFavicon,
   pickThemeFiles,
   setTheme,
+  setTrayState,
   setWindowZoom,
   syncHtmlFullscreen,
   showContextMenu,
@@ -118,6 +119,7 @@ export const installDesktopIpcHandlers = Effect.fn("desktop.ipc.installHandlers"
   yield* ipc.handleSync(getLinuxPortalAppearance);
   yield* ipc.handleSync(getWindowZoomState);
   yield* ipc.handle(setWindowZoom);
+  yield* ipc.handle(setTrayState);
   yield* ipc.handleSync(getLocalEnvironmentBootstraps);
   yield* ipc.handleSync(getLocalEnvironmentEnabled);
   yield* ipc.handle(setLocalEnvironmentEnabled);
