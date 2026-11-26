@@ -185,11 +185,18 @@ function WindowBar({
         }
       >
         {/* Clip both layers so the gap exposes even a translucent composer surface. */}
-        <div className={"absolute inset-0"} style={paceMark?.gap}>
+        <div
+          className={
+            "absolute inset-0 transition-[clip-path] duration-300 ease-(--ease-drawer) motion-reduce:transition-none"
+          }
+          style={paceMark?.gap}
+        >
           <div className={"absolute inset-x-0 inset-y-1.5 rounded-full bg-muted"} />
           {remaining > 0 ? (
             <div
-              className={"absolute inset-y-1.5 left-0 rounded-full"}
+              className={
+                "absolute inset-y-1.5 left-0 rounded-full transition-[width] duration-300 ease-(--ease-drawer) motion-reduce:transition-none"
+              }
               style={{ width: `${remaining}%`, backgroundColor: color }}
             />
           ) : null}
@@ -197,7 +204,9 @@ function WindowBar({
         {paceMark ? (
           <span
             aria-hidden
-            className={"absolute inset-y-1 w-0.5 -translate-x-1/2 rounded-full bg-foreground"}
+            className={
+              "absolute inset-y-1 w-0.5 -translate-x-1/2 rounded-full bg-foreground transition-[left] duration-300 ease-(--ease-drawer) motion-reduce:transition-none"
+            }
             style={paceMark.tick}
           />
         ) : null}
@@ -216,8 +225,7 @@ function WindowBar({
           ) : null}
           {resetsAt ? (
             <span className={"text-muted-foreground"}>
-              {uiText("Resets")}
-              {resetsAt}
+              {uiText("Resets {time}", { time: resetsAt })}
               {resetsIn ? ` · ${resetsIn}` : ""}
             </span>
           ) : null}
