@@ -594,3 +594,46 @@
     animation: none;
   }
 }
+
+/* --------------------------------------------------------------------------
+   D21 / C070: Document Paper Elevation, Auto-Fading Scrub HUD & Sheet Fade
+   -------------------------------------------------------------------------- */
+
+.doc-paper-sheet {
+  box-shadow:
+    0 1px 2px color-mix(in oklch, var(--foreground) 8%, transparent),
+    0 8px 24px -6px color-mix(in oklch, var(--foreground) 14%, transparent),
+    0 0 0 1px color-mix(in oklch, var(--foreground) 7%, transparent);
+}
+
+.doc-scrub-hud {
+  opacity: 0;
+  pointer-events: none;
+  transform: translate3d(0, 6px, 0);
+  transition:
+    opacity 180ms ease-out,
+    transform 200ms var(--spring-snappy);
+}
+
+.doc-scrub-hud[data-visible="true"] {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translate3d(0, 0, 0);
+}
+
+.spreadsheet-sheet-fade {
+  transition: opacity 140ms ease-out;
+}
+
+@starting-style {
+  .spreadsheet-sheet-fade {
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .doc-scrub-hud,
+  .spreadsheet-sheet-fade {
+    transition: none;
+  }
+}

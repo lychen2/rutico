@@ -3,6 +3,7 @@ import { observeResize } from "~/lib/observeResize";
 import { msg, useGT } from "gt-react";
 import { useEffect, useRef, useState } from "react";
 import { m } from "~/i18n/messages";
+import { useSharedIndicator } from "~/lib/motion/useSharedIndicator";
 import {
   cellAtPoint,
   normalizeRange,
@@ -57,6 +58,18 @@ export default function Spreadsheet(props: {
   const gt = useGT();
   const [preview, setPreview] = useState<{ opened: Opened; error?: string }>();
   const picking = useRef<AbortController | null>(null);
+  const sheetTabListRef = useRef<HTMLDivElement>(null);
+  const sheetIndicatorRef = useRef<HTMLDivElement>(null);
+  const activeSheetKey = preview
+    ? `${preview.opened.layout.info.activeSheet}:${preview.opened.tabs.length}`
+    : null;
+  useSharedIndicator({
+    containerRef: sheetTabListRef,
+    indicatorRef: sheetIndicatorRef,
+    activeSelector: '[role="tab"][aria-selected="true"]',
+    activeKey: activeSheetKey,
+    preset: "snappy",
+  });
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Open the workbook worker and cancel workbook and sheet requests when the source changes or unmounts.
   useEffect(() => {
     const controller = new AbortController();
@@ -114,20 +127,25 @@ export default function Spreadsheet(props: {
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       {error ? <FileSurfaceNotice>{error}</FileSurfaceNotice> : null}
-      <SpreadsheetGrid
-        key={opened.layout.info.activeSheet}
-        engine={opened.engine}
-        layout={opened.layout}
-        initialCell={opened.target}
-        onNavigate={(name, cell) => {
-          const tab = opened.tabs.find((tab) => tab.name.toLowerCase() === name.toLowerCase());
-          if (tab) show(tab.index, cell);
-        }}
-      />
       <div
+        key={opened.layout.info.activeSheet}
+        className="spreadsheet-sheet-fade flex min-h-0 flex-1 flex-col"
+      >
+        <SpreadsheetGrid
+          engine={opened.engine}
+          layout={opened.layout}
+          initialCell={opened.target}
+          onNavigate={(name, cell) => {
+            const tab = opened.tabs.find((tab) => tab.name.toLowerCase() === name.toLowerCase());
+            if (tab) show(tab.index, cell);
+          }}
+        />
+      </div>
+      <div
+        ref={sheetTabListRef}
         role="tablist"
         aria-label={gt("Sheets")}
-        className="flex h-9 shrink-0 items-center gap-1 overflow-x-auto border-t border-border px-2"
+        className="relative flex h-9 shrink-0 items-center gap-1 overflow-x-auto border-t border-border px-2"
         onKeyDown={(event) => {
           // Focus moves before the worker confirms the selected sheet.
           const buttons = event.currentTarget.querySelectorAll<HTMLButtonElement>('[role="tab"]');
@@ -149,6 +167,12 @@ export default function Spreadsheet(props: {
           buttons[next]?.focus();
         }}
       >
+        <div
+          ref={sheetIndicatorRef}
+          aria-hidden="true"
+          className="pointer-events-none absolute top-1 bottom-1 left-0 rounded-md bg-accent"
+          style={{ opacity: 0 }}
+        />
         {opened.tabs.map((tab) => (
           <button
             key={tab.index}
@@ -157,7 +181,7 @@ export default function Spreadsheet(props: {
             aria-selected={tab.index === opened.layout.info.activeSheet}
             tabIndex={tab.index === opened.layout.info.activeSheet ? 0 : -1}
             onClick={() => show(tab.index)}
-            className="h-7 shrink-0 rounded-md px-2.5 text-xs text-muted-foreground hover:bg-accent aria-selected:bg-accent aria-selected:text-foreground"
+            className="relative z-10 h-7 shrink-0 cursor-pointer rounded-md px-2.5 text-xs text-muted-foreground transition-colors duration-120 hover:bg-accent/60 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset aria-selected:font-medium aria-selected:text-foreground"
           >
             {tab.name}
           </button>

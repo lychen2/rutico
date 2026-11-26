@@ -47,6 +47,23 @@
 [data-pdf-text-layer] ::selection {
   background: #4a90e266;
 }
+@keyframes pdf-find-match-pulse {
+  0% {
+    background: #ffc800b8;
+  }
+  100% {
+    background: #ffc80066;
+  }
+}
+
 [data-pdf-text-layer] .pdf-find-match {
   background: #ffc80066;
+  border-radius: 2px;
+  animation: pdf-find-match-pulse 260ms ease-out both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-pdf-text-layer] .pdf-find-match {
+    animation: none;
+  }
 }
