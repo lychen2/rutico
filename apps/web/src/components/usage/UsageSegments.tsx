@@ -32,7 +32,7 @@ export function UsageSegments(props: ComponentProps<typeof ToggleGroup>) {
             { transform: `translateX(${old.left}px) scaleX(${old.width / next.width})` },
             { transform: `translateX(${next.left}px) scaleX(1)` },
           ],
-          { duration: 380, easing: "cubic-bezier(.32,.72,0,1)" },
+          { duration: 240, easing: "cubic-bezier(0.22, 1, 0.36, 1)" },
         );
       previous.current = next;
     };
