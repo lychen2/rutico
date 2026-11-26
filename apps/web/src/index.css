@@ -2262,18 +2262,19 @@ code {
 }
 
 .chat-markdown :not(pre) > code {
-  border: 1px solid transparent;
-  border-radius: 0.25rem;
+  border: 1px solid color-mix(in srgb, var(--contrast-foreground) 10%, transparent);
+  border-radius: 0.3125rem;
   box-decoration-break: clone;
   -webkit-box-decoration-break: clone;
-  background: color-mix(in srgb, var(--contrast-foreground) 10%, transparent);
+  background: color-mix(in srgb, var(--contrast-foreground) 8%, transparent);
   padding: 0.1em 0.35em;
   color: var(--contrast-foreground);
   font-size: 0.85em;
 }
 
 .chat-markdown.user-message-markdown :not(pre) > code {
-  background: color-mix(in srgb, var(--contrast-message-foreground) 10%, transparent);
+  border-color: color-mix(in srgb, var(--contrast-message-foreground) 10%, transparent);
+  background: color-mix(in srgb, var(--contrast-message-foreground) 8%, transparent);
   color: var(--contrast-message-foreground);
 }
 
