@@ -16,7 +16,6 @@ import {
   getQuestionAnswerPreview,
   hasQuestionAnswer,
 } from "@t3tools/client-runtime/work-log/user-input";
-import * as Haptics from "expo-haptics";
 import { T, useGT, useMessages } from "gt-react-native";
 import { Image } from "expo-image";
 import { type AppSymbolName, SymbolView } from "../../components/ui/AppSymbol";
@@ -72,6 +71,8 @@ import { T3Wordmark } from "../../components/T3Wordmark";
 import { BrowserAppIcon } from "./BrowserAppIcon";
 import { useAppActive, useReduceMotionEnabled } from "../../lib/appState";
 import { cn } from "../../lib/cn";
+import { triggerSemanticHaptic } from "../../lib/hapticChoreography";
+import { startNativePulseLoop } from "../../lib/mobileMotion";
 import { THREAD_WORK_ROW_MIN_HEIGHT, type deriveThreadWorkLogSizing } from "../../lib/layout";
 import {
   formatItemFullDetail,
@@ -122,12 +123,47 @@ export { THREAD_DISCLOSURE_TRANSITION_MS, ThreadDisclosureChevron };
 
 const SHIMMER_WIDTH = 72;
 const SHIMMER_ICON_AND_GAP_WIDTH = 30;
-const WORK_LOG_LAYOUT_TRANSITION = LinearTransition.duration(
-  THREAD_DISCLOSURE_TRANSITION_MS,
-).reduceMotion(ReduceMotion.System);
+const WORK_LOG_LAYOUT_TRANSITION = LinearTransition.springify()
+  .damping(26)
+  .stiffness(360)
+  .mass(0.75)
+  .reduceMotion(ReduceMotion.System);
 const WORK_LOG_DETAIL_ENTER_TRANSITION = FadeIn.duration(140).reduceMotion(ReduceMotion.System);
 const WORK_LOG_DETAIL_EXIT_TRANSITION = FadeOut.duration(120).reduceMotion(ReduceMotion.System);
 const WORK_LOG_FRESH_ROW_ENTERING = FadeIn.duration(200).reduceMotion(ReduceMotion.System);
+
+function LiveTimelineNodeDot() {
+  const appIsActive = useAppActive();
+  const screenIsFocused = useIsFocused();
+  const reducedMotion = useReduceMotionEnabled();
+  const pulse = useAnimatedValue(1, { useNativeDriver: true });
+  const shouldPulse = appIsActive && screenIsFocused && !reducedMotion;
+
+  // Uses RN Animated (useNativeDriver: true) to stay safe with DISABLE_COMMIT_PAUSING_MECHANISM.
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- drives a subtle native opacity pulse on the active timeline node while visible and foregrounded
+  useEffect(() => {
+    if (!shouldPulse) {
+      pulse.setValue(0.85);
+      return;
+    }
+    return startNativePulseLoop(pulse, {
+      active: shouldPulse,
+      minValue: 0.35,
+      maxValue: 1,
+      duration: 1600,
+      mode: "breathe",
+    });
+  }, [pulse, shouldPulse]);
+
+  return (
+    <NativeAnimated.View
+      pointerEvents="none"
+      accessible={false}
+      style={{ opacity: pulse }}
+      className="size-1.5 rounded-full bg-primary"
+    />
+  );
+}
 type WorkContentIcon =
   | AppSymbolName
   | "browser"
@@ -523,7 +559,15 @@ export function ThreadWorkLog(props: ThreadWorkLogProps) {
           renderRow={renderRow}
         />
       ) : (
-        <WorkLogRows>{props.activities.map(renderRow)}</WorkLogRows>
+        <View className="relative">
+          {props.activities.length > 1 ? (
+            <View
+              pointerEvents="none"
+              className="absolute bottom-3.5 left-[13px] top-3.5 w-[2px] rounded-full bg-border/65"
+            />
+          ) : null}
+          <WorkLogRows>{props.activities.map(renderRow)}</WorkLogRows>
+        </View>
       )}
     </WorkLogBlock>
   );
@@ -770,7 +814,7 @@ function WorkspacePreparationRetryButton(props: {
         disabled={busy}
         onPress={() => {
           setBusy(true);
-          void Haptics.selectionAsync();
+          triggerSemanticHaptic("contextClick");
           void retry({
             environmentId: props.environmentId,
             input: { threadId: props.threadId, runId: props.runId },
@@ -1099,12 +1143,12 @@ const ThreadWorkLogRow = function ThreadWorkLogRow(
             return;
           }
           if (opensMcpSignIn) {
-            void Haptics.selectionAsync();
+            triggerSemanticHaptic("contextClick");
             setMcpSignInOpen(true);
             return;
           }
           if (canExpand) {
-            void Haptics.selectionAsync();
+            triggerSemanticHaptic("segmentTick");
             props.onToggleRow(row.id, props.anchorKey, row.groupStandIn?.groupId);
           }
         }}
@@ -1166,7 +1210,8 @@ const ThreadWorkLogRow = function ThreadWorkLogRow(
           </>
         )}
 
-        <View className="shrink-0 flex-row items-center gap-px">
+        <View className="shrink-0 flex-row items-center gap-1">
+          {row.live ? <LiveTimelineNodeDot /> : null}
           {props.copied ? (
             <Text className="pr-1 font-t3-medium text-3xs text-adaptive-emerald-600-400">
               <T>Copied</T>
@@ -1227,7 +1272,11 @@ const ThreadWorkLogRow = function ThreadWorkLogRow(
           entering={WORK_LOG_DETAIL_ENTER_TRANSITION}
           exiting={WORK_LOG_DETAIL_EXIT_TRANSITION}
           layout={WORK_LOG_LAYOUT_TRANSITION}
-          className={reasoning ? "ml-7 py-1" : "pb-1 pt-0.5"}
+          className={
+            reasoning
+              ? "ml-3.5 border-l-2 border-border pl-3.5 py-1"
+              : "ml-3.5 border-l-2 border-border/80 pb-1 pl-3.5 pt-0.5"
+          }
         >
           {row.workEntry.questionAnswer ? (
             <QuestionAnswerHistory
@@ -1438,7 +1487,7 @@ export function ThreadWorkGroupToggle(props: {
                   )
             }
             onPress={() => {
-              void Haptics.selectionAsync();
+              triggerSemanticHaptic("segmentTick");
               props.onToggle();
             }}
             rowSizing={props.rowSizing}

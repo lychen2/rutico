@@ -14,16 +14,25 @@ import { resolveUserMessagePresentation } from "@t3tools/client-runtime/user-mes
 import type { ChatAttachment, EnvironmentId, RunId, ThreadId } from "@t3tools/contracts";
 import { Atom } from "effect/reactivity";
 import { Image } from "expo-image";
-import * as Haptics from "expo-haptics";
 import { msg, T, useGT, useMessages } from "gt-react-native";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Pressable, ScrollView, View } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import ReanimatedSwipeable, {
   type SwipeableMethods,
 } from "react-native-gesture-handler/ReanimatedSwipeable";
+import Animated, {
+  Extrapolation,
+  interpolate,
+  ReduceMotion,
+  runOnJS,
+  useAnimatedReaction,
+  useAnimatedStyle,
+  type SharedValue,
+} from "react-native-reanimated";
 import { useUniwindTheme } from "../../lib/useUniwindTheme";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { triggerSemanticHaptic } from "../../lib/hapticChoreography";
 
 import { Button } from "../../components/ui/Button";
 import * as Dialog from "../../components/ui/Dialog";
@@ -175,7 +184,7 @@ export function ThreadQueueSheet({ route }: StaticScreenProps<QueueTarget>) {
     if (action === "edit") {
       if (editBlockedReason !== null) return;
       const entry = queuedRuns[index]!;
-      void Haptics.selectionAsync();
+      triggerSemanticHaptic("contextClick");
       beginQueuedRunEdit(
         threadKey,
         {
@@ -205,7 +214,7 @@ export function ThreadQueueSheet({ route }: StaticScreenProps<QueueTarget>) {
     if (action !== "steer" && action !== "remove") return;
     busyRef.current = true;
     setBusyRunId(runId);
-    void Haptics.selectionAsync();
+    triggerSemanticHaptic(action === "remove" ? "reject" : "confirm");
     const result =
       action === "remove"
         ? await cancel(buildCancelQueuedRunCommand({ ...target, runId }))
@@ -251,6 +260,7 @@ export function ThreadQueueSheet({ route }: StaticScreenProps<QueueTarget>) {
             disabled={resuming || busyRunId !== null}
             onPress={async () => {
               if (busyRef.current) return;
+              triggerSemanticHaptic("confirm");
               busyRef.current = true;
               setResuming(true);
               const result = await resumeHeldQueue({
@@ -427,6 +437,66 @@ export function ThreadQueueSheet({ route }: StaticScreenProps<QueueTarget>) {
   );
 }
 
+const QUEUE_SWIPE_SPRING = {
+  damping: 26,
+  stiffness: 340,
+  mass: 0.72,
+  overshootClamping: true,
+  reduceMotion: ReduceMotion.System,
+} as const;
+
+function QueueSwipeRemoveAction(props: {
+  readonly accessibilityLabel: string;
+  readonly dragX: SharedValue<number>;
+  readonly enabled: boolean;
+  readonly label: string;
+  readonly onPress: () => void;
+}) {
+  const { dragX } = props;
+  const triggerArmedHaptic = useCallback(() => {
+    triggerSemanticHaptic("segmentTick");
+  }, []);
+
+  useAnimatedReaction(
+    () => -dragX.get() >= 40,
+    (armed, previous) => {
+      if (armed && previous === false) {
+        runOnJS(triggerArmedHaptic)();
+      }
+    },
+    [dragX, triggerArmedHaptic],
+  );
+
+  const iconAnimatedStyle = useAnimatedStyle(() => {
+    const reveal = Math.max(0, -dragX.get());
+    const scale = interpolate(
+      reveal,
+      [0, 32, 48, REMOVE_ACTION_WIDTH],
+      [0.8, 0.92, 1.18, 1],
+      Extrapolation.CLAMP,
+    );
+    return {
+      transform: [{ scale }],
+    };
+  });
+
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={props.accessibilityLabel}
+      disabled={!props.enabled}
+      onPress={props.onPress}
+      className="items-center justify-center bg-danger active:opacity-70 disabled:opacity-40"
+      style={{ width: REMOVE_ACTION_WIDTH }}
+    >
+      <Animated.View style={iconAnimatedStyle}>
+        <SymbolView name="trash" size={16} tintColorClassName="accent-danger-foreground" />
+      </Animated.View>
+      <Text className="pt-1 text-2xs font-t3-medium text-danger-foreground">{props.label}</Text>
+    </Pressable>
+  );
+}
+
 function QueueRowSwipeable(props: {
   readonly enabled: boolean;
   readonly background: string;
@@ -439,6 +509,7 @@ function QueueRowSwipeable(props: {
   return (
     <ReanimatedSwipeable
       ref={swipeableRef}
+      animationOptions={QUEUE_SWIPE_SPRING}
       enabled={props.enabled}
       friction={2}
       rightThreshold={40}
@@ -452,23 +523,17 @@ function QueueRowSwipeable(props: {
         swipeableRef.current?.close();
         props.onRemove();
       }}
-      renderRightActions={() => (
-        <Pressable
-          accessibilityRole="button"
+      renderRightActions={(_progress, dragX) => (
+        <QueueSwipeRemoveAction
           accessibilityLabel={m(REMOVE_QUEUED_MESSAGE_ACCESSIBILITY_LABEL)}
-          disabled={!props.enabled}
+          dragX={dragX}
+          enabled={props.enabled}
+          label={gt("Remove", { $context: "verb, menu action" })}
           onPress={() => {
             swipeableRef.current?.close();
             props.onRemove();
           }}
-          className="items-center justify-center bg-danger active:opacity-70 disabled:opacity-40"
-          style={{ width: REMOVE_ACTION_WIDTH }}
-        >
-          <SymbolView name="trash" size={16} tintColorClassName="accent-danger-foreground" />
-          <Text className="pt-1 text-2xs font-t3-medium text-danger-foreground">
-            {gt("Remove", { $context: "verb, menu action" })}
-          </Text>
-        </Pressable>
+        />
       )}
     >
       {props.children}
