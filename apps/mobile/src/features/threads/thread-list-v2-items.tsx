@@ -36,11 +36,11 @@ import { canSnooze } from "@t3tools/client-runtime/state/thread-settled";
 import { threadChipCopyTarget } from "@t3tools/client-runtime/thread-reference";
 import type { MenuAction } from "@react-native-menu/menu";
 import { useIsFocused, useNavigation } from "@react-navigation/native";
-import * as Haptics from "expo-haptics";
 import { msg, T, useGT, useMessages } from "gt-react-native";
 import { memo, useCallback, useEffect, useMemo, useState, type ComponentProps } from "react";
 import {
   Animated as RNAnimated,
+  BackHandler,
   Easing as RNEasing,
   Platform,
   Pressable,
@@ -50,13 +50,21 @@ import {
   View,
 } from "react-native";
 import type { SwipeableMethods } from "react-native-gesture-handler/ReanimatedSwipeable";
-import { useReducedMotion } from "react-native-reanimated";
+import Animated, {
+  FadeIn,
+  FadeOut,
+  ReduceMotion,
+  useReducedMotion,
+  ZoomIn,
+  ZoomOut,
+} from "react-native-reanimated";
 
 import type { ThreadListProvider } from "../../state/thread-list-environments";
 import { AppActivityIndicator } from "../../components/ui/AppActivityIndicator";
 import { SymbolView, type AppSymbolName } from "../../components/ui/AppSymbol";
 import { AppText as Text } from "../../components/ui/AppText";
 import { Menu } from "../../components/ui/Menu";
+import { OverlayPortal } from "../../components/ui/OverlayPortal";
 import { ThreadDisclosureChevron } from "../../components/ui/ThreadDisclosureChevron";
 import { EnvironmentMachineSymbol } from "../../components/EnvironmentMachineSymbol";
 import { ProjectFavicon } from "../../components/ProjectFavicon";
@@ -70,6 +78,7 @@ import { useNowAfter } from "../../lib/clock";
 import { cn } from "../../lib/cn";
 import { copyTextWithHaptic } from "../../lib/copyTextWithHaptic";
 import { copyThreadReference } from "../../lib/copyThreadReference";
+import { triggerSemanticHaptic } from "../../lib/hapticChoreography";
 import { useUniwindTheme } from "../../lib/useUniwindTheme";
 import { useEnvironmentScope } from "../../state/session";
 import type { PendingNewTask } from "../../state/use-pending-new-tasks";
@@ -406,7 +415,7 @@ function ThreadListV2Section(props: {
       className={className}
       disabled={props.disclosure.disabled}
       onPress={() => {
-        void Haptics.selectionAsync().catch(() => undefined);
+        triggerSemanticHaptic("segmentTick");
         props.disclosure?.onToggle();
       }}
       style={({ pressed }) => ({ opacity: pressed ? 0.6 : 1 })}
@@ -560,6 +569,170 @@ export const ThreadListV2ShowMoreRow = memo(function ThreadListV2ShowMoreRow(pro
     </Pressable>
   );
 });
+
+const LIVE_PEEK_BACKDROP_ENTERING = FadeIn.duration(140).reduceMotion(ReduceMotion.System);
+const LIVE_PEEK_BACKDROP_EXITING = FadeOut.duration(120).reduceMotion(ReduceMotion.System);
+const LIVE_PEEK_CARD_ENTERING = ZoomIn.springify()
+  .damping(24)
+  .stiffness(340)
+  .mass(0.75)
+  .reduceMotion(ReduceMotion.System);
+const LIVE_PEEK_CARD_EXITING = ZoomOut.duration(120).reduceMotion(ReduceMotion.System);
+
+interface LivePeekQuickAction {
+  readonly id: string;
+  readonly label: string;
+  readonly icon: AppSymbolName;
+  readonly destructive?: boolean;
+  readonly onPress: () => void;
+}
+
+function AndroidThreadLivePeekOverlay(props: {
+  readonly thread: EnvironmentThreadShell;
+  readonly project: EnvironmentProject | null;
+  readonly environmentLabel: string | null;
+  readonly statusLabel: string | null;
+  readonly timeLabel: string;
+  readonly quickActions: ReadonlyArray<LivePeekQuickAction>;
+  readonly onOpen: () => void;
+  readonly onClose: () => void;
+}) {
+  const gt = useGT();
+  const { onClose } = props;
+
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- closes the Android live peek preview card on hardware back
+  useEffect(() => {
+    const subscription = BackHandler.addEventListener("hardwareBackPress", () => {
+      onClose();
+      return true;
+    });
+    return () => subscription.remove();
+  }, [onClose]);
+
+  return (
+    <OverlayPortal>
+      <Animated.View
+        entering={LIVE_PEEK_BACKDROP_ENTERING}
+        exiting={LIVE_PEEK_BACKDROP_EXITING}
+        className="flex-1 items-center justify-center bg-black/45 px-5"
+      >
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={gt("Close thread preview")}
+          onPress={onClose}
+          className="absolute inset-0"
+        />
+        <Animated.View
+          entering={LIVE_PEEK_CARD_ENTERING}
+          exiting={LIVE_PEEK_CARD_EXITING}
+          className="w-full max-w-[380px] gap-3 rounded-[24px] border border-border bg-card p-4"
+        >
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={gt("Open {title}", { title: props.thread.title })}
+            onPress={() => {
+              triggerSemanticHaptic("contextClick");
+              onClose();
+              props.onOpen();
+            }}
+            className="gap-2 rounded-2xl bg-subtle/50 p-3 active:opacity-80"
+          >
+            <View className="flex-row items-center gap-2">
+              {props.project ? (
+                <ProjectFavicon
+                  environmentId={props.thread.environmentId}
+                  faviconPath={props.project.faviconPath}
+                  projectIcon={props.project.projectIcon}
+                  size={18}
+                  projectTitle={props.project.title}
+                  workspaceRoot={props.project.workspaceRoot}
+                />
+              ) : null}
+              <Text
+                className="min-w-0 flex-1 font-t3-medium text-xs text-foreground-muted"
+                numberOfLines={1}
+              >
+                {[props.project?.title, props.environmentLabel].filter(Boolean).join(" · ") ||
+                  props.timeLabel}
+              </Text>
+              {props.statusLabel ? (
+                <View className="rounded-full bg-primary/15 px-2 py-0.5">
+                  <Text className="font-t3-bold text-2xs text-primary">{props.statusLabel}</Text>
+                </View>
+              ) : (
+                <Text className="text-2xs tabular-nums text-foreground-tertiary">
+                  {props.timeLabel}
+                </Text>
+              )}
+            </View>
+            <Text className="font-t3-bold text-base leading-snug text-foreground" numberOfLines={3}>
+              {props.thread.title}
+            </Text>
+            {props.thread.branch ? (
+              <View className="flex-row items-center gap-1.5">
+                <SymbolView
+                  name="arrow.triangle.branch"
+                  size={11}
+                  tintColorClassName="accent-icon-muted"
+                  type="monochrome"
+                />
+                <Text
+                  numberOfLines={1}
+                  className="min-w-0 flex-1 text-xs text-foreground-muted"
+                  style={{ fontFamily: MONO_FONT }}
+                >
+                  {props.thread.branch}
+                </Text>
+              </View>
+            ) : null}
+            {props.thread.runtime?.lastError ? (
+              <Text numberOfLines={2} className="text-xs text-danger-foreground">
+                {props.thread.runtime.lastError}
+              </Text>
+            ) : null}
+          </Pressable>
+          <View className="flex-row flex-wrap gap-2">
+            {props.quickActions.map((action) => (
+              <Pressable
+                key={action.id}
+                accessibilityRole="button"
+                accessibilityLabel={action.label}
+                onPress={() => {
+                  triggerSemanticHaptic(action.destructive ? "reject" : "contextClick");
+                  onClose();
+                  action.onPress();
+                }}
+                className={cn(
+                  "min-h-10 flex-row items-center gap-1.5 rounded-full border px-3.5 py-2 active:opacity-75",
+                  action.destructive
+                    ? "border-danger-border bg-danger/10"
+                    : "border-border bg-input",
+                )}
+              >
+                <SymbolView
+                  name={action.icon}
+                  size={13}
+                  tintColorClassName={
+                    action.destructive ? "accent-danger-foreground" : "accent-foreground-secondary"
+                  }
+                  type="monochrome"
+                />
+                <Text
+                  className={cn(
+                    "font-t3-medium text-xs",
+                    action.destructive ? "text-danger-foreground" : "text-foreground",
+                  )}
+                >
+                  {action.label}
+                </Text>
+              </Pressable>
+            ))}
+          </View>
+        </Animated.View>
+      </Animated.View>
+    </OverlayPortal>
+  );
+}
 
 const PENDING_TASK_MENU_ACTIONS: MenuAction[] = [
   {
@@ -1070,12 +1243,14 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
   );
   const handleSettle = useCallback(() => onSettleThread(thread), [onSettleThread, thread]);
   const [customSnoozeOpen, setCustomSnoozeOpen] = useState(false);
+  const [livePeekOpen, setLivePeekOpen] = useState(false);
   // Recycling changes identity without remounting; clear local UI directly because equality may skip the render closure.
   const rowIdentity = `${thread.environmentId}:${thread.id}`;
   const [boundIdentity, setBoundIdentity] = useState(rowIdentity);
   if (boundIdentity !== rowIdentity) {
     setBoundIdentity(rowIdentity);
     setCustomSnoozeOpen(false);
+    setLivePeekOpen(false);
   }
   const handleSnooze = useCallback(
     (snoozedUntil: string) => onSnoozeThread(thread, snoozedUntil),
@@ -1491,6 +1666,108 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
         : null,
     [gt, handleMenuAction, snoozePresetActions, swipeActions.secondary, thread.title],
   );
+  const leadingAction = useMemo(() => {
+    if (snoozedRow) {
+      return {
+        accessibilityLabel: gt("Wake {title} now", { title: thread.title }),
+        icon: "clock" as const,
+        label: gt("Wake", { $context: "verb, thread action" }),
+        onPress: handleUnsnooze,
+      };
+    }
+    if (!props.pinningSupported) return null;
+    return pinnedRow
+      ? {
+          accessibilityLabel: gt("Unpin {title}", { title: thread.title }),
+          icon: "pin.slash" as const,
+          label: gt("Unpin", { $context: "verb, thread action" }),
+          onPress: handleUnpin,
+        }
+      : {
+          accessibilityLabel: gt("Pin {title}", { title: thread.title }),
+          icon: "pin" as const,
+          label: gt("Pin", { $context: "verb, thread action" }),
+          onPress: handlePin,
+        };
+  }, [
+    gt,
+    handlePin,
+    handleUnpin,
+    handleUnsnooze,
+    pinnedRow,
+    props.pinningSupported,
+    snoozedRow,
+    thread.title,
+  ]);
+  const buildLivePeekActions = (): ReadonlyArray<LivePeekQuickAction> => {
+    const actions: LivePeekQuickAction[] = [
+      {
+        id: "primary",
+        label: primaryAction.label,
+        icon: primaryAction.icon,
+        onPress: primaryAction.onPress,
+      },
+    ];
+    if (props.pinningSupported && !snoozedRow) {
+      actions.push(
+        pinnedRow
+          ? {
+              id: "unpin",
+              label: gt("Unpin", { $context: "verb, thread action" }),
+              icon: "pin.slash",
+              onPress: handleUnpin,
+            }
+          : {
+              id: "pin",
+              label: gt("Pin", { $context: "verb, thread action" }),
+              icon: "pin",
+              onPress: handlePin,
+            },
+      );
+    }
+    if (swipeActions.secondary === "snooze") {
+      actions.push({
+        id: "snooze",
+        label: gt("Snooze", { $context: "verb, thread action" }),
+        icon: "clock",
+        onPress: () => setCustomSnoozeOpen(true),
+      });
+    }
+    if (canShareWithGuest) {
+      actions.push({
+        id: "share-guest",
+        label: gt("Share with guest"),
+        icon: "person.badge.plus",
+        onPress: () =>
+          navigation.navigate("ThreadGuestShare", {
+            environmentId: thread.environmentId,
+            threadId: thread.id,
+          }),
+      });
+    }
+    actions.push({
+      id: "rename",
+      label: gt("Rename", { $context: "verb, thread action" }),
+      icon: "square.and.pencil",
+      onPress: handleRename,
+    });
+    if (props.settlementSupported) {
+      actions.push({
+        id: "archive",
+        label: gt("Archive", { $context: "verb, thread action" }),
+        icon: "archivebox",
+        onPress: handleArchive,
+      });
+    }
+    actions.push({
+      id: "delete",
+      label: gt("Delete", { $context: "verb, thread action" }),
+      icon: "trash",
+      destructive: true,
+      onPress: handleDelete,
+    });
+    return actions;
+  };
   const swipeAccessibilityHint = !canOperateThread
     ? gt("Opens the thread")
     : secondaryAction === null
@@ -1814,6 +2091,15 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
         accessibilityRole="button"
         accessibilityState={{ selected }}
         accessibilityActions={rowAccessibilityActions}
+        delayLongPress={Platform.OS === "android" ? 380 : undefined}
+        onLongPress={
+          Platform.OS === "android" && canOperateThread
+            ? () => {
+                close();
+                setLivePeekOpen(true);
+              }
+            : undefined
+        }
         onAccessibilityAction={(event) => {
           if (event.nativeEvent.actionName === "openPullRequests") handleOpenPullRequests();
           if (event.nativeEvent.actionName === "dismissWoke") handleAcknowledgeWoke();
@@ -1845,6 +2131,15 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
         accessibilityRole="button"
         accessibilityState={{ selected }}
         className={rowAppearance.className}
+        delayLongPress={Platform.OS === "android" ? 380 : undefined}
+        onLongPress={
+          Platform.OS === "android" && canOperateThread
+            ? () => {
+                close();
+                setLivePeekOpen(true);
+              }
+            : undefined
+        }
         onPress={() => {
           close();
           selectThread();
@@ -1932,6 +2227,21 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
       {customSnoozeOpen && (
         <CustomSnoozeSheet onClose={() => setCustomSnoozeOpen(false)} onSnooze={handleSnooze} />
       )}
+      {Platform.OS === "android" && livePeekOpen ? (
+        <AndroidThreadLivePeekOverlay
+          thread={thread}
+          project={props.project}
+          environmentLabel={props.environmentLabel}
+          statusLabel={statusLabel?.label ?? null}
+          timeLabel={timeLabel}
+          quickActions={buildLivePeekActions()}
+          onOpen={selectThread}
+          onClose={() => {
+            triggerSemanticHaptic("toggleOff");
+            setLivePeekOpen(false);
+          }}
+        />
+      ) : null}
       <ThreadSwipeable
         dormant={dormant}
         threadKey={`${thread.environmentId}:${thread.id}`}
@@ -1941,6 +2251,7 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
         enableTrackpadSwipe
         fullSwipeAction="primary"
         fullSwipeWidth={props.fullSwipeWidth ?? windowWidth - 32}
+        leadingAction={leadingAction}
         listAnimatesLayout
         onDelete={handleDelete}
         onSwipeableClose={props.onSwipeableClose}
@@ -1951,16 +2262,20 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
         simultaneousWith={props.simultaneousSwipeGesture}
         threadTitle={thread.title}
       >
-        {(close) => (
-          <Menu
-            accessibilityLabel={rowAccessibilityLabel}
-            actions={menuActions}
-            onPressAction={handleMenuAction}
-            shouldOpenOnLongPress
-          >
-            {rowContent(close)}
-          </Menu>
-        )}
+        {(close) =>
+          Platform.OS === "android" ? (
+            rowContent(close)
+          ) : (
+            <Menu
+              accessibilityLabel={rowAccessibilityLabel}
+              actions={menuActions}
+              onPressAction={handleMenuAction}
+              shouldOpenOnLongPress
+            >
+              {rowContent(close)}
+            </Menu>
+          )
+        }
       </ThreadSwipeable>
     </View>
   );

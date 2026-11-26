@@ -10,14 +10,9 @@ import Animated, {
 } from "react-native-reanimated";
 
 import { cn } from "../../lib/cn";
+import { triggerSemanticHaptic } from "../../lib/hapticChoreography";
+import { SPRING_EFFECTS_FAST } from "../../lib/mobileMotion";
 import { useHoverGesture } from "../../lib/useHoverGesture";
-
-const PRESS_SPRING_CONFIG = {
-  damping: 20,
-  stiffness: 420,
-  mass: 0.6,
-  reduceMotion: ReduceMotion.System,
-} as const;
 
 const PRESS_HIGHLIGHT_IN_TIMING = {
   duration: 100,
@@ -34,6 +29,7 @@ export function RowPressable({
   className,
   interactionClassName = "bg-row-hover",
   interactionOpacity = 1,
+  onLongPress,
   onPressIn,
   onPressOut,
   ...props
@@ -63,15 +59,26 @@ export function RowPressable({
       >
         <Pressable
           {...props}
+          onLongPress={
+            onLongPress
+              ? (event) => {
+                  if (!disabled) {
+                    pressScale.set(withSpring(1.015, SPRING_EFFECTS_FAST));
+                    triggerSemanticHaptic("longPress");
+                  }
+                  onLongPress(event);
+                }
+              : undefined
+          }
           onPressIn={(event) => {
             if (!disabled) {
-              pressScale.set(withSpring(0.984, PRESS_SPRING_CONFIG));
+              pressScale.set(withSpring(0.985, SPRING_EFFECTS_FAST));
               pressHighlight.set(withTiming(1, PRESS_HIGHLIGHT_IN_TIMING));
             }
             onPressIn?.(event);
           }}
           onPressOut={(event) => {
-            pressScale.set(withSpring(1, PRESS_SPRING_CONFIG));
+            pressScale.set(withSpring(1, SPRING_EFFECTS_FAST));
             pressHighlight.set(withTiming(0, PRESS_HIGHLIGHT_OUT_TIMING));
             onPressOut?.(event);
           }}
