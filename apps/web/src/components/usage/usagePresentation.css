@@ -1988,10 +1988,17 @@ html:root {
     display: flex;
     flex-direction: column;
     transform-origin: bottom;
+    transition: height 320ms var(--apple-spring);
   }
   .usage-token-stack i {
     display: block;
     width: 100%;
+    transition:
+      height 300ms var(--apple-spring),
+      opacity 180ms ease-out;
+  }
+  .usage-token-stack i[data-dim="true"] {
+    opacity: 0;
   }
   .usage-token-stack [data-token-type="cache"] {
     background: color-mix(in srgb, var(--foreground) 20%, var(--card));
@@ -2013,10 +2020,40 @@ html:root {
   }
   .usage-token-legend {
     display: flex;
-    gap: 16px;
+    flex-wrap: wrap;
+    gap: 8px 12px;
     font-size: 12px;
     margin-top: 8px;
     color: var(--muted-foreground);
+  }
+  .usage-token-legend-btn {
+    display: inline-flex;
+    align-items: center;
+    padding: 3px 8px;
+    border-radius: 999px;
+    background: transparent;
+    border: 0.5px solid transparent;
+    color: inherit;
+    font: inherit;
+    cursor: pointer;
+    transition:
+      background-color 160ms ease-out,
+      border-color 160ms ease-out,
+      color 160ms ease-out,
+      opacity 180ms ease-out;
+  }
+  .usage-token-legend-btn:hover {
+    background: var(--apple-fill);
+    color: var(--foreground);
+  }
+  .usage-token-legend-btn[data-active="true"] {
+    background: color-mix(in srgb, var(--primary) 12%, transparent);
+    border-color: color-mix(in srgb, var(--primary) 34%, transparent);
+    color: var(--foreground);
+    font-weight: 550;
+  }
+  .usage-token-legend-btn[data-dim="true"] {
+    opacity: 0.42;
   }
   .usage-token-legend i {
     display: inline-block;
@@ -2604,11 +2641,58 @@ html:root {
 .usage-brush-clear:hover {
   background: var(--accent);
 }
+@keyframes usage-chart-bar-morph {
+  from {
+    opacity: 0;
+    transform: scaleY(0.14);
+  }
+  to {
+    opacity: 1;
+    transform: scaleY(1);
+  }
+}
+@keyframes usage-chart-area-morph {
+  from {
+    opacity: 0;
+    transform: scaleY(0.76);
+  }
+  to {
+    opacity: 1;
+    transform: scaleY(1);
+  }
+}
+.usage-chart-morph-bar {
+  transform-box: fill-box;
+  transform-origin: bottom;
+}
+.usage-model-bar-rect {
+  transition:
+    fill 160ms ease-out,
+    opacity 160ms ease-out;
+}
+@media (prefers-reduced-motion: no-preference) {
+  [data-chart-morph="bar"] .usage-chart-morph-bar {
+    animation: usage-chart-bar-morph 280ms var(--apple-spring) both;
+  }
+  [data-chart-morph="area"] {
+    transform-box: fill-box;
+    transform-origin: bottom;
+    animation: usage-chart-area-morph 280ms var(--apple-spring) both;
+  }
+}
 @media (prefers-reduced-motion: reduce) {
   .usage-chart-crosshair,
   .usage-chart-popover,
-  .usage-brush-clear {
+  .usage-brush-clear,
+  .usage-model-bar-rect,
+  .usage-token-stack,
+  .usage-token-stack i,
+  .usage-token-legend-btn {
     transition: none;
+  }
+  [data-chart-morph="bar"] .usage-chart-morph-bar,
+  [data-chart-morph="area"] {
+    animation: none;
   }
 }
 .usage-updating {

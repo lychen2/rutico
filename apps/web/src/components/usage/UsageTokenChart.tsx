@@ -4,6 +4,17 @@ import { useState } from "react";
 import type { MergedUsage } from "@t3tools/shared/usageMerge";
 import { formatPercent, formatTokens } from "@t3tools/shared/usageFormat";
 
+type TokenLayer = "cache" | "fresh" | "output";
+
+function splitTokenLayers(row: MergedUsage | undefined) {
+  const total = row?.totalTokens ?? 0;
+  // V9 three layers: cache reads, fresh input (incl. cache writes), model output.
+  const cache = Math.min(total, row?.cachedInputTokens ?? 0);
+  const output = Math.min(total - cache, row?.outputTokens ?? 0);
+  const fresh = Math.max(0, total - cache - output);
+  return { total, cache, fresh, output };
+}
+
 export function UsageTokenChart({
   periods,
   totals,
@@ -22,8 +33,30 @@ export function UsageTokenChart({
   readonly timeZone?: string;
 }) {
   const [hovered, setHovered] = useState<string | null>(null);
-  const peak = Math.max(1, ...totals.map((row) => row.totalTokens));
-  const active = hovered === null ? null : totals[periods.indexOf(hovered)];
+  const [isolatedLayer, setIsolatedLayer] = useState<TokenLayer | null>(null);
+
+  const toggleLayer = (layer: TokenLayer) => {
+    setIsolatedLayer((current) => (current === layer ? null : layer));
+  };
+
+  const rows = totals.map((row) => splitTokenLayers(row));
+  const valueForRow = (split: ReturnType<typeof splitTokenLayers>) =>
+    isolatedLayer === null ? split.total : split[isolatedLayer];
+
+  const peak = Math.max(1, ...rows.map(valueForRow));
+  const hoveredIndex = hovered === null ? -1 : periods.indexOf(hovered);
+  const active = hoveredIndex >= 0 ? totals[hoveredIndex] : null;
+  const activeSplit = hoveredIndex >= 0 ? rows[hoveredIndex] : null;
+  const overallTotal = rows.reduce((sum, split) => sum + split.total, 0);
+  const isolatedTotal = rows.reduce((sum, split) => sum + valueForRow(split), 0);
+  const isolatedLayerLabel =
+    isolatedLayer === "cache"
+      ? copy("Cache read")
+      : isolatedLayer === "fresh"
+        ? copy("Fresh input (incl. cache writes)")
+        : isolatedLayer === "output"
+          ? copy("Model output (incl. reasoning)")
+          : null;
 
   const parts = active
     ? ([
@@ -33,16 +66,22 @@ export function UsageTokenChart({
         [copy("Cache write"), active.cacheCreationTokens],
       ] as const)
     : [];
+  const headlineValue = activeSplit ? valueForRow(activeSplit) : isolatedTotal;
   return (
-    <div className="usage-token-chart">
+    <div className="usage-token-chart" data-isolated-layer={isolatedLayer ?? undefined}>
       <div className="usage-readout" role="status" data-usage-readout>
         <div>
-          <span>{hovered ? formatPeriod(hovered) : copy("All periods · Total")}</span>
-          <strong>
-            {formatTokens(
-              active?.totalTokens ?? totals.reduce((sum, row) => sum + row.totalTokens, 0),
-            )}{" "}
-            {copy("Tokens")}
+          <span>
+            {hovered
+              ? isolatedLayerLabel
+                ? `${formatPeriod(hovered)} · ${isolatedLayerLabel}`
+                : formatPeriod(hovered)
+              : isolatedLayerLabel
+                ? `${isolatedLayerLabel} · ${formatPercent(overallTotal > 0 ? isolatedTotal / overallTotal : 0)}`
+                : copy("All periods · Total")}
+          </span>
+          <strong className="tabular-nums">
+            {formatTokens(headlineValue)} {copy("Tokens")}
           </strong>
         </div>
         <div className="usage-readout-parts">
@@ -71,12 +110,32 @@ export function UsageTokenChart({
           aria-label={hourly ? copy("Hourly tokens") : copy("Daily tokens.")}
         >
           {periods.map((period, index) => {
-            const row = totals[index];
-            const total = row?.totalTokens ?? 0;
-            // V9 three layers: cache reads, fresh input (incl. cache writes), model output.
-            const cached = Math.min(total, row?.cachedInputTokens ?? 0);
-            const output = Math.min(total - cached, row?.outputTokens ?? 0);
-            const fresh = Math.max(0, total - cached - output);
+            const split = rows[index] ?? { total: 0, cache: 0, fresh: 0, output: 0 };
+            const shownTotal = valueForRow(split);
+            const cacheHeight =
+              isolatedLayer === "cache"
+                ? split.cache > 0
+                  ? 100
+                  : 0
+                : isolatedLayer === null && split.total > 0
+                  ? (split.cache / split.total) * 100
+                  : 0;
+            const freshHeight =
+              isolatedLayer === "fresh"
+                ? split.fresh > 0
+                  ? 100
+                  : 0
+                : isolatedLayer === null && split.total > 0
+                  ? (split.fresh / split.total) * 100
+                  : 0;
+            const outputHeight =
+              isolatedLayer === "output"
+                ? split.output > 0
+                  ? 100
+                  : 0
+                : isolatedLayer === null && split.total > 0
+                  ? (split.output / split.total) * 100
+                  : 0;
             return (
               <button
                 type="button"
@@ -84,7 +143,7 @@ export function UsageTokenChart({
                 className="usage-token-column"
                 aria-label={copy("{period}, {count} tokens", {
                   period: formatPeriod(period),
-                  count: formatTokens(total),
+                  count: formatTokens(shownTotal),
                 })}
                 aria-pressed={hourly ? selectedHour === period : undefined}
                 data-hovered={hovered === period || undefined}
@@ -99,19 +158,28 @@ export function UsageTokenChart({
                 <span
                   data-usage-bar
                   className="usage-token-stack"
-                  style={{ height: `${(total / peak) * 100}%` }}
+                  style={{ height: `${(shownTotal / peak) * 100}%` }}
                 >
                   <i
                     data-token-type="cache"
-                    style={{ height: `${total > 0 ? (cached / total) * 100 : 0}%` }}
+                    data-dim={
+                      isolatedLayer !== null && isolatedLayer !== "cache" ? "true" : undefined
+                    }
+                    style={{ height: `${cacheHeight}%` }}
                   />
                   <i
                     data-token-type="fresh"
-                    style={{ height: `${total > 0 ? (fresh / total) * 100 : 0}%` }}
+                    data-dim={
+                      isolatedLayer !== null && isolatedLayer !== "fresh" ? "true" : undefined
+                    }
+                    style={{ height: `${freshHeight}%` }}
                   />
                   <i
                     data-token-type="output"
-                    style={{ height: `${total > 0 ? (output / total) * 100 : 0}%` }}
+                    data-dim={
+                      isolatedLayer !== null && isolatedLayer !== "output" ? "true" : undefined
+                    }
+                    style={{ height: `${outputHeight}%` }}
                   />
                 </span>
               </button>
@@ -141,19 +209,31 @@ export function UsageTokenChart({
                 </span>
               ))}
       </div>
-      <div className="usage-token-legend">
-        <span>
-          <i />
-          {copy("Cache read")}
-        </span>
-        <span>
-          <i data-token-type="fresh" />
-          {copy("Fresh input (incl. cache writes)")}
-        </span>
-        <span>
-          <i data-token-type="output" />
-          {copy("Model output (incl. reasoning)")}
-        </span>
+      <div className="usage-token-legend" role="group" aria-label={copy("Token layers")}>
+        {(
+          [
+            ["cache", copy("Cache read")],
+            ["fresh", copy("Fresh input (incl. cache writes)")],
+            ["output", copy("Model output (incl. reasoning)")],
+          ] as const
+        ).map(([layer, label]) => {
+          const activeLayer = isolatedLayer === layer;
+          const dimmedLayer = isolatedLayer !== null && !activeLayer;
+          return (
+            <button
+              key={layer}
+              type="button"
+              className="usage-token-legend-btn"
+              aria-pressed={activeLayer}
+              data-active={activeLayer ? "true" : undefined}
+              data-dim={dimmedLayer ? "true" : undefined}
+              onClick={() => toggleLayer(layer)}
+            >
+              <i data-token-type={layer === "cache" ? undefined : layer} />
+              <span>{label}</span>
+            </button>
+          );
+        })}
       </div>
       {hourly ? (
         <p className="usage-card-hint">

@@ -450,9 +450,54 @@
   opacity: 0.84;
 }
 
+@keyframes ctv9BarMorphIn {
+  from {
+    opacity: 0;
+    transform: scaleY(0.16);
+  }
+  to {
+    opacity: 1;
+    transform: scaleY(1);
+  }
+}
+
+@keyframes ctv9AreaMorphIn {
+  from {
+    opacity: 0;
+    transform: scaleY(0.76);
+  }
+  to {
+    opacity: 1;
+    transform: scaleY(1);
+  }
+}
+
+[data-ctv9-root]
+  [data-v9-cost-bars][data-chart-morph="bar"]
+  [data-ctv9="chart-col-g"]
+  rect:not([fill="transparent"]) {
+  transform-box: fill-box;
+  transform-origin: bottom;
+  animation: ctv9BarMorphIn calc(280ms * var(--motion-scale)) var(--spring) both;
+}
+
+[data-ctv9-root] [data-v9-cost-area][data-chart-morph="area"] {
+  transform-box: fill-box;
+  transform-origin: bottom;
+  animation: ctv9AreaMorphIn calc(280ms * var(--motion-scale)) var(--spring) both;
+}
+
+[data-ctv9-root] [data-v9-token-bars] rect[data-layer-seg] {
+  transition:
+    y calc(300ms * var(--motion-scale)) var(--spring),
+    height calc(300ms * var(--motion-scale)) var(--spring),
+    opacity calc(180ms * var(--motion-scale)) ease-out;
+}
+
 [data-ctv9-root] [data-ctv9="tok-legend"] {
   display: flex;
-  gap: 14px;
+  flex-wrap: wrap;
+  gap: 6px 10px;
   font-size: 11px;
   color: var(--fg-2);
   margin-top: 8px;
@@ -462,6 +507,30 @@
   display: inline-flex;
   align-items: center;
   gap: 5px;
+  padding: 3px 8px;
+  border-radius: 999px;
+  border: 0.5px solid transparent;
+  transition:
+    background calc(160ms * var(--motion-scale)) ease-out,
+    border-color calc(160ms * var(--motion-scale)) ease-out,
+    color calc(160ms * var(--motion-scale)) ease-out,
+    opacity calc(180ms * var(--motion-scale)) ease-out;
+}
+
+[data-ctv9-root] [data-ctv9="tok-legend-item"]:hover {
+  background: var(--fill);
+  color: var(--fg);
+}
+
+[data-ctv9-root] [data-ctv9="tok-legend-item"][data-active="true"] {
+  background: var(--ac-soft);
+  border-color: color-mix(in srgb, var(--ac) 36%, transparent);
+  color: var(--fg);
+  font-weight: 600;
+}
+
+[data-ctv9-root] [data-ctv9="tok-legend-item"][data-dim="true"] {
+  opacity: 0.42;
 }
 
 [data-ctv9-root] [data-ctv9="tok-legend-swatch"] {

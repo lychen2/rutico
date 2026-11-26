@@ -870,7 +870,11 @@ export function UsageProviderChart({
               />
             ) : null}
             {totalOnly && chartStyle === "bar" ? (
-              <g data-usage-total-bars className={seriesClassName(anyLoading)}>
+              <g
+                data-usage-total-bars
+                data-chart-morph="bar"
+                className={seriesClassName(anyLoading)}
+              >
                 {columns.map((column, index) => {
                   // Bars sit on the curve's x positions so hover readouts line up. Width is capped
                   // (few periods would otherwise draw slabs) and edge bars are nudged inward
@@ -895,12 +899,16 @@ export function UsageProviderChart({
                       rx={1.5}
                       fill="var(--primary)"
                       fillOpacity={0.78}
+                      className="usage-chart-morph-bar"
+                      style={{
+                        animationDelay: `${Math.min(index, 24) * 12}ms`,
+                      }}
                     />
                   );
                 })}
               </g>
             ) : totalOnly ? (
-              <>
+              <g data-chart-morph="area">
                 <defs>
                   <linearGradient id="usage-total-fill" x1="0" x2="0" y1="0" y2="1">
                     <stop offset="0%" stopColor="var(--primary)" stopOpacity={0.16} />
@@ -920,7 +928,7 @@ export function UsageProviderChart({
                   strokeWidth={2}
                   vectorEffect="non-scaling-stroke"
                 />
-              </>
+              </g>
             ) : null}
             {(totalOnly ? [] : paths).map(({ provider, loading, area }) => (
               <path

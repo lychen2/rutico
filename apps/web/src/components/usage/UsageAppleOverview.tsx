@@ -1908,7 +1908,7 @@ export function V9CostDashboard({
             ) : null}
 
             {chartStyle === "bar" ? (
-              <g data-v9-cost-bars>
+              <g data-v9-cost-bars data-chart-morph="bar">
                 {chartRows.map((row, i) => {
                   const cx = L + (i + 0.5) * slotW;
                   const bh = row.costUsd > 0 ? Math.max(3, (row.costUsd / maxV) * CH) : 0;
@@ -1973,7 +1973,7 @@ export function V9CostDashboard({
                 })}
               </g>
             ) : (
-              <g data-v9-cost-area>
+              <g data-v9-cost-area data-chart-morph="area">
                 <defs>
                   <linearGradient id={areaGradId} x1="0" y1="0" x2="0" y2="1">
                     <stop offset="0%" stopColor="var(--ac)" stopOpacity={0.26} />
@@ -2398,7 +2398,12 @@ export function V9TokensDashboard({
 }: V9TokensDashboardProps) {
   const text = useUiText();
   const [hoveredIndex, setHoveredIndex] = useState<number | null>(null);
+  const [isolatedLayer, setIsolatedLayer] = useState<"cache" | "fresh" | "output" | null>(null);
   const [rankExpanded, setRankExpanded] = useState(false);
+
+  const toggleTokenLayer = (layer: "cache" | "fresh" | "output") => {
+    setIsolatedLayer((current) => (current === layer ? null : layer));
+  };
 
   const scopedEnvs = scopeUsageEnvironments(
     selectedEnvironments,
@@ -2438,7 +2443,15 @@ export function V9TokensDashboard({
     };
   });
 
-  const maxRaw = Math.max(...chartRows.map((row) => row.total), 0);
+  const activeRowTotal = (row: (typeof chartRows)[number]) =>
+    isolatedLayer === "cache"
+      ? row.cache
+      : isolatedLayer === "fresh"
+        ? row.fresh
+        : isolatedLayer === "output"
+          ? row.out
+          : row.total;
+  const maxRaw = Math.max(...chartRows.map(activeRowTotal), 0);
   const maxV = (maxRaw > 0 ? maxRaw : 1) * 1.12;
   const slotW = CW / Math.max(1, chartRows.length);
   const bw = Math.min(26, slotW * 0.62);
@@ -2449,6 +2462,14 @@ export function V9TokensDashboard({
       : Math.max(1, Math.ceil(chartRows.length / 8));
 
   const hoveredRow = hoveredIndex === null ? undefined : chartRows[hoveredIndex];
+  const isolatedHeroTotal =
+    isolatedLayer === "cache"
+      ? cacheTok
+      : isolatedLayer === "fresh"
+        ? freshTok
+        : isolatedLayer === "output"
+          ? outTok
+          : totalTok;
   const readoutText = hoveredRow
     ? text("{period} · Total {total} (Cache {cache} / Fresh {fresh} / Out {output})", {
         period: hoveredRow.label,
@@ -2457,9 +2478,20 @@ export function V9TokensDashboard({
         fresh: formatTokens(hoveredRow.fresh),
         output: formatTokens(hoveredRow.out),
       })
-    : hourly
-      ? text("Hover stacked bars for hourly token breakdown")
-      : text("Hover stacked bars for daily token breakdown");
+    : isolatedLayer !== null
+      ? text("{layer} · {value} ({share})", {
+          layer:
+            isolatedLayer === "cache"
+              ? copy("Cache read")
+              : isolatedLayer === "fresh"
+                ? text("Fresh input")
+                : text("Model output"),
+          value: formatTokens(isolatedHeroTotal),
+          share: formatPercent(totalTok > 0 ? isolatedHeroTotal / totalTok : 0),
+        })
+      : hourly
+        ? text("Hover stacked bars for hourly token breakdown")
+        : text("Hover stacked bars for daily token breakdown");
 
   const scopePillText = `${selectedProvider === null ? copy("All providers") : usageSeriesLabel(selectedProvider)}${
     selectedPeriod !== null
@@ -2522,7 +2554,7 @@ export function V9TokensDashboard({
               </span>
             </div>
             <div data-ctv9="hero-big-num" data-ctv9-num>
-              <UsageCount value={totalTok} format={formatTokens} />
+              <UsageCount value={isolatedHeroTotal} format={formatTokens} />
             </div>
             <div data-ctv9="hero-subline">
               <span data-ctv9="badge" data-tone="ok" data-ctv9-num>
@@ -2587,16 +2619,19 @@ export function V9TokensDashboard({
             );
           })}
 
-          <g data-v9-token-bars>
+          <g data-v9-token-bars data-isolated-layer={isolatedLayer ?? undefined}>
             {chartRows.map((row, i) => {
               const cx = L + (i + 0.5) * slotW;
               const x = cx - bw / 2;
               const sel = selectedPeriod === row.period;
               const op = selectedPeriod !== null && !sel ? 0.32 : 1;
               const showTick = i % labelEvery === 0 || sel;
-              const hC = row.cache > 0 ? Math.max(2, (row.cache / maxV) * CH) : 0;
-              const hI = row.fresh > 0 ? Math.max(1.5, (row.fresh / maxV) * CH) : 0;
-              const hO = row.out > 0 ? Math.max(1.5, (row.out / maxV) * CH) : 0;
+              const showCache = isolatedLayer === null || isolatedLayer === "cache";
+              const showFresh = isolatedLayer === null || isolatedLayer === "fresh";
+              const showOut = isolatedLayer === null || isolatedLayer === "output";
+              const hC = showCache && row.cache > 0 ? Math.max(2, (row.cache / maxV) * CH) : 0;
+              const hI = showFresh && row.fresh > 0 ? Math.max(1.5, (row.fresh / maxV) * CH) : 0;
+              const hO = showOut && row.out > 0 ? Math.max(1.5, (row.out / maxV) * CH) : 0;
               const gap1 = hC > 0 && hI > 0 ? 1.5 : 0;
               const gap2 = (hC > 0 || hI > 0) && hO > 0 ? 1.5 : 0;
               const yC = B - hC;
@@ -2612,15 +2647,36 @@ export function V9TokensDashboard({
                   onClick={() => onSelectPeriod(sel ? null : row.period)}
                 >
                   <rect x={L + i * slotW} y={T} width={slotW} height={CH} fill="transparent" />
-                  {hC > 0 ? (
-                    <rect x={x} y={yC} width={bw} height={hC} rx={4} fill="var(--ac)" />
-                  ) : null}
-                  {hI > 0 ? (
-                    <rect x={x} y={yI} width={bw} height={hI} rx={3} fill="var(--ac-2)" />
-                  ) : null}
-                  {hO > 0 ? (
-                    <rect x={x} y={yO} width={bw} height={hO} rx={3} fill="var(--ac-3)" />
-                  ) : null}
+                  <rect
+                    data-layer-seg="cache"
+                    x={x}
+                    y={yC}
+                    width={bw}
+                    height={hC}
+                    rx={4}
+                    fill="var(--ac)"
+                    opacity={hC > 0 ? 1 : 0}
+                  />
+                  <rect
+                    data-layer-seg="fresh"
+                    x={x}
+                    y={yI}
+                    width={bw}
+                    height={hI}
+                    rx={3}
+                    fill="var(--ac-2)"
+                    opacity={hI > 0 ? 1 : 0}
+                  />
+                  <rect
+                    data-layer-seg="output"
+                    x={x}
+                    y={yO}
+                    width={bw}
+                    height={hO}
+                    rx={3}
+                    fill="var(--ac-3)"
+                    opacity={hO > 0 ? 1 : 0}
+                  />
                   {showTick ? (
                     <text
                       x={cx}
@@ -2640,19 +2696,31 @@ export function V9TokensDashboard({
           </g>
         </svg>
 
-        <div data-ctv9="tok-legend">
-          <span data-ctv9="tok-legend-item">
-            <i data-ctv9="tok-legend-swatch" data-layer="cache" />
-            {copy("Cache read")}
-          </span>
-          <span data-ctv9="tok-legend-item">
-            <i data-ctv9="tok-legend-swatch" data-layer="fresh" />
-            {text("Fresh input")}
-          </span>
-          <span data-ctv9="tok-legend-item">
-            <i data-ctv9="tok-legend-swatch" data-layer="output" />
-            {text("Model output")}
-          </span>
+        <div data-ctv9="tok-legend" role="group" aria-label={copy("Token layers")}>
+          {(
+            [
+              ["cache", copy("Cache read")],
+              ["fresh", text("Fresh input")],
+              ["output", text("Model output")],
+            ] as const
+          ).map(([layer, label]) => {
+            const active = isolatedLayer === layer;
+            const dim = isolatedLayer !== null && !active;
+            return (
+              <button
+                key={layer}
+                type="button"
+                data-ctv9="tok-legend-item"
+                aria-pressed={active}
+                data-active={active ? "true" : undefined}
+                data-dim={dim ? "true" : undefined}
+                onClick={() => toggleTokenLayer(layer)}
+              >
+                <i data-ctv9="tok-legend-swatch" data-layer={layer} />
+                {label}
+              </button>
+            );
+          })}
         </div>
       </section>
 
