@@ -15,7 +15,7 @@ import {
   resolveLauncherPath,
 } from "../cloud/pinnedRuntime.ts";
 
-const PINNED_RUNTIME_ENTRY = /^(.*)\/runtime\/versions\/[^/]+\/t3$/;
+const PINNED_RUNTIME_ENTRY = /^(.*)\/runtime\/((?:rutico\/)?versions)\/[^/]+\/t3$/;
 
 export type CliRunner = "npx" | "pnpm dlx" | "bunx";
 
@@ -84,7 +84,7 @@ export const resolveServerInstallation = Effect.gen(function* () {
       ? launchedAs
       : yield* findPosixLauncher({
           launchedAs,
-          versionsDir: path.join(runtime[1] || "/", "runtime/versions"),
+          versionsDir: path.join(runtime[1] || "/", "runtime", runtime[2] ?? "versions"),
         });
     // None for a runtime started directly, as SSH launches do, or through a copy.
     if (launcher === undefined) return null;

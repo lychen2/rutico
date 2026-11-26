@@ -48,18 +48,16 @@ export function exhaustedUsageWindow(
       const auto = exhausted.find((window) => window.id === "autoPercentUsed");
       return /^(auto|default|grok|composer)/.test(model) ? auto && api : api;
     }
-    case "antigravity": {
-      const family = model.match(/^(gemini|claude|gpt)-/)?.[1];
-      return exhausted.find((window) => {
-        const pool = window.id.match(/^(gemini|claude|gpt|3p)-/)?.[1];
-        return (
-          pool === undefined ||
-          family === undefined ||
-          pool === family ||
-          (pool === "3p" && (family === "claude" || family === "gpt"))
-        );
-      });
+    case "claudeAgent": {
+      const normalized = model.toLowerCase().replace(/[^a-z0-9]+/g, "_");
+      return exhausted.find(
+        (window) =>
+          !window.id.startsWith("seven_day_") ||
+          normalized.includes(window.id.slice("seven_day_".length)),
+      );
     }
+    case "antigravity":
+      return exhausted.find((window) => antigravityWindowLimitsModel(window, model));
     case "codex": {
       // Seat-based plans spend credits only past their plan windows, so the credit cap blocks only plans without them.
       const hasPlanWindows = windows.some(
@@ -987,8 +985,13 @@ export function instanceHubs(
 
 // Antigravity meters Gemini Argon, Gemini Carbon, other Gemini, and Claude/GPT models apart.
 function antigravityQuotaFamily(id: string) {
-  if (!id.startsWith("gemini")) return "shared";
-  return id.includes("argon") ? "argon" : id.includes("carbon") ? "carbon" : "gemini";
+  const lower = id.toLowerCase();
+  if (lower === "argon" || (lower.startsWith("gemini") && lower.includes("argon"))) return "argon";
+  if (lower === "carbon" || (lower.startsWith("gemini") && lower.includes("carbon"))) {
+    return "carbon";
+  }
+  if (lower.startsWith("gemini")) return "gemini";
+  return "shared";
 }
 
 /** Each Antigravity quota blocks only the models it meters. */
@@ -999,7 +1002,7 @@ export function antigravityWindowLimitsModel(
   // A hub can prefix model ids, such as "ag/gemini-3.1-pro".
   const base = model?.slice(model.lastIndexOf("/") + 1);
   // An alias such as "fast" may route to either quota, so both hold it back.
-  if (base === undefined || !/^(gemini|claude|gpt)/.test(base)) return true;
+  if (base === undefined || !/^(?:gemini|claude|gpt|argon$|carbon$)/i.test(base)) return true;
   return antigravityQuotaFamily(window.id) === antigravityQuotaFamily(base);
 }
 

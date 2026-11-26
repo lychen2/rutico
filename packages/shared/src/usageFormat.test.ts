@@ -7,6 +7,7 @@ import {
   formatHourShort,
   formatTokens,
   makeWindow,
+  resolvePiProviderLabel,
   usageSourceMessages,
 } from "./usageFormat.ts";
 import { usageSourceMessages as localizedUsageSourceMessages } from "./usageFormatCopy.ts";
@@ -211,12 +212,16 @@ describe("hourly usage formatting", () => {
     expect(formatHourShort(instant, "UTC", false, "es")).toBe("18:00");
   });
 
-  it("builds an exact minute-aligned 24-hour request", () => {
-    const window = makeWindow(1, new Date("2026-08-11T12:37:42.123Z"), "hour");
+  it("builds an exact minute-aligned 24-hour request and honors multi-day hourly windows", () => {
+    const window1d = makeWindow(1, new Date("2026-08-11T12:37:42.123Z"), "hour");
+    expect(window1d.resolution).toBe("hour");
+    expect(window1d.sinceTime).toBe("2026-08-10T12:37:00.000Z");
+    expect(window1d.untilTime).toBe("2026-08-11T12:37:00.000Z");
 
-    expect(window.resolution).toBe("hour");
-    expect(window.sinceTime).toBe("2026-08-10T12:37:00.000Z");
-    expect(window.untilTime).toBe("2026-08-11T12:37:00.000Z");
+    const window7d = makeWindow(7, new Date("2026-08-11T12:37:42.123Z"), "hour");
+    expect(window7d.resolution).toBe("hour");
+    expect(window7d.sinceTime).toBe("2026-08-04T12:37:00.000Z");
+    expect(window7d.untilTime).toBe("2026-08-11T12:37:00.000Z");
   });
 
   it("degrades an unknown resolved zone to UTC instead of crashing", () => {
@@ -252,5 +257,29 @@ describe("localized usage source messages", () => {
     expect(localizedUsageSourceMessages([malformedSource(2)])).toEqual([
       "2 malformed or inconsistent usage records were skipped; usage may be incomplete.",
     ]);
+  });
+});
+
+describe("Pi vs OMP usage label classification", () => {
+  it("distinguishes pure Pi, pure OMP, mixed, and unknown without changing wire schema", () => {
+    expect(
+      resolvePiProviderLabel({
+        buckets: [{ provider: "pi", sourcePath: "/home/user/.pi/agent/sessions" }],
+      }),
+    ).toBe("Pi");
+    expect(
+      resolvePiProviderLabel({
+        buckets: [{ provider: "pi", sourcePath: "/home/user/.omp/agent/sessions" }],
+      }),
+    ).toBe("OMP");
+    expect(
+      resolvePiProviderLabel({
+        buckets: [
+          { provider: "pi", sourcePath: "/home/user/.pi/agent/sessions" },
+          { provider: "pi", sourcePath: "/home/user/.omp/agent/sessions" },
+        ],
+      }),
+    ).toBe("Pi / OMP");
+    expect(resolvePiProviderLabel({})).toBe("Pi / OMP");
   });
 });

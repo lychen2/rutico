@@ -194,3 +194,38 @@ it("splits a pasted pairing link and preserves the code during address edits", (
     act(() => root.unmount());
   }
 });
+
+it("prefills the confirmation form from system links in production without auto-pairing", () => {
+  (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+  vi.stubGlobal("__DEV__", false);
+  harness.connectPress.mockClear();
+  const container = document.createElement("div");
+  const root = createRoot(container);
+
+  try {
+    act(() =>
+      root.render(
+        <ConnectionsNewRouteScreen
+          route={{
+            params: {
+              pairingUrl: "https://desktop.tailnet.ts.net/pair#token=confirm-me",
+              autoConnect: "1",
+            },
+          }}
+        />,
+      ),
+    );
+    const address = container.querySelector<HTMLInputElement>('input[aria-label="Address"]')!;
+    const code = container.querySelector<HTMLInputElement>('input[aria-label="Code"]')!;
+    expect(address.value).toBe("https://desktop.tailnet.ts.net");
+    expect(code.value).toBe("confirm-me");
+    expect(harness.connectPress).not.toHaveBeenCalled();
+
+    const connectButton = [...container.querySelectorAll("button")].find(
+      (button) => button.textContent === "Connect",
+    );
+    expect(connectButton?.disabled).toBe(false);
+  } finally {
+    act(() => root.unmount());
+  }
+});

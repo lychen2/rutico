@@ -338,9 +338,10 @@ export function buildPiRpcLaunch(input: {
     args.push("--extension", input.extensionPath);
   }
   const environment = { ...input.environment };
-  if (input.omp && !environment.PI_INTENT_DESC) {
-    // OMP injects the required i itself when intent tracing is enabled.
-    environment.PI_INTENT_DESC =
+  if (input.omp) {
+    // The description labels OMP's intent field; it does not enable tracing.
+    environment.PI_INTENT_TRACING ??= "1";
+    environment.PI_INTENT_DESC ||=
       "Brief purpose of this tool call, shown as its T3 card title. Use the language of the user's latest request (Chinese for Chinese requests), unless the user specifies another language. Keep technical identifiers unchanged.";
   }
   // MCP credentials belong to this T3 session; discard inherited server/parent credentials.

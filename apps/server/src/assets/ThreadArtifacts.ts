@@ -157,13 +157,37 @@ const make = Effect.gen(function* () {
       );
       if (thread === null) return { artifacts: [] };
 
-      const references = new Map<string, boolean>();
+      const references = new Map<
+        string,
+        {
+          fresh: boolean;
+          readonly preferredCwds: Set<string>;
+          hasRootReference: boolean;
+        }
+      >();
       const attachments = new Map<string, AttachmentResource>();
       const commandDirectories = new Set<string>();
-      const addReference = (value: string, needsFreshFile: boolean) => {
+      const addReference = (value: string, needsFreshFile: boolean, commandCwd?: string) => {
         const reference = decodePath(value, homeDir);
         if (!reference || MIME_TYPES[path.extname(reference).toLowerCase()] === undefined) return;
-        references.set(reference, needsFreshFile && references.get(reference) !== false);
+        const existing = references.get(reference);
+        if (existing) {
+          existing.fresh = existing.fresh && needsFreshFile;
+          if (commandCwd !== undefined && commandCwd !== thread.cwd) {
+            existing.preferredCwds.add(commandCwd);
+          } else {
+            existing.hasRootReference = true;
+          }
+          return;
+        }
+        const preferredCwds = new Set<string>();
+        const isSubdirCommand = commandCwd !== undefined && commandCwd !== thread.cwd;
+        if (isSubdirCommand) preferredCwds.add(commandCwd);
+        references.set(reference, {
+          fresh: needsFreshFile,
+          preferredCwds,
+          hasRootReference: !isSubdirCommand,
+        });
       };
       const addAttachment = (attachmentId: string, fileName: string, mimeType: string) => {
         const resource = { _tag: "attachment", attachmentId, fileName, mimeType } as const;
@@ -202,8 +226,8 @@ const make = Effect.gen(function* () {
             cwd = path.resolve(cwd, directory);
             if (cwd !== thread.cwd) commandDirectories.add(cwd);
           }
-          pathReferences(item.input, (reference) => addReference(reference, true));
-          pathReferences(item.output, (reference) => addReference(reference, true));
+          pathReferences(item.input, (reference) => addReference(reference, true, cwd));
+          pathReferences(item.output, (reference) => addReference(reference, true, cwd));
         }
       }
 
@@ -261,8 +285,9 @@ const make = Effect.gen(function* () {
       });
       const files = yield* Effect.forEach(
         references,
-        ([reference, fresh]) =>
+        ([reference, entry]) =>
           Effect.gen(function* () {
+            const { fresh, preferredCwds, hasRootReference } = entry;
             if (isWindowsDrivePath(reference) && !path.isAbsolute(reference)) return null;
             if (
               isNetworkPath(reference) &&
@@ -270,8 +295,40 @@ const make = Effect.gen(function* () {
             ) {
               return null;
             }
+            if (path.isAbsolute(reference)) {
+              return yield* probeReference(reference, fresh);
+            }
+            // Prefer the directory of the command that referenced this relative path over an
+            // unrelated same-named file at the worktree root.
+            if (preferredCwds.size > 0) {
+              let preferredMatch: NonNullable<
+                Effect.Success<ReturnType<typeof probeReference>>
+              > | null = null;
+              let ambiguous = false;
+              for (const directory of preferredCwds) {
+                const result = yield* probeReference(path.resolve(directory, reference), fresh);
+                if (!result) continue;
+                if (preferredMatch && preferredMatch.resource.path !== result.resource.path) {
+                  ambiguous = true;
+                  break;
+                }
+                preferredMatch = result;
+              }
+              if (ambiguous) return null;
+              if (preferredMatch && !hasRootReference) return preferredMatch;
+              if (preferredMatch) {
+                const inWorkspace = yield* probeReference(
+                  path.resolve(thread.cwd, reference),
+                  fresh,
+                );
+                if (!inWorkspace || inWorkspace.resource.path === preferredMatch.resource.path) {
+                  return preferredMatch;
+                }
+                return preferredMatch;
+              }
+            }
             const inWorkspace = yield* probeReference(path.resolve(thread.cwd, reference), fresh);
-            if (inWorkspace || path.isAbsolute(reference)) return inWorkspace;
+            if (inWorkspace) return inWorkspace;
             let match: NonNullable<Effect.Success<ReturnType<typeof probeReference>>> | null = null;
             for (const directory of commandDirectories) {
               const result = yield* probeReference(path.resolve(directory, reference), fresh);

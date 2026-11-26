@@ -1,6 +1,7 @@
 import {
   providerInstanceConfigEnabledFlag,
   ProviderInstanceId,
+  resolveProviderInstanceEnabled,
   type ProviderInstanceConfig,
   type ProviderInstanceConfigMap,
   type ProviderInstanceEnvironment,
@@ -69,7 +70,7 @@ interface RegistryState {
 
 const isActiveAntigravityNativeOAuthInstance = (entry: ProviderInstanceConfig): boolean => {
   if (entry.driver !== "antigravity") return false;
-  if (providerInstanceConfigEnabledFlag(entry) === false) return false;
+  if (!resolveProviderInstanceEnabled(entry)) return false;
   const authMethod =
     typeof entry.config === "object" && entry.config !== null && "authMethod" in entry.config
       ? (entry.config as { readonly authMethod?: unknown }).authMethod

@@ -257,6 +257,9 @@ vi.mock("../hooks/useSettings", async () => {
 function Drawer(props: {
   threadRef: ScopedThreadRef;
   cwd?: string;
+  terminalIds?: readonly string[];
+  terminalGroups?: readonly { readonly id: string; readonly terminalIds: readonly string[] }[];
+  onNewTerminal?: () => void;
   onCloseTerminal: (terminalId: string, threadRef?: ScopedThreadRef) => void;
   keybindings?: ResolvedKeybindingsConfig;
 }) {
@@ -266,13 +269,20 @@ function Drawer(props: {
       threadId={props.threadRef.threadId}
       cwd={props.cwd ?? "/repo"}
       height={240}
-      terminalIds={["term-1"]}
+      terminalIds={[...(props.terminalIds ?? ["term-1"])]}
       activeTerminalId="term-1"
-      terminalGroups={[{ id: "group-1", terminalIds: ["term-1"] }]}
+      terminalGroups={
+        props.terminalGroups
+          ? props.terminalGroups.map((group) => ({
+              id: group.id,
+              terminalIds: [...group.terminalIds],
+            }))
+          : [{ id: "group-1", terminalIds: ["term-1"] }]
+      }
       activeTerminalGroupId="group-1"
       onSplitTerminal={() => {}}
       onSplitTerminalVertical={() => {}}
-      onNewTerminal={() => {}}
+      onNewTerminal={props.onNewTerminal ?? (() => {})}
       onActiveTerminalChange={() => {}}
       onCloseTerminal={props.onCloseTerminal}
       onHeightChange={() => {}}
@@ -684,4 +694,64 @@ it("resends a failed resize once in each writable session", async () => {
     input: { threadId: threadRef.threadId, terminalId: "term-1", cols: 57, rows: 41 },
   };
   expect(resizes).toEqual([resize, resize, resize]);
+});
+
+it("keeps New Terminal and Close Terminal hitboxes non-overlapping under coarse pointers", async () => {
+  const { other: threadRef } = setup();
+  let newClicks = 0;
+  let closeClicks = 0;
+  await using screen = await render(
+    <div style={{ width: "640px", height: "320px" }}>
+      <Drawer
+        threadRef={threadRef}
+        terminalIds={["term-1", "term-2"]}
+        terminalGroups={[
+          { id: "group-1", terminalIds: ["term-1"] },
+          { id: "group-2", terminalIds: ["term-2"] },
+        ]}
+        onNewTerminal={() => {
+          newClicks += 1;
+        }}
+        onCloseTerminal={() => {
+          closeClicks += 1;
+        }}
+      />
+    </div>,
+  );
+  await act(async () => {
+    fixture.pendingSurfaces.shift()?.();
+  });
+
+  const newButton = screen.container.querySelector<HTMLButtonElement>(
+    'button[aria-label^="New Terminal"]',
+  )!;
+  const closeButton = screen.container.querySelector<HTMLButtonElement>(
+    'button[aria-label^="Close Terminal"]',
+  )!;
+  expect(newButton).not.toBeNull();
+  expect(closeButton).not.toBeNull();
+  // Verify coarse-pointer layout classes allocate real non-overlapping button size without ::after overhang.
+  expect(newButton.className).toContain("pointer-coarse:size-11");
+  expect(newButton.className).toContain("pointer-coarse:after:min-w-0");
+  expect(closeButton.className).toContain("pointer-coarse:size-11");
+  expect(closeButton.className).toContain("pointer-coarse:after:min-w-0");
+
+  const newRect = newButton.getBoundingClientRect();
+  const closeRect = closeButton.getBoundingClientRect();
+  expect(newRect.width).toBeGreaterThan(0);
+  expect(closeRect.width).toBeGreaterThan(0);
+  expect(newRect.right).toBeLessThanOrEqual(closeRect.left + 0.5);
+
+  const hit = document.elementFromPoint(
+    newRect.left + newRect.width / 2,
+    newRect.top + newRect.height / 2,
+  );
+  expect(newButton.contains(hit)).toBe(true);
+  expect(closeButton.contains(hit)).toBe(false);
+
+  await act(async () => {
+    newButton.click();
+  });
+  expect(newClicks).toBe(1);
+  expect(closeClicks).toBe(0);
 });

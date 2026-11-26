@@ -17,9 +17,10 @@ export function feedbackRequestDisplay(
   item: Pick<FeedbackRequestItem, "feedbackStatus">,
   visibility: "local" | "inherited" | "synthetic",
   resolve: MFunctionType = mFallback,
-  options?: { readonly localOnly?: boolean },
 ): FeedbackRequestDisplay {
-  const localOnly = options?.localOnly === true;
+  // Persisted feedback items do not record whether an approved report was saved locally or
+  // uploaded by a prior host, so historical statuses stay neutral instead of reinterpreting past
+  // outcomes through today's host capabilities.
   switch (item.feedbackStatus) {
     case "pending":
       return visibility === "local"
@@ -29,19 +30,19 @@ export function feedbackRequestDisplay(
       return {
         kind: "answered",
         outcome: "sent",
-        label: resolve(localOnly ? msg("Saved locally") : msg("Sent")),
+        label: resolve(msg("Approved")),
       };
     case "declined":
       return {
         kind: "answered",
         outcome: "not-sent",
-        label: resolve(localOnly ? msg("Not saved") : msg("Not sent")),
+        label: resolve(msg("Declined")),
       };
     case "cancelled":
       return {
         kind: "answered",
         outcome: "not-sent",
-        label: resolve(localOnly ? msg("Closed without saving") : msg("Closed without sending")),
+        label: resolve(msg("Closed")),
       };
   }
 }

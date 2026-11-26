@@ -2916,7 +2916,7 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
       protocols: [
         {
           name: "Rutico",
-          schemes: ["rutico", "t3code", "t3code-dev"],
+          schemes: [...resolveDesktopProtocolSchemes(version)],
         },
         {
           name: "Web site URL",
@@ -2969,7 +2969,7 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
       protocols: [
         {
           name: "Rutico",
-          schemes: ["rutico", "t3code", "t3code-dev"],
+          schemes: [...resolveDesktopProtocolSchemes(version)],
         },
       ],
       desktop: {
@@ -3014,7 +3014,7 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
     buildConfig.protocols = [
       {
         name: "Rutico",
-        schemes: ["rutico", "t3code", "t3code-dev"],
+        schemes: [...resolveDesktopProtocolSchemes(version)],
       },
     ];
     buildConfig.nsis = {
@@ -3045,6 +3045,18 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
 
   return buildConfig;
 });
+
+export function resolveStagePackageName(platform: typeof BuildPlatform.Type): string {
+  // Windows NSIS derives its default install directory (%LOCALAPPDATA%\Programs\<name>),
+  // AppData uninstall path, and updater cache from package.json name. Keep Rutico separate
+  // from official T3 Code ("t3code") so side-by-side install and uninstall never collide.
+  return platform === "win" ? "rutico" : "t3code";
+}
+
+export function resolveDesktopProtocolSchemes(version: string): ReadonlyArray<string> {
+  const isPreviewOrNightly = /-(?:preview|nightly)\./i.test(version);
+  return isPreviewOrNightly ? ["rutico", "rutico-preview", "t3code"] : ["rutico", "t3code"];
+}
 
 const assertPlatformBuildResources = Effect.fn("assertPlatformBuildResources")(function* (
   platform: typeof BuildPlatform.Type,
@@ -3972,7 +3984,7 @@ const buildDesktopArtifactUnlocked = Effect.fn("buildDesktopArtifactUnlocked")(f
       ? path.join(stageAppDir, WINDOWS_SERVER_RESOURCE_SOURCE_DIR, WINDOWS_SERVER_ASAR_RESOURCE)
       : undefined;
   const stagePackageJson: StagePackageJson = {
-    name: "t3code",
+    name: resolveStagePackageName(options.platform),
     version: appVersion,
     buildVersion: appVersion,
     t3codeCommitHash: commitHash,

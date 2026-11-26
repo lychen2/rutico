@@ -12,13 +12,21 @@ const textEncoder = new TextEncoder();
 
 /**
  * Lets the device ignore pushes for an account it no longer has without FCM
- * seeing the raw account id. Builds before 2.4.0 only match the raw `user_id`.
+ * seeing the raw account id. Prefer the device's declared hash capability when
+ * present; fall back to the 2.4.0 semver floor for clients that predate it.
  */
-export function androidRecipientData(userId: string, deviceId: string, appVersion: string | null) {
+export function androidRecipientData(
+  userId: string,
+  deviceId: string,
+  appVersion: string | null,
+  supportsUserHash?: boolean,
+) {
   const readsHash =
-    appVersion !== null &&
-    parseSemver(appVersion) !== null &&
-    compareSemverVersions(appVersion, "2.4.0") >= 0;
+    supportsUserHash !== undefined
+      ? supportsUserHash
+      : appVersion !== null &&
+        parseSemver(appVersion) !== null &&
+        compareSemverVersions(appVersion, "2.4.0") >= 0;
   return {
     device_id: deviceId,
     user_hash: Hex.encode(sha256(textEncoder.encode(`${userId}:${deviceId}`))),

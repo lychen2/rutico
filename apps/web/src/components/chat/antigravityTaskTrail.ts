@@ -21,6 +21,8 @@ export interface AntigravityTaskTrail {
   planId?: string;
   liveIntent?: string;
   blockedStepId?: string;
+  /** External dependency block reasons keyed by step id (distinct from user confirmation). */
+  blockedReasons?: Readonly<Record<string, string>>;
   waiting: boolean;
   failed: boolean;
   complete: boolean;
@@ -30,13 +32,18 @@ export interface AntigravityTaskTrail {
 function normalizeTodoStep(step: OrchestrationV2PlanStep): {
   readonly step: OrchestrationV2PlanStep;
   readonly blocked: boolean;
+  readonly blockedReason?: string;
 } | null {
-  const [title = step.text, note] = step.text.split("\n");
+  const [title = step.text, ...rest] = step.text.split("\n");
+  const note = rest.join("\n").trim();
   if (step.status === "pending" && note === "[abandoned]") return null;
-  const blocked = step.status === "pending" && /^\[blocked\](?: |$)/.test(note ?? "");
+  const blockedMatch = step.status === "pending" ? /^\[blocked\](?:\s+(.*))?$/s.exec(note) : null;
+  const blocked = blockedMatch !== null;
+  const blockedReason = blockedMatch?.[1]?.trim() || undefined;
   return {
     step: title === step.text ? step : { ...step, text: title },
     blocked,
+    ...(blockedReason === undefined ? {} : { blockedReason }),
   };
 }
 
@@ -150,7 +157,8 @@ export function antigravityTaskTrail(
         entry.threadId === projection.thread.id &&
         entry.id === ompPlanId &&
         entry.kind === "todo_list" &&
-        entry.status !== "superseded",
+        entry.status !== "superseded" &&
+        entry.status !== "completed",
     );
   const active =
     run.status === "running" ||
@@ -194,7 +202,12 @@ export function antigravityTaskTrail(
     });
     if (normalizedEntries.length > 0) {
       const normalizedSteps = normalizedEntries.map((entry) => entry.step);
-      const blockedStepId = normalizedEntries.find((entry) => entry.blocked)?.step.id;
+      const blockedEntries = normalizedEntries.filter((entry) => entry.blocked);
+      const blockedStepId = blockedEntries[0]?.step.id;
+      const blockedReasons: Record<string, string> = {};
+      for (const entry of blockedEntries) {
+        blockedReasons[entry.step.id] = entry.blockedReason ?? "";
+      }
       const validStepIds = new Set(normalizedSteps.map((step) => step.id));
       // Assign calls to the step active at their start, not the most recent step at render time.
       const anchors = normalizedSteps
@@ -242,12 +255,14 @@ export function antigravityTaskTrail(
       const planComplete =
         plan.status === "completed" &&
         !waiting &&
-        blockedStepId === undefined &&
+        blockedEntries.length === 0 &&
         normalizedSteps.every((step) => step.status === "completed");
       return {
         ...common,
-        waiting: waiting || blockedStepId !== undefined,
+        // External `[blocked]` todo steps wait on external dependencies, not user confirmation.
+        waiting,
         ...(blockedStepId === undefined ? {} : { blockedStepId }),
+        ...(blockedEntries.length === 0 ? {} : { blockedReasons }),
         key: plan.id,
         planId: plan.id,
         steps: normalizedSteps,

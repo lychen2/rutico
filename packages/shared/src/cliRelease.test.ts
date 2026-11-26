@@ -1,6 +1,15 @@
 import { describe, expect, it } from "vite-plus/test";
 
-import { cliArchiveTarCommand, newestCliReleaseVersion, parseChecksums } from "./cliRelease.ts";
+import {
+  CLI_RELEASE_REPOSITORY,
+  CLI_RELEASES_PAGE_URL,
+  cliArchiveTarCommand,
+  cliReleaseAssetUrl,
+  cliReleaseDownloadBaseUrl,
+  cliReleaseIndexPageUrl,
+  newestCliReleaseVersion,
+  parseChecksums,
+} from "./cliRelease.ts";
 
 describe("cliRelease", () => {
   it("parses sha256sum output including binary-mode markers", () => {
@@ -38,5 +47,19 @@ describe("cliRelease", () => {
     expect(newestCliReleaseVersion(releases, "nightly")).toBe("1.2.4-nightly.20260912.7");
     expect(newestCliReleaseVersion(releases, "stable")).toBe("1.2.3");
     expect(newestCliReleaseVersion([{ tag_name: "v1.2.3" }], "preview")).toBeUndefined();
+  });
+
+  it("points default release index, downloads, checksums, and releases page to the Rutico fork repository", () => {
+    expect(CLI_RELEASE_REPOSITORY).toBe("lychen2/rutico");
+    expect(CLI_RELEASES_PAGE_URL).toBe("https://github.com/lychen2/rutico/releases");
+    expect(cliReleaseIndexPageUrl(1)).toBe(
+      "https://api.github.com/repos/lychen2/rutico/releases?per_page=100&page=1",
+    );
+    expect(cliReleaseDownloadBaseUrl("1.2.3")).toBe(
+      "https://github.com/lychen2/rutico/releases/download/v1.2.3",
+    );
+    expect(cliReleaseAssetUrl("1.2.3", "SHA256SUMS")).toBe(
+      "https://github.com/lychen2/rutico/releases/download/v1.2.3/SHA256SUMS",
+    );
   });
 });

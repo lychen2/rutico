@@ -78,4 +78,17 @@ describe("parsePairingUrl", () => {
       code: "pairing-token",
     });
   });
+
+  it("unwraps rutico, rutico-preview, and rutico-dev pairing app links when pasted", () => {
+    for (const scheme of ["rutico", "rutico-preview", "rutico-dev", "t3code"]) {
+      expect(
+        parsePairingUrl(
+          `${scheme}://pair?pairingUrl=https%3A%2F%2Fdesktop.tailnet.ts.net%2Fpair%23token%3Dpairing-token`,
+        ),
+      ).toEqual({
+        host: "https://desktop.tailnet.ts.net",
+        code: "pairing-token",
+      });
+    }
+  });
 });

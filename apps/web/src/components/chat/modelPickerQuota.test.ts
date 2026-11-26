@@ -112,3 +112,68 @@ it("omits expired, stale, and unavailable readings while retaining a real zero",
     0,
   );
 });
+
+it("prefers the tightest matching Claude weekly window so a model-specific limit is not masked by the account window", () => {
+  const claudeProvider: ServerProvider = {
+    ...NATIVE,
+    instanceId: ProviderInstanceId.make("claude"),
+    driver: ProviderDriverKind.make("claudeAgent"),
+    usageLimits: {
+      checkedAt: CHECKED_AT,
+      windows: [
+        { id: "seven_day", kind: "weekly", label: "Weekly", usedPercent: 18.4 },
+        { id: "seven_day_fable", kind: "weekly", label: "Weekly · Fable", usedPercent: 100 },
+      ],
+    },
+  };
+  expect(
+    modelPickerQuotaRemaining({
+      provider: claudeProvider,
+      sources: [],
+      model: "claude-fable-5",
+      now: NOW,
+    }),
+  ).toBe(0);
+  expect(
+    modelPickerQuotaRemaining({
+      provider: claudeProvider,
+      sources: [],
+      model: "claude-sonnet-4-6",
+      now: NOW,
+    }),
+  ).toBe(82);
+});
+
+it("keeps Antigravity Argon and Carbon pools independent in model picker quota", () => {
+  const agProvider: ServerProvider = {
+    ...NATIVE,
+    instanceId: ProviderInstanceId.make("antigravity"),
+    driver: ProviderDriverKind.make("antigravity"),
+    usageLimits: {
+      checkedAt: CHECKED_AT,
+      windows: [
+        { id: "gemini-argon-weekly", kind: "weekly", label: "Argon · Weekly", usedPercent: 100 },
+        { id: "gemini-carbon-weekly", kind: "weekly", label: "Carbon · Weekly", usedPercent: 15 },
+      ],
+    },
+  };
+  expect(
+    modelPickerQuotaRemaining({
+      provider: agProvider,
+      sources: [],
+      model: "gemini-4-argon",
+      now: NOW,
+    }),
+  ).toBe(0);
+  expect(
+    modelPickerQuotaRemaining({
+      provider: agProvider,
+      sources: [],
+      model: "gemini-4-carbon",
+      now: NOW,
+    }),
+  ).toBe(85);
+  expect(
+    modelPickerQuotaRemaining({ provider: agProvider, sources: [], model: "carbon", now: NOW }),
+  ).toBe(85);
+});

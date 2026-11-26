@@ -1684,4 +1684,52 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("Antigravity inst
         }
       }),
   );
+
+  it.effect(
+    "skips an incompatible PATH Antigravity 1.5.0 in favor of a compatible managed runtime, while rejecting explicit 1.5.0 override",
+    () =>
+      Effect.gen(function* () {
+        const { installation, baseDir, fs, path } = yield* makeHarness({ previous: true });
+        const managed = yield* installation.resolve();
+        expect(managed.source).toBe("managed");
+        expect(managed.version).toBe("1.5.3");
+
+        const externalDirectory = path.join(baseDir, "old-path-agy");
+        yield* fs.makeDirectory(externalDirectory, { recursive: true });
+        const oldBinary = path.join(externalDirectory, "agy");
+        yield* fs.writeFileString(oldBinary, "#!/bin/sh\necho '1.5.0'\n", { mode: 0o755 });
+
+        const versionSpawner = ChildProcessSpawner.make((command) => {
+          const isVersion =
+            ChildProcess.isStandardCommand(command) && command.args.includes("--version");
+          return Effect.succeed({
+            exitCode: Effect.succeed(ChildProcessSpawner.ExitCode(0)),
+            stdout: Stream.make(new TextEncoder().encode(isVersion ? "1.5.0\n" : "")),
+            stderr: Stream.empty,
+            stdin: Sink.drain,
+            kill: () => Effect.void,
+            isRunning: Effect.succeed(false),
+            pid: ChildProcessSpawner.ProcessId(1),
+            all: Stream.empty,
+            getInputFd: () => Sink.drain,
+            getOutputFd: () => Stream.empty,
+          } as unknown as ChildProcessSpawner.ChildProcessHandle);
+        });
+
+        const withOldPath = yield* makeHarness({
+          baseDir,
+          path: externalDirectory,
+          spawner: versionSpawner,
+        });
+        // Auto-selection (empty binaryPath) skips incompatible PATH 1.5.0 and picks managed 1.5.3.
+        const autoSelected = yield* withOldPath.installation.resolve();
+        expect(autoSelected.source).toBe("managed");
+        expect(autoSelected.version).toBe("1.5.3");
+
+        // Explicit binaryPath pointing to 1.5.0 fails instead of silently falling back.
+        const explicitError = yield* withOldPath.installation.resolve(oldBinary).pipe(Effect.flip);
+        expect(explicitError.operation).toBe("resolve");
+        expect(explicitError.detail).toContain("1.5.0");
+      }),
+  );
 });

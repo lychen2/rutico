@@ -54,7 +54,10 @@ export function modelPickerQuotaRemaining({
     if (driver === "opencode" && window.id.startsWith("go_")) return providerId === "opencode-go";
     if (driver === "antigravity") {
       const base = slug.slice(slug.lastIndexOf("/") + 1);
-      return /^(gemini|claude|gpt)/.test(base) && antigravityWindowLimitsModel(window, slug);
+      return (
+        /^(?:gemini|claude|gpt|argon$|carbon$)/i.test(base) &&
+        antigravityWindowLimitsModel(window, slug)
+      );
     }
     if (
       (driver === "claudeAgent" || driver === "claude") &&
@@ -67,8 +70,20 @@ export function modelPickerQuotaRemaining({
     }
     return true;
   });
-  const window = windows.find((candidate) => candidate.kind === "weekly") ?? windows[0];
-  if (!window || !Number.isFinite(window.usedPercent)) return null;
-  if (window.resetsAt !== undefined && !(Date.parse(window.resetsAt) > now)) return null;
+  const activeWindows = windows.filter(
+    (candidate) =>
+      Number.isFinite(candidate.usedPercent) &&
+      (candidate.resetsAt === undefined || Date.parse(candidate.resetsAt) > now),
+  );
+  const weeklyWindows = activeWindows.filter((candidate) => candidate.kind === "weekly");
+  const pool = weeklyWindows.length > 0 ? weeklyWindows : activeWindows;
+  const window = pool.reduce<(typeof pool)[number] | undefined>(
+    (tightest, candidate) =>
+      tightest === undefined || (candidate.usedPercent ?? 0) > (tightest.usedPercent ?? 0)
+        ? candidate
+        : tightest,
+    undefined,
+  );
+  if (!window) return null;
   return remainingPercent(window);
 }

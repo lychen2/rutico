@@ -47,7 +47,7 @@ import { toggleUsageEnvironment } from "./usageEnvironmentSelection";
 import { useRefreshLimits } from "./UsageLimitsSection";
 import { UsageLimitsSection } from "./UsageLimitsPooled";
 import type { UsageChartMetric } from "./usageChartData";
-import { PROVIDER_LABEL, useProviderColors, useUsageMixColors } from "./usageProviders";
+import { usageProviderLabel, useProviderColors, useUsageMixColors } from "./usageProviders";
 
 type UsageView = UsageChartMetric | "limits";
 const VIEW_OPTIONS = [
@@ -84,7 +84,7 @@ const WIDE_CHART_HEIGHT = 260;
 // Below this the page keeps the phone's single column.
 const WIDE_WIDTH = 600;
 const MAX_CONTENT_WIDTH = 1080;
-const providerLabel = (provider: UsageProviderKind) => PROVIDER_LABEL[provider];
+const providerLabel = (provider: UsageProviderKind) => usageProviderLabel(provider);
 
 export function UsageRouteScreen(props: { readonly workspace?: boolean }) {
   const route = useRoute<RouteProp<{ Usage: { tab?: string } | undefined }, "Usage">>();
@@ -165,11 +165,17 @@ function UsageScreen(props: {
   const refreshingRef = useRef(false);
   const showingLimits = view === "limits";
   const metric: UsageChartMetric = view === "tokens" ? "tokens" : "cost";
+  const labelContext = {
+    sources: selectedEnvironments.flatMap((environment) => environment.summary?.sources ?? []),
+    buckets: selectedEnvironments.flatMap((environment) => environment.summary?.buckets ?? []),
+  };
+  const resolvedProviderLabel = (provider: UsageProviderKind) =>
+    usageProviderLabel(provider, labelContext);
   const progress = usageProgress(
     selectedEnvironments,
     {
       refreshing: refreshingUsage,
-      providerLabel,
+      providerLabel: resolvedProviderLabel,
     },
     m,
   );
@@ -207,8 +213,16 @@ function UsageScreen(props: {
     untilDay: window.untilDay,
     isPast24Hours,
     timeZone: window.timeZone,
+    resolveProviderLabel: resolvedProviderLabel,
   };
-  const providers = <ProviderSection merged={merged} metric={metric} compact={wide} />;
+  const providers = (
+    <ProviderSection
+      merged={merged}
+      metric={metric}
+      compact={wide}
+      resolveProviderLabel={resolvedProviderLabel}
+    />
+  );
 
   const showEnvironmentFilter = environments.length > 0 || selectedEnvironmentIds !== null;
   const selectEnvironment = (value: string) => {
@@ -460,6 +474,7 @@ function ChartCard(props: {
   readonly isPast24Hours: boolean;
   readonly timeZone: string;
   readonly height: number;
+  readonly resolveProviderLabel: (provider: UsageProviderKind) => string;
   /** Replaces the summary when it sits beside the chart. */
   readonly title?: string;
   /** Grows the chart past `height` to match a taller neighbouring column. */
@@ -568,7 +583,7 @@ function ChartCard(props: {
                 style={{ backgroundColor: colors[provider.provider] }}
               />
               <Text className="text-xs text-foreground-muted">
-                {PROVIDER_LABEL[provider.provider]}
+                {props.resolveProviderLabel(provider.provider)}
               </Text>
             </View>
           ))}
@@ -637,6 +652,7 @@ function ProviderSection(props: {
   readonly metric: UsageChartMetric;
   /** Drops the share bar so the list fits beside the chart. */
   readonly compact: boolean;
+  readonly resolveProviderLabel: (provider: UsageProviderKind) => string;
 }) {
   const { merged, metric } = props;
   const colors = useProviderColors();
@@ -697,7 +713,7 @@ function ProviderSection(props: {
                       : "text-lg font-t3-medium text-foreground"
                   }
                 >
-                  {PROVIDER_LABEL[provider.provider]}
+                  {props.resolveProviderLabel(provider.provider)}
                 </Text>
                 {speed !== null ? (
                   <Text className="text-xs tabular-nums text-foreground-tertiary">

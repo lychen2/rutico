@@ -1,3 +1,4 @@
+import { CLI_RUNTIME_CACHE_SUBDIR } from "@t3tools/shared/cliRelease";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import { pathSetupCommand, resolveCommandPath } from "@t3tools/shared/shell";
 import * as Console from "effect/Console";
@@ -30,17 +31,21 @@ export class CliInstallError extends Schema.TaggedError<CliInstallError>()("CliI
   }
 }
 
-/** `<T3 home>/runtime/versions/<version>/t3`: the layout the install scripts and npm launcher share. */
+/** `<T3 home>/runtime/rutico/versions/<version>/t3`: the layout the install scripts and npm launcher share. */
 const standaloneRuntime = Effect.gen(function* () {
   const path = yield* Path.Path;
   if (!(yield* HostProcess.IsExecutable)) return Option.none();
   const executable = yield* HostProcess.ExecutablePath;
   const versionsDir = path.dirname(path.dirname(executable));
-  const runtimeDir = path.dirname(versionsDir);
-  if (path.basename(versionsDir) !== "versions" || path.basename(runtimeDir) !== "runtime") {
+  const parentDir = path.dirname(versionsDir);
+  const isRuticoRuntime =
+    path.basename(parentDir) === CLI_RUNTIME_CACHE_SUBDIR &&
+    path.basename(path.dirname(parentDir)) === "runtime";
+  const isLegacyRuntime = path.basename(parentDir) === "runtime";
+  if (path.basename(versionsDir) !== "versions" || (!isRuticoRuntime && !isLegacyRuntime)) {
     return Option.none();
   }
-  return Option.some({ executable, versionsDir, runtimeDir });
+  return Option.some({ executable, versionsDir, runtimeDir: parentDir });
 });
 
 /** Installs this runtime as the `t3` command the way the install scripts do, replacing only our own launcher. */

@@ -134,6 +134,7 @@ function makePiFamilyUsageFormat(
       timestamp: true,
       provider: true,
       model: true,
+      responseModel: true,
       usage: true,
       message: { role: true, provider: true, model: true, responseModel: true, usage: true },
     },

@@ -53,6 +53,16 @@ export const DeferringFailedCheck = Context.Reference<boolean>("t3/provider/Defe
   defaultValue: () => false,
 });
 
+/**
+ * True while `checkProvider` runs automatically on startup or on a periodic interval rather than
+ * in response to an explicit refresh. Providers can skip loading user extensions during background
+ * health checks while keeping full discovery on explicit refreshes.
+ */
+export const BackgroundProviderCheck = Context.Reference<boolean>(
+  "t3/provider/BackgroundProviderCheck",
+  { defaultValue: () => false },
+);
+
 export const makeManagedServerProvider = Effect.fn("makeManagedServerProvider")(function* <
   Settings,
 >(input: {
@@ -436,7 +446,11 @@ export const makeManagedServerProvider = Effect.fn("makeManagedServerProvider")(
               ? shouldRefreshOnInterval.pipe(
                   Effect.flatMap((shouldRefresh) =>
                     shouldRefresh
-                      ? refreshSemaphore.withPermits(1)(refreshOnInterval(!recheckPending))
+                      ? refreshSemaphore.withPermits(1)(
+                          refreshOnInterval(!recheckPending).pipe(
+                            Effect.provideService(BackgroundProviderCheck, true),
+                          ),
+                        )
                       : Effect.void,
                   ),
                 )
@@ -454,7 +468,11 @@ export const makeManagedServerProvider = Effect.fn("makeManagedServerProvider")(
       // Read under the lock, so a settings check in flight cannot be overwritten with older settings.
       refreshSemaphore.withPermits(1)(
         Ref.get(settingsRef).pipe(
-          Effect.flatMap((settings) => applySnapshotBase(settings, { forceRefresh: true })),
+          Effect.flatMap((settings) =>
+            applySnapshotBase(settings, { forceRefresh: true }).pipe(
+              Effect.provideService(BackgroundProviderCheck, true),
+            ),
+          ),
         ),
       ),
     ),

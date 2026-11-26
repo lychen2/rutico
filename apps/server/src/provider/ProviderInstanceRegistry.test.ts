@@ -30,8 +30,11 @@ import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import * as Scope from "effect/Scope";
+import * as Stream from "effect/Stream";
 import * as Fiber from "effect/Fiber";
 import * as FileSystem from "effect/FileSystem";
+
+const decodeAntigravitySettings = Schema.decodeSync(AntigravitySettings);
 import * as Layer from "effect/Layer";
 import * as Path from "effect/Path";
 import * as PubSub from "effect/PubSub";
@@ -1178,4 +1181,86 @@ describe("ProviderInstanceRegistry secret environment", () => {
       expect(yield* registry.listUnavailable).toEqual([]);
     });
   });
+
+  it.effect(
+    "does not let a default-disabled Antigravity instance occupy the sole native OAuth slot, while still rejecting two enabled native OAuth instances",
+    () =>
+      Effect.gen(function* () {
+        const disabledDefaultId = ProviderInstanceId.make("antigravity_default_off");
+        const enabledPrimaryId = ProviderInstanceId.make("antigravity_active_1");
+        const enabledSecondId = ProviderInstanceId.make("antigravity_active_2");
+        const stubAntigravityDriver: AnyProviderDriver = {
+          driverKind: ProviderDriverKind.make("antigravity"),
+          metadata: { displayName: "Antigravity", supportsMultipleInstances: false },
+          configSchema: AntigravitySettings,
+          defaultConfig: () => decodeAntigravitySettings({}),
+          create: (input) =>
+            Effect.succeed({
+              instanceId: input.instanceId,
+              driverKind: ProviderDriverKind.make("antigravity"),
+              displayName: input.displayName,
+              accentColor: input.accentColor,
+              enabled: input.enabled,
+              continuationIdentity: { continuationKey: `antigravity:${input.instanceId}` },
+              snapshot: {
+                getSnapshot: Effect.die("unused"),
+                refresh: Effect.die("unused"),
+                refreshUsage: Effect.void,
+                applyUsageLimits: () => Effect.void,
+                isAwaitingFirstCheck: Effect.succeed(false),
+                streamChanges: Stream.empty,
+                resolveMaintenance: () => Effect.die("unused"),
+              },
+              orchestrationAdapter: {} as never,
+            } as unknown as ProviderInstance),
+        };
+
+        const noopSecretResolver = Layer.succeed(SecretResolver.SecretResolver, {
+          label: (provider) => Effect.succeed(provider),
+          read: () => Effect.succeed([]),
+          invalidate: () => Effect.void,
+        });
+
+        // Case 1: first entry omits `enabled` (default-disabled for Antigravity, only binaryPath set),
+        // second entry is explicitly enabled -> second must be live and NOT marked conflicting.
+        const first = yield* makeProviderInstanceRegistry({
+          drivers: [stubAntigravityDriver],
+          configMap: {
+            [disabledDefaultId]: {
+              driver: ProviderDriverKind.make("antigravity"),
+              config: { binaryPath: "/custom/agy" },
+            },
+            [enabledPrimaryId]: {
+              driver: ProviderDriverKind.make("antigravity"),
+              enabled: true,
+              config: { enabled: true, authMethod: "oauth-personal" },
+            },
+          },
+        }).pipe(Effect.provide(noopSecretResolver));
+        expect(yield* first.registry.getInstance(enabledPrimaryId)).toBeDefined();
+        expect(yield* first.registry.listUnavailable).toEqual([]);
+
+        // Case 2: two truly enabled native OAuth instances -> second is rejected as unavailable.
+        const second = yield* makeProviderInstanceRegistry({
+          drivers: [stubAntigravityDriver],
+          configMap: {
+            [enabledPrimaryId]: {
+              driver: ProviderDriverKind.make("antigravity"),
+              enabled: true,
+              config: { enabled: true, authMethod: "oauth-personal" },
+            },
+            [enabledSecondId]: {
+              driver: ProviderDriverKind.make("antigravity"),
+              enabled: true,
+              config: { enabled: true, authMethod: "oauth-personal" },
+            },
+          },
+        }).pipe(Effect.provide(noopSecretResolver));
+        expect(yield* second.registry.getInstance(enabledPrimaryId)).toBeDefined();
+        expect(yield* second.registry.getInstance(enabledSecondId)).toBeUndefined();
+        const unavailable = yield* second.registry.listUnavailable;
+        expect(unavailable).toHaveLength(1);
+        expect(unavailable[0]?.instanceId).toBe(enabledSecondId);
+      }),
+  );
 });

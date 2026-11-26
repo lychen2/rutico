@@ -48,9 +48,10 @@ export function buildPairingUrl(host: string, code: string): string {
 export function parsePairingUrl(url: string): { host: string; code: string } {
   const trimmed = url.trim();
   if (!trimmed) return { host: "", code: "" };
+  const target = readPairingAppLink(trimmed) ?? trimmed;
 
   try {
-    const parsed = new URL(trimmed);
+    const parsed = new URL(target);
     const hostedPairingRequest = readHostedPairingRequest(parsed);
     if (hostedPairingRequest) {
       return {

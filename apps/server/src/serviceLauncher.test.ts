@@ -154,7 +154,7 @@ it("rejects contradictory service state", () => {
 });
 
 const unitPlan = (root: string, version: string) => ({
-  program: [`${root}/runtime/versions/${version}/t3`, "__service-launcher"],
+  program: [`${root}/runtime/rutico/versions/${version}/t3`, "__service-launcher"],
   baseDir: root,
   logPath: `${root}/logs/boot-service.log`,
   unitPath: `${root}/unit/t3code.service`,
@@ -274,7 +274,7 @@ setInterval(() => {}, 1_000);
         yield* writeFakeRuntime(
           fs,
           path,
-          path.join(root, "runtime", "versions", version),
+          path.join(root, "runtime", "rutico", "versions", version),
           childSource,
         );
       }
@@ -391,7 +391,9 @@ setInterval(() => {}, 1_000);
       if (scenario === "trial exit")
         assert.equal(yield* fs.readFileString(databasePath), "migrated");
       if (scenario === "failed trial start") {
-        yield* fs.remove(path.join(root, "runtime", "versions", "1.1.0"), { recursive: true });
+        yield* fs.remove(path.join(root, "runtime", "rutico", "versions", "1.1.0"), {
+          recursive: true,
+        });
       }
       low = false;
       recovered = true;
@@ -513,7 +515,7 @@ setInterval(() => {}, 1_000);
       yield* writeFakeRuntime(
         fs,
         path,
-        path.join(root, "runtime", "versions", "1.1.0"),
+        path.join(root, "runtime", "rutico", "versions", "1.1.0"),
         "process.exit(0);\n",
       );
       yield* Effect.promise(() =>
@@ -573,7 +575,7 @@ setInterval(() => {}, 1_000);
         yield* writeFakeRuntime(
           fs,
           path,
-          path.join(root, "runtime", "versions", "1.1.0"),
+          path.join(root, "runtime", "rutico", "versions", "1.1.0"),
           "process.exit(0);\n",
         );
         yield* Effect.promise(() =>
@@ -623,7 +625,7 @@ setInterval(() => {}, 1_000);
       yield* writeFakeRuntime(
         fs,
         path,
-        path.join(root, "runtime", "versions", "1.0.0"),
+        path.join(root, "runtime", "rutico", "versions", "1.0.0"),
         "process.exit(0);\n",
       );
       yield* Effect.promise(() =>
@@ -651,7 +653,7 @@ setInterval(() => {}, 1_000);
       const root = yield* fs.makeTempDirectoryScoped({ prefix: "t3-service-launcher-migrate-" });
       const statePath = path.join(root, "runtime", "service-state.json");
       const activeVersion = "0.0.43-nightly.20260919.1962+build.1";
-      const versionDir = path.join(root, "runtime", "versions", activeVersion);
+      const versionDir = path.join(root, "runtime", "rutico", "versions", activeVersion);
       yield* writeFakeRuntime(
         fs,
         path,
@@ -683,7 +685,7 @@ process.exit(0);
       const path = yield* Path.Path;
       const parent = yield* fs.makeTempDirectoryScoped({ prefix: "t3-service-launcher-space-" });
       const root = path.join(parent, "T3 data ");
-      const versionDir = path.join(root, "runtime", "versions", "1.0.0");
+      const versionDir = path.join(root, "runtime", "rutico", "versions", "1.0.0");
       yield* writeFakeRuntime(
         fs,
         path,
@@ -716,7 +718,7 @@ process.exit(0);
       yield* writeFakeRuntime(
         fs,
         path,
-        path.join(root, "runtime", "versions", "1.0.0"),
+        path.join(root, "runtime", "rutico", "versions", "1.0.0"),
         "process.exit(0);\n",
       );
       const legacy = { protocol: 2, activeVersion: "1.0.0" };
@@ -780,7 +782,7 @@ process.exit(0);
       yield* writeFakeRuntime(
         fs,
         path,
-        path.join(root, "runtime", "versions", "1.0.0"),
+        path.join(root, "runtime", "rutico", "versions", "1.0.0"),
         "setInterval(() => {}, 1_000);\n",
       );
       yield* Effect.promise(() =>
@@ -824,7 +826,7 @@ process.exit(0);
         yield* writeFakeRuntime(
           fs,
           path,
-          path.join(root, "runtime", "versions", "1.1.0"),
+          path.join(root, "runtime", "rutico", "versions", "1.1.0"),
           "setInterval(() => {}, 1_000);\n",
         );
         yield* Effect.promise(() =>
@@ -882,7 +884,7 @@ process.exit(0);
         yield* writeFakeRuntime(
           fs,
           path,
-          path.join(selectedRoot, "runtime", "versions", "1.0.0"),
+          path.join(selectedRoot, "runtime", "rutico", "versions", "1.0.0"),
           "setInterval(() => {}, 1_000);\n",
         );
         const selectedStatePath = path.join(selectedRoot, "runtime", "service-state.json");
@@ -920,7 +922,7 @@ process.exit(0);
       yield* writeFakeRuntime(
         fs,
         path,
-        path.join(root, "runtime", "versions", "1.1.0"),
+        path.join(root, "runtime", "rutico", "versions", "1.1.0"),
         "setInterval(() => {}, 1_000);\n",
       );
       yield* Effect.promise(() =>
@@ -965,7 +967,7 @@ process.exit(0);
       yield* writeFakeRuntime(
         fs,
         path,
-        path.join(root, "runtime", "versions", "1.0.0"),
+        path.join(root, "runtime", "rutico", "versions", "1.0.0"),
         [
           `const db = new (require("node:sqlite").DatabaseSync)(${JSON.stringify(ownerPath)});`,
           `try { db.exec("PRAGMA busy_timeout = 0; BEGIN EXCLUSIVE;"); }`,
@@ -1042,7 +1044,7 @@ process.exit(0);
           yield* writeFakeRuntime(
             fs,
             path,
-            path.join(root, "runtime", "versions", version),
+            path.join(root, "runtime", "rutico", "versions", version),
             [
               `const db = new (require("node:sqlite").DatabaseSync)(${JSON.stringify(ownerPath)});`,
               `try { db.exec("PRAGMA busy_timeout = 0; BEGIN EXCLUSIVE;"); }`,
@@ -1152,7 +1154,7 @@ setInterval(() => {}, 1_000);
         yield* writeFakeRuntime(
           fs,
           path,
-          path.join(root, "runtime", "versions", version),
+          path.join(root, "runtime", "rutico", "versions", version),
           childSource,
         );
       }
@@ -1225,7 +1227,7 @@ setInterval(() => {}, 1_000);
       yield* writeFakeRuntime(
         fs,
         path,
-        path.join(root, "runtime", "versions", "1.1.0"),
+        path.join(root, "runtime", "rutico", "versions", "1.1.0"),
         `process.exit(${SERVER_EXIT_CODE_STATE_DIR_OWNED});\n`,
       );
       yield* Effect.promise(() =>
@@ -1355,7 +1357,7 @@ if (context.update?.status === "pending") {
         yield* writeFakeRuntime(
           fs,
           path,
-          path.join(root, "runtime", "versions", version),
+          path.join(root, "runtime", "rutico", "versions", version),
           childSource,
         );
       }
@@ -1413,7 +1415,7 @@ if (context.update?.status === "pending") {
       render: (plan: Parameters<typeof renderBootServicePlist>[0]) =>
         renderBootServicePlist(plan, {
           homeDir: "/Users/test & <user>",
-          environmentPath: "/usr/bin:/custom/runtime/versions/1.0.0",
+          environmentPath: "/usr/bin:/custom/runtime/rutico/versions/1.0.0",
         }),
     },
     {
@@ -1498,7 +1500,7 @@ if (context.update?.status === "pending") {
         yield* writeFakeRuntime(
           fs,
           path,
-          path.join(root, "runtime", "versions", version),
+          path.join(root, "runtime", "rutico", "versions", version),
           childSource,
         );
       }
@@ -1594,7 +1596,7 @@ if (context.update?.status === "pending") {
           yield* writeFakeRuntime(
             fs,
             path,
-            path.join(root, "runtime", "versions", version),
+            path.join(root, "runtime", "rutico", "versions", version),
             childSource,
           );
         }
@@ -1692,7 +1694,7 @@ if (context.update?.status === "pending") {
           yield* writeFakeRuntime(
             fs,
             path,
-            path.join(root, "runtime", "versions", version),
+            path.join(root, "runtime", "rutico", "versions", version),
             childSource,
           );
         }
@@ -1785,7 +1787,7 @@ if (context.update?.status === "pending") {
         yield* writeFakeRuntime(
           fs,
           path,
-          path.join(root, "runtime", "versions", version),
+          path.join(root, "runtime", "rutico", "versions", version),
           childSource,
         );
       }
@@ -1875,7 +1877,7 @@ process.send({ type: "request-update", targetVersion: "1.1.0", dbPath: paths.dat
         yield* writeFakeRuntime(
           fs,
           path,
-          path.join(root, "runtime", "versions", version),
+          path.join(root, "runtime", "rutico", "versions", version),
           childSource,
         );
       }
@@ -1958,7 +1960,7 @@ process.send({ type: "request-update", targetVersion: "1.1.0", dbPath: paths.dat
         yield* writeFakeRuntime(
           fs,
           path,
-          path.join(root, "runtime", "versions", version),
+          path.join(root, "runtime", "rutico", "versions", version),
           childSource,
         );
       }
@@ -2018,7 +2020,7 @@ setInterval(() => {}, 1_000);
         yield* writeFakeRuntime(
           fs,
           path,
-          path.join(root, "runtime", "versions", version),
+          path.join(root, "runtime", "rutico", "versions", version),
           childSource,
         );
       }

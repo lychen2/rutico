@@ -30,7 +30,10 @@ import {
   discoverPiCommandsForCwd,
   enrichPiSnapshot,
 } from "./status.ts";
-import { makeManagedServerProvider } from "@t3tools/provider-core/server/managedProvider";
+import {
+  BackgroundProviderCheck,
+  makeManagedServerProvider,
+} from "@t3tools/provider-core/server/managedProvider";
 import {
   defaultProviderContinuationIdentity,
   type ProviderDriver,
@@ -111,14 +114,16 @@ export const OmpDriver: ProviderDriver<PiSettings, PiDriverEnv, FileSystem.FileS
           haveSettingsChanged: haveProviderSnapshotSettingsChanged,
           initialSnapshot: (current) =>
             buildInitialOmpSnapshot(current.provider).pipe(Effect.map(stampIdentity)),
-          checkProvider: fs
-            .makeDirectory(probeCwd, { recursive: true })
-            .pipe(
-              Effect.ignore,
-              Effect.andThen(checkOmpStatus(settings, environment, probeCwd)),
+          checkProvider: Effect.gen(function* () {
+            const background = yield* BackgroundProviderCheck;
+            yield* fs.makeDirectory(probeCwd, { recursive: true }).pipe(Effect.ignore);
+            return yield* checkOmpStatus(settings, environment, probeCwd, {
+              disableExtensions: background,
+            }).pipe(
               Effect.map(stampIdentity),
               Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner),
-            ),
+            );
+          }),
         });
         const textGeneration = yield* makePiTextGeneration(
           settings,

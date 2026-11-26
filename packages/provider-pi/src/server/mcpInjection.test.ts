@@ -97,6 +97,21 @@ describe("pi T3 MCP injection", () => {
     );
   });
 
+  it("enables OMP tool intents without overriding an explicit tracing setting", () => {
+    const options = { launchArgs: [], mcpSession: undefined, extensionPath: undefined };
+    const omp = buildPiRpcLaunch({ ...options, omp: true, environment: {} });
+    assert.equal(omp.env.PI_INTENT_TRACING, "1");
+    assert.isString(omp.env.PI_INTENT_DESC);
+    const disabled = buildPiRpcLaunch({
+      ...options,
+      omp: true,
+      environment: { PI_INTENT_TRACING: "0" },
+    });
+    assert.equal(disabled.env.PI_INTENT_TRACING, "0");
+    const pi = buildPiRpcLaunch({ ...options, environment: {} });
+    assert.isUndefined(pi.env.PI_INTENT_TRACING);
+  });
+
   it("forces tools and user extensions off for unattended text generation", () => {
     const launch = buildPiRpcLaunch({
       launchArgs: [

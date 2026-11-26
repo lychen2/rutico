@@ -535,4 +535,49 @@ describe("PiProvider", () => {
       assert.isTrue(spawnedCommands.every((cmd) => cmd.endsWith("omp")));
     }).pipe(Effect.provide(NodeServices.layer)),
   );
+
+  it.effect(
+    "skips user extensions during background OMP health checks while keeping them for explicit discovery",
+    () =>
+      Effect.gen(function* () {
+        const spawnedArgs: Array<ReadonlyArray<string>> = [];
+        const spawner = ChildProcessSpawner.make((command) => {
+          const args = ChildProcess.isStandardCommand(command)
+            ? command.args.filter((arg): arg is string => typeof arg === "string")
+            : [];
+          spawnedArgs.push(args);
+          return Effect.succeed(
+            args.includes("--version")
+              ? processHandle({ stdout: "omp 19.2.1\n" })
+              : processHandle({ stderr: "RPC unavailable", exitCode: 1 }),
+          );
+        });
+        const ompSettings = {
+          enabled: true,
+          binaryPath: "",
+          launchArgs: "--extension /tmp/user-ext.ts -e /tmp/other-ext.ts --provider anthropic",
+          customModels: [],
+        };
+
+        yield* checkOmpStatus(ompSettings, {}, "/tmp/omp-bg", { disableExtensions: true }).pipe(
+          Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner),
+        );
+        const bgRpcArgs = spawnedArgs.find((args) => args.includes("--mode"));
+        assert.isDefined(bgRpcArgs);
+        assert.include(bgRpcArgs!, "--no-extensions");
+        assert.notInclude(bgRpcArgs!, "--extension");
+        assert.notInclude(bgRpcArgs!, "-e");
+        assert.notInclude(bgRpcArgs!, "/tmp/user-ext.ts");
+
+        spawnedArgs.length = 0;
+        yield* checkOmpStatus(ompSettings, {}, "/tmp/omp-explicit", {
+          disableExtensions: false,
+        }).pipe(Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner));
+        const explicitRpcArgs = spawnedArgs.find((args) => args.includes("--mode"));
+        assert.isDefined(explicitRpcArgs);
+        assert.notInclude(explicitRpcArgs!, "--no-extensions");
+        assert.include(explicitRpcArgs!, "--extension");
+        assert.include(explicitRpcArgs!, "/tmp/user-ext.ts");
+      }).pipe(Effect.provide(NodeServices.layer)),
+  );
 });

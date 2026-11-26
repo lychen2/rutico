@@ -559,9 +559,30 @@ export const makeAntigravityInstallation = Effect.fn("AntigravityInstallation.ma
     },
   );
 
+  const probeExternalVersion = Effect.fn("AntigravityInstallation.probeExternalVersion")(function* (
+    candidate: string,
+    processEnvironment = environment,
+  ) {
+    const command = ChildProcess.make(candidate, ["--version"], {
+      env: processEnvironment,
+      extendEnv: false,
+      stdout: "pipe",
+      stderr: "pipe",
+      shell: platform === "win32" && /\.(?:cmd|bat)$/iu.test(candidate),
+    });
+    const output = yield* spawner.string(command).pipe(
+      Effect.timeoutOption("3 seconds"),
+      Effect.catchCause(() => Effect.succeed(Option.none<string>())),
+    );
+    if (Option.isNone(output)) return null;
+    const match = /\b(\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?)\b/u.exec(output.value);
+    return match?.[1] ?? null;
+  });
+
   const fromExternal = Effect.fn("AntigravityInstallation.fromExternal")(function* (
     candidate: string,
     source: "override" | "path",
+    processEnvironment = environment,
   ) {
     if (!(yield* executableFile(candidate))) return null;
     const executablePath = yield* fs.realPath(candidate);
@@ -572,10 +593,11 @@ export const makeAntigravityInstallation = Effect.fn("AntigravityInstallation.ma
     }
     // Keep launcher symlinks intact: version-manager shims dispatch by their invoked name.
     if (!isAntigravityCli(candidate, executablePath)) return null;
+    const version = yield* probeExternalVersion(candidate, processEnvironment);
     return {
       executablePath: candidate,
       source,
-      version: null,
+      version,
       managedVersionDirectory: null,
     } satisfies AntigravityExecutable;
   });
@@ -594,6 +616,7 @@ export const makeAntigravityInstallation = Effect.fn("AntigravityInstallation.ma
   const findVerifiedExternal = Effect.fn("AntigravityInstallation.findVerifiedExternal")(function* (
     candidates: ReadonlyArray<string>,
     source: "override" | "path",
+    processEnvironment = environment,
   ) {
     for (const candidate of candidates) {
       const info = yield* fs.stat(candidate).pipe(Effect.option);
@@ -613,6 +636,13 @@ export const makeAntigravityInstallation = Effect.fn("AntigravityInstallation.ma
         cached.size === size &&
         cached.mtimeMs === mtimeMs
       ) {
+        if (
+          source === "path" &&
+          cached.executable.version !== null &&
+          (yield* isWithdrawn(cached.executable.version))
+        ) {
+          continue;
+        }
         return cached.executable;
       }
       const resolved = yield* fs.realPath(candidate).pipe(Effect.option);
@@ -620,14 +650,18 @@ export const makeAntigravityInstallation = Effect.fn("AntigravityInstallation.ma
       const executablePath = resolved.value;
       if (yield* isManagedVersionCandidate(executablePath)) return null;
       if (isAntigravityCli(candidate, executablePath)) {
+        const version = yield* probeExternalVersion(candidate, processEnvironment);
         const executable = {
           executablePath: candidate,
           source,
-          version: null,
+          version,
           managedVersionDirectory: null,
         } satisfies AntigravityExecutable;
         if (verifiedExternalCache.size >= 32) verifiedExternalCache.clear();
         verifiedExternalCache.set(candidate, { source, size, mtimeMs, executable });
+        if (source === "path" && version !== null && (yield* isWithdrawn(version))) {
+          continue;
+        }
         return executable;
       }
     }
@@ -683,17 +717,31 @@ export const makeAntigravityInstallation = Effect.fn("AntigravityInstallation.ma
     const override = expandHomePath(binaryPath?.trim() ?? "", yield* HostProcess.HomeDirectory);
     if (override) {
       for (const candidate of yield* commandCandidates(override, processEnvironment)) {
-        const selected = yield* fromExternal(candidate, "override");
-        if (selected) return selected;
+        const selected = yield* fromExternal(candidate, "override", processEnvironment);
+        if (selected) {
+          if (selected.version !== null && (yield* isWithdrawn(selected.version))) {
+            return yield* installationError(
+              "resolve",
+              `Antigravity ${selected.version} no longer works with this T3 Code release. Update the Antigravity executable at ${selected.executablePath}.`,
+            );
+          }
+          return selected;
+        }
       }
       return yield* installationError(
         "resolve",
         "The custom Antigravity executable is missing or not executable, or it is not the agy CLI.",
       );
     }
+    let incompatiblePath: AntigravityExecutable | null = null;
     for (const candidate of yield* defaultPathCandidates(processEnvironment)) {
-      const selected = yield* fromExternal(candidate, "path");
-      if (selected) return selected;
+      const selected = yield* fromExternal(candidate, "path", processEnvironment);
+      if (!selected) continue;
+      if (selected.version !== null && (yield* isWithdrawn(selected.version))) {
+        incompatiblePath ??= selected;
+        continue;
+      }
+      return selected;
     }
     if (yield* fs.exists(activePath)) {
       yield* ensureRealManagedRoot("resolve");
@@ -705,6 +753,12 @@ export const makeAntigravityInstallation = Effect.fn("AntigravityInstallation.ma
           `Antigravity ${installed.version} no longer works with this T3 Code release. Update it in Antigravity setup.`,
         );
       return installed;
+    }
+    if (incompatiblePath !== null) {
+      return yield* installationError(
+        "resolve",
+        `Antigravity ${incompatiblePath.version} at ${incompatiblePath.executablePath} no longer works with this T3 Code release. Update it or install the managed runtime in Antigravity setup.`,
+      );
     }
     return yield* installationError(
       "resolve",
@@ -723,12 +777,22 @@ export const makeAntigravityInstallation = Effect.fn("AntigravityInstallation.ma
         const external = yield* findVerifiedExternal(
           yield* commandCandidates(override, processEnvironment),
           "override",
+          processEnvironment,
         );
-        if (external !== null) return external;
+        if (external !== null) {
+          if (external.version !== null && (yield* isWithdrawn(external.version))) {
+            return yield* installationError(
+              "resolve",
+              `Antigravity ${external.version} no longer works with this T3 Code release. Update the Antigravity executable at ${external.executablePath}.`,
+            );
+          }
+          return external;
+        }
       } else {
         const external = yield* findVerifiedExternal(
           yield* defaultPathCandidates(processEnvironment),
           "path",
+          processEnvironment,
         );
         if (external !== null) return external;
       }
@@ -741,6 +805,7 @@ export const makeAntigravityInstallation = Effect.fn("AntigravityInstallation.ma
               const external = yield* findVerifiedExternal(
                 yield* defaultPathCandidates(processEnvironment),
                 "path",
+                processEnvironment,
               );
               if (external !== null) return external;
             }

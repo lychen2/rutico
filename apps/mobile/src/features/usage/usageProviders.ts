@@ -1,4 +1,5 @@
 import type { UsageProviderKind } from "@t3tools/contracts";
+import { resolvePiProviderLabel } from "@t3tools/shared/usageFormat";
 import { useAppearancePreferences } from "../settings/appearance/AppearancePreferencesProvider";
 import { providerColors } from "./providerColors";
 
@@ -15,6 +16,7 @@ export const PROVIDER_ORDER: readonly UsageProviderKind[] = [
 
 export function usageProviderKind(driver: string): UsageProviderKind | null {
   if (driver === "claudeAgent") return "claude";
+  if (driver === "omp") return "pi";
   return PROVIDER_ORDER.find((kind) => kind === driver) ?? null;
 }
 
@@ -25,9 +27,19 @@ export const PROVIDER_LABEL: Record<UsageProviderKind, string> = {
   cursor: "Cursor",
   opencode: "OpenCode",
   antigravity: "Antigravity",
-  pi: "OMP",
+  pi: "Pi / OMP",
   muse: "Muse Code",
 };
+
+export function usageProviderLabel(
+  provider: UsageProviderKind,
+  context?: Parameters<typeof resolvePiProviderLabel>[0],
+): string {
+  if (provider === "pi" && context !== undefined) {
+    return resolvePiProviderLabel(context);
+  }
+  return PROVIDER_LABEL[provider];
+}
 
 export function useProviderColors(): Record<UsageProviderKind, string> {
   return providerColors(useAppearancePreferences().themeAppearance);

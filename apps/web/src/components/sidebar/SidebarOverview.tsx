@@ -740,7 +740,7 @@ export function SidebarOverview({
   const attachAttention = useOverviewListMotion(attentionLayoutKey, true);
   const attachToday = useOverviewListMotion(todayLayoutKey);
   const attachSections = useOverviewListMotion(
-    `${runningLayoutKey}:${attentionLayoutKey}:${todayLayoutKey}:${incomplete}:${hiddenActive}:${hasMoreAttention}:${todayTasks.length > 0}`,
+    `${runningLayoutKey}:${attentionLayoutKey}:${todayLayoutKey}:${incomplete}:${hiddenActive}:${hasMoreAttention}:${todayTasksCount > 0}`,
     true,
   );
   const headingClass =

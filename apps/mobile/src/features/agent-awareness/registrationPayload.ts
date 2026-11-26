@@ -53,6 +53,7 @@ export function makeRelayDeviceRegistrationRequest(
       notifyOnInput: true,
       notifyOnCompletion: true,
       notifyOnFailure: true,
+      ...(input.platform === "android" ? { recipientUserHash: true } : {}),
     },
   };
 }

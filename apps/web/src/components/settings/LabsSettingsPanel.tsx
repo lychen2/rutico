@@ -402,6 +402,16 @@ const AGENT_FEEDBACK_MODE_LABELS: Record<AgentFeedbackMode, string> = {
   "on-request": msg("When I ask"),
   auto: msg("Automatic"),
 };
+const AGENT_FEEDBACK_LOCAL_MODE_DESCRIPTIONS: Record<AgentFeedbackMode, string> = {
+  off: msg("Agents save no local feedback reports."),
+  "on-request": msg(
+    "When you ask, agents show you a short report and save it strictly on this environment if you approve.",
+  ),
+  auto: msg(
+    "Agents also save local reports on this environment when they hit problems, such as a tool that failed.",
+  ),
+};
+
 const AGENT_FEEDBACK_MODE_DESCRIPTIONS: Record<AgentFeedbackMode, string> = {
   off: msg("Agents send no feedback to the T3 team."),
   "on-request": msg(
@@ -429,6 +439,13 @@ function AgentFeedbackRow() {
     )
   )
     return null;
+  const allLocalOnly = connectedEnvironments.every(
+    (environment) =>
+      environment.serverConfig?.environment.capabilities.agentFeedbackLocalOnly === true,
+  );
+  const descriptions = allLocalOnly
+    ? AGENT_FEEDBACK_LOCAL_MODE_DESCRIPTIONS
+    : AGENT_FEEDBACK_MODE_DESCRIPTIONS;
   return (
     <SettingsRow
       serverScoped
@@ -437,7 +454,7 @@ function AgentFeedbackRow() {
       description={
         mixed
           ? gt("The selected machines use different agent feedback modes.")
-          : m(AGENT_FEEDBACK_MODE_DESCRIPTIONS[settings.agentFeedback.mode])
+          : m(descriptions[settings.agentFeedback.mode])
       }
       control={
         <Select

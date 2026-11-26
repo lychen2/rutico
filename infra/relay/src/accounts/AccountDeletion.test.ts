@@ -9,7 +9,11 @@ import * as Layer from "effect/Layer";
 import * as Redacted from "effect/Redacted";
 import * as TestClock from "effect/testing/TestClock";
 import * as Tracer from "effect/Tracer";
+import { RelayApi } from "@t3tools/contracts/relay";
+import * as HttpClient from "effect/http/HttpClient";
+import * as HttpClientResponse from "effect/http/HttpClientResponse";
 import * as HttpServerRequest from "effect/http/HttpServerRequest";
+import * as HttpApiClient from "effect/http-api/HttpApiClient";
 
 import * as RelayConfiguration from "../Config.ts";
 import * as RelayDb from "../db.ts";
@@ -289,4 +293,35 @@ describe("AccountDeletion", () => {
       ]);
     }).pipe(Effect.provide(layerAccountDeletionTest(fakeDb, calls)));
   });
+
+  it.effect("decodes both 200 (enqueued) and 204 (ignored) via the typed RelayApi client", () =>
+    Effect.gen(function* () {
+      let nextStatus = 200;
+      const client = yield* HttpApiClient.make(RelayApi, { baseUrl: "https://relay.test" }).pipe(
+        Effect.provideService(
+          HttpClient.HttpClient,
+          HttpClient.make((request) =>
+            Effect.succeed(
+              HttpClientResponse.fromWeb(request, new Response(null, { status: nextStatus })),
+            ),
+          ),
+        ),
+      );
+      const headers = {
+        "svix-id": "msg_test",
+        "svix-timestamp": String(SIGNED_AT_SECONDS),
+        "svix-signature": "v1,dummy",
+      };
+      nextStatus = 200;
+      yield* client.accountWebhooks.clerk({
+        headers,
+        payload: JSON.stringify({ type: "user.deleted", data: { id: "user_1" } }),
+      });
+      nextStatus = 204;
+      yield* client.accountWebhooks.clerk({
+        headers,
+        payload: JSON.stringify({ type: "session.ended", data: { id: "sess_1" } }),
+      });
+    }),
+  );
 });

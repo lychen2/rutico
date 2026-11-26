@@ -32,6 +32,7 @@ import { WorkLogRow } from "./WorkLog";
 
 const LOCAL_TITLE = msg("Local feedback report");
 const REMOTE_TITLE = msg("Feedback for the T3 team");
+const HISTORY_TITLE = msg("Feedback report");
 
 export function FeedbackRequestCard(props: {
   readonly environmentId: EnvironmentId;
@@ -42,8 +43,7 @@ export function FeedbackRequestCard(props: {
   const { item } = props;
   const serverConfig = useAtomValue(serverEnvironment.configValueAtom(props.environmentId));
   const localOnly = serverConfig?.environment.capabilities.agentFeedbackLocalOnly === true;
-  const title = localOnly ? LOCAL_TITLE : REMOTE_TITLE;
-  const display = feedbackRequestDisplay(item, props.visibility, m, { localOnly });
+  const display = feedbackRequestDisplay(item, props.visibility, m);
   if (display.kind !== "pending") {
     const Icon =
       display.kind === "pending-elsewhere"
@@ -59,7 +59,7 @@ export function FeedbackRequestCard(props: {
               icon={<Icon className="size-3.5 text-icon-muted" aria-hidden />}
               label={
                 <>
-                  {m(title)} · {display.label}
+                  {m(HISTORY_TITLE)} · {display.label}
                 </>
               }
               trailing={<ChevronDownIcon className="size-3.5 text-icon-muted" aria-hidden />}
@@ -110,6 +110,7 @@ function PendingFeedbackRequest(props: {
         turnItemId: props.item.id,
         answer: reply,
         includeConversation,
+        expectedLocalOnly: props.localOnly,
       },
     }).finally(() => {
       inFlight.current = false;

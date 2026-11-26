@@ -1,4 +1,5 @@
 import { uiText } from "~/i18n";
+import { resolvePiProviderLabel } from "@t3tools/shared/usageFormat";
 import type { UsageProviderKind } from "@t3tools/contracts";
 
 import { ProviderDriverKind } from "@t3tools/contracts";
@@ -43,7 +44,7 @@ export const PROVIDER_PRESENTATION = {
     driverKind: ProviderDriverKind.make("antigravity"),
   },
   pi: {
-    label: "OMP",
+    label: "Pi / OMP",
     color: "var(--usage-pi)",
     driverKind: ProviderDriverKind.make("pi"),
   },
@@ -91,8 +92,21 @@ export const USAGE_SERIES_ORDER: readonly UsageProviderKind[] = [
   "pi",
   "cursor",
 ];
-export function usageSeriesLabel(provider: UsageProviderKind) {
-  return provider === "cursor" ? uiText("Other providers") : PROVIDER_PRESENTATION[provider].label;
+function usageProviderLabel(
+  provider: UsageProviderKind,
+  context?: Parameters<typeof resolvePiProviderLabel>[0],
+): string {
+  if (provider === "pi" && context !== undefined) {
+    return resolvePiProviderLabel(context);
+  }
+  return PROVIDER_PRESENTATION[provider].label;
+}
+
+export function usageSeriesLabel(
+  provider: UsageProviderKind,
+  context?: Parameters<typeof resolvePiProviderLabel>[0],
+) {
+  return provider === "cursor" ? uiText("Other providers") : usageProviderLabel(provider, context);
 }
 
 export function rankProvidersByMetric(

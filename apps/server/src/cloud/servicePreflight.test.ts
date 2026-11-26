@@ -98,6 +98,27 @@ it.layer(NodeServices.layer)("service preflight database", (it) => {
           .status,
       ).toBe("ready");
 
+      // Official upstream 119-migration ledger is recognized and upgraded cleanly at startup.
+      const upstream = path.join(path.dirname(databasePath), "upstream.sqlite");
+      const upstreamDb = new NodeSqlite.DatabaseSync(upstream);
+      upstreamDb.exec(
+        "CREATE TABLE effect_sql_migrations (migration_id INTEGER PRIMARY KEY, name TEXT)",
+      );
+      const insertUpstream = upstreamDb.prepare("INSERT INTO effect_sql_migrations VALUES (?, ?)");
+      for (const [id, name] of migrationManifest.filter(([id]) => id <= 105)) {
+        insertUpstream.run(id, name);
+      }
+      for (const [id, name] of migrationManifest.filter(([id]) => id >= 107)) {
+        insertUpstream.run(id - 1, name);
+      }
+      upstreamDb.close();
+      expect(
+        runServicePreflight({
+          databasePath: upstream,
+          launcherProtocol: SERVICE_LAUNCHER_PROTOCOL,
+        }).status,
+      ).toBe("ready");
+
       const newerId = Math.max(...migrationManifest.map(([id]) => id)) + 1;
       insert.run(newerId, "FromNightly");
       db.close();

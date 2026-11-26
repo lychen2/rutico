@@ -251,6 +251,13 @@ function EnvironmentApprovalWatcher(props: {
     access.data?.type === "snapshot" ? access.data.payload.pairingLinks : undefined;
 
   const offerPrompts = useEffectEvent((links: ReadonlyArray<AuthPairingLink>) => {
+    const activeIds = new Set(links.map((link) => link.id));
+    connectDeviceDialogQueue.drop(
+      (item) =>
+        item.kind === "approval" &&
+        item.environmentId === props.environmentId &&
+        !activeIds.has(item.rawPairingLinkId),
+    );
     const knownApprovalIds = new Set<string>();
     for (const key of connectDeviceDialogQueue.known) {
       if (key.startsWith(APPROVAL_QUEUE_KEY_PREFIX)) {

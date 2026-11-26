@@ -372,22 +372,78 @@ const assertV2MigrationsCanRun = Effect.fn("assertV2MigrationsCanRun")(function*
 
 const latestMigrationId = Math.max(...migrationEntries.map(([id]) => id));
 
-// Mirrors the Migrator, which runs only ids above the highest recorded, plus the V2-preview reconciliation.
+// Mirrors the Migrator, which runs only ids above the highest recorded, plus the V2-preview and upstream-shift reconciliations.
 export const hasPendingMigrations = Effect.fn("hasPendingMigrations")(function* () {
   const sql = yield* SqlClient.SqlClient;
   const tables = yield* sql`
     SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'effect_sql_migrations'
   `;
   if (tables.length === 0) return true;
-  const rows = yield* sql<{ readonly latestId: number | null; readonly previewRows: number }>`
+  const rows = yield* sql<{
+    readonly latestId: number | null;
+    readonly previewRows: number;
+    readonly upstreamShiftedRows: number;
+  }>`
     SELECT
       MAX(migration_id) AS latestId,
-      SUM(name = 'OrchestrationV2' AND migration_id IN (53, 54)) AS previewRows
+      SUM(name = 'OrchestrationV2' AND migration_id IN (53, 54)) AS previewRows,
+      SUM(migration_id = ${UPSTREAM_SHIFT_FIRST_ID} AND name = 'WorktreePathKeyIndex') AS upstreamShiftedRows
     FROM effect_sql_migrations
   `;
   const row = rows[0];
-  return (row?.latestId ?? 0) < latestMigrationId || (row?.previewRows ?? 0) > 0;
+  return (
+    (row?.latestId ?? 0) < latestMigrationId ||
+    (row?.previewRows ?? 0) > 0 ||
+    (row?.upstreamShiftedRows ?? 0) > 0
+  );
 });
+
+const reconcileUpstreamShiftedMigrations = Effect.fn("reconcileUpstreamShiftedMigrations")(
+  function* (toMigrationInclusive?: number) {
+    const sql = yield* SqlClient.SqlClient;
+    return yield* sql.withTransaction(
+      Effect.gen(function* () {
+        const ledger = yield* sql`
+          SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'effect_sql_migrations'
+        `;
+        if (ledger.length === 0) return undefined;
+        const recorded = yield* sql<{
+          readonly id: number;
+          readonly name: string;
+        }>`SELECT migration_id AS id, name FROM effect_sql_migrations ORDER BY migration_id`;
+        if (
+          !isRecognizedUpstreamShiftedLedger(recorded) ||
+          (toMigrationInclusive ?? latestMigrationId) < WAIT_WAKE_MIGRATION_ID
+        ) {
+          return undefined;
+        }
+        const latestRecordedId = Math.max(0, ...recorded.map((row) => row.id));
+        // Install Rutico's 106_ThreadWaitWakeObligations while preserving all upstream 106..latest schema & data.
+        yield* Migration0106;
+        // Shift upstream 106..latestRecordedId to 107..latestRecordedId+1 via a positive temporary offset
+        // to avoid primary-key collisions and keep existing created_at timestamps intact.
+        yield* sql`
+          UPDATE effect_sql_migrations
+          SET migration_id = migration_id + ${UPSTREAM_SHIFT_TEMP_OFFSET + 1}
+          WHERE migration_id >= ${UPSTREAM_SHIFT_FIRST_ID}
+        `;
+        yield* sql`
+          UPDATE effect_sql_migrations
+          SET migration_id = migration_id - ${UPSTREAM_SHIFT_TEMP_OFFSET}
+          WHERE migration_id > ${UPSTREAM_SHIFT_TEMP_OFFSET}
+        `;
+        yield* sql`
+          INSERT INTO effect_sql_migrations (migration_id, name)
+          VALUES (${WAIT_WAKE_MIGRATION_ID}, ${LEGACY_WAIT_WAKE_MIGRATION_NAME})
+        `;
+        return {
+          executed: [[WAIT_WAKE_MIGRATION_ID, LEGACY_WAIT_WAKE_MIGRATION_NAME] as const],
+          latestRecordedId: latestRecordedId + 1,
+        };
+      }),
+    );
+  },
+);
 
 const run = Migrator.make({});
 
@@ -421,7 +477,13 @@ export const runMigrations = Effect.fn("runMigrations")(function* ({
           readonly name: string;
         }>`SELECT migration_id AS id, name FROM effect_sql_migrations ORDER BY migration_id DESC LIMIT 1`;
   let latestRecordedId = latest?.id ?? 0;
-  if (
+  const reconciledUpstream =
+    includesV2 && hasPending
+      ? yield* reconcileUpstreamShiftedMigrations(toMigrationInclusive)
+      : undefined;
+  if (reconciledUpstream !== undefined) {
+    latestRecordedId = reconciledUpstream.latestRecordedId;
+  } else if (
     latest?.id === LEGACY_WAIT_WAKE_MIGRATION_ID &&
     latest.name === LEGACY_WAIT_WAKE_MIGRATION_NAME &&
     (toMigrationInclusive ?? latestMigrationId) >= LEGACY_WAIT_WAKE_MIGRATION_ID
@@ -441,7 +503,10 @@ export const runMigrations = Effect.fn("runMigrations")(function* ({
   );
   // One transaction per migration: an index build on a large database can take minutes, and a
   // restart then resumes after the last finished migration instead of rolling all of them back.
-  const executedMigrations: Array<readonly [id: number, name: string]> = [...previewMigrations];
+  const executedMigrations: Array<readonly [id: number, name: string]> = [
+    ...previewMigrations,
+    ...(reconciledUpstream?.executed ?? []),
+  ];
   yield* Effect.gen(function* () {
     for (const [index, [id, name]] of pending.entries()) {
       if (Option.isSome(progress)) {

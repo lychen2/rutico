@@ -40,11 +40,7 @@ import { useRemoteConnections } from "../../state/use-remote-environment-registr
 import { SymbolView } from "../../components/ui/AppSymbol";
 import { hasCloudPublicConfig } from "../cloud/publicConfig";
 import { CloudEnvironmentRows } from "./CloudEnvironmentRows";
-import {
-  autoConnectReport,
-  devAutoConnectAttemptAtom,
-  pairingLinksAllowed,
-} from "./devAutoConnect";
+import { autoConnectReport, devAutoConnectAttemptAtom } from "./devAutoConnect";
 import { linkedEnvironmentPrefillAtom } from "./linkedEnvironmentPrefill";
 import { splitEnvironmentSections } from "./environmentSections";
 import { leaveSettingsPage } from "../settings/settings-navigation";
@@ -64,8 +60,9 @@ export function ConnectionsNewRouteScreen({
   route,
 }: StaticScreenProps<ConnectionsNewRouteParams | undefined>) {
   const params = route.params ?? {};
-  // Store builds ignore the prefill so a link can never supply an attacker-chosen host and token.
-  const routePairingUrl = pairingLinksAllowed() ? (params.pairingUrl?.trim() ?? "") : "";
+  // System pairing links prefill the confirmation form across all channels so the user inspects
+  // the host and code before tapping Connect; production builds still block auto-connect.
+  const routePairingUrl = params.pairingUrl?.trim() ?? "";
   const known = useAtomValue(linkedEnvironmentPrefillAtom);
   const linked = known !== null && known.environmentId === params.linked ? known : null;
   // A new prefill link replaces whatever the form held.

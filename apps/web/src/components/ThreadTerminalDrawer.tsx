@@ -1356,7 +1356,8 @@ function TerminalActionButton({
   disabled,
   variant = "ghost",
   size = "icon-micro",
-}: TerminalActionButtonProps) {
+  className,
+}: TerminalActionButtonProps & { readonly className?: string }) {
   return (
     <Tooltip>
       <TooltipTrigger
@@ -1365,6 +1366,11 @@ function TerminalActionButton({
             type="button"
             variant={variant}
             size={size}
+            // Give each toolbar action real touch dimensions so adjacent coarse hitboxes never overlap.
+            className={cn(
+              "pointer-coarse:size-11 pointer-coarse:after:min-h-0 pointer-coarse:after:min-w-0 any-pointer-coarse:size-11 any-pointer-coarse:after:min-h-0 any-pointer-coarse:after:min-w-0",
+              className,
+            )}
             aria-label={label}
             aria-disabled={disabled || undefined}
             onClick={disabled ? undefined : onClick}
@@ -1976,7 +1982,7 @@ export default function ThreadTerminalDrawer({
 
       {!hasTerminalSidebar && (
         <div className="pointer-events-none absolute right-2 top-2 z-20">
-          <div className="surface-glass pointer-events-auto inline-flex items-center gap-0.5 rounded-lg border border-border/70 p-0.5">
+          <div className="surface-glass pointer-events-auto inline-flex items-center gap-0.5 rounded-lg border border-border/70 p-0.5 pointer-coarse:gap-1 any-pointer-coarse:gap-1">
             <TerminalActionButton
               disabled={!canOperateTerminal || hasReachedSplitLimit}
               onClick={onSplitTerminalAction}
@@ -2039,11 +2045,12 @@ export default function ThreadTerminalDrawer({
           </div>
 
           {hasTerminalSidebar && (
-            <aside className="flex w-36 min-w-36 flex-col border border-border/70 bg-muted/10">
-              <div className="flex h-6 items-center justify-end border-b border-border/70 px-0.5">
-                {/* Sits above the taller touch resize handle so its buttons keep their taps. */}
-                <div className="inline-flex items-center gap-0.5 any-pointer-coarse:relative any-pointer-coarse:z-30">
+            <aside className="flex w-36 min-w-36 flex-col border border-border/70 bg-muted/10 pointer-coarse:w-48 pointer-coarse:min-w-48 any-pointer-coarse:w-48 any-pointer-coarse:min-w-48">
+              <div className="flex h-6 items-center justify-end border-b border-border/70 px-0.5 pointer-coarse:h-11 any-pointer-coarse:h-11">
+                {/* Sits above the taller touch resize handle so its buttons keep their taps; give each button real touch width so adjacent coarse hitboxes never overlap. */}
+                <div className="inline-flex items-center gap-0.5 pointer-coarse:gap-1 any-pointer-coarse:relative any-pointer-coarse:z-30 any-pointer-coarse:gap-1">
                   <TerminalActionButton
+                    className="pointer-coarse:size-11 pointer-coarse:after:min-h-0 pointer-coarse:after:min-w-0 any-pointer-coarse:size-11 any-pointer-coarse:after:min-h-0 any-pointer-coarse:after:min-w-0"
                     disabled={!canOperateTerminal || hasReachedSplitLimit}
                     onClick={onSplitTerminalAction}
                     label={splitTerminalActionLabel}
@@ -2051,6 +2058,7 @@ export default function ThreadTerminalDrawer({
                     <SquareSplitHorizontal className="size-3.25" />
                   </TerminalActionButton>
                   <TerminalActionButton
+                    className="pointer-coarse:size-11 pointer-coarse:after:min-h-0 pointer-coarse:after:min-w-0 any-pointer-coarse:size-11 any-pointer-coarse:after:min-h-0 any-pointer-coarse:after:min-w-0"
                     disabled={!canOperateTerminal || hasReachedSplitLimit}
                     onClick={onSplitTerminalVerticalAction}
                     label={splitTerminalVerticalActionLabel}
@@ -2058,6 +2066,7 @@ export default function ThreadTerminalDrawer({
                     <SquareSplitVertical className="size-3.25" />
                   </TerminalActionButton>
                   <TerminalActionButton
+                    className="pointer-coarse:size-11 pointer-coarse:after:min-h-0 pointer-coarse:after:min-w-0 any-pointer-coarse:size-11 any-pointer-coarse:after:min-h-0 any-pointer-coarse:after:min-w-0"
                     disabled={!canOperateTerminal}
                     onClick={onNewTerminalAction}
                     label={newTerminalActionLabel}
@@ -2065,6 +2074,7 @@ export default function ThreadTerminalDrawer({
                     <Plus className="size-3.25" />
                   </TerminalActionButton>
                   <TerminalActionButton
+                    className="pointer-coarse:size-11 pointer-coarse:after:min-h-0 pointer-coarse:after:min-w-0 any-pointer-coarse:size-11 any-pointer-coarse:after:min-h-0 any-pointer-coarse:after:min-w-0"
                     disabled={!canOperateTerminal}
                     variant="ghost-destructive"
                     onClick={() => confirmCloseTerminal(resolvedActiveTerminalId)}

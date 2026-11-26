@@ -2037,3 +2037,64 @@ describe("ChatGPT sharing presentation", () => {
     ).toBe(false);
   });
 });
+
+describe("provider-scoped exhaustedUsageWindow isolation", () => {
+  it("does not trigger Antigravity Carbon fallback when only Argon is exhausted", () => {
+    const ag = provider({
+      instanceId: ProviderInstanceId.make("antigravity"),
+      driver: ProviderDriverKind.make("antigravity"),
+      usageLimits: {
+        checkedAt: "2026-09-03T11:00:00.000Z",
+        windows: [
+          {
+            id: "gemini-argon-weekly",
+            kind: "weekly",
+            label: "Argon · Weekly",
+            usedPercent: 100,
+            resetsAt: "2026-09-05T12:00:00.000Z",
+          },
+          {
+            id: "gemini-carbon-weekly",
+            kind: "weekly",
+            label: "Carbon · Weekly",
+            usedPercent: 20,
+            resetsAt: "2026-09-05T12:00:00.000Z",
+          },
+        ],
+      },
+    });
+    expect(exhaustedUsageWindow(ag, now, "gemini-4-argon")?.id).toBe("gemini-argon-weekly");
+    expect(exhaustedUsageWindow(ag, now, "argon")?.id).toBe("gemini-argon-weekly");
+    expect(exhaustedUsageWindow(ag, now, "gemini-4-carbon")).toBeUndefined();
+    expect(exhaustedUsageWindow(ag, now, "carbon")).toBeUndefined();
+    expect(exhaustedUsageWindow(ag, now, "gemini-3.1-pro")).toBeUndefined();
+  });
+
+  it("scopes Claude seven_day_<model> exhaustion to matching models only", () => {
+    const claude = provider({
+      instanceId: ProviderInstanceId.make("claude"),
+      driver: ProviderDriverKind.make("claudeAgent"),
+      usageLimits: {
+        checkedAt: "2026-09-03T11:00:00.000Z",
+        windows: [
+          {
+            id: "seven_day",
+            kind: "weekly",
+            label: "Weekly",
+            usedPercent: 18.4,
+            resetsAt: "2026-09-05T12:00:00.000Z",
+          },
+          {
+            id: "seven_day_fable",
+            kind: "weekly",
+            label: "Weekly · Fable",
+            usedPercent: 100,
+            resetsAt: "2026-09-05T12:00:00.000Z",
+          },
+        ],
+      },
+    });
+    expect(exhaustedUsageWindow(claude, now, "claude-fable-5")?.id).toBe("seven_day_fable");
+    expect(exhaustedUsageWindow(claude, now, "claude-sonnet-4-6")).toBeUndefined();
+  });
+});

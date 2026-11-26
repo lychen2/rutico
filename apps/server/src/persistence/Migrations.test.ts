@@ -17,7 +17,7 @@ import {
 } from "@t3tools/shared/databaseMigrationLog";
 import * as DatabaseMigrationProgress from "./DatabaseMigrationProgress.ts";
 
-import { migrationManifest, runMigrations } from "./Migrations.ts";
+import { migrationManifest, runMigrations, skippedV2Migrations } from "./Migrations.ts";
 import ThreadWaitWakeObligations from "./Migrations/106_ThreadWaitWakeObligations.ts";
 
 const v2Migrations = migrationManifest.filter(([id]) => id >= 55);
@@ -179,6 +179,103 @@ describe("runMigrations", () => {
       yield* sql`SELECT tracked_folders_json FROM projection_projects`;
       yield* sql`SELECT root FROM task_folders`;
       assert.deepStrictEqual(yield* runMigrations(), []);
+    }).pipe(Effect.provide(NodeSqliteClient.layer({ filename: ":memory:" }))),
+  );
+
+  it.effect(
+    "upgrades an official upstream 119-migration database in place without losing data or re-running migrations",
+    () =>
+      Effect.gen(function* () {
+        const sql = yield* SqlClient.SqlClient;
+        // Build a real database with all schemas through 120, then reshape it to exact official
+        // upstream 119 state (no 106_ThreadWaitWakeObligations table, upstream ids 106..119).
+        yield* runMigrations();
+        yield* sql`DROP TABLE thread_wait_wake_obligations`;
+        yield* sql`DELETE FROM effect_sql_migrations WHERE migration_id = 106`;
+        yield* sql`UPDATE effect_sql_migrations SET migration_id = migration_id - 1 WHERE migration_id >= 107`;
+        yield* sql`
+          UPDATE effect_sql_migrations
+          SET created_at = '2026-10-01 00:00:00'
+          WHERE migration_id = 119
+        `;
+        // Seed data in tables introduced by upstream 108 (AgentFeedback).
+        yield* sql`
+          INSERT INTO agent_feedback (
+            id, thread_id, run_id, created_at, kind, subject, expected, actual, workaround,
+            user_requested, trace, source, sent
+          )
+          VALUES (
+            'fb-upstream', 'thread-1', 'run-1', '2026-10-01T00:00:00.000Z',
+            'bug', 'Upstream feedback', 'expected', 'actual', 'workaround',
+            0, NULL, 'agent', 1
+          )
+        `;
+
+        const upstreamRecorded = (yield* history).map(([id, name]) => ({ id, name }));
+        assert.strictEqual(upstreamRecorded.length, 119);
+        assert.deepStrictEqual(upstreamRecorded[105], { id: 106, name: "WorktreePathKeyIndex" });
+        assert.deepStrictEqual(upstreamRecorded[118], { id: 119, name: "WorkflowRunSubject" });
+        assert.deepStrictEqual(skippedV2Migrations(upstreamRecorded), []);
+
+        assert.deepStrictEqual(yield* runMigrations(), [[106, "ThreadWaitWakeObligations"]]);
+        assert.deepStrictEqual(yield* history, migrationManifest);
+        // Preserves upstream data and created_at metadata while installing the wake table.
+        assert.deepStrictEqual(yield* sql`SELECT id, subject FROM agent_feedback`, [
+          { id: "fb-upstream", subject: "Upstream feedback" },
+        ]);
+        assert.deepStrictEqual(
+          yield* sql`SELECT created_at FROM effect_sql_migrations WHERE migration_id = 120`,
+          [{ created_at: "2026-10-01 00:00:00" }],
+        );
+        assert.lengthOf(yield* sql`SELECT wake_id FROM thread_wait_wake_obligations`, 0);
+
+        // Second startup is a clean no-op and needs no write lock.
+        assert.deepStrictEqual(yield* runMigrations(), []);
+        yield* sql`PRAGMA query_only = ON`;
+        assert.deepStrictEqual(yield* runMigrations(), []);
+      }).pipe(Effect.provide(NodeSqliteClient.layer({ filename: ":memory:" }))),
+  );
+
+  it.effect("upgrades an intermediate official upstream database (through 110) in place", () =>
+    Effect.gen(function* () {
+      const sql = yield* SqlClient.SqlClient;
+      yield* runMigrations({ toMigrationInclusive: 111 });
+      yield* sql`DROP TABLE thread_wait_wake_obligations`;
+      yield* sql`DELETE FROM effect_sql_migrations WHERE migration_id = 106`;
+      yield* sql`UPDATE effect_sql_migrations SET migration_id = migration_id - 1 WHERE migration_id >= 107`;
+
+      const executed = yield* runMigrations();
+      assert.deepStrictEqual(executed, [
+        [106, "ThreadWaitWakeObligations"],
+        ...migrationManifest.filter(([id]) => id >= 112),
+      ]);
+      assert.deepStrictEqual(yield* history, migrationManifest);
+      assert.deepStrictEqual(yield* runMigrations(), []);
+    }).pipe(Effect.provide(NodeSqliteClient.layer({ filename: ":memory:" }))),
+  );
+
+  it.effect("still refuses unknown or corrupted ledgers that resemble upstream 106..119", () =>
+    Effect.gen(function* () {
+      const sql = yield* SqlClient.SqlClient;
+      yield* runMigrations();
+      yield* sql`DROP TABLE thread_wait_wake_obligations`;
+      yield* sql`DELETE FROM effect_sql_migrations WHERE migration_id = 106`;
+      yield* sql`UPDATE effect_sql_migrations SET migration_id = migration_id - 1 WHERE migration_id >= 107`;
+      // Corrupt one entry in the shifted range: must not be recognized as official upstream.
+      yield* sql`UPDATE effect_sql_migrations SET name = 'UnknownForkMigration' WHERE migration_id = 119`;
+      const before = yield* history;
+
+      const exit = yield* Effect.exit(runMigrations());
+      assert.isTrue(Exit.isFailure(exit));
+      assert.include(
+        String(exit),
+        "106_ThreadWaitWakeObligations (recorded: WorktreePathKeyIndex)",
+      );
+      assert.deepStrictEqual(yield* history, before);
+      assert.deepStrictEqual(
+        yield* sql`SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'thread_wait_wake_obligations'`,
+        [],
+      );
     }).pipe(Effect.provide(NodeSqliteClient.layer({ filename: ":memory:" }))),
   );
 

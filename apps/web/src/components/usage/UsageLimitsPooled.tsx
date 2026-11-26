@@ -765,6 +765,23 @@ function formatTimingStamp(at: number, now: number): string {
   return `${day} ${time}`;
 }
 
+export function resetCreditConfirmToken(
+  account: Pick<LimitAccount, "key" | "limits"> & {
+    readonly redeem: NonNullable<LimitAccount["redeem"]>;
+  },
+  choice: ResetCreditChoice,
+): string {
+  return JSON.stringify({
+    accountKey: account.key,
+    environmentId: account.redeem.environmentId,
+    redeemInput: account.redeem.input,
+    choiceKey: choice.key,
+    choiceInput: choice.input,
+    availableCount: choice.availableCount,
+    nextExpiresAt: account.limits.resetCredits?.nextExpiresAt ?? null,
+  });
+}
+
 function PoolResetTray({
   pool,
   health,
@@ -785,7 +802,7 @@ function PoolResetTray({
   readonly onClose: () => void;
 }) {
   const uiText = useUiText();
-  const [confirmingKey, setConfirmingKey] = useState<string | null>(null);
+  const [confirmingToken, setConfirmingToken] = useState<string | null>(null);
   const credits = account.limits.resetCredits;
   const choices = credits ? resetCreditChoices(credits, account.redeem.input, now) : [];
   const availableChoices = choices.filter((c) => c.availableCount > 0);
@@ -908,7 +925,7 @@ function PoolResetTray({
           type="button"
           data-lv9="chip-btn"
           onClick={() => {
-            setConfirmingKey(null);
+            setConfirmingToken(null);
             onClose();
           }}
         >
@@ -965,7 +982,7 @@ function PoolResetTray({
               data-pick-card={meta.choice.key}
               data-selected={isSelected || undefined}
               onClick={() => {
-                setConfirmingKey(null);
+                setConfirmingToken(null);
                 onSelectKey(meta.choice.key);
               }}
             >
@@ -1028,41 +1045,52 @@ function PoolResetTray({
             ))}
           </div>
         )}
-        {selected && selectedMeta ? (
-          confirmingKey === selected.key ? (
-            <div data-lv9="rc-confirm-bar">
-              <span>
-                {uiText("Confirm spending 1 {label}? This cannot be undone.", {
-                  label: selectedMeta.label,
-                })}
-              </span>
-              <button type="button" data-lv9="chip-btn" onClick={() => setConfirmingKey(null)}>
-                {uiText("Cancel")}
-              </button>
-              <button
-                type="button"
-                data-lv9="rc-btn-danger"
-                disabled={redeem.busy || !redeem.canManageProviders}
-                onClick={() => {
-                  setConfirmingKey(null);
-                  void redeem.redeemChoice(selected);
-                }}
-              >
-                {redeem.busy ? uiText("Using…") : uiText("Confirm reset now")}
-              </button>
-            </div>
-          ) : (
-            <button
-              type="button"
-              data-lv9="rc-btn-primary"
-              disabled={redeem.busy || !redeem.canManageProviders}
-              onClick={() => setConfirmingKey(selected.key)}
-            >
-              <TicketIcon aria-hidden="true" />
-              <span>{uiText("Use {label}", { label: selectedMeta.label })}</span>
-            </button>
-          )
-        ) : null}
+        {selected && selectedMeta
+          ? (() => {
+              const selectedConfirmToken = resetCreditConfirmToken(account, selected);
+              return confirmingToken === selectedConfirmToken ? (
+                <div data-lv9="rc-confirm-bar">
+                  <span>
+                    {uiText("Confirm spending 1 {label}? This cannot be undone.", {
+                      label: selectedMeta.label,
+                    })}
+                  </span>
+                  <button
+                    type="button"
+                    data-lv9="chip-btn"
+                    onClick={() => setConfirmingToken(null)}
+                  >
+                    {uiText("Cancel")}
+                  </button>
+                  <button
+                    type="button"
+                    data-lv9="rc-btn-danger"
+                    disabled={redeem.busy || !redeem.canManageProviders}
+                    onClick={() => {
+                      if (confirmingToken !== resetCreditConfirmToken(account, selected)) {
+                        setConfirmingToken(null);
+                        return;
+                      }
+                      setConfirmingToken(null);
+                      void redeem.redeemChoice(selected);
+                    }}
+                  >
+                    {redeem.busy ? uiText("Using…") : uiText("Confirm reset now")}
+                  </button>
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  data-lv9="rc-btn-primary"
+                  disabled={redeem.busy || !redeem.canManageProviders}
+                  onClick={() => setConfirmingToken(selectedConfirmToken)}
+                >
+                  <TicketIcon aria-hidden="true" />
+                  <span>{uiText("Use {label}", { label: selectedMeta.label })}</span>
+                </button>
+              );
+            })()
+          : null}
       </div>
     </div>
   );
@@ -1760,6 +1788,7 @@ export function UsageLimitsPooled({
           <div data-lv9="rc-tray-clip">
             {activeResetPool && activeResetAccount ? (
               <PoolResetTray
+                key={`${limitPoolId(activeResetPool)}:${activeResetAccount.key}`}
                 pool={activeResetPool}
                 health={activeResetHealth}
                 title={titles.get(limitPoolId(activeResetPool)) ?? String(activeResetPool.driver)}

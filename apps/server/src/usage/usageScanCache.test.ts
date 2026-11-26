@@ -433,4 +433,53 @@ describe("scan cache round trip", () => {
     const restored = decodeScanCache(JSON.parse(JSON.stringify(poisoned)), TEST_FORMAT_MAP);
     expect(restored.has("/a.jsonl")).toBe(false);
   });
+
+  it("v17 to v18 preserves cache-only Pi history while invalidating live OMP resume positions for model_usage rescan", () => {
+    const cache: ScanCache = new Map();
+    const piFile: CachedFile = {
+      size: 256,
+      mtimeMs: 100,
+      provider: "pi",
+      records: [
+        record({
+          provider: "pi",
+          model: "anthropic/claude-fable-5",
+          dedupeKey: '["pi","m1","t","m"]',
+        }),
+      ],
+      tailRecords: [],
+      malformedRecords: [],
+      position: position({ state: { sessionId: "pi-session" } }),
+    };
+    const ompFile: CachedFile = {
+      size: 512,
+      mtimeMs: 200,
+      provider: "pi",
+      records: [
+        record({
+          provider: "pi",
+          model: "anthropic/claude-sonnet-4",
+          dedupeKey: '["omp","m2","t","m"]',
+        }),
+      ],
+      tailRecords: [],
+      malformedRecords: [],
+      position: position({ state: { sessionId: "omp-session" } }),
+    };
+    cache.set("/home/user/.pi/agent/sessions/deleted-pi.jsonl", piFile);
+    cache.set("/home/user/.omp/agent/sessions/live-omp.jsonl", ompFile);
+
+    const encoded = parse(makeScanCacheWriter()(cache, {}));
+    const v17 = { ...encoded, version: 17 };
+    const restored = decodeScanCache(JSON.parse(JSON.stringify(v17)), TEST_FORMAT_MAP);
+
+    // Cache-only Pi transcript retains both records and resume position.
+    expect(restored.get("/home/user/.pi/agent/sessions/deleted-pi.jsonl")).toEqual(piFile);
+    // Live OMP transcript retains cached records AND invalidates size/position so it rescans model_usage.
+    expect(restored.get("/home/user/.omp/agent/sessions/live-omp.jsonl")).toEqual({
+      ...ompFile,
+      size: -1,
+      position: { resumeOffset: 0, guardLength: 0, guardHash: 0, state: null },
+    });
+  });
 });

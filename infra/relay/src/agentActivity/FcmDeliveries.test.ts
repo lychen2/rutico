@@ -489,6 +489,44 @@ describe("Android delivery routing", () => {
     }).pipe(Effect.provide(h.layer));
   });
 
+  it.effect(
+    "honors declared recipientUserHash capability over appVersion for fork 2.3.0 and legacy clients",
+    () => {
+      const h = harness();
+      return Effect.gen(function* () {
+        const delivery = yield* FcmDeliveries.FcmDeliveries;
+        // Hash-capable Rutico 2.3.0 APK declares recipientUserHash: true -> omit raw user_id.
+        h.current.target.app_version = "2.3.0";
+        h.current.target.preferences_json = encodeJson({
+          ...preferences,
+          recipientUserHash: true,
+        });
+        yield* delivery.process(h.job);
+        expect(h.sent[0]?.data.user_id).toBeUndefined();
+        expect(h.sent[0]?.data.user_hash).toBe(
+          "6d11cb8c16365bd4d82136aef4cf191f7fad3a12047924930a31230fd235adbc",
+        );
+
+        // Genuine legacy 2.3.0 APK omits recipientUserHash -> include raw user_id.
+        h.current.target.preferences_json = encodeJson(preferences);
+        yield* delivery.process(h.job);
+        expect(h.sent[1]?.data.user_id).toBe("user");
+        expect(h.sent[1]?.data.user_hash).toBe(
+          "6d11cb8c16365bd4d82136aef4cf191f7fad3a12047924930a31230fd235adbc",
+        );
+
+        // Client explicitly declaring recipientUserHash: false keeps raw user_id even on 2.4.0.
+        h.current.target.app_version = "2.4.0";
+        h.current.target.preferences_json = encodeJson({
+          ...preferences,
+          recipientUserHash: false,
+        });
+        yield* delivery.process(h.job);
+        expect(h.sent[2]?.data.user_id).toBe("user");
+      }).pipe(Effect.provide(h.layer));
+    },
+  );
+
   it.effect("drops jobs for rotated tokens, expired jobs, and revoked links", () => {
     const h = harness();
     return Effect.gen(function* () {

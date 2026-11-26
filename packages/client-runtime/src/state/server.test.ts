@@ -7,7 +7,9 @@ import {
   type ProviderSetupInput,
   ServerObservability,
   EnvironmentThemeId,
+  UsageDay,
   UsageLimitSourceId,
+  type UsageSummary,
   type ServerConfig,
   type ServerConfigStreamEvent,
   type ServerLifecycleStreamEvent,
@@ -52,11 +54,14 @@ import type { RpcSession } from "../rpc/session.ts";
 import {
   applyServerWelcomeEvent,
   createServerEnvironmentAtoms,
+  executeAnswerFeedbackRequest,
   type FetchedMachineCatalog,
   makeEnvironmentServerWelcomeState,
   makeEnvironmentServerConfigState,
   isLegacyUpdateHandoffLoss,
   recordFetchedWorkspaceSnapshot,
+  mergeHourlyUsageSummaries,
+  splitHourlyUsageWindow,
   withFetchedWorkspaceSnapshots,
   matchesServerUpdateReadyEvent,
   matchesServerUpdateResumeEvent,
@@ -1255,6 +1260,33 @@ describe("server state projection", () => {
         initial,
       ),
     ).toBe(live);
+
+    // Same environment + same serverVersion + different capabilities (e.g. reconnected from a
+    // local-only host to an upload-capable host) must NOT keep the stale live config.
+    const localOnlyLive = {
+      ...CONFIG,
+      environment: {
+        serverVersion: "2.3.0",
+        capabilities: { agentFeedback: true, agentFeedbackLocalOnly: true },
+      },
+    } as unknown as ServerConfig;
+    const remoteInitial = {
+      ...CONFIG,
+      environment: {
+        serverVersion: "2.3.0",
+        capabilities: { agentFeedback: true },
+      },
+    } as unknown as ServerConfig;
+    expect(
+      resolveServerConfigValue(
+        {
+          config: localOnlyLive,
+          latestEvent: snapshotEvent(localOnlyLive),
+          source: "live",
+        },
+        remoteInitial,
+      ),
+    ).toBe(remoteInitial);
   });
 
   it("merges fetched workspace snapshots only from servers that omit them", () => {
@@ -1897,6 +1929,101 @@ describe("provider setup commands", () => {
   );
 });
 
+describe("feedback consent bound to RpcSession", () => {
+  it.effect(
+    "blocks local-only consent against a reconnected session without agentFeedbackLocalOnly (0 RPC sends) and strips expectedLocalOnly when matching",
+    () =>
+      Effect.gen(function* () {
+        const sentPayloads: Array<unknown> = [];
+        const makeConfig = (localOnly: boolean) =>
+          ({
+            ...CONFIG,
+            environment: {
+              serverVersion: "2.3.0",
+              capabilities: {
+                agentFeedback: true,
+                ...(localOnly ? { agentFeedbackLocalOnly: true } : {}),
+              },
+            },
+          }) as unknown as ServerConfig;
+        const makeClient = () =>
+          ({
+            [WS_METHODS.agentFeedbackAnswerRequest]: (input: unknown) =>
+              Effect.sync(() => {
+                sentPayloads.push(input);
+                return { status: "sent" as const };
+              }),
+          }) as unknown as WsRpcProtocolClient;
+        const makeSessionWithConfig = (localOnly: boolean): RpcSession => ({
+          ...session(makeClient()),
+          initialConfig: Effect.succeed(makeConfig(localOnly)),
+        });
+
+        const sessionRef = yield* SubscriptionRef.make<Option.Option<RpcSession>>(
+          Option.some(makeSessionWithConfig(false)),
+        );
+        const supervisor = EnvironmentSupervisor.EnvironmentSupervisor.of({
+          target: TARGET,
+          state: yield* SubscriptionRef.make<SupervisorConnectionState>({
+            ...AVAILABLE_CONNECTION_STATE,
+            phase: "connected",
+          }),
+          session: sessionRef,
+          prepared: yield* SubscriptionRef.make(Option.none<PreparedConnection>()),
+          connect: Effect.void,
+          disconnect: Effect.void,
+          retryNow: Effect.void,
+        });
+        const runWithSession = <A, E>(
+          effect: Effect.Effect<A, E, EnvironmentSupervisor.EnvironmentSupervisor>,
+        ) =>
+          effect.pipe(
+            Effect.provideService(EnvironmentSupervisor.EnvironmentSupervisor, supervisor),
+            Effect.provideService(RpcPermissionGuard, { authorize: () => Effect.void }),
+          );
+
+        // User confirmed "Save locally" (expectedLocalOnly: true), but active RpcSession is a
+        // same-version host without agentFeedbackLocalOnly -> must fail and send 0 RPCs!
+        const mismatchExit = yield* Effect.exit(
+          runWithSession(
+            executeAnswerFeedbackRequest({
+              threadId: "thread-1" as never,
+              turnItemId: "item-1" as never,
+              answer: "send",
+              includeConversation: true,
+              expectedLocalOnly: true,
+            }),
+          ),
+        );
+        expect(Exit.isFailure(mismatchExit)).toBe(true);
+        expect(sentPayloads).toHaveLength(0);
+
+        // Reconnect to a local-only session -> succeeds and strips expectedLocalOnly from wire RPC.
+        yield* SubscriptionRef.set(sessionRef, Option.some(makeSessionWithConfig(true)));
+        const matchExit = yield* Effect.exit(
+          runWithSession(
+            executeAnswerFeedbackRequest({
+              threadId: "thread-1" as never,
+              turnItemId: "item-1" as never,
+              answer: "send",
+              includeConversation: false,
+              expectedLocalOnly: true,
+            }),
+          ),
+        );
+        expect(Exit.isSuccess(matchExit)).toBe(true);
+        expect(sentPayloads).toEqual([
+          {
+            threadId: "thread-1",
+            turnItemId: "item-1",
+            answer: "send",
+            includeConversation: false,
+          },
+        ]);
+      }),
+  );
+});
+
 describe("resource telemetry history", () => {
   it.effect.each([
     ["resourceTelemetryHistory", WS_METHODS.serverGetResourceTelemetryHistory],
@@ -1984,4 +2111,81 @@ describe("resource telemetry history", () => {
         }
       }),
   );
+
+  it("splits 7-day hourly usage windows into <=24h chunks for legacy hosts and merges 3-day-old records", () => {
+    const window = {
+      sinceDay: UsageDay.make("2026-04-04"),
+      untilDay: UsageDay.make("2026-04-11"),
+      sinceTime: "2026-04-04T12:00:00.000Z",
+      untilTime: "2026-04-11T12:00:00.000Z",
+      timeZone: "UTC",
+      resolution: "hour" as const,
+    };
+    const slices = splitHourlyUsageWindow(window);
+    expect(slices).toHaveLength(7);
+    for (const slice of slices) {
+      const spanHours = (Date.parse(slice.untilTime!) - Date.parse(slice.sinceTime!)) / 3_600_000;
+      expect(spanHours).toBeGreaterThan(0);
+      expect(spanHours).toBeLessThanOrEqual(24);
+    }
+
+    const source: UsageSummary["sources"][number] = {
+      fingerprint: {
+        hostId: "host-1",
+        provider: "pi",
+        resolvedHomePath: "/Users/me/.pi/agent/sessions",
+        volumeId: "vol-1",
+      },
+      status: "ok",
+      scannedFiles: 1,
+      skippedFiles: 0,
+      malformedRecords: 0,
+      distinctSessions: 1,
+      message: null,
+    };
+    const threeDaysAgoBucket: UsageSummary["buckets"][number] = {
+      provider: "pi",
+      day: UsageDay.make("2026-04-08"),
+      hourStart: "2026-04-08T10:00:00.000Z",
+      model: "claude-sonnet-4-5",
+      sourcePath: "/Users/me/.pi/agent/sessions/session-1.jsonl",
+      costUsd: 1.25,
+      costSource: "modelPriced",
+      cacheSavingsUsd: 0,
+      totals: {
+        uncachedInputTokens: 1000,
+        cachedInputTokens: 0,
+        cacheCreationTokens: 0,
+        outputTokens: 500,
+        reasoningTokens: 0,
+      },
+      sessions: 1,
+      records: 1,
+      unpricedRecords: 0,
+    };
+    const baseChunk: UsageSummary = {
+      contractVersion: 3,
+      readAt: "2026-04-11T12:00:00.000Z",
+      timeZone: "UTC",
+      sinceDay: UsageDay.make("2026-04-08"),
+      untilDay: UsageDay.make("2026-04-09"),
+      sources: [source],
+      buckets: [threeDaysAgoBucket],
+      pricing: {
+        status: "fresh",
+        source: "test",
+        fetchedAt: "2026-04-11T12:00:00.000Z",
+        knownModels: 1,
+      },
+      scanDurationMs: 1,
+      projectTotals: [],
+    };
+    const merged = mergeHourlyUsageSummaries([baseChunk, { ...baseChunk, buckets: [] }], window);
+    expect(merged.sources).toHaveLength(1);
+    expect(merged.buckets).toHaveLength(1);
+    expect(merged.buckets[0]?.hourStart).toBe("2026-04-08T10:00:00.000Z");
+    expect(merged.buckets[0]?.costUsd).toBe(1.25);
+    expect(merged.buckets[0]?.totals.uncachedInputTokens).toBe(1000);
+    expect(merged.buckets[0]?.totals.outputTokens).toBe(500);
+  });
 });

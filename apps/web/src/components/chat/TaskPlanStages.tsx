@@ -76,6 +76,13 @@ function stageSummary(milestone: Milestone, gt: UiText) {
   switch (milestone.status) {
     case "need":
       return { text: gt("Needs confirmation"), tone: "need" };
+    case "blocked": {
+      const reasons = milestone.blockedReasons?.join(" · ") ?? "";
+      return {
+        text: [gt("Blocked"), reasons, operations].filter(Boolean).join(" · "),
+        tone: "problem",
+      };
+    }
     case "problem":
       return { text: [gt("Problem"), operations].filter(Boolean).join(" · "), tone: "problem" };
     case "run":
@@ -207,13 +214,15 @@ export function TaskPlanStages({
             ? `${gt("{count, plural, one {{count} item} other {{count} items}}", { count: groups.length })} ${open ? "▴" : "▾"}`
             : milestone.status === "need"
               ? gt("Needs confirmation")
-              : milestone.status === "problem"
-                ? gt("Problem")
-                : milestone.status === "run"
-                  ? gt("In progress")
-                  : milestone.status === "todo"
-                    ? gt("Not started")
-                    : gt("Completed");
+              : milestone.status === "blocked"
+                ? gt("Blocked")
+                : milestone.status === "problem"
+                  ? gt("Problem")
+                  : milestone.status === "run"
+                    ? gt("In progress")
+                    : milestone.status === "todo"
+                      ? gt("Not started")
+                      : gt("Completed");
         const content = (
           <>
             <StageMark status={milestone.status} />

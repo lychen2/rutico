@@ -37,6 +37,8 @@ export const RelayAgentAwarenessPreferences = Schema.Struct({
   notifyOnInput: Schema.Boolean,
   notifyOnCompletion: Schema.Boolean,
   notifyOnFailure: Schema.Boolean,
+  /** Explicit client declaration of whether Android push payloads verify `user_hash` (avoids version-only guessing). */
+  recipientUserHash: Schema.optional(Schema.Boolean),
 });
 export type RelayAgentAwarenessPreferences = typeof RelayAgentAwarenessPreferences.Type;
 
@@ -1324,7 +1326,17 @@ const RelayMobileTelemetryGroup = HttpApiGroup.make("mobileTelemetry")
 
 // Clerk signs with Svix headers; the handler reads raw bytes to verify the signature.
 const RelayAccountWebhooksGroup = HttpApiGroup.make("accountWebhooks")
-  .add(HttpApiEndpoint.post("clerk", "/v1/webhooks/clerk"))
+  .add(
+    HttpApiEndpoint.post("clerk", "/v1/webhooks/clerk", {
+      payload: Schema.String.pipe(HttpApiSchema.asText()),
+      headers: Schema.Struct({
+        "svix-id": Schema.String,
+        "svix-timestamp": Schema.String,
+        "svix-signature": Schema.String,
+      }),
+      success: [HttpApiSchema.Empty(200), HttpApiSchema.NoContent],
+    }),
+  )
   .annotate(OpenApi.Description, "Receive Clerk account lifecycle events.");
 
 export const RelayApi = HttpApi.make("RelayApi")

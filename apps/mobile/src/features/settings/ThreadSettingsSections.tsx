@@ -266,7 +266,27 @@ export function NewThreadSettingsSection() {
 
 type MachineBetaSetting = "linkedEnvironmentsEnabled" | "fastWorktreeCheckout";
 
-const AGENT_FEEDBACK_CHOICES: ReadonlyArray<{
+const AGENT_FEEDBACK_LOCAL_CHOICES: ReadonlyArray<{
+  readonly mode: AgentFeedbackMode;
+  readonly label: string;
+  readonly description: string;
+}> = [
+  { mode: "off", label: msg("Off"), description: msg("Agents save no local feedback reports.") },
+  {
+    mode: "on-request",
+    label: msg("When I ask"),
+    description: msg(
+      "When you ask, you see a short report and save it on this environment if you approve.",
+    ),
+  },
+  {
+    mode: "auto",
+    label: msg("Automatic"),
+    description: msg("Agents also save local reports on this environment when they hit problems."),
+  },
+];
+
+const AGENT_FEEDBACK_REMOTE_CHOICES: ReadonlyArray<{
   readonly mode: AgentFeedbackMode;
   readonly label: string;
   readonly description: string;
@@ -300,12 +320,23 @@ function AgentFeedbackSection() {
     reportFailure: true,
   });
   if (supported.length === 0) return null;
+  const allLocalOnly = supported.every(
+    (environment) =>
+      environment.serverConfig?.environment.capabilities.agentFeedbackLocalOnly === true,
+  );
+  const anyLocalOnly = supported.some(
+    (environment) =>
+      environment.serverConfig?.environment.capabilities.agentFeedbackLocalOnly === true,
+  );
   return (
     <View className="gap-3">
       {supported.map((environment) => {
         const policy = environment.serverConfig?.managedPolicy;
         const managed = isManagedSettingPath(policy, "agentFeedback");
         const mode = environment.serverConfig?.settings.agentFeedback.mode;
+        const localOnly =
+          environment.serverConfig?.environment.capabilities.agentFeedbackLocalOnly === true;
+        const choices = localOnly ? AGENT_FEEDBACK_LOCAL_CHOICES : AGENT_FEEDBACK_REMOTE_CHOICES;
         return (
           <SettingsSection
             key={environment.environmentId}
@@ -318,7 +349,7 @@ function AgentFeedbackSection() {
               ? { footer: gt("Managed by {organization}.", { organization: policy?.organization }) }
               : {})}
           >
-            {AGENT_FEEDBACK_CHOICES.map((choice, index) => (
+            {choices.map((choice, index) => (
               <SettingsChoiceRow
                 key={choice.mode}
                 label={m(choice.label)}
@@ -338,11 +369,26 @@ function AgentFeedbackSection() {
         );
       })}
       <Text className="px-2 text-sm text-foreground-muted">
-        <T>
-          Reports go to the T3 team. A report you ask for is shown to you first in a card, with an
-          outline of recent turns. Turn on Include the conversation there to add the messages of the
-          turns the report is about.
-        </T>
+        {allLocalOnly ? (
+          <T>
+            Reports are saved strictly on the environment host and never uploaded. A report you ask
+            for is shown to you first in a card, with an outline of recent turns. Turn on Include
+            the conversation there to add the messages of the turns the report is about.
+          </T>
+        ) : anyLocalOnly ? (
+          <T>
+            Each confirmation card states whether the environment saves reports locally or may send
+            them to the T3 team. A report you ask for is shown to you first in a card, with an
+            outline of recent turns. Turn on Include the conversation there to add the messages of
+            the turns the report is about.
+          </T>
+        ) : (
+          <T>
+            Reports go to the T3 team. A report you ask for is shown to you first in a card, with an
+            outline of recent turns. Turn on Include the conversation there to add the messages of
+            the turns the report is about.
+          </T>
+        )}
       </Text>
     </View>
   );

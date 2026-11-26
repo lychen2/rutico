@@ -31,8 +31,7 @@ import { useServerConfigs } from "../../state/entities";
 import { serverEnvironment } from "../../state/server";
 import { useAtomCommand } from "../../state/use-atom-command";
 
-const LOCAL_TITLE = msg("Local feedback report");
-const REMOTE_TITLE = msg("Feedback for the T3 team");
+const HISTORY_TITLE = msg("Feedback report");
 const LOCK_SYMBOL: AppSymbolName = { ios: "lock", android: "lock" };
 
 export function FeedbackRequestCard(props: {
@@ -48,8 +47,7 @@ export function FeedbackRequestCard(props: {
   const localOnly =
     serverConfigs.get(props.environmentId)?.environment.capabilities.agentFeedbackLocalOnly ===
     true;
-  const title = localOnly ? LOCAL_TITLE : REMOTE_TITLE;
-  const display = feedbackRequestDisplay(item, visibility, m, { localOnly });
+  const display = feedbackRequestDisplay(item, visibility, m);
   if (display.kind === "pending") {
     return (
       <PendingFeedbackRequest
@@ -75,7 +73,7 @@ export function FeedbackRequestCard(props: {
       >
         <SymbolView name={icon} size={13} tintColor={props.iconColor} type="monochrome" />
         <Text className="flex-1 font-sans text-sm text-foreground-muted" numberOfLines={2}>
-          {m(title)} · {display.label}
+          {m(HISTORY_TITLE)} · {display.label}
         </Text>
       </Pressable>
       {open ? <FeedbackPreview preview={item.preview} /> : null}
@@ -115,6 +113,7 @@ function PendingFeedbackRequest(props: {
         turnItemId: props.item.id,
         answer: reply,
         includeConversation,
+        expectedLocalOnly: props.localOnly,
       },
     }).finally(() => {
       inFlight.current = false;

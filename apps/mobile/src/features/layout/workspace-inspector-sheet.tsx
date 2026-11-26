@@ -6,7 +6,7 @@ import { PaneSheet } from "../../components/ui/PaneSheet";
 import { RoutedFormSheetContext } from "../../components/ui/RoutedFormSheetContext";
 import { formSheetDetents } from "../../native/sheet-surface";
 import { InspectorPanes } from "./inspector-host";
-import type { InspectorContent } from "./inspector-panes";
+import { InspectorPaneVisibleContext, type InspectorContent } from "./inspector-panes";
 
 /**
  * Closes the inspector sheet around the inspector, then runs `then` once it is gone: a route
@@ -65,7 +65,9 @@ export function WorkspaceInspectorSheet(props: {
           {/* The sheet starts below the status bar. */}
           <SafeAreaInsetsContext value={{ ...insets, top: 0 }}>
             <PaneContext value="inspector">
-              <InspectorPanes content={props.content} onClose={() => close()} />
+              <InspectorPaneVisibleContext value={props.open}>
+                <InspectorPanes content={props.content} onClose={() => close()} />
+              </InspectorPaneVisibleContext>
             </PaneContext>
           </SafeAreaInsetsContext>
         </RoutedFormSheetContext>

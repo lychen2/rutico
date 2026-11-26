@@ -62,6 +62,7 @@ import {
 } from "../../native/NativeWorkspaceColumns";
 import { V5StackHeader } from "../../native/V5StackHeader.ios";
 import { InspectorColumnScreens } from "./inspector-host";
+import { InspectorPaneVisibleContext } from "./inspector-panes";
 import { PaneContext } from "../../components/ui/Pane";
 import { useWorkspaceSidebarHeaderItem } from "./useWorkspaceSidebarHeaderItem";
 import type { AppNativeStackNavigationOptions } from "../../native/StackHeader";
@@ -447,40 +448,46 @@ function WorkspaceColumns(
           })}
         </Stack.Host>
       </Split.Column>
-      <InspectorColumnScreens
-        content={inspector.content}
-        onClose={hideInspector}
-        overlay={
-          inspector.visible ? (
-            <GestureHandlerRootView
-              style={[StyleSheet.absoluteFill, { zIndex: 100 }]}
-              pointerEvents="box-none"
-              collapsable={false}
-            >
-              <SafeAreaView style={{ flex: 1 }} edges={["left", "right"]} pointerEvents="box-none">
-                <View className="flex-1" pointerEvents="box-none">
-                  <View
-                    className="absolute inset-y-0 left-0 w-[22px] flex-row"
-                    pointerEvents="box-none"
-                  >
-                    <WorkspacePaneDivider
-                      accessibilityLabel={gt("Resize inspector")}
-                      currentWidth={inspectorWidth}
-                      resizeDirection={-1}
-                      onResizeStart={() => {
-                        resizeStartWidth.current = inspectorWidth;
-                      }}
-                      onResizeBy={(delta) =>
-                        setNativeInspectorWidth(resizeStartWidth.current + delta)
-                      }
-                    />
+      <InspectorPaneVisibleContext value={inspector.visible}>
+        <InspectorColumnScreens
+          content={inspector.content}
+          onClose={hideInspector}
+          overlay={
+            inspector.visible ? (
+              <GestureHandlerRootView
+                style={[StyleSheet.absoluteFill, { zIndex: 100 }]}
+                pointerEvents="box-none"
+                collapsable={false}
+              >
+                <SafeAreaView
+                  style={{ flex: 1 }}
+                  edges={["left", "right"]}
+                  pointerEvents="box-none"
+                >
+                  <View className="flex-1" pointerEvents="box-none">
+                    <View
+                      className="absolute inset-y-0 left-0 w-[22px] flex-row"
+                      pointerEvents="box-none"
+                    >
+                      <WorkspacePaneDivider
+                        accessibilityLabel={gt("Resize inspector")}
+                        currentWidth={inspectorWidth}
+                        resizeDirection={-1}
+                        onResizeStart={() => {
+                          resizeStartWidth.current = inspectorWidth;
+                        }}
+                        onResizeBy={(delta) =>
+                          setNativeInspectorWidth(resizeStartWidth.current + delta)
+                        }
+                      />
+                    </View>
                   </View>
-                </View>
-              </SafeAreaView>
-            </GestureHandlerRootView>
-          ) : null
-        }
-      />
+                </SafeAreaView>
+              </GestureHandlerRootView>
+            ) : null
+          }
+        />
+      </InspectorPaneVisibleContext>
     </Split.Host>
   );
 }

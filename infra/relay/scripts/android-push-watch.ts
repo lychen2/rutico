@@ -41,6 +41,8 @@ const Device = Schema.Struct({
   deviceId: Schema.NonEmptyString,
   userId: Schema.NonEmptyString,
   packageName: Schema.NonEmptyString,
+  appVersion: Schema.optional(Schema.NonEmptyString),
+  recipientUserHash: Schema.optional(Schema.Boolean),
 });
 const Connection = Schema.Struct({
   wsUrl: Schema.NonEmptyString,
@@ -207,7 +209,12 @@ const main = Effect.gen(function* () {
             alert: alert !== null,
             data: fitFcmData({
               t3_kind: "agent_activity",
-              ...androidRecipientData(device.userId, device.deviceId, null),
+              ...androidRecipientData(
+                device.userId,
+                device.deviceId,
+                device.appVersion ?? null,
+                device.recipientUserHash,
+              ),
               updated_at: String(now),
               ...androidActivityData(aggregate),
               ...alert,

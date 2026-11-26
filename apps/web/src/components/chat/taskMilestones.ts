@@ -4,7 +4,7 @@ import { trailFailureKind } from "./taskTrailFailures";
 
 const MAX_MILESTONES = 6;
 
-export type MilestoneStatus = "todo" | "run" | "need" | "problem" | "done";
+export type MilestoneStatus = "todo" | "run" | "need" | "blocked" | "problem" | "done";
 
 export interface Milestone {
   readonly id: string;
@@ -13,6 +13,8 @@ export interface Milestone {
   readonly stepIds: readonly string[];
   readonly completedSteps: number;
   readonly operations: readonly TrailActivity[];
+  /** External dependency block reasons for steps in this milestone. */
+  readonly blockedReasons?: readonly string[];
   /** Failures that cost something and were followed by a success of the same kind of work. */
   readonly retries: number;
   /** Failures that cost something and were never followed by a success. */
@@ -63,12 +65,15 @@ export interface MilestoneInput {
   readonly activities: Readonly<Record<string, readonly TrailActivity[]>>;
   /** The step that is waiting on the user, when there is one. */
   readonly waitingStepId?: string | undefined;
+  /** External dependency block reasons keyed by step id. */
+  readonly blockedReasons?: Readonly<Record<string, string>> | undefined;
 }
 
 export function deriveMilestones({
   steps,
   activities,
   waitingStepId,
+  blockedReasons,
 }: MilestoneInput): Milestone[] {
   let offset = 0;
   return milestoneGroupSizes(steps.length).map((size, index) => {
@@ -78,15 +83,26 @@ export function deriveMilestones({
     const operations = group.flatMap((step) => activities[step.id] ?? []);
     const { retries, unresolved } = countRetries(operations);
     const finished = completedSteps === group.length;
+    const groupBlockedSteps =
+      blockedReasons === undefined
+        ? []
+        : group.filter(
+            (step) => step.status !== "completed" && Object.hasOwn(blockedReasons, step.id),
+          );
+    const groupBlockedReasons = groupBlockedSteps
+      .map((step) => blockedReasons?.[step.id]?.trim() ?? "")
+      .filter((reason) => reason.length > 0);
     const status: MilestoneStatus = finished
       ? "done"
       : group.some((step) => step.id === waitingStepId)
         ? "need"
-        : unresolved > 0
-          ? "problem"
-          : group.some((step) => step.status === "running") || completedSteps > 0
-            ? "run"
-            : "todo";
+        : groupBlockedSteps.length > 0
+          ? "blocked"
+          : unresolved > 0
+            ? "problem"
+            : group.some((step) => step.status === "running") || completedSteps > 0
+              ? "run"
+              : "todo";
     const lead = group.find((step) => step.status !== "completed") ?? group.at(-1)!;
     return {
       id: `milestone-${index}`,
@@ -95,24 +111,27 @@ export function deriveMilestones({
       stepIds: group.map((step) => step.id),
       completedSteps,
       operations,
+      ...(groupBlockedReasons.length === 0 ? {} : { blockedReasons: groupBlockedReasons }),
       retries,
       unresolved,
     };
   });
 }
 
-/** The milestone that holds attention: a wait first, then trouble, then the one running. */
+/** The milestone that holds attention: a wait first, then trouble, then blocked, then running. */
 export function currentMilestoneIndex(milestones: readonly Milestone[]): number {
   const rank = (status: MilestoneStatus) =>
     status === "need"
       ? 0
       : status === "problem"
         ? 1
-        : status === "run"
+        : status === "blocked"
           ? 2
-          : status === "todo"
+          : status === "run"
             ? 3
-            : 4;
+            : status === "todo"
+              ? 4
+              : 5;
   let best = -1;
   milestones.forEach((milestone, index) => {
     if (milestone.status === "done") return;
@@ -121,9 +140,9 @@ export function currentMilestoneIndex(milestones: readonly Milestone[]): number 
   return best;
 }
 
-export type CapsuleMode = "idle" | "run" | "need" | "problem" | "done";
+export type CapsuleMode = "idle" | "run" | "need" | "blocked" | "problem" | "done";
 
-/** Priority is fixed: waiting on you, then trouble, then work in flight. */
+/** Priority is fixed: waiting on you, then trouble, then external block, then work in flight. */
 export function capsuleMode(
   milestones: readonly Milestone[],
   options: {
@@ -136,6 +155,9 @@ export function capsuleMode(
   if (options.complete && milestones.length > 0) return "done";
   if (options.failed || milestones.some((milestone) => milestone.status === "problem")) {
     return "problem";
+  }
+  if (milestones.some((milestone) => milestone.status === "blocked")) {
+    return "blocked";
   }
   return milestones.some((milestone) => milestone.status === "run") ? "run" : "idle";
 }

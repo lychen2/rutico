@@ -12,7 +12,7 @@ export function UsageSegments(props: ComponentProps<typeof ToggleGroup>) {
     el.dataset.selection = selection;
     let animation: Animation | undefined;
     const update = () => {
-      const selected = el.querySelector<HTMLElement>("[data-slot=toggle][data-pressed]");
+      const selected = el.querySelector<HTMLElement>("[data-pressed]");
       const thumb = el.querySelector<HTMLElement>("[data-usage-thumb]");
       if (!selected || !thumb) return;
       const next = { left: selected.offsetLeft, width: selected.offsetWidth };

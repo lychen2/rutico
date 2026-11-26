@@ -27,6 +27,13 @@ import { scopeUsageEnvironments, mergeUsageEnvironments } from "./usageAnalysis"
 import { useUsage, type EnvironmentUsageStatus } from "../../state/usage";
 import { cacheHitRate, modelShare, sortModelsByTokens } from "./usageBreakdown";
 import { PROVIDER_PRESENTATION, usageSeries, usageSeriesLabel } from "./usageProviders";
+
+function piLabelContext(environments: readonly EnvironmentUsageStatus[]) {
+  return {
+    sources: environments.flatMap((environment) => environment.summary?.sources ?? []),
+    buckets: environments.flatMap((environment) => environment.summary?.buckets ?? []),
+  };
+}
 import { Toggle } from "../ui/toggle-group";
 import { UsageSegments as ToggleGroup } from "./UsageSegments";
 import "./usagePresentation.css";
@@ -1578,7 +1585,8 @@ export function V9CostDashboard({
   const periodSpanText =
     windowDays === 1 ? copy("24 hours") : copy("{count} days", { count: windowDays });
 
-  const scopePillText = `${selectedProvider === null ? copy("All providers") : usageSeriesLabel(selectedProvider)}${
+  const labelContext = piLabelContext(selectedEnvironments);
+  const scopePillText = `${selectedProvider === null ? copy("All providers") : usageSeriesLabel(selectedProvider, labelContext)}${
     selectedPeriod !== null
       ? ` · ${hourly ? formatPeriod(selectedPeriod).replace(/:\d{2}$/, ":00") : formatPeriod(selectedPeriod)}`
       : ""
@@ -1879,7 +1887,7 @@ export function V9CostDashboard({
                       data-ctv9="comp-seg"
                       data-dim={dim ? "true" : undefined}
                       style={{ width: `${Math.max(1.5, pct).toFixed(1)}%`, background: col }}
-                      aria-label={`${usageSeriesLabel(row.provider)} ${pct.toFixed(1)}%`}
+                      aria-label={`${usageSeriesLabel(row.provider, labelContext)} ${pct.toFixed(1)}%`}
                       onClick={() => onSelectProvider(sel ? null : row.provider)}
                     />
                   );
@@ -1905,7 +1913,9 @@ export function V9CostDashboard({
                   >
                     <V9BrandLogo provider={row.provider} />
                     <div>
-                      <div data-ctv9="prov-name">{usageSeriesLabel(row.provider)}</div>
+                      <div data-ctv9="prov-name">
+                        {usageSeriesLabel(row.provider, labelContext)}
+                      </div>
                       <div data-ctv9="prov-meta">
                         {copy("{count} conversations · {share}", {
                           count: formatCount(row.sessions),
@@ -2266,7 +2276,8 @@ export function V9TokensDashboard({
       ? text("Hover stacked bars for hourly token breakdown")
       : text("Hover stacked bars for daily token breakdown");
 
-  const scopePillText = `${selectedProvider === null ? copy("All providers") : usageSeriesLabel(selectedProvider)}${
+  const labelContext = piLabelContext(selectedEnvironments);
+  const scopePillText = `${selectedProvider === null ? copy("All providers") : usageSeriesLabel(selectedProvider, labelContext)}${
     selectedPeriod !== null
       ? ` · ${hourly ? formatPeriod(selectedPeriod).replace(/:\d{2}$/, ":00") : formatPeriod(selectedPeriod)}`
       : ""
@@ -2583,7 +2594,9 @@ export function V9TokensDashboard({
                   >
                     <V9BrandLogo provider={row.provider} />
                     <div>
-                      <div data-ctv9="prov-name">{usageSeriesLabel(row.provider)}</div>
+                      <div data-ctv9="prov-name">
+                        {usageSeriesLabel(row.provider, labelContext)}
+                      </div>
                       <div data-ctv9="prov-meta" data-ctv9-num>
                         {text("{share} of total · Output {outputShare}", {
                           share: `${sh.toFixed(1)}%`,

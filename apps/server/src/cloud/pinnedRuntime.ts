@@ -14,6 +14,7 @@ import { HttpClient, HttpClientError, HttpClientRequest, HttpClientResponse } fr
 
 import {
   CLI_RELEASE_CHECKSUMS_FILE,
+  CLI_RUNTIME_CACHE_SUBDIR,
   cliArchiveFileName,
   cliArchivePlatformKey,
   cliArchiveTarCommand,
@@ -49,7 +50,7 @@ export function pinnedRuntimeCommand(paths: PinnedRuntimePaths): {
 }
 
 export function pinnedRuntimeVersionsDir(path: Path.Path, baseDir: string): string {
-  return path.join(baseDir, PINNED_RUNTIME_DIR, "versions");
+  return path.join(baseDir, PINNED_RUNTIME_DIR, CLI_RUNTIME_CACHE_SUBDIR, "versions");
 }
 
 export function pinnedRuntimePaths(

@@ -133,7 +133,12 @@ it.layer(NodeServices.layer)("build-npm-launcher", (it) => {
         );
         assert.equal(manifest.name, "t3");
         assert.equal(manifest.version, VERSION);
-        assert.deepStrictEqual(manifest.bin, { t3: "./bin/t3.mjs" });
+        assert.deepStrictEqual(manifest.bin, { rutico: "./bin/t3.mjs", t3: "./bin/t3.mjs" });
+        assert.deepStrictEqual(manifest.repository, {
+          type: "git",
+          url: "https://github.com/lychen2/rutico",
+          directory: "apps/server",
+        });
         assert.isUndefined(manifest.dependencies);
         assert.isUndefined(manifest.optionalDependencies);
         assert.isAbove(npmReleaseDatabaseMigration(manifest) ?? 0, 0);
@@ -146,11 +151,29 @@ it.layer(NodeServices.layer)("build-npm-launcher", (it) => {
         });
         assert.equal(unpack.exitCode, 0, unpack.stderr);
         const packageDir = path.join(installed, "package");
+        const tarballManifest = yield* decodeManifest(
+          yield* fs.readFileString(path.join(packageDir, "package.json")),
+        );
+        assert.deepStrictEqual(tarballManifest.bin, {
+          rutico: "./bin/t3.mjs",
+          t3: "./bin/t3.mjs",
+        });
 
         const release = yield* serveFakeRelease(root);
         // regression: #32897
         release.failNextRequests(504, 524);
         const home = path.join(root, "home");
+        // Seed a same-version official T3 Code cache at runtime/versions/<version> to prove
+        // Rutico does not reuse official cached binaries and downloads its own release.
+        const officialCacheDir = path.join(home, "runtime/versions", VERSION);
+        yield* fs.makeDirectory(officialCacheDir, { recursive: true });
+        yield* fs.writeFileString(
+          path.join(officialCacheDir, "t3"),
+          '#!/bin/sh\necho "OFFICIAL_CACHE_HIJACK"\nexit 99\n',
+        );
+        yield* fs.chmod(path.join(officialCacheDir, "t3"), 0o755);
+        yield* fs.writeFileString(path.join(officialCacheDir, ".install-complete"), `${VERSION}\n`);
+
         const env = {
           PATH: (yield* HostProcess.Environment).PATH,
           T3CODE_HOME: home,
@@ -168,15 +191,20 @@ it.layer(NodeServices.layer)("build-npm-launcher", (it) => {
           (yield* fs.readFileString(env.T3CODE_TEST_CALLS)).trim().split("\n"),
           ["--version|", `serve a b|${launcher}`],
         );
-        const versionDir = path.join(home, "runtime/versions", VERSION);
+        const versionDir = path.join(home, "runtime/rutico/versions", VERSION);
         assert.equal(
           (yield* fs.readFileString(path.join(versionDir, ".install-complete"))).trim(),
           VERSION,
         );
         assert.isTrue(yield* fs.exists(path.join(versionDir, "node_modules/native")));
         assert.deepStrictEqual(
-          (yield* fs.readDirectory(path.join(home, "runtime/versions"))).sort(),
+          (yield* fs.readDirectory(path.join(home, "runtime/rutico/versions"))).sort(),
           [VERSION],
+        );
+        // Official cache was left untouched alongside Rutico's separate cache.
+        assert.include(
+          yield* fs.readFileString(path.join(officialCacheDir, "t3")),
+          "OFFICIAL_CACHE_HIJACK",
         );
 
         const requestsAfterFirst = release.requests.length;
@@ -200,7 +228,7 @@ it.layer(NodeServices.layer)("build-npm-launcher", (it) => {
           );
         }
 
-        const ipcServer = path.join(home, "runtime/versions", VERSION, "t3");
+        const ipcServer = path.join(home, "runtime/rutico/versions", VERSION, "t3");
         yield* fs.writeFileString(
           ipcServer,
           `#!${process.execPath}\nprocess.on("SIGTERM", () => process.exit(23));\nprocess.on("message", (m) => process.send({ reply: m }));\nprocess.send({ args: process.argv.slice(2) });\n`,
@@ -230,14 +258,15 @@ it.layer(NodeServices.layer)("build-npm-launcher", (it) => {
         const [one, two] = yield* Effect.all([launch, launch], { concurrency: "unbounded" });
         assert.equal(one.exitCode, 0, one.stderr);
         assert.equal(two.exitCode, 0, two.stderr);
-        assert.deepStrictEqual(yield* fs.readDirectory(path.join(raceHome, "runtime/versions")), [
-          VERSION,
-        ]);
+        assert.deepStrictEqual(
+          yield* fs.readDirectory(path.join(raceHome, "runtime/rutico/versions")),
+          [VERSION],
+        );
 
         // A peer's executable and sidecar stay available after every later rename or removal,
         // even when it publishes after our missing-marker read.
         const staleHome = path.join(root, "stale-home");
-        const staleDir = path.join(staleHome, "runtime/versions", VERSION);
+        const staleDir = path.join(staleHome, "runtime/rutico/versions", VERSION);
         const peerDir = path.join(root, "peer-runtime");
         yield* fs.makeDirectory(staleDir, { recursive: true });
         yield* fs.writeFileString(path.join(staleDir, "t3"), "");
@@ -310,14 +339,15 @@ fs.readFileSync = (file, ...rest) => {
         assert.deepStrictEqual([...new Set(checks)], ["7|peer --version|peer sidecar"]);
         assert.equal(recovered.stdout.trim(), "peer --version", recovered.stderr);
         assert.equal(recovered.exitCode, 7);
-        assert.deepStrictEqual(yield* fs.readDirectory(path.join(staleHome, "runtime/versions")), [
-          VERSION,
-        ]);
+        assert.deepStrictEqual(
+          yield* fs.readDirectory(path.join(staleHome, "runtime/rutico/versions")),
+          [VERSION],
+        );
 
         // While another launch holds the lock, a stale folder is left alone and the error says
         // how to clear a lock left by a crash.
         const staleOnlyHome = path.join(root, "stale-only-home");
-        const staleOnlyDir = path.join(staleOnlyHome, "runtime/versions", VERSION);
+        const staleOnlyDir = path.join(staleOnlyHome, "runtime/rutico/versions", VERSION);
         yield* fs.makeDirectory(staleOnlyDir, { recursive: true });
         yield* fs.writeFileString(path.join(staleOnlyDir, "t3"), "incomplete");
         yield* fs.makeDirectory(`${staleOnlyDir}.lock`);
@@ -338,7 +368,7 @@ fs.readFileSync = (file, ...rest) => {
         assert.equal(replaced.stdout.trim(), VERSION, replaced.stderr);
         assert.equal(replaced.exitCode, 0);
         assert.deepStrictEqual(
-          yield* fs.readDirectory(path.join(staleOnlyHome, "runtime/versions")),
+          yield* fs.readDirectory(path.join(staleOnlyHome, "runtime/rutico/versions")),
           [VERSION],
         );
 
@@ -350,7 +380,7 @@ fs.readFileSync = (file, ...rest) => {
         assert.equal(corrupt.exitCode, 1);
         assert.include(corrupt.stderr, "checksum mismatch");
         assert.deepStrictEqual(
-          yield* fs.readDirectory(path.join(root, "other-home/runtime/versions")),
+          yield* fs.readDirectory(path.join(root, "other-home/runtime/rutico/versions")),
           [],
         );
       }),
@@ -374,7 +404,7 @@ fs.readFileSync = (file, ...rest) => {
           });
           const release = yield* serveFakeRelease(root, executable);
           const home = path.join(root, "home");
-          const dir = path.join(home, "runtime/versions", VERSION);
+          const dir = path.join(home, "runtime/rutico/versions", VERSION);
           const probeTimeoutHook = path.join(root, "probe-timeout.mjs");
           yield* fs.writeFileString(
             probeTimeoutHook,
@@ -438,7 +468,7 @@ syncBuiltinESMExports();
         assert.equal(unpack.exitCode, 0, unpack.stderr);
 
         const home = path.join(root, "home");
-        const versionDir = path.join(home, "runtime/versions", VERSION);
+        const versionDir = path.join(home, "runtime/rutico/versions", VERSION);
         yield* fs.makeDirectory(versionDir, { recursive: true });
         yield* fs.writeFileString(path.join(versionDir, ".install-complete"), `${VERSION}\n`);
         // Stands in for a runtime whose exit is stuck behind blocked filesystem calls, with a

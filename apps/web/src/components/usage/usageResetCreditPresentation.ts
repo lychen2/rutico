@@ -59,6 +59,10 @@ export function resetCreditChoices(
     });
 }
 
+function isModelScopedWeeklyWindow(window: ServerProviderUsageWindow): boolean {
+  return Boolean(window.modelIds?.length) || window.id.startsWith("seven_day_");
+}
+
 /** Only infer effects for the provider's known option labels. Unknown effects remain explicit. */
 export function resetAffectedWindows(
   choice: ResetCreditChoice | null,
@@ -66,19 +70,27 @@ export function resetAffectedWindows(
   windows: readonly ServerProviderUsageWindow[],
 ) {
   const option = credits?.options?.find((o) => o.creditId === choice?.key);
-  if (!option) return credits?.options?.length ? [] : windows;
+  if (!option) {
+    return credits?.options?.length
+      ? []
+      : windows.filter(
+          (w) => w.id !== "individual" && w.id !== "monthly_spend" && w.kind !== "monthly",
+        );
+  }
   switch (option.label) {
     case "5-hour reset":
       return windows.filter((w) => w.kind === "session");
     case "Weekly reset":
-      return windows.filter((w) => w.kind === "weekly" && !w.modelIds?.length);
+      return windows.filter((w) => w.kind === "weekly" && !isModelScopedWeeklyWindow(w));
     case "Full reset":
       return windows.filter(
-        (w) => (w.kind === "session" || w.kind === "weekly") && !w.modelIds?.length,
+        (w) => (w.kind === "session" || w.kind === "weekly") && !isModelScopedWeeklyWindow(w),
       );
     // A Fable card gives back part of the weekly use, not the whole week.
     case "Fable reset":
-      return windows.filter((w) => w.modelIds?.some((id) => /fable/i.test(id)));
+      return windows.filter(
+        (w) => w.modelIds?.some((id) => /fable/i.test(id)) || /^seven_day_.*fable/i.test(w.id),
+      );
     default:
       return [];
   }

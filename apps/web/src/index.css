@@ -944,14 +944,6 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
   body {
     background-color: var(--app-chrome-background);
   }
-  /* Let Electron macOS vibrancy / Windows mica show through when glass opacity < 100%. */
-  html[data-native-glass="true"],
-  html[data-native-glass="true"] body {
-    background-color: transparent;
-  }
-  html[data-native-glass="true"] [data-slot="sidebar-wrapper"] {
-    background-color: color-mix(in srgb, var(--background) var(--glass-opacity), transparent);
-  }
   body {
     @apply text-foreground relative;
     text-autospace: normal;
@@ -965,6 +957,15 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
   [contenteditable="true"] {
     text-autospace: no-autospace;
   }
+}
+
+/* Unlayered so native vibrancy/mica transparency overrides Tailwind utility bg-background on [data-slot="sidebar-wrapper"]. */
+html[data-native-glass="true"],
+html[data-native-glass="true"] body {
+  background-color: transparent;
+}
+html[data-native-glass="true"] [data-slot="sidebar-wrapper"] {
+  background-color: color-mix(in srgb, var(--background) var(--glass-opacity), transparent);
 }
 
 @layer components {

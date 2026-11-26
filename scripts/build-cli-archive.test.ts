@@ -454,6 +454,21 @@ it.layer(NodeServices.layer)("build-cli-archive linux libatomic", (it) => {
         })),
         {},
       );
+      // 4. ldd probe fails (non-zero exit) -> smoke check fails instead of treating as no dependency.
+      const probeFail = yield* makeContent();
+      const probeFailErr = yield* withStubs(
+        verifyLinuxBundledLibatomic({
+          contentDir: probeFail.contentDir,
+          executable: probeFail.executablePath,
+        }),
+        stubCommandSpawner(() => ({
+          exitCode: 1,
+          stdout: "\tnot a dynamic executable\n",
+        })),
+        {},
+      ).pipe(Effect.flip);
+      assert.equal(probeFailErr._tag, "CliArchiveSmokeError");
+      assert.include(probeFailErr.detail, "ldd exited with 1");
     }).pipe(Effect.scoped),
   );
 });

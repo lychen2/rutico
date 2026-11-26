@@ -58,7 +58,7 @@ it.effect("authenticates each release page until the requested channel is found"
     const httpClient = HttpClient.make((request) => {
       const url = new URL(request.url);
       assert.equal(url.origin, "https://api.github.com");
-      assert.equal(url.pathname, "/repos/pingdotgg/t3code/releases");
+      assert.equal(url.pathname, "/repos/lychen2/rutico/releases");
       assert.equal(request.headers.accept, "application/vnd.github+json");
       assert.equal(request.headers.authorization, "Bearer gh-token");
       const page = url.searchParams.get("page") ?? "";
@@ -206,8 +206,8 @@ it.layer(NodeServices.layer)("t3 update launcher", (it) => {
       const fs = yield* FileSystem.FileSystem;
       const path = yield* Path.Path;
       const root = yield* fs.makeTempDirectoryScoped({ prefix: "t3-update-" });
-      const oldExe = path.join(root, "runtime/versions/1.0.0/t3");
-      const newExe = path.join(root, "runtime/versions/2.0.0/t3");
+      const oldExe = path.join(root, "runtime/rutico/versions/1.0.0/t3");
+      const newExe = path.join(root, "runtime/rutico/versions/2.0.0/t3");
       const launcher = path.join(root, "bin/t3");
       for (const file of [oldExe, newExe]) {
         yield* fs.makeDirectory(path.dirname(file), { recursive: true });
@@ -237,12 +237,12 @@ it.layer(NodeServices.layer)("t3 update launcher", (it) => {
       const baseDir = path.join(root, "home");
       const runtimeDir = path.join(baseDir, "runtime");
       const launcher = path.join(root, "custom bin", "t3.cmd");
-      const launchedAs = path.join(runtimeDir, "versions", "1.0.0", "t3.exe");
-      const targetEntryPath = path.join(runtimeDir, "versions", "2.0.0", "t3.exe");
-      yield* fs.makeDirectory(runtimeDir, { recursive: true });
+      const launchedAs = path.join(runtimeDir, "rutico", "versions", "1.0.0", "t3.exe");
+      const targetEntryPath = path.join(runtimeDir, "rutico", "versions", "2.0.0", "t3.exe");
+      yield* fs.makeDirectory(path.join(runtimeDir, "rutico"), { recursive: true });
       yield* fs.makeDirectory(path.dirname(launcher), { recursive: true });
       yield* fs.writeFileString(launcher, `@echo off\r\n"${launchedAs}" %*`);
-      yield* fs.writeFileString(path.join(runtimeDir, "launchers"), `${launcher}\r\n`);
+      yield* fs.writeFileString(path.join(runtimeDir, "rutico", "launchers"), `${launcher}\r\n`);
 
       const repointed = yield* repointLauncher({ launchedAs, baseDir, targetEntryPath });
 
@@ -267,7 +267,8 @@ it.layer(NodeServices.layer)("t3 update launcher", (it) => {
         );
         // A quote and a space in the home path exercise the script's quoting.
         const home = path.join(root, "it's home");
-        const entry = (version: string) => path.join(home, "runtime/versions", version, "t3");
+        const entry = (version: string) =>
+          path.join(home, "runtime/rutico/versions", version, "t3");
         for (const version of ["1.0.0", "2.0.0"]) {
           yield* fs.makeDirectory(path.dirname(entry(version)), { recursive: true });
           yield* fs.writeFileString(entry(version), '#!/bin/sh\nprintf \'[%s]\\n\' "$0" "$@"\n', {
@@ -342,7 +343,7 @@ it.layer(NodeServices.layer)("t3 update launcher", (it) => {
       const root = yield* fs.makeTempDirectoryScoped({ prefix: "t3-update-" });
       yield* TestClock.setTime(Duration.toMillis(Duration.days(1)));
       for (const version of ["1.0.0", "2.0.0"]) {
-        const directory = path.join(root, "runtime/versions", version);
+        const directory = path.join(root, "runtime/rutico/versions", version);
         yield* fs.makeDirectory(directory, { recursive: true });
         yield* fs.writeFileString(path.join(directory, "t3"), "");
         yield* fs.writeFileString(path.join(directory, ".install-complete"), `${version}\n`);
@@ -353,13 +354,13 @@ it.layer(NodeServices.layer)("t3 update launcher", (it) => {
       }
       // A launcher in the T3 home itself, which neither PATH nor the default bin dir reaches.
       const launcher = path.join(root, "t3");
-      yield* fs.symlink(path.join(root, "runtime/versions/1.0.0/t3"), launcher);
+      yield* fs.symlink(path.join(root, "runtime/rutico/versions/1.0.0/t3"), launcher);
 
       const launchersFile = path.join(root, "runtime/launchers");
       yield* repointLauncher({
         launchedAs: launcher,
         baseDir: root,
-        targetEntryPath: path.join(root, "runtime/versions/2.0.0/t3"),
+        targetEntryPath: path.join(root, "runtime/rutico/versions/2.0.0/t3"),
       }).pipe(
         Effect.provideService(FileSystem.FileSystem, {
           ...fs,
@@ -386,7 +387,7 @@ it.layer(NodeServices.layer)("t3 update launcher", (it) => {
       assert.deepStrictEqual(removed, ["1.0.0"]);
       assert.equal(
         yield* readPosixLauncherTarget(launcher),
-        path.join(root, "runtime/versions/2.0.0/t3"),
+        path.join(root, "runtime/rutico/versions/2.0.0/t3"),
       );
     }).pipe(Effect.provideService(HostProcess.Platform, "linux")),
   );
@@ -395,8 +396,8 @@ it.layer(NodeServices.layer)("t3 update launcher", (it) => {
     const fs = yield* FileSystem.FileSystem;
     const path = yield* Path.Path;
     const root = yield* fs.makeTempDirectoryScoped({ prefix: "t3-update-" });
-    const oldExe = path.join(root, "runtime/versions/1.0.0/t3");
-    const newExe = path.join(root, "runtime/versions/2.0.0/t3");
+    const oldExe = path.join(root, "runtime/rutico/versions/1.0.0/t3");
+    const newExe = path.join(root, "runtime/rutico/versions/2.0.0/t3");
     const launcher = path.join(root, "t3");
     for (const file of [oldExe, newExe]) {
       yield* fs.makeDirectory(path.dirname(file), { recursive: true });
@@ -481,11 +482,11 @@ it.layer(NodeServices.layer)("t3 update launcher", (it) => {
       const fs = yield* FileSystem.FileSystem;
       const path = yield* Path.Path;
       const root = yield* fs.makeTempDirectoryScoped({ prefix: "t3-update-" });
-      const newExe = path.join(root, "runtime/versions/2.0.0/t3");
+      const newExe = path.join(root, "runtime/rutico/versions/2.0.0/t3");
       const copy = path.join(root, "copy/t3");
       const foreign = path.join(root, "foreign/t3");
       const elsewhere = path.join(root, "elsewhere/t3");
-      const otherHome = path.join(root, "other/runtime/versions/1.0.0/t3");
+      const otherHome = path.join(root, "other/runtime/rutico/versions/1.0.0/t3");
       const otherLauncher = path.join(root, "other/bin/t3");
       for (const file of [newExe, copy, elsewhere, otherHome]) {
         yield* fs.makeDirectory(path.dirname(file), { recursive: true });

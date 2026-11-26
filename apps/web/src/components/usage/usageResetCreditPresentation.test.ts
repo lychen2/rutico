@@ -1,6 +1,7 @@
 import { expect, it } from "vite-plus/test";
-import { ProviderInstanceId, ProviderDriverKind } from "@t3tools/contracts";
+import { EnvironmentId, ProviderInstanceId, ProviderDriverKind } from "@t3tools/contracts";
 import { collectLimitPools, type LimitAccount } from "@t3tools/shared/usageLimits";
+import { resetCreditConfirmToken } from "./UsageLimitsPooled";
 import { t3LimitWindows, quotaForecastState } from "./usageQuotaPresentation";
 import {
   resetAdvanceLabel,
@@ -95,6 +96,29 @@ it("defaults to earliest available expiry and never claims a partial Fable reset
   expect(resetAffectedWindows(choices[0]!, credits, windows).map((w) => w.id)).toEqual(["5h"]);
   const partial = { ...credits, options: [{ ...credits.options[0]!, label: "Fable reset" }] };
   expect(resetAffectedWindows(choices[1]!, partial, windows)).toEqual([]);
+  const claudeScoped = [
+    ...windows,
+    { id: "seven_day_fable", kind: "weekly" as const, label: "Weekly · Fable", usedPercent: 100 },
+  ];
+  expect(resetAffectedWindows(choices[1]!, partial, claudeScoped).map((w) => w.id)).toEqual([
+    "seven_day_fable",
+  ]);
+  // Codex no-options fallback must not claim to reset monthly credit limits ("individual").
+  const codexCredits = { availableCount: 1 };
+  const codexChoice = resetCreditChoices(
+    codexCredits,
+    { instanceId: ProviderInstanceId.make("codex") },
+    now,
+  )[0]!;
+  const codexWindows = [
+    { id: "primary", kind: "session" as const, label: "5-hour", usedPercent: 80 },
+    { id: "secondary", kind: "weekly" as const, label: "Weekly", usedPercent: 60 },
+    { id: "individual", kind: "monthly" as const, label: "Monthly credit limit", usedPercent: 40 },
+  ];
+  expect(resetAffectedWindows(codexChoice, codexCredits, codexWindows).map((w) => w.id)).toEqual([
+    "primary",
+    "secondary",
+  ]);
 });
 
 it("formats reset advance in days starting at 48 hours and hours below that", () => {
@@ -108,4 +132,37 @@ it("formats reset advance in days starting at 48 hours and hours below that", ()
   ] as const) {
     expect(resetAdvanceLabel(new Date(now + hours * 3600000).toISOString(), now)).toBe(expected);
   }
+});
+
+it("binds Codex 'next' reset credit confirmation to environment, account, instance, and credit state so exhausting account A cancels confirmation for account B", () => {
+  const now = Date.parse("2026-11-17T16:00:00Z");
+  const makeCodexAccount = (id: string, envId: string, availableCount: number) => {
+    const account = {
+      key: `${envId}:${id}`,
+      limits: {
+        checkedAt: new Date(now).toISOString(),
+        windows: [],
+        resetCredits: { availableCount, nextExpiresAt: "2026-12-01T00:00:00Z" },
+      },
+      redeem: {
+        environmentId: EnvironmentId.make(envId),
+        input: { instanceId: ProviderInstanceId.make(id) },
+      },
+    };
+    const choice = resetCreditChoices(account.limits.resetCredits, account.redeem.input, now)[0]!;
+    return { account, choice };
+  };
+  const a = makeCodexAccount("codex-a", "env-1", 1);
+  const b = makeCodexAccount("codex-b", "env-1", 1);
+  // Both native Codex accounts produce the same choice key "next", but distinct confirm tokens.
+  expect(a.choice.key).toBe("next");
+  expect(b.choice.key).toBe("next");
+  expect(resetCreditConfirmToken(a.account, a.choice)).not.toBe(
+    resetCreditConfirmToken(b.account, b.choice),
+  );
+  // Even on the same account, a change in availableCount (credit consumed externally) invalidates confirmation.
+  const aAfterOtherDevice = makeCodexAccount("codex-a", "env-1", 2);
+  expect(resetCreditConfirmToken(a.account, a.choice)).not.toBe(
+    resetCreditConfirmToken(aAfterOtherDevice.account, aAfterOtherDevice.choice),
+  );
 });

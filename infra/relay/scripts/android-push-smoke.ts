@@ -20,6 +20,8 @@ const Device = Schema.Struct({
   userId: Schema.NonEmptyString,
   packageName: Schema.NonEmptyString,
   deepLink: Schema.optional(Schema.NonEmptyString),
+  appVersion: Schema.optional(Schema.NonEmptyString),
+  recipientUserHash: Schema.optional(Schema.Boolean),
 });
 const decodeDevice = Schema.decodeUnknownEffect(Schema.fromJsonString(Device));
 const Phase = Schema.Literals(["running", "approval", "input", "completed", "failed", "end"]);
@@ -103,7 +105,12 @@ const main = Effect.gen(function* () {
         alert: title !== null,
         data: {
           t3_kind: "agent_activity",
-          ...androidRecipientData(device.userId, device.deviceId, null),
+          ...androidRecipientData(
+            device.userId,
+            device.deviceId,
+            device.appVersion ?? null,
+            device.recipientUserHash,
+          ),
           updated_at: String(now),
           active: String(active),
           activity_title: active

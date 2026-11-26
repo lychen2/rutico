@@ -65,11 +65,12 @@ export function TaskPlanCapsule({ progress, onOpenFile, onDismissed }: TaskPlanC
   const [fading, setFading] = useState(false);
   const [hintKey, setHintKey] = useState(0);
   const { complete, waiting } = progress;
-  const needStep = progress.blockedStepId ?? (waiting ? waitingStepId(progress) : undefined);
+  const needStep = waiting ? waitingStepId(progress) : undefined;
   const milestones = deriveMilestones({
     steps: progress.steps,
     activities: progress.activities,
     waitingStepId: needStep,
+    blockedReasons: progress.blockedReasons,
   });
   const mode = capsuleMode(milestones, {
     waiting,
@@ -96,7 +97,13 @@ export function TaskPlanCapsule({ progress, onOpenFile, onDismissed }: TaskPlanC
         ? `${current.name} · ${gt("{count} calls completed", { count: completedFallbackOps })}`
         : (current?.name ?? gt("Task steps"));
   const pill =
-    mode === "need" ? gt("Needs confirmation") : mode === "problem" ? gt("Problem") : null;
+    mode === "need"
+      ? gt("Needs confirmation")
+      : mode === "blocked"
+        ? gt("Blocked")
+        : mode === "problem"
+          ? gt("Problem")
+          : null;
 
   // The old title slides out while the new one slides in; one timer clears the old one.
   const [shownTitle, setShownTitle] = useState(title);

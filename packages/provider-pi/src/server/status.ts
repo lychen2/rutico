@@ -150,6 +150,7 @@ const makePiDiscoveryConnection = Effect.fnUntraced(function* (
   cwd?: string,
   textGenerationLaunch = false,
   omp = false,
+  disableExtensions = textGenerationLaunch,
 ) {
   const launch = buildPiRpcLaunch({
     omp,
@@ -158,7 +159,7 @@ const makePiDiscoveryConnection = Effect.fnUntraced(function* (
     mcpSession: undefined,
     extensionPath: undefined,
     ephemeral: true,
-    disableExtensions: textGenerationLaunch,
+    disableExtensions,
     disableTools: textGenerationLaunch,
     shortLived: true,
   });
@@ -691,7 +692,12 @@ export const enrichPiSnapshot = (input: {
 };
 
 export const discoverOmpInventory = Effect.fn("discoverOmpInventory")(
-  function* (settings: PiSettings, environment: NodeJS.ProcessEnv, cwd: string) {
+  function* (
+    settings: PiSettings,
+    environment: NodeJS.ProcessEnv,
+    cwd: string,
+    options?: { readonly disableExtensions?: boolean },
+  ) {
     const launchArgs = resolveOmpLaunchArgs(settings.launchArgs);
     if (!launchArgs.ok) {
       return yield* new PiRpcError({ operation: "launch", detail: launchArgs.message });
@@ -703,6 +709,7 @@ export const discoverOmpInventory = Effect.fn("discoverOmpInventory")(
       cwd,
       false,
       true,
+      options?.disableExtensions ?? false,
     );
     const state = yield* connection.request({ type: "get_state" });
     const models = yield* connection.request({ type: "get_available_models" });
@@ -752,6 +759,7 @@ export const checkOmpStatus = Effect.fn("checkOmpStatus")(function* (
   settings: PiSettings,
   environment: NodeJS.ProcessEnv,
   cwd: string,
+  options?: { readonly disableExtensions?: boolean },
 ) {
   const initial = yield* buildInitialOmpSnapshot(settings);
   if (!settings.enabled) return initial;
@@ -768,7 +776,9 @@ export const checkOmpStatus = Effect.fn("checkOmpStatus")(function* (
   const inventory =
     version === null
       ? Option.none()
-      : yield* discoverOmpInventory(settings, environment, cwd).pipe(Effect.option);
+      : yield* discoverOmpInventory(settings, environment, cwd, {
+          disableExtensions: options?.disableExtensions ?? true,
+        }).pipe(Effect.option);
   return buildServerProvider({
     presentation: OMP_PRESENTATION,
     checkedAt: DateTime.formatIso(yield* DateTime.now),

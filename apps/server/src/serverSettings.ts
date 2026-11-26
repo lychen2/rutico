@@ -260,6 +260,31 @@ function isActiveAntigravityNativeOAuthInstance(entry: ProviderInstanceConfig): 
   );
 }
 
+function ensureAntigravityNativeOAuthSingleInstance(
+  providerInstances: ServerSettings["providerInstances"],
+  settingsPath: string,
+): Effect.Effect<void, ServerSettingsError> {
+  let primaryId: string | undefined;
+  for (const [id, entry] of Object.entries(providerInstances)) {
+    if (!isActiveAntigravityNativeOAuthInstance(entry)) continue;
+    if (primaryId === undefined) {
+      primaryId = id;
+      continue;
+    }
+    return Effect.fail(
+      new ServerSettingsError({
+        settingsPath,
+        operation: "create-provider-instance",
+        providerInstanceId: id,
+        cause: new Error(
+          `Another active Antigravity instance ('${primaryId}') already uses this OS user's native ~/.gemini Google sign-in. Disable one instance or switch to an API key method.`,
+        ),
+      }),
+    );
+  }
+  return Effect.void;
+}
+
 function ensureProviderInstanceMutationAllowed(
   settings: ServerSettings,
   mutation: ProviderInstanceMutation,
@@ -289,10 +314,7 @@ function ensureProviderInstanceMutationAllowed(
       return Effect.fail(
         new ServerSettingsError({
           settingsPath,
-          operation:
-            mutation.operation === "create"
-              ? "create-provider-instance"
-              : "upsert-provider-instance",
+          operation: "create-provider-instance",
           providerInstanceId: mutation.instanceId,
           cause: new Error(
             `Another active Antigravity instance ('${conflictingId}') already uses this OS user's native ~/.gemini Google sign-in. Disable it first or choose an API key sign-in method.`,
@@ -1517,9 +1539,14 @@ const make = Effect.gen(function* () {
     getSettings: getMaterializedSettings,
     updateSettings: (patch) =>
       updateAndPersistSettings(patch, (current) =>
-        ensureSecretProviderWritesAllowed(patch, settingsPath).pipe(
-          Effect.as(applyServerSettingsPatch(current, patch)),
-        ),
+        Effect.gen(function* () {
+          yield* ensureSecretProviderWritesAllowed(patch, settingsPath);
+          const next = applyServerSettingsPatch(current, patch);
+          if (patch.providerInstances !== undefined) {
+            yield* ensureAntigravityNativeOAuthSingleInstance(next.providerInstances, settingsPath);
+          }
+          return next;
+        }),
       ),
     updateProviderInstance: (mutation, patch = {}) =>
       updateAndPersistSettings(patch, (current) =>

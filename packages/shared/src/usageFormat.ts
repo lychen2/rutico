@@ -319,7 +319,7 @@ export function makeWindow(
   const untilDay = format.format(now);
   if (resolution === "hour") {
     const untilTimeMs = Math.floor(now.getTime() / 60_000) * 60_000;
-    const sinceTimeMs = untilTimeMs - 24 * HOUR_MS;
+    const sinceTimeMs = untilTimeMs - Math.max(1, days) * 24 * HOUR_MS;
     const sinceTime = new Date(sinceTimeMs);
     const untilTime = new Date(untilTimeMs);
     return {
@@ -342,4 +342,58 @@ export function makeWindow(
     timeZone,
     resolution,
   };
+}
+
+const OMP_PATH_PATTERN = /(?:^|[\\/])\.omp(?:[\\/]|$)/i;
+
+/**
+ * Classifies `pi`-bucketed usage without changing the closed `UsageProviderKind` wire schema:
+ * pure Pi transcripts show "Pi", pure OMP transcripts show "OMP", mixed show "Pi / OMP".
+ */
+export function resolvePiProviderLabel(input: {
+  readonly sources?: ReadonlyArray<{
+    readonly status?: string;
+    readonly scannedFiles?: number;
+    readonly distinctSessions?: number;
+    readonly fingerprint: {
+      readonly provider: string;
+      readonly resolvedHomePath: string;
+    };
+  }>;
+  readonly buckets?: ReadonlyArray<{
+    readonly provider: string;
+    readonly sourcePath?: string | undefined;
+  }>;
+}): "Pi" | "OMP" | "Pi / OMP" {
+  let sawPi = false;
+  let sawOmp = false;
+  for (const bucket of input.buckets ?? []) {
+    if (bucket.provider !== "pi" || bucket.sourcePath === undefined) continue;
+    if (OMP_PATH_PATTERN.test(bucket.sourcePath)) {
+      sawOmp = true;
+    } else {
+      sawPi = true;
+    }
+  }
+  if (!sawPi && !sawOmp) {
+    for (const source of input.sources ?? []) {
+      if (source.fingerprint.provider !== "pi") continue;
+      if (
+        source.status === "missing" &&
+        (source.scannedFiles ?? 0) === 0 &&
+        (source.distinctSessions ?? 0) === 0
+      ) {
+        continue;
+      }
+      if (OMP_PATH_PATTERN.test(source.fingerprint.resolvedHomePath)) {
+        sawOmp = true;
+      } else {
+        sawPi = true;
+      }
+    }
+  }
+  if (sawPi && sawOmp) return "Pi / OMP";
+  if (sawOmp) return "OMP";
+  if (sawPi) return "Pi";
+  return "Pi / OMP";
 }

@@ -38,6 +38,8 @@ it.effect("lists only existing artifacts recorded by this thread in its worktree
     yield* fs.makeDirectory(attachmentsDir, { recursive: true });
     yield* fs.writeFileString(path.join(root, "report.pdf"), "not the thread's report");
     yield* fs.writeFileString(path.join(worktree, "report.pdf"), "thread report");
+    // Same-named file at worktree root must NOT shadow the `cd reports` command's plot.png.
+    yield* fs.writeFileString(path.join(worktree, "plot.png"), "wrong worktree root plot");
     yield* fs.writeFileString(path.join(output, "plot.png"), "thread plot");
     yield* fs.writeFileString(path.join(worktree, "unmentioned.md"), "unrelated file");
     yield* fs.writeFileString(path.join(worktree, "rolled-back.pdf"), "previous run output");
@@ -155,6 +157,16 @@ it.effect("lists only existing artifacts recorded by this thread in its worktree
     }
 
     const actual = (yield* artifacts.list(threadId)).artifacts;
+    const plotArtifact = actual.find((artifact) => artifact.name === "plot.png");
+    expect(plotArtifact?.resource).toMatchObject({
+      _tag: "media-file",
+      path: path.join(output, "plot.png"),
+    });
+    expect(
+      yield* fs.readFileString(
+        plotArtifact!.resource._tag === "media-file" ? plotArtifact!.resource.path : "",
+      ),
+    ).toBe("thread plot");
     expect(actual.map((artifact) => artifact.name).sort()).toEqual([
       "Tool page.html",
       "plot.png",

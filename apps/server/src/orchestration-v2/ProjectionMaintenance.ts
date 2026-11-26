@@ -375,14 +375,44 @@ export const layer: Layer.Layer<ProjectionMaintenanceV2, never, SqlClient.SqlCli
                       AND json_extract(payload_json, '$.status') = 'running'
                     )
                 )`,
-                // The purge deletes settled requests and clears a failed one's error.
+                // The purge deletes settled requests and clears a failed one's text and error.
                 sql`EXISTS (
                   SELECT 1 FROM orchestration_v2_effect_outbox AS effect
                   WHERE effect.thread_id = thread.thread_id
                     AND effect.effect_type <> 'thread-content.purge'
                     AND (
                       effect.status IN ('succeeded', 'cancelled')
-                      OR (effect.status = 'failed' AND effect.last_error IS NOT NULL)
+                      OR (
+                        effect.status = 'failed'
+                        AND (
+                          effect.last_error IS NOT NULL
+                          OR (json_valid(effect.payload_json) AND json_type(effect.payload_json, '$.answers') IS NOT NULL)
+                          OR (json_valid(effect.payload_json) AND json_type(effect.payload_json, '$.feedback') IS NOT NULL)
+                          OR (
+                            json_valid(effect.payload_json)
+                            AND json_type(effect.payload_json, '$.title') = 'text'
+                            AND json_extract(effect.payload_json, '$.title') <> ${DELETED_THREAD_TITLE}
+                          )
+                        )
+                      )
+                    )
+                )`,
+                sql`EXISTS (
+                  SELECT 1 FROM agent_feedback
+                  WHERE thread_id = thread.thread_id
+                )`,
+                sql`EXISTS (
+                  SELECT 1 FROM orchestration_v2_events
+                  WHERE thread_id = thread.thread_id
+                    AND (
+                      event_type NOT IN ('thread.created', 'thread.deleted')
+                      OR (
+                        json_valid(payload_json)
+                        AND (
+                          json_extract(payload_json, '$.title') IS NOT ${DELETED_THREAD_TITLE}
+                          OR json_type(payload_json, '$.guestShare') IS NOT NULL
+                        )
+                      )
                     )
                 )`,
                 ...DELETED_THREAD_CONTENT_TABLES.map(
@@ -487,14 +517,383 @@ export const layer: Layer.Layer<ProjectionMaintenanceV2, never, SqlClient.SqlCli
       }
     });
 
+    // Failed/settled outbox payloads (user answers, feedback, titles) never belong to live run
+    // forks, so redact failed rows (preserving status='failed' for worktree protection) and clear
+    // settled rows once no active effect/merge-back/subagent still reads the deleted thread.
+    const scrubDeletedSensitiveOutbox = Effect.fnUntraced(function* (
+      deletedThreadId: ThreadId | undefined,
+    ) {
+      const targetIds = yield* (
+        deletedThreadId !== undefined
+          ? sql<{ readonly thread_id: string }>`
+              WITH RECURSIVE candidate(thread_id) AS (
+                SELECT ${deletedThreadId}
+                UNION
+                SELECT json_extract(fork.payload_json, '$.forkedFrom.threadId')
+                FROM candidate
+                JOIN orchestration_v2_projection_threads AS fork
+                  ON fork.thread_id = candidate.thread_id
+                WHERE json_extract(fork.payload_json, '$.forkedFrom.type') = 'run'
+              )
+              SELECT thread.thread_id
+              FROM candidate
+              JOIN orchestration_v2_projection_threads AS thread
+                ON thread.thread_id = candidate.thread_id
+              WHERE thread.deleted_at IS NOT NULL
+                AND NOT EXISTS (
+                  SELECT 1 FROM orchestration_v2_effect_outbox AS active
+                  WHERE active.thread_id = thread.thread_id
+                    AND active.status IN ('pending', 'running')
+                    AND active.effect_type NOT IN ('thread-content.purge', 'thread-title.generate')
+                )
+                AND NOT EXISTS (
+                  SELECT 1 FROM orchestration_v2_projection_context_transfers AS transfer
+                  JOIN orchestration_v2_projection_threads AS target
+                    ON target.thread_id = transfer.target_thread_id
+                  WHERE transfer.source_thread_id = thread.thread_id
+                    AND transfer.type = 'merge_back'
+                    AND transfer.status = 'pending'
+                    AND target.deleted_at IS NULL
+                )
+                AND NOT EXISTS (
+                  SELECT 1 FROM orchestration_v2_projection_subagents AS task
+                  JOIN orchestration_v2_projection_threads AS parent ON parent.thread_id = task.thread_id
+                  WHERE task.child_thread_id = thread.thread_id
+                    AND task.status IN ('idle', 'pending', 'running', 'waiting')
+                    AND parent.deleted_at IS NULL
+                )
+                AND EXISTS (
+                  SELECT 1 FROM orchestration_v2_effect_outbox AS effect
+                  WHERE effect.thread_id = thread.thread_id
+                    AND effect.effect_type <> 'thread-content.purge'
+                    AND (
+                      effect.status IN ('succeeded', 'cancelled')
+                      OR (
+                        effect.status = 'failed'
+                        AND (
+                          effect.last_error IS NOT NULL
+                          OR (json_valid(effect.payload_json) AND json_type(effect.payload_json, '$.answers') IS NOT NULL)
+                          OR (json_valid(effect.payload_json) AND json_type(effect.payload_json, '$.feedback') IS NOT NULL)
+                          OR (
+                            json_valid(effect.payload_json)
+                            AND json_type(effect.payload_json, '$.title') = 'text'
+                            AND json_extract(effect.payload_json, '$.title') <> ${DELETED_THREAD_TITLE}
+                          )
+                        )
+                      )
+                    )
+                )
+            `
+          : sql<{ readonly thread_id: string }>`
+              SELECT thread.thread_id
+              FROM orchestration_v2_projection_threads AS thread
+              WHERE thread.deleted_at IS NOT NULL
+                AND NOT EXISTS (
+                  SELECT 1 FROM orchestration_v2_effect_outbox AS active
+                  WHERE active.thread_id = thread.thread_id
+                    AND active.status IN ('pending', 'running')
+                    AND active.effect_type NOT IN ('thread-content.purge', 'thread-title.generate')
+                )
+                AND NOT EXISTS (
+                  SELECT 1 FROM orchestration_v2_projection_context_transfers AS transfer
+                  JOIN orchestration_v2_projection_threads AS target
+                    ON target.thread_id = transfer.target_thread_id
+                  WHERE transfer.source_thread_id = thread.thread_id
+                    AND transfer.type = 'merge_back'
+                    AND transfer.status = 'pending'
+                    AND target.deleted_at IS NULL
+                )
+                AND NOT EXISTS (
+                  SELECT 1 FROM orchestration_v2_projection_subagents AS task
+                  JOIN orchestration_v2_projection_threads AS parent ON parent.thread_id = task.thread_id
+                  WHERE task.child_thread_id = thread.thread_id
+                    AND task.status IN ('idle', 'pending', 'running', 'waiting')
+                    AND parent.deleted_at IS NULL
+                )
+                AND EXISTS (
+                  SELECT 1 FROM orchestration_v2_effect_outbox AS effect
+                  WHERE effect.thread_id = thread.thread_id
+                    AND effect.effect_type <> 'thread-content.purge'
+                    AND (
+                      effect.status IN ('succeeded', 'cancelled')
+                      OR (
+                        effect.status = 'failed'
+                        AND (
+                          effect.last_error IS NOT NULL
+                          OR (json_valid(effect.payload_json) AND json_type(effect.payload_json, '$.answers') IS NOT NULL)
+                          OR (json_valid(effect.payload_json) AND json_type(effect.payload_json, '$.feedback') IS NOT NULL)
+                          OR (
+                            json_valid(effect.payload_json)
+                            AND json_type(effect.payload_json, '$.title') = 'text'
+                            AND json_extract(effect.payload_json, '$.title') <> ${DELETED_THREAD_TITLE}
+                          )
+                        )
+                      )
+                    )
+                )
+            `
+      ).pipe(NodeSqliteClient.readOnly);
+
+      for (const { thread_id: threadId } of targetIds) {
+        yield* sql`
+          DELETE FROM orchestration_v2_effect_outbox
+          WHERE thread_id = ${threadId}
+            AND status IN ('succeeded', 'cancelled')
+            AND effect_type <> 'thread-content.purge'
+        `;
+        yield* sql`
+          UPDATE orchestration_v2_effect_outbox
+          SET payload_json = CASE
+            WHEN json_valid(payload_json) AND json_type(payload_json, '$.title') = 'text'
+              THEN json_remove(
+                json_set(payload_json, '$.title', ${DELETED_THREAD_TITLE}),
+                '$.feedback',
+                '$.answers'
+              )
+            WHEN json_valid(payload_json)
+              THEN json_remove(payload_json, '$.feedback', '$.answers')
+            ELSE payload_json
+          END,
+            last_error = NULL
+          WHERE thread_id = ${threadId} AND status = 'failed'
+        `;
+      }
+    });
+
+    // A deleted source thread retained only by live run forks only needs runs at or before the
+    // latest live fork point; purge later independent runs immediately while keeping inherited runs.
+    const purgePostForkRuns = Effect.fnUntraced(function* (
+      deletedThreadId: ThreadId | undefined,
+      betweenPages: Effect.Effect<void>,
+    ) {
+      const retained = yield* sql<{
+        readonly thread_id: string;
+        readonly max_kept_ordinal: number;
+      }>`
+        WITH RECURSIVE shown(thread_id) AS (
+          SELECT thread_id FROM orchestration_v2_projection_threads WHERE deleted_at IS NULL
+          UNION
+          SELECT transfer.source_thread_id
+          FROM orchestration_v2_projection_context_transfers AS transfer
+          JOIN orchestration_v2_projection_threads AS target
+            ON target.thread_id = transfer.target_thread_id
+          WHERE transfer.type = 'merge_back' AND transfer.status = 'pending'
+            AND target.deleted_at IS NULL
+          UNION
+          SELECT json_extract(fork.payload_json, '$.forkedFrom.threadId')
+          FROM shown
+          JOIN orchestration_v2_projection_threads AS fork ON fork.thread_id = shown.thread_id
+          WHERE json_extract(fork.payload_json, '$.forkedFrom.type') = 'run'
+        ),
+        candidate(thread_id) AS (${
+          deletedThreadId === undefined
+            ? sql`SELECT thread_id FROM orchestration_v2_projection_threads WHERE deleted_at IS NOT NULL`
+            : sql`
+                SELECT ${deletedThreadId}
+                UNION
+                SELECT json_extract(fork.payload_json, '$.forkedFrom.threadId')
+                FROM candidate
+                JOIN orchestration_v2_projection_threads AS fork
+                  ON fork.thread_id = candidate.thread_id
+                WHERE json_extract(fork.payload_json, '$.forkedFrom.type') = 'run'
+              `
+        })
+        SELECT
+          thread.thread_id,
+          MAX(run.ordinal) AS max_kept_ordinal
+        FROM candidate
+        JOIN orchestration_v2_projection_threads AS thread ON thread.thread_id = candidate.thread_id
+        JOIN shown ON shown.thread_id = thread.thread_id
+        JOIN orchestration_v2_projection_threads AS child
+          ON json_extract(child.payload_json, '$.forkedFrom.type') = 'run'
+          AND json_extract(child.payload_json, '$.forkedFrom.threadId') = thread.thread_id
+        JOIN shown AS shown_child ON shown_child.thread_id = child.thread_id
+        LEFT JOIN orchestration_v2_projection_runs AS run
+          ON run.thread_id = thread.thread_id
+          AND run.run_id = json_extract(child.payload_json, '$.forkedFrom.runId')
+        WHERE thread.deleted_at IS NOT NULL
+          AND NOT EXISTS (
+            SELECT 1 FROM orchestration_v2_projection_context_transfers AS transfer
+            JOIN orchestration_v2_projection_threads AS target
+              ON target.thread_id = transfer.target_thread_id
+            WHERE transfer.source_thread_id = thread.thread_id
+              AND transfer.type = 'merge_back'
+              AND transfer.status = 'pending'
+              AND target.deleted_at IS NULL
+          )
+          AND NOT EXISTS (
+            SELECT 1 FROM orchestration_v2_effect_outbox AS effect
+            WHERE effect.thread_id = thread.thread_id
+              AND effect.status IN ('pending', 'running')
+              AND effect.effect_type NOT IN ('thread-content.purge', 'thread-title.generate')
+          )
+          AND NOT EXISTS (
+            SELECT 1 FROM orchestration_v2_projection_subagents AS task
+            JOIN orchestration_v2_projection_threads AS parent ON parent.thread_id = task.thread_id
+            WHERE task.child_thread_id = thread.thread_id
+              AND task.status IN ('idle', 'pending', 'running', 'waiting')
+              AND parent.deleted_at IS NULL
+          )
+        GROUP BY thread.thread_id
+        HAVING SUM(CASE WHEN run.ordinal IS NULL THEN 1 ELSE 0 END) = 0
+          AND MAX(run.ordinal) IS NOT NULL
+      `.pipe(NodeSqliteClient.readOnly);
+
+      let purged = 0;
+      const runScopedTables = [
+        "orchestration_v2_projection_turn_items",
+        "orchestration_v2_projection_messages",
+        "orchestration_v2_projection_plans",
+        "orchestration_v2_projection_subagents",
+        "orchestration_v2_projection_nodes",
+        "orchestration_v2_projection_runs",
+      ] as const;
+
+      for (const { thread_id: threadId, max_kept_ordinal: maxKeptOrdinal } of retained) {
+        const postForkRuns = yield* sql<{ readonly run_id: string }>`
+          SELECT run_id
+          FROM orchestration_v2_projection_runs
+          WHERE thread_id = ${threadId}
+            AND ordinal > ${maxKeptOrdinal}
+        `.pipe(NodeSqliteClient.readOnly);
+        if (postForkRuns.length === 0) continue;
+        const purgedRunIds = postForkRuns.map((row) => row.run_id);
+
+        const runtimeRequestRows = yield* sql`
+          DELETE FROM orchestration_v2_projection_runtime_requests
+          WHERE thread_id = ${threadId}
+            AND node_id IN (
+              SELECT node_id FROM orchestration_v2_projection_nodes
+              WHERE thread_id = ${threadId} AND run_id IN ${sql.in(purgedRunIds)}
+            )
+          RETURNING 1 AS purged
+        `;
+        purged += runtimeRequestRows.length;
+
+        const handoffRows = yield* sql`
+          DELETE FROM orchestration_v2_projection_context_handoffs
+          WHERE thread_id = ${threadId}
+            AND target_run_id IN ${sql.in(purgedRunIds)}
+          RETURNING 1 AS purged
+        `;
+        purged += handoffRows.length;
+
+        for (const table of runScopedTables) {
+          const rows = yield* sql`
+            DELETE FROM ${sql(table)}
+            WHERE thread_id = ${threadId}
+              AND run_id IN ${sql.in(purgedRunIds)}
+            RETURNING 1 AS purged
+          `;
+          purged += rows.length;
+        }
+        const orphanPositions = yield* sql`
+          DELETE FROM orchestration_v2_turn_item_positions
+          WHERE thread_id = ${threadId}
+            AND turn_item_id NOT IN (
+              SELECT turn_item_id
+              FROM orchestration_v2_projection_turn_items
+              WHERE thread_id = ${threadId}
+            )
+          RETURNING 1 AS purged
+        `;
+        purged += orphanPositions.length;
+
+        const feedbackRows = yield* sql`
+          DELETE FROM agent_feedback
+          WHERE thread_id = ${threadId}
+            AND run_id IN ${sql.in(purgedRunIds)}
+          RETURNING 1 AS purged
+        `;
+        purged += feedbackRows.length;
+
+        const tombstone = sql`(
+          SELECT json_remove(json_set(payload_json, '$.title', ${DELETED_THREAD_TITLE}), '$.guestShare')
+          FROM orchestration_v2_projection_threads WHERE thread_id = ${threadId}
+        )`;
+        // If a post-fork event somehow became the stream head, turn it into a tombstone first.
+        yield* sql`
+          UPDATE orchestration_events
+          SET event_type = 'thread.deleted', payload_json = ${tombstone}, metadata_json = '{}'
+          WHERE sequence = (
+              SELECT MAX(sequence) FROM orchestration_events
+              WHERE application_event_version = 2
+                AND aggregate_kind = 'thread'
+                AND stream_id = ${threadId}
+            )
+            AND event_type NOT IN ('thread.created', 'thread.deleted')
+            AND NOT (
+              event_type = 'run.updated' AND json_extract(payload_json, '$.status') = 'running'
+            )
+            AND (
+              (json_valid(metadata_json) AND json_extract(metadata_json, '$.runId') IN ${sql.in(purgedRunIds)})
+              OR (json_valid(payload_json) AND json_extract(payload_json, '$.runId') IN ${sql.in(purgedRunIds)})
+              OR (
+                event_type IN ('run.created', 'run.updated')
+                AND json_valid(payload_json)
+                AND json_extract(payload_json, '$.id') IN ${sql.in(purgedRunIds)}
+              )
+            )
+        `;
+        for (;;) {
+          const eventRows = yield* sql`
+            DELETE FROM orchestration_events
+            WHERE sequence IN (
+              SELECT sequence FROM orchestration_events
+                INDEXED BY idx_orchestration_events_agent_stream_sequence
+              WHERE application_event_version = 2
+                AND aggregate_kind = 'thread'
+                AND stream_id = ${threadId}
+                AND event_type NOT IN ('thread.created', 'thread.deleted')
+                AND NOT (
+                  event_type = 'run.updated' AND json_extract(payload_json, '$.status') = 'running'
+                )
+                AND (
+                  (json_valid(metadata_json) AND json_extract(metadata_json, '$.runId') IN ${sql.in(purgedRunIds)})
+                  OR (json_valid(payload_json) AND json_extract(payload_json, '$.runId') IN ${sql.in(purgedRunIds)})
+                  OR (
+                    event_type IN ('run.created', 'run.updated')
+                    AND json_valid(payload_json)
+                    AND json_extract(payload_json, '$.id') IN ${sql.in(purgedRunIds)}
+                  )
+                )
+                AND sequence < (
+                  SELECT MAX(sequence) FROM orchestration_events
+                  WHERE application_event_version = 2
+                    AND aggregate_kind = 'thread'
+                    AND stream_id = ${threadId}
+                )
+              ORDER BY sequence DESC
+              LIMIT ${PURGE_BATCH_SIZE}
+            )
+            RETURNING 1 AS purged
+          `;
+          purged += eventRows.length;
+          yield* Effect.yieldNow;
+          yield* betweenPages;
+          if (eventRows.length < PURGE_BATCH_SIZE) break;
+        }
+        const v2EventRows = yield* sql`
+          DELETE FROM orchestration_v2_events
+          WHERE thread_id = ${threadId}
+            AND run_id IN ${sql.in(purgedRunIds)}
+            AND event_type NOT IN ('thread.created', 'thread.deleted')
+          RETURNING 1 AS purged
+        `;
+        purged += v2EventRows.length;
+      }
+      return purged;
+    });
+
     const purgeThreads = Effect.fnUntraced(function* (
       deletedThreadId: ThreadId | undefined,
       betweenPages: Effect.Effect<void>,
     ) {
       yield* scrubDeletedGuestShare(deletedThreadId);
+      yield* scrubDeletedSensitiveOutbox(deletedThreadId);
+      let purged = yield* purgePostForkRuns(deletedThreadId, betweenPages);
       const threads = yield* purgeableThreads(deletedThreadId);
       const now = DateTime.formatIso(yield* DateTime.now);
-      let purged = 0;
       // Each statement commits on its own, so a huge thread never holds the writer for long.
       const drain = Effect.fnUntraced(function* (
         deleteBatch: Effect.Effect<ReadonlyArray<unknown>, SqlError.SqlError>,
@@ -582,9 +981,15 @@ export const layer: Layer.Layer<ProjectionMaintenanceV2, never, SqlClient.SqlCli
         yield* sql`
           UPDATE orchestration_v2_effect_outbox
           SET payload_json = CASE
-            WHEN json_type(payload_json, '$.title') = 'text'
-              THEN json_set(payload_json, '$.title', ${DELETED_THREAD_TITLE})
-            ELSE json_remove(payload_json, '$.feedback', '$.answers')
+            WHEN json_valid(payload_json) AND json_type(payload_json, '$.title') = 'text'
+              THEN json_remove(
+                json_set(payload_json, '$.title', ${DELETED_THREAD_TITLE}),
+                '$.feedback',
+                '$.answers'
+              )
+            WHEN json_valid(payload_json)
+              THEN json_remove(payload_json, '$.feedback', '$.answers')
+            ELSE payload_json
           END,
             last_error = NULL
           WHERE thread_id = ${threadId} AND status = 'failed'
@@ -595,13 +1000,18 @@ export const layer: Layer.Layer<ProjectionMaintenanceV2, never, SqlClient.SqlCli
           SET transcript_imported_at = ${now}
           WHERE thread_id = ${threadId} AND transcript_imported_at IS NULL
         `;
-        yield* sql`DELETE FROM agent_feedback WHERE thread_id = ${threadId}`;
-        yield* sql`
+        const deletedFeedback = yield* sql`
+          DELETE FROM agent_feedback WHERE thread_id = ${threadId} RETURNING 1 AS purged
+        `;
+        purged += deletedFeedback.length;
+        const deletedV2Events = yield* sql`
           DELETE FROM orchestration_v2_events
           WHERE thread_id = ${threadId}
             AND event_type NOT IN ('thread.created', 'thread.deleted')
+          RETURNING 1 AS purged
         `;
-        yield* sql`
+        purged += deletedV2Events.length;
+        const updatedV2Events = yield* sql`
           UPDATE orchestration_v2_events
           SET payload_json = json_remove(
             json_set(payload_json, '$.title', ${DELETED_THREAD_TITLE}),
@@ -610,7 +1020,13 @@ export const layer: Layer.Layer<ProjectionMaintenanceV2, never, SqlClient.SqlCli
           WHERE thread_id = ${threadId}
             AND event_type IN ('thread.created', 'thread.deleted')
             AND json_valid(payload_json)
+            AND (
+              json_extract(payload_json, '$.title') IS NOT ${DELETED_THREAD_TITLE}
+              OR json_type(payload_json, '$.guestShare') IS NOT NULL
+            )
+          RETURNING 1 AS purged
         `;
+        purged += updatedV2Events.length;
         // Last, because the new title is what marks the purge as done.
         yield* sql`
           UPDATE projection_threads SET title = ${DELETED_THREAD_TITLE} WHERE thread_id = ${threadId}

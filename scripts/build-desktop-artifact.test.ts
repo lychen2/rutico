@@ -44,6 +44,7 @@ import {
   resolveMacPasskeySigningConfiguration,
   resolveMergedStageDependencies,
   resolveBuildOptions,
+  resolveStagePackageName,
   stageWslRuntimeArchive,
   ancestorNodeModulesPaths,
   copyDirectoryPreservingSymlinks,
@@ -1791,6 +1792,26 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
         undefined,
       );
       assert.equal(winBuild.appId, "io.github.lychen2.rutico");
+      assert.equal(resolveStagePackageName("win"), "rutico");
+      assert.deepStrictEqual(
+        (winBuild.protocols as ReadonlyArray<{ readonly schemes: ReadonlyArray<string> }>)[0]
+          ?.schemes,
+        ["rutico", "t3code"],
+      );
+      const winPreviewBuild = yield* createBuildConfig(
+        "win",
+        "nsis",
+        "1.2.3-preview.20261126.1",
+        false,
+        false,
+        undefined,
+        undefined,
+      );
+      assert.deepStrictEqual(
+        (winPreviewBuild.protocols as ReadonlyArray<{ readonly schemes: ReadonlyArray<string> }>)[0]
+          ?.schemes,
+        ["rutico", "rutico-preview", "t3code"],
+      );
       const macBuild = yield* createBuildConfig(
         "mac",
         "dmg",

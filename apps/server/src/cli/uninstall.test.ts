@@ -34,8 +34,8 @@ it.live(
       const fs = yield* FileSystem.FileSystem;
       const path = yield* Path.Path;
       const baseDir = yield* fs.makeTempDirectoryScoped({ prefix: "t3-uninstall-shell-" });
-      const runtimeDir = path.join(baseDir, "runtime");
-      yield* fs.makeDirectory(runtimeDir);
+      const runtimeDir = path.join(baseDir, "runtime", "rutico");
+      yield* fs.makeDirectory(runtimeDir, { recursive: true });
       vi.spyOn(BootService, "layer").mockReturnValue(
         Layer.succeed(
           BootService.BootService,
@@ -178,9 +178,9 @@ it.layer(NodeServices.layer)("t3 uninstall launcher", (it) => {
       const root = yield* fs
         .makeTempDirectoryScoped({ prefix: "t3-uninstall-" })
         .pipe(Effect.flatMap(fs.realPath));
-      const versionsDir = path.join(root, "runtime/versions");
+      const versionsDir = path.join(root, "runtime/rutico/versions");
       const exe = path.join(versionsDir, "1.0.0/t3");
-      const otherExe = path.join(root, "other/runtime/versions/1.0.0/t3");
+      const otherExe = path.join(root, "other/runtime/rutico/versions/1.0.0/t3");
       const copy = path.join(root, "copy/t3");
       for (const file of [exe, otherExe, copy]) {
         yield* fs.makeDirectory(path.dirname(file), { recursive: true });
@@ -233,11 +233,11 @@ it.layer(NodeServices.layer)("t3 uninstall launcher", (it) => {
       const scriptThroughAlias = path.join(scriptDir, "t3-alias");
       const prunedScript = path.join(scriptDir, "t3-pruned");
       yield* fs.symlink(root, path.join(root, "alias"));
-      yield* fs.symlink(path.join(root, "alias/runtime/versions/1.0.0/t3"), throughAlias);
+      yield* fs.symlink(path.join(root, "alias/runtime/rutico/versions/1.0.0/t3"), throughAlias);
       yield* fs.symlink(path.join(versionsDir, "0.9.0/t3"), pruned);
       yield* fs.writeFileString(
         scriptThroughAlias,
-        posixLauncherScript(path.join(root, "alias/runtime/versions/1.0.0/t3")),
+        posixLauncherScript(path.join(root, "alias/runtime/rutico/versions/1.0.0/t3")),
         { mode: 0o755 },
       );
       yield* fs.writeFileString(
@@ -249,7 +249,7 @@ it.layer(NodeServices.layer)("t3 uninstall launcher", (it) => {
       const sibling = path.join(root, "bin/t3-sibling");
       yield* fs.symlink(path.join(versionsDir, "1.0.0/node"), sibling);
       yield* fs.writeFileString(
-        path.join(root, "runtime/launchers"),
+        path.join(root, "runtime/rutico/launchers"),
         [
           ours,
           theirs,
@@ -264,7 +264,7 @@ it.layer(NodeServices.layer)("t3 uninstall launcher", (it) => {
           path.join(root, "missing"),
         ].join("\n") + "\n",
       );
-      for (const dir of [versionsDir, path.join(root, "alias/runtime/versions")]) {
+      for (const dir of [versionsDir, path.join(root, "alias/runtime/rutico/versions")]) {
         assert.deepStrictEqual(yield* findRecordedLaunchers(dir), [
           ours,
           throughAlias,
@@ -280,7 +280,10 @@ it.layer(NodeServices.layer)("t3 uninstall launcher", (it) => {
       const edited = path.join(root, "bin/edited.cmd");
       yield* fs.writeFileString(cmd, `@echo off\r\n"${exe}" %*`);
       yield* fs.writeFileString(edited, `@echo off\r\nset "T3CODE_HOME=D:\\other"\r\n"${exe}" %*`);
-      yield* fs.writeFileString(path.join(root, "runtime/launchers"), `${cmd}\r\n${edited}\r\n`);
+      yield* fs.writeFileString(
+        path.join(root, "runtime/rutico/launchers"),
+        `${cmd}\r\n${edited}\r\n`,
+      );
       assert.deepStrictEqual(
         yield* findRecordedLaunchers(versionsDir).pipe(
           Effect.provideService(HostProcess.Platform, "win32"),
@@ -299,8 +302,10 @@ it.live.runIf(HostProcess.Platform.defaultValue() === "win32")(
       const path = yield* Path.Path;
       const root = yield* fs.makeTempDirectoryScoped({ prefix: "t3-uninstall-" });
       const runtimeDir = path.join(root, "t3 home %COMSPEC% !COMSPEC! & data", "runtime");
-      yield* fs.makeDirectory(path.join(runtimeDir, "versions", "1.0.0"), { recursive: true });
-      yield* fs.writeFileString(path.join(runtimeDir, "versions", "1.0.0", "t3.exe"), "");
+      yield* fs.makeDirectory(path.join(runtimeDir, "rutico", "versions", "1.0.0"), {
+        recursive: true,
+      });
+      yield* fs.writeFileString(path.join(runtimeDir, "rutico", "versions", "1.0.0", "t3.exe"), "");
 
       // The directory `t3 uninstall` is run from holds its own `ping`, which must stay unused.
       const marker = path.join(root, "ping-ran.txt");

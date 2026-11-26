@@ -255,6 +255,7 @@ function layerTest(input: {
   readonly mainWindow: Ref.Ref<Option.Option<Electron.BrowserWindow>>;
   readonly createdWindowOptions?: Electron.BrowserWindowConstructorOptions[];
   readonly clientSettings?: Option.Option<ClientSettings>;
+  readonly clientSettingsRef?: Ref.Ref<Option.Option<ClientSettings>>;
   readonly desktopSettings?: DesktopAppSettings.DesktopSettings;
   readonly mainWindowBoundsUpdates?: DesktopAppSettings.DesktopWindowBounds[];
   readonly mainWindowMaximizedUpdates?: boolean[];
@@ -360,11 +361,15 @@ function layerTest(input: {
           ? layerDesktopEnvironment
           : layerDesktopEnvironmentFor(input.platform),
         layerDesktopAppSettings,
-        input.clientSettings === undefined
-          ? layerDesktopClientSettings
-          : Layer.mock(DesktopClientSettings.DesktopClientSettings)({
-              get: Effect.succeed(input.clientSettings),
-            }),
+        input.clientSettingsRef !== undefined
+          ? Layer.mock(DesktopClientSettings.DesktopClientSettings)({
+              get: Ref.get(input.clientSettingsRef),
+            })
+          : input.clientSettings === undefined
+            ? layerDesktopClientSettings
+            : Layer.mock(DesktopClientSettings.DesktopClientSettings)({
+                get: Effect.succeed(input.clientSettings),
+              }),
         layerDesktopServerExposure,
         DesktopState.layer,
         layerElectronApp,
@@ -1375,6 +1380,7 @@ describe("DesktopWindow", () => {
         createCount: yield* Ref.make(0),
         mainWindow: yield* Ref.make<Option.Option<Electron.BrowserWindow>>(Option.none()),
         platform: "win32",
+        clientSettings: Option.some({ ...DEFAULT_CLIENT_SETTINGS, glassOpacity: 100 }),
         appearanceWindows: [
           { window: framed.window, titleBarOverlay: false },
           { window: overlay.window, titleBarOverlay: true },
@@ -1547,6 +1553,48 @@ describe("DesktopWindow", () => {
         vi.mocked(opaqueWindow.window.setBackgroundColor).mock.calls[0]?.[0],
         "#00000000",
       );
+
+      // Live toggle 80 -> 100 -> 80 updates the open window's material without OS theme changes.
+      const liveWindow = makeFakeBrowserWindow();
+      const liveSettingsRef = yield* Ref.make<Option.Option<ClientSettings>>(
+        Option.some({ ...DEFAULT_CLIENT_SETTINGS, glassOpacity: 80 }),
+      );
+      yield* Effect.gen(function* () {
+        const desktopWindow = yield* DesktopWindow.DesktopWindow;
+        yield* desktopWindow.ensureMain;
+        yield* desktopWindow.syncAppearance;
+        yield* Ref.set(
+          liveSettingsRef,
+          Option.some({ ...DEFAULT_CLIENT_SETTINGS, glassOpacity: 100 }),
+        );
+        yield* desktopWindow.syncAppearance;
+        yield* Ref.set(
+          liveSettingsRef,
+          Option.some({ ...DEFAULT_CLIENT_SETTINGS, glassOpacity: 80 }),
+        );
+        yield* desktopWindow.syncAppearance;
+      }).pipe(
+        Effect.provide(
+          layerTest({
+            window: liveWindow.window,
+            createCount: yield* Ref.make(0),
+            mainWindow: yield* Ref.make<Option.Option<Electron.BrowserWindow>>(Option.none()),
+            platform: "darwin",
+            clientSettingsRef: liveSettingsRef,
+          }),
+        ),
+      );
+      assert.deepEqual(liveWindow.setVibrancy.mock.calls, [
+        ["under-window"],
+        [null],
+        ["under-window"],
+      ]);
+      const liveBgCalls = vi
+        .mocked(liveWindow.window.setBackgroundColor)
+        .mock.calls.map((c) => c[0]);
+      assert.equal(liveBgCalls[0], "#00000000");
+      assert.notEqual(liveBgCalls[1], "#00000000");
+      assert.equal(liveBgCalls[2], "#00000000");
     }),
   );
 

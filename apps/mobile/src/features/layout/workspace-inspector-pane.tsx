@@ -14,7 +14,7 @@ import type { WorkspacePaneLayout } from "../../lib/layout";
 import { WORKSPACE_PANE_TIMING } from "./workspace-pane-animation";
 import { WorkspacePaneDivider } from "./workspace-pane-divider";
 import { InspectorPanes } from "./inspector-host";
-import type { InspectorContent } from "./inspector-panes";
+import { InspectorPaneVisibleContext, type InspectorContent } from "./inspector-panes";
 
 // CSS form of WORKSPACE_PANE_TIMING's Easing.inOut(Easing.cubic).
 const PANE_EASING = cubicBezier(0.65, 0, 0.35, 1);
@@ -114,7 +114,9 @@ export function WorkspaceInspectorPane(props: {
           style={inspectorStyle}
         >
           <Animated.View className="flex-1" style={inspectorContentStyle}>
-            <InspectorPanes content={props.content} onClose={props.onClose} />
+            <InspectorPaneVisibleContext value={inspectorVisible}>
+              <InspectorPanes content={props.content} onClose={props.onClose} />
+            </InspectorPaneVisibleContext>
           </Animated.View>
         </Animated.View>
       ) : null}

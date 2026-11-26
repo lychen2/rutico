@@ -7,6 +7,7 @@ import {
   withI18nMessage,
 } from "../errors/translatable.ts";
 import {
+  AgentFeedbackRequestError,
   type DesktopUpdateChannel,
   type EnvironmentId,
   type ProviderInstanceId,
@@ -21,11 +22,14 @@ import {
   type ServerSelfUpdateProgressEvent,
   type ServerSelfUpdateResult,
   shouldRecommendDatabaseCompaction,
+  UsageDay,
   type UsageSummary,
+  type UsageSummaryInput,
   type WorkflowRunsSnapshot,
   WS_METHODS,
 } from "@t3tools/contracts";
 import * as Cause from "effect/Cause";
+import * as DateTime from "effect/DateTime";
 import * as Duration from "effect/Duration";
 import * as Equal from "effect/Equal";
 import * as Deferred from "effect/Deferred";
@@ -849,6 +853,152 @@ export function hasFeatureFlag(
   return config?.featureFlags?.[flag] === true;
 }
 
+function serverCapabilitiesEqual(
+  left: ServerConfig["environment"]["capabilities"] | undefined,
+  right: ServerConfig["environment"]["capabilities"] | undefined,
+): boolean {
+  if (left === right) return true;
+  if (left === undefined || right === undefined) return false;
+  const leftKeys = Object.keys(left) as Array<keyof ServerConfig["environment"]["capabilities"]>;
+  const rightKeys = Object.keys(right) as Array<keyof ServerConfig["environment"]["capabilities"]>;
+  if (leftKeys.length !== rightKeys.length) return false;
+  return leftKeys.every((key) => left[key] === right[key]);
+}
+
+export type AnswerFeedbackRequestInput = EnvironmentRpcInput<
+  typeof WS_METHODS.agentFeedbackAnswerRequest
+> & {
+  /** Consent mode the user confirmed on the card; verified against the exact RpcSession that dispatches the RPC. */
+  readonly expectedLocalOnly?: boolean;
+};
+
+export const executeAnswerFeedbackRequest = Effect.fn(
+  "ServerEnvironment.executeAnswerFeedbackRequest",
+)(function* (input: AnswerFeedbackRequestInput) {
+  const { expectedLocalOnly, ...rpcInput } = input;
+  const session = yield* currentSession();
+  if (rpcInput.answer === "send" && expectedLocalOnly !== undefined) {
+    const initialConfig = yield* session.initialConfig.pipe(
+      Effect.mapError(
+        (cause) =>
+          new AgentFeedbackRequestError({
+            reason: "load_failed",
+            cause,
+          }),
+      ),
+    );
+    const sessionLocalOnly = initialConfig.environment.capabilities.agentFeedbackLocalOnly === true;
+    if (sessionLocalOnly !== expectedLocalOnly) {
+      return yield* new AgentFeedbackRequestError({
+        reason: "record_failed",
+        cause: new Error(
+          expectedLocalOnly
+            ? "This connection no longer guarantees local-only feedback storage. Review the updated prompt and confirm again."
+            : "This connection's feedback delivery mode changed. Review the updated prompt and confirm again.",
+        ),
+      });
+    }
+  }
+  return yield* requestInSession(session, WS_METHODS.agentFeedbackAnswerRequest, rpcInput);
+});
+
+const LEGACY_HOURLY_CHUNK_MS = 24 * 60 * 60 * 1000;
+
+export function splitHourlyUsageWindow(
+  input: UsageSummaryInput,
+  maxSpanMs = LEGACY_HOURLY_CHUNK_MS,
+): ReadonlyArray<UsageSummaryInput> {
+  if (input.resolution !== "hour" || !input.sinceTime || !input.untilTime) {
+    return [input];
+  }
+  const sinceMs = Date.parse(input.sinceTime);
+  const untilMs = Date.parse(input.untilTime);
+  if (!Number.isFinite(sinceMs) || !Number.isFinite(untilMs) || untilMs - sinceMs <= maxSpanMs) {
+    return [input];
+  }
+  const formatter = new Intl.DateTimeFormat("en-CA", {
+    timeZone: input.timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  });
+  const chunks: UsageSummaryInput[] = [];
+  for (let start = sinceMs; start < untilMs; start += maxSpanMs) {
+    const end = Math.min(start + maxSpanMs, untilMs);
+    const startUtc = DateTime.makeUnsafe(start);
+    const endUtc = DateTime.makeUnsafe(end);
+    chunks.push({
+      ...input,
+      sinceDay: UsageDay.make(formatter.format(DateTime.toDateUtc(startUtc))),
+      untilDay: UsageDay.make(formatter.format(DateTime.toDateUtc(endUtc))),
+      sinceTime: DateTime.formatIso(startUtc),
+      untilTime: DateTime.formatIso(endUtc),
+    });
+  }
+  return chunks;
+}
+
+export function mergeHourlyUsageSummaries(
+  chunks: ReadonlyArray<UsageSummary>,
+  input: UsageSummaryInput,
+): UsageSummary {
+  const first = chunks[0]!;
+  const bucketMap = new Map<string, UsageSummary["buckets"][number]>();
+  for (const chunk of chunks) {
+    for (const bucket of chunk.buckets) {
+      const key = JSON.stringify([
+        bucket.day,
+        bucket.hourStart ?? null,
+        bucket.provider,
+        bucket.model,
+        bucket.sourcePath ?? null,
+      ]);
+      const existing = bucketMap.get(key);
+      if (existing === undefined) {
+        bucketMap.set(key, bucket);
+      } else {
+        bucketMap.set(key, {
+          ...existing,
+          totals: {
+            uncachedInputTokens:
+              existing.totals.uncachedInputTokens + bucket.totals.uncachedInputTokens,
+            cachedInputTokens: existing.totals.cachedInputTokens + bucket.totals.cachedInputTokens,
+            cacheCreationTokens:
+              existing.totals.cacheCreationTokens + bucket.totals.cacheCreationTokens,
+            outputTokens: existing.totals.outputTokens + bucket.totals.outputTokens,
+            reasoningTokens: existing.totals.reasoningTokens + bucket.totals.reasoningTokens,
+          },
+          costUsd: existing.costUsd + bucket.costUsd,
+          cacheSavingsUsd: existing.cacheSavingsUsd + bucket.cacheSavingsUsd,
+          records: existing.records + bucket.records,
+          unpricedRecords: existing.unpricedRecords + bucket.unpricedRecords,
+          sessions: existing.sessions + bucket.sessions,
+        });
+      }
+    }
+  }
+  return {
+    ...first,
+    sinceDay: input.sinceDay,
+    untilDay: input.untilDay,
+    timeZone: input.timeZone,
+    ...(input.sinceTime !== undefined ? { sinceTime: input.sinceTime } : {}),
+    ...(input.untilTime !== undefined ? { untilTime: input.untilTime } : {}),
+    buckets: [...bucketMap.values()],
+  };
+}
+
+function isInvalidHourlyWindowError(error: unknown): boolean {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    "_tag" in error &&
+    error._tag === "UsageReadError" &&
+    "reason" in error &&
+    error.reason === "invalidWindow"
+  );
+}
+
 export function resolveServerConfigValue(
   projection: ServerConfigProjection | null,
   initialConfig: ServerConfig | null,
@@ -856,7 +1006,11 @@ export function resolveServerConfigValue(
   if (
     projection?.source === "live" &&
     (initialConfig === null ||
-      projection.config.environment.serverVersion === initialConfig.environment.serverVersion)
+      (projection.config.environment.serverVersion === initialConfig.environment.serverVersion &&
+        serverCapabilitiesEqual(
+          projection.config.environment.capabilities,
+          initialConfig.environment.capabilities,
+        )))
   ) {
     return projection.config;
   }
@@ -1703,6 +1857,22 @@ export function createServerEnvironmentAtoms<R, E>(
       execute: (input, emit, previous) => {
         const settled = (summary: UsageSummary) =>
           !summary.sources.some((source) => source.refreshing === true);
+        const readChunk = (chunkInput: UsageSummaryInput) =>
+          request(WS_METHODS.serverGetUsageSummary, chunkInput).pipe(
+            Effect.filterOrElse(settled, (summary) =>
+              request(WS_METHODS.serverGetUsageSummary, {
+                ...chunkInput,
+                awaitRefresh: true,
+              }).pipe(
+                Effect.catch((error) =>
+                  Effect.logWarning("Could not refresh slow usage sources.").pipe(
+                    Effect.annotateLogs({ ...safeErrorLogAttributes(error) }),
+                    Effect.as(summary),
+                  ),
+                ),
+              ),
+            ),
+          );
         const read = request(WS_METHODS.serverGetUsageSummary, input).pipe(
           Effect.filterOrElse(settled, (summary) =>
             emit(summary).pipe(
@@ -1716,6 +1886,18 @@ export function createServerEnvironmentAtoms<R, E>(
                 ),
               ),
             ),
+          ),
+          // Older servers cap hourly windows (e.g. 24h) and reject 7-day hourly requests with
+          // UsageReadError(invalidWindow); fall back to 24-hour chunks and merge them.
+          Effect.catchIf(
+            (error) =>
+              input.resolution === "hour" &&
+              isInvalidHourlyWindowError(error) &&
+              splitHourlyUsageWindow(input).length > 1,
+            () =>
+              Effect.forEach(splitHourlyUsageWindow(input), readChunk, { concurrency: 2 }).pipe(
+                Effect.map((chunks) => mergeHourlyUsageSummaries(chunks, input)),
+              ),
           ),
         );
         if (Option.isSome(previous)) return read;
@@ -2045,6 +2227,7 @@ export function createServerEnvironmentAtoms<R, E>(
     answerFeedbackRequest: createEnvironmentRpcCommand(runtime, {
       label: "environment-data:server:agent-feedback:answer-request",
       tag: WS_METHODS.agentFeedbackAnswerRequest,
+      execute: (input: AnswerFeedbackRequestInput) => executeAnswerFeedbackRequest(input),
       concurrency: {
         mode: "singleFlight",
         key: ({ environmentId, input }) =>

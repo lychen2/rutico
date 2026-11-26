@@ -25,7 +25,7 @@ describe.skipIf(HostProcess.Platform.defaultValue() !== "linux")("installer home
     const homeName = "-custom home\\home\n";
     const home = NodePath.join(root, homeName);
     const version = "1.2.3";
-    const target = NodePath.join(home, "runtime/versions", version);
+    const target = NodePath.join(home, "runtime/rutico/versions", version);
     const launcher = NodePath.join(root, "bin/t3");
     try {
       await NodeFSP.mkdir(target, { recursive: true });
@@ -75,15 +75,15 @@ describe.skipIf(HostProcess.Platform.defaultValue() !== "linux")("installer chan
     ["preview", "1.2.4-preview.20261019.50", 0],
   ])("finds %s %s behind nightlies and %i HTTP 504s", async (channel, version, failures) => {
     const root = await NodeFSP.mkdtemp(NodePath.join(NodeOS.tmpdir(), "t3-install-index-"));
-    const target = NodePath.join(root, "home/runtime/versions", version);
+    const target = NodePath.join(root, "home/runtime/rutico/versions", version);
     const server = NodeHttp.createServer((request, response) => {
       if (failures-- > 0) return response.writeHead(504).end();
       const url = new URL(request.url ?? "/", "http://fixture");
       const body =
-        url.pathname === "/pingdotgg/t3code/releases/latest" &&
+        url.pathname === "/lychen2/rutico/releases/latest" &&
         request.headers.accept === "application/json"
           ? { tag_name: "v1.2.3" }
-          : url.pathname === "/repos/pingdotgg/t3code/releases"
+          : url.pathname === "/repos/lychen2/rutico/releases"
             ? { "1": nightlies, "2": [{ tag_name: `v${version}` }, { tag_name: "v1.2.3" }] }[
                 url.searchParams.get("page") ?? ""
               ]
@@ -197,7 +197,7 @@ async function installOver(input: {
   readonly env?: NodeJS.ProcessEnv;
   readonly cwd?: string;
 }) {
-  const target = NodePath.join(input.home, "runtime", "versions", "1.2.3");
+  const target = NodePath.join(input.home, "runtime", "rutico", "versions", "1.2.3");
   await NodeFSP.mkdir(target, { recursive: true });
   await NodeFSP.writeFile(NodePath.join(target, ".install-complete"), "1.2.3\n");
   const installer = NodePath.resolve(import.meta.dirname, input.script);
@@ -249,23 +249,23 @@ describe.skipIf(HostProcess.Platform.defaultValue() !== "linux")("install.sh t3 
       await NodeFSP.rm(link);
       await NodeFSP.mkdir(NodePath.join(home, "other"), { recursive: true });
       await NodeFSP.writeFile(NodePath.join(home, "other/t3"), "#!/bin/sh\n");
-      await NodeFSP.symlink(`${home}/runtime/versions/../../other/t3`, link);
+      await NodeFSP.symlink(`${home}/runtime/rutico/versions/../../other/t3`, link);
       const climbing = await installOver({ script: "install.sh", home, binDir });
       expect(climbing.code).not.toBe(0);
-      expect(await NodeFSP.readlink(link)).toBe(`${home}/runtime/versions/../../other/t3`);
+      expect(await NodeFSP.readlink(link)).toBe(`${home}/runtime/rutico/versions/../../other/t3`);
 
       // Only `<version>/t3` counts, not another program inside a version.
       await NodeFSP.rm(link);
-      await NodeFSP.symlink(NodePath.join(home, "runtime/versions/1.0.0/helper"), link);
+      await NodeFSP.symlink(NodePath.join(home, "runtime/rutico/versions/1.0.0/helper"), link);
       const sibling = await installOver({ script: "install.sh", home, binDir });
       expect(sibling.code).not.toBe(0);
       expect(await NodeFSP.readlink(link)).toBe(
-        NodePath.join(home, "runtime/versions/1.0.0/helper"),
+        NodePath.join(home, "runtime/rutico/versions/1.0.0/helper"),
       );
 
       // An upgrade over an older version's link, written through a symlinked T3 home.
       await NodeFSP.rm(link);
-      await NodeFSP.symlink(NodePath.join(home, "runtime/versions/1.0.0/t3"), link);
+      await NodeFSP.symlink(NodePath.join(home, "runtime/rutico/versions/1.0.0/t3"), link);
       await NodeFSP.symlink(home, NodePath.join(root, "alias"));
       const upgrade = await installOver({
         script: "install.sh",
@@ -275,7 +275,7 @@ describe.skipIf(HostProcess.Platform.defaultValue() !== "linux")("install.sh t3 
       });
       expect(upgrade.code, upgrade.output).toBe(0);
       expect(await NodeFSP.readFile(link, "utf8")).toBe(
-        launcherScript(NodePath.join(root, "alias/runtime/versions/1.2.3/t3")),
+        launcherScript(NodePath.join(root, "alias/runtime/rutico/versions/1.2.3/t3")),
       );
       expect(upgrade.output).toContain(
         `printf '\\n%s\\n' 'export PATH="$PATH:$HOME/bin"' >> ~/.zshrc`,
@@ -313,7 +313,7 @@ describe.skipIf(HostProcess.Platform.defaultValue() !== "linux")("install.sh t3 
       expect(relative.output).toContain(`'export PATH="$PATH:$HOME/bin"'`);
 
       // A launcher script someone edited is theirs now.
-      const edited = `${launcherScript(NodePath.join(home, "runtime/versions/1.2.3/t3"))}# mine\n`;
+      const edited = `${launcherScript(NodePath.join(home, "runtime/rutico/versions/1.2.3/t3"))}# mine\n`;
       await NodeFSP.writeFile(link, edited);
       const overEdited = await installOver({ script: "install.sh", home, binDir });
       expect(overEdited.code).not.toBe(0);
@@ -328,7 +328,7 @@ describe.skipIf(HostProcess.Platform.defaultValue() !== "linux")("install.sh t3 
       });
       expect(overDesktop.code, overDesktop.output).toBe(0);
       expect(await NodeFSP.readFile(link, "utf8")).toBe(
-        launcherScript(NodePath.join(home, "runtime/versions/1.2.3/t3")),
+        launcherScript(NodePath.join(home, "runtime/rutico/versions/1.2.3/t3")),
       );
     } finally {
       await NodeFSP.rm(root, { recursive: true, force: true });
@@ -354,19 +354,19 @@ describe.skipIf(HostProcess.Platform.defaultValue() !== "win32")("install.ps1 t3
       expect(await NodeFSP.readFile(shim, "utf8")).toBe(desktopShim);
 
       // A hand-edited wrapper may set its own environment; replacing it would drop that.
-      const edited = `@echo off\r\nset "T3CODE_HOME=D:\\other"\r\n"${NodePath.join(home, "runtime", "versions", "1.0.0", "t3.exe")}" %*`;
+      const edited = `@echo off\r\nset "T3CODE_HOME=D:\\other"\r\n"${NodePath.join(home, "runtime", "rutico", "versions", "1.0.0", "t3.exe")}" %*`;
       await NodeFSP.writeFile(shim, edited, "utf8");
       const wrapper = await installOver({ script: "install.ps1", home, binDir });
       expect(wrapper.code).not.toBe(0);
       expect(await NodeFSP.readFile(shim, "utf8")).toBe(edited);
 
-      const climbing = `@echo off\r\n"${NodePath.join(home, "runtime", "versions")}\\..\\other\\t3.exe" %*`;
+      const climbing = `@echo off\r\n"${NodePath.join(home, "runtime", "rutico", "versions")}\\..\\other\\t3.exe" %*`;
       await NodeFSP.writeFile(shim, climbing, "utf8");
       const outside = await installOver({ script: "install.ps1", home, binDir });
       expect(outside.code).not.toBe(0);
       expect(await NodeFSP.readFile(shim, "utf8")).toBe(climbing);
 
-      const older = NodePath.join(home, "runtime", "versions", "1.0.0", "t3.exe");
+      const older = NodePath.join(home, "runtime", "rutico", "versions", "1.0.0", "t3.exe");
       await NodeFSP.writeFile(shim, `@echo off\r\n"${older}" %*`, "utf8");
       const upgrade = await installOver({ script: "install.ps1", home, binDir });
       expect(upgrade.code, upgrade.output).toBe(0);
@@ -510,7 +510,7 @@ describe.skipIf(HostProcess.Platform.defaultValue() !== "linux")("installer chec
               child.on("close", (code) => resolve({ code, output }));
             },
           );
-          const versions = NodePath.join(home, "runtime/versions");
+          const versions = NodePath.join(home, "runtime/rutico/versions");
           if (validChecksum) {
             expect(code, `${checksumTool}: ${output}`).toBe(0);
             expect(
@@ -544,7 +544,7 @@ describe.skipIf(HostProcess.Platform.defaultValue() !== "linux")("concurrent ins
     const version = "1.2.3";
     const stem = `t3-${version}-linux-${HostProcess.Architecture.defaultValue()}`;
     const archiveName = `${stem}.tar.gz`;
-    const target = NodePath.join(root, "home/runtime/versions", version);
+    const target = NodePath.join(root, "home/runtime/rutico/versions", version);
     const waiting = new Map<string, NodeHttp.ServerResponse>();
     const server = NodeHttp.createServer();
     try {

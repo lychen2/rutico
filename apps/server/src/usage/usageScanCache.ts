@@ -288,8 +288,6 @@ export function decodeScanCache(
     const entry = raw as Partial<SerializedFile>;
     if (typeof entry.s !== "number" || typeof entry.m !== "number") continue;
     if (entry.p === undefined) continue;
-    // v18 adds OMP `model_usage` records; drop older pi-family cache entries so OMP sessions re-scan once.
-    if (entry.p === "pi" && version < 18) continue;
     const format = formats.get(entry.p);
     if (format === undefined) continue;
     if (!isRecordArray(entry.r) || !isRecordArray(entry.t)) continue;
@@ -323,11 +321,27 @@ export function decodeScanCache(
     ) {
       continue;
     }
-    // Keep history for deleted rollouts, but re-parse incompatible reducer state.
-    // v13 adds Claude 1-hour cache writes; v14 uses Codex request ledgers.
-    // v15 repairs skipped Codex requests whose counters rewound; clean v14 entries stay served.
-    // v17 keys Grok turns by time, restoring turns previously dropped as repeats.
+    // Keep history for deleted rollouts, but invalidate resume positions for incompatible reducer state
+    // (v13 Claude 1h cache, v14/v15 Codex ledgers, v17 Grok turns, v18 OMP model_usage).
+    const needsOmpModelUsageRescan =
+      entry.p === "pi" &&
+      version < 18 &&
+      (/(?:^|[\\/])\.omp(?:[\\/]|$)/i.test(path) ||
+        entry.r.some(
+          (record) =>
+            Array.isArray(record) &&
+            typeof record[8] === "string" &&
+            record[8].startsWith('["omp",'),
+        ) ||
+        entry.t.some(
+          (record) =>
+            Array.isArray(record) &&
+            typeof record[8] === "string" &&
+            record[8].startsWith('["omp",'),
+        ) ||
+        (entry.r.length === 0 && entry.t.length === 0));
     const legacy =
+      needsOmpModelUsageRescan ||
       (entry.p === "claude" && version < 13) ||
       (entry.p === "grok" && version < 17) ||
       (format.state !== undefined &&

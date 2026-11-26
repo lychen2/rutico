@@ -110,6 +110,40 @@ it.layer(NodeServices.layer)("ensurePinnedRuntimeInstalled", (it) => {
     }),
   );
 
+  it.effect("isolates Rutico cached runtimes from a pre-existing same-version official cache", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const baseDir = yield* fs.makeTempDirectoryScoped({ prefix: "t3-pinned-official-iso-" });
+      const officialDir = path.join(baseDir, "runtime", "versions", version);
+      yield* fs.makeDirectory(officialDir, { recursive: true });
+      yield* fs.writeFileString(path.join(officialDir, "t3"), "#!/bin/sh\necho official\n", {
+        mode: 0o755,
+      });
+      yield* fs.writeFileString(path.join(officialDir, ".install-complete"), `${version}\n`);
+
+      const requests: string[] = [];
+      const paths = yield* ensurePinnedRuntimeInstalled({
+        baseDir,
+        version,
+        fs,
+        path,
+        platform: "linux",
+        arch: "x64",
+        httpClient: releaseHttpClient(yield* validChecksums, requests),
+        releaseBaseUrl: "https://releases.example/download",
+        runner: extractingRunner(fs, path),
+        validate: () => Effect.void,
+      });
+      assert.equal(paths.versionDir, path.join(baseDir, "runtime", "rutico", "versions", version));
+      assert.lengthOf(requests, 2);
+      assert.equal(
+        yield* fs.readFileString(path.join(officialDir, "t3")),
+        "#!/bin/sh\necho official\n",
+      );
+    }),
+  );
+
   it.effect("cleans up an interrupted download without reporting verification or extraction", () =>
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;
@@ -156,12 +190,18 @@ it.layer(NodeServices.layer)("ensurePinnedRuntimeInstalled", (it) => {
       }).pipe(Effect.forkScoped);
       yield* Deferred.await(firstChunk);
       // Nothing is staged mid-download, so an age-based prune elsewhere cannot remove it.
-      assert.deepEqual(yield* fs.readDirectory(path.join(baseDir, "runtime", "versions")), []);
+      assert.deepEqual(
+        yield* fs.readDirectory(path.join(baseDir, "runtime", "rutico", "versions")),
+        [],
+      );
       yield* Fiber.interrupt(install);
       assert.deepEqual(progress.at(-1), { stage: "download", received: 4, total: undefined });
       assert.isTrue(progress.every((event) => event.stage === "download"));
       assert.isTrue(cancelled);
-      assert.deepEqual(yield* fs.readDirectory(path.join(baseDir, "runtime", "versions")), []);
+      assert.deepEqual(
+        yield* fs.readDirectory(path.join(baseDir, "runtime", "rutico", "versions")),
+        [],
+      );
     }),
   );
 
@@ -436,7 +476,10 @@ it.layer(NodeServices.layer)("ensurePinnedRuntimeInstalled", (it) => {
       assert.instanceOf(error, PinnedRuntimeInstallError);
       assert.equal(error.step, "verifying the t3 release archive checksum");
       assert.deepEqual(commands, []);
-      assert.deepEqual(yield* fs.readDirectory(path.join(baseDir, "runtime", "versions")), []);
+      assert.deepEqual(
+        yield* fs.readDirectory(path.join(baseDir, "runtime", "rutico", "versions")),
+        [],
+      );
     }),
   );
 
@@ -631,7 +674,7 @@ it.layer(NodeServices.layer)("prunePinnedRuntimes", (it) => {
     const fs = yield* FileSystem.FileSystem;
     const path = yield* Path.Path;
     const baseDir = yield* fs.makeTempDirectoryScoped({ prefix: "t3-pinned-prune-" });
-    const versionsDir = path.join(baseDir, "runtime", "versions");
+    const versionsDir = path.join(baseDir, "runtime", "rutico", "versions");
     const now = Duration.toMillis(Duration.days(1));
     yield* TestClock.setTime(now);
     const install = Effect.fn(function* (
@@ -1027,7 +1070,7 @@ it.layer(NodeServices.layer)("launcher lookup on PATH", (it) => {
       const fs = yield* FileSystem.FileSystem;
       const path = yield* Path.Path;
       const root = yield* fs.makeTempDirectoryScoped({ prefix: "t3-launcher-path-" });
-      const versionsDir = path.join(root, ".t3", "runtime", "versions");
+      const versionsDir = path.join(root, ".t3", "runtime", "rutico", "versions");
       const executable = path.join(versionsDir, "1.0.0", "t3");
       yield* fs.makeDirectory(path.dirname(executable), { recursive: true });
       yield* fs.writeFileString(executable, "", { mode: 0o755 });
