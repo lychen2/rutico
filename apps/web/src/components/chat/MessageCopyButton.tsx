@@ -34,15 +34,18 @@ export const MessageCopyButton = memo(function MessageCopyButton({
     timeout: ANCHORED_COPY_TOAST_TIMEOUT_MS,
     ...(extraFlavors ? { extraFlavors } : {}),
   });
+  const activeLabel = isCopied ? gt("Copied") : label;
 
   return (
     <Tooltip>
       <TooltipTrigger
         render={
           <Button
-            aria-label={label}
-            disabled={isCopied}
-            onClick={() => copyToClipboard(text)}
+            aria-label={activeLabel}
+            data-copied={isCopied ? "true" : undefined}
+            onClick={() => {
+              if (!isCopied) copyToClipboard(text);
+            }}
             ref={ref}
             type="button"
             size={size}
@@ -52,13 +55,13 @@ export const MessageCopyButton = memo(function MessageCopyButton({
         }
       >
         {isCopied ? (
-          <CheckIcon key="copied" className="t3-icon-pop size-3 text-primary" />
+          <CheckIcon key="copied" className="t3-icon-pop size-3 text-success" />
         ) : (
           <Icon key="copy" className="size-3" />
         )}
       </TooltipTrigger>
       <TooltipPopup>
-        <p>{label}</p>
+        <p>{activeLabel}</p>
       </TooltipPopup>
     </Tooltip>
   );
