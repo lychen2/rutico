@@ -19,6 +19,7 @@ import { AnimatedNumber } from "~/components/ui/animated-number";
 import { FloatingHighlight } from "~/components/ui/floating-highlight";
 import { useActiveProjectTarget, type ActiveProjectTarget } from "~/hooks/useActiveProjectTarget";
 import { useRenderedAppearance, useTheme } from "~/hooks/useTheme";
+import { observeResize } from "~/lib/observeResize";
 import { cn } from "~/lib/utils";
 import { useRightPanelStore } from "~/rightPanelStore";
 import { useProjectContentSearch } from "~/state/queries";
@@ -44,6 +45,16 @@ interface ProjectContentSearchDialogProps {
 const VISIBLE_MATCH_WINDOW = 100;
 const CONTEXT_RADIUS_LINES = 8;
 const PEEK_PREFETCH_DEBOUNCE_MS = 120;
+const PEEK_PANE_MIN_WIDTH_REM = 42;
+
+function isPeekPaneWideEnough(element: HTMLElement): boolean {
+  const rootFontSize =
+    Number.parseFloat(
+      element.ownerDocument.defaultView?.getComputedStyle(element.ownerDocument.documentElement)
+        .fontSize ?? "",
+    ) || 16;
+  return element.getBoundingClientRect().width >= PEEK_PANE_MIN_WIDTH_REM * rootFontSize;
+}
 
 function formatLocaleCount(value: number): string {
   return Math.round(value).toLocaleString();
@@ -279,6 +290,17 @@ function OpenContentSearchDialog(props: {
   const [selectedIndex, setSelectedIndex] = useState(0);
 
   const [visibleCount, setVisibleCount] = useState(VISIBLE_MATCH_WINDOW);
+  const [showPeekPane, setShowPeekPane] = useState(false);
+
+  const observeResultsContainer = (element: HTMLDivElement | null) => {
+    if (!element) return;
+    const update = () => {
+      const next = isPeekPaneWideEnough(element);
+      setShowPeekPane((current) => (current === next ? current : next));
+    };
+    update();
+    return observeResize(element, update);
+  };
 
   const search = useProjectContentSearch(
     {
@@ -461,7 +483,10 @@ function OpenContentSearchDialog(props: {
           </EmptyHeader>
         </Empty>
       ) : (
-        <div className="@container flex min-h-0 flex-1 overflow-hidden">
+        <div
+          ref={observeResultsContainer}
+          className="@container flex min-h-0 flex-1 overflow-hidden"
+        >
           <div className="flex min-h-0 min-w-0 flex-1 flex-col @min-[42rem]:w-[52%] @min-[42rem]:flex-none @min-[42rem]:border-r @min-[42rem]:border-border/60">
             <ScrollArea className="min-h-0 flex-1" scrollFade>
               <div className="relative py-2">
@@ -525,14 +550,16 @@ function OpenContentSearchDialog(props: {
               </div>
             </ScrollArea>
           </div>
-          <SearchContextPeekPane
-            target={target}
-            match={matches[selectedIndex]}
-            canRead={canOpenMatches}
-            resolvedTheme={resolvedTheme}
-            renderedAppearance={renderedAppearance}
-            onOpenMatch={openMatch}
-          />
+          {showPeekPane ? (
+            <SearchContextPeekPane
+              target={target}
+              match={matches[selectedIndex]}
+              canRead={canOpenMatches}
+              resolvedTheme={resolvedTheme}
+              renderedAppearance={renderedAppearance}
+              onOpenMatch={openMatch}
+            />
+          ) : null}
         </div>
       )}
     </CommandPaletteContent>

@@ -396,6 +396,7 @@ function CommandPaletteDialog(props: {
 
   return (
     <CommandDialogPopup
+      size={props.mode === "content" ? "wide" : "default"}
       aria-label={
         props.mode === "files"
           ? gt("File picker")

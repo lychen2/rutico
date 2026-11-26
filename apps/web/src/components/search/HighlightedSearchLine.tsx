@@ -201,10 +201,26 @@ function multiLineTokens(
   theme: "light" | "dark",
 ): ReadonlyArray<ReadonlyArray<CodeToken>> | undefined {
   try {
-    return highlighter.codeToTokens(lines.map((line) => line.content).join("\n"), {
+    const tokenizedLines = highlighter.codeToTokens(lines.map((line) => line.content).join("\n"), {
       lang: language,
       theme: resolveDiffThemeName(theme),
     }).tokens;
+    let lineStartOffset = 0;
+    return lines.map((line, index) => {
+      const lineOffset = lineStartOffset;
+      lineStartOffset += line.content.length + 1;
+      const lineTokens = tokenizedLines[index];
+      if (!lineTokens) {
+        return [{ content: line.content, offset: 0 }];
+      }
+      // Shiki reports document-level offsets across codeToTokens lines; normalize to line-relative offsets.
+      const baseOffset =
+        lineTokens.length > 0 && lineTokens[0]!.offset >= lineOffset ? lineOffset : 0;
+      return lineTokens.map((token) => ({
+        ...token,
+        offset: token.offset - baseOffset,
+      }));
+    });
   } catch {
     return undefined;
   }

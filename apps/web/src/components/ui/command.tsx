@@ -59,9 +59,11 @@ function CommandDialogPopup({
   className,
   children,
   onBackdropPointerDown,
+  size = "default",
   ...props
 }: CommandDialogPrimitive.Popup.Props & {
   onBackdropPointerDown?: React.PointerEventHandler<HTMLDivElement>;
+  size?: "default" | "wide";
 }) {
   const popupRef = useRef<HTMLDivElement>(null);
   return (
@@ -74,7 +76,8 @@ function CommandDialogPopup({
           ref={popupRef}
           className={cn(
             DIALOG_POPUP_CLASS,
-            "pointer-events-auto max-h-105 max-w-xl text-foreground data-ending-style:pointer-events-none",
+            "pointer-events-auto max-h-105 text-foreground data-ending-style:pointer-events-none",
+            size === "wide" ? "max-w-4xl" : "max-w-xl",
             className,
           )}
           data-slot="command-dialog-popup"
