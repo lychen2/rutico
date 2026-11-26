@@ -1,5 +1,6 @@
 import { msg, T, useGT, useMessages } from "gt-react";
 import { contextMenuSourceOf } from "../contextMenuSource";
+import { observeVisibleAnimation } from "~/lib/visibleAnimation";
 import { m, type MessageResolver } from "../i18n/messages";
 import { sourceControlClients } from "@t3tools/client-runtime/source-control-clients";
 import { scopeThreadRef } from "@t3tools/client-runtime/environment";
@@ -33,13 +34,14 @@ import {
   closestCenter,
   DndContext,
   type DragEndEvent,
+  type DragOverEvent,
+  type DragStartEvent,
   PointerSensor,
   useSensor,
   useSensors,
 } from "@dnd-kit/core";
 import { restrictToFirstScrollableAncestor, restrictToHorizontalAxis } from "@dnd-kit/modifiers";
 import { horizontalListSortingStrategy, SortableContext, useSortable } from "@dnd-kit/sortable";
-import { CSS } from "@dnd-kit/utilities";
 import {
   Bot,
   CircleDotIcon,
@@ -53,7 +55,6 @@ import {
   MessagesSquare,
   Plus,
   TerminalSquare,
-  Volume2Icon,
   VolumeOffIcon,
 } from "lucide-react";
 import {
@@ -115,6 +116,7 @@ import { PierreEntryIcon } from "./chat/PierreEntryIcon";
 import { resolvePullRequestState } from "./pullRequest/pullRequestPresentation";
 import { PullRequestGlyph } from "~/components/pullRequest/pullRequestIcons";
 import { observeResize } from "~/lib/observeResize";
+import { useSharedIndicator } from "~/lib/motion/useSharedIndicator";
 import { surfaceShortcutKey } from "~/lib/surfaceShortcutKey";
 
 export interface RightPanelTabsProps {
@@ -900,25 +902,92 @@ function PullRequestSurfaceIcon({
   return <presentation.Icon className={cn("size-3 shrink-0", presentation.toneClassName)} />;
 }
 
+const TAB_RIPPLE_AMPLITUDE_PX = 4;
+const TAB_RIPPLE_DECAY = 0.7;
+const TAB_RIPPLE_STAGGER_MS = 24;
+const TAB_RIPPLE_MAX_HOP = 4;
+
+/**
+ * Kubai087 Tip 005 drag-reorder neighbor ripple (`A * 0.7^n`, `24ms * n` stagger):
+ * returns a gentle horizontal wave offset and delay for tabs neighboring the hovered slot.
+ */
+export function computeTabDragRipple(
+  tabIndex: number,
+  activeIndex: number,
+  overIndex: number,
+): { readonly offsetPx: number; readonly delayMs: number } {
+  if (activeIndex < 0 || overIndex < 0 || tabIndex === activeIndex || activeIndex === overIndex) {
+    return { offsetPx: 0, delayMs: 0 };
+  }
+  const hop = Math.abs(tabIndex - overIndex);
+  if (hop === 0 || hop > TAB_RIPPLE_MAX_HOP) {
+    return { offsetPx: 0, delayMs: 0 };
+  }
+  const direction = tabIndex > overIndex ? 1 : -1;
+  const magnitude = TAB_RIPPLE_AMPLITUDE_PX * TAB_RIPPLE_DECAY ** hop;
+  return {
+    offsetPx: Math.round(direction * magnitude * 100) / 100,
+    delayMs: hop * TAB_RIPPLE_STAGGER_MS,
+  };
+}
+
+interface TabDragRippleState {
+  readonly activeId: string;
+  readonly activeIndex: number;
+  readonly overIndex: number;
+}
+
 function SortableTabList(props: {
   surfaces: readonly RightPanelSurface[];
   onMove: ((surfaceId: string, toIndex: number) => void) | undefined;
+  onDragStateChange: (state: TabDragRippleState | null) => void;
   children: ReactNode;
 }) {
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }));
   const surfaceIds = props.surfaces.map((surface) => surface.id);
-  const { onMove, surfaces } = props;
+  const { onMove, onDragStateChange, surfaces } = props;
+
+  const handleDragStart = ({ active }: DragStartEvent) => {
+    const activeIndex = surfaces.findIndex((surface) => surface.id === active.id);
+    if (activeIndex < 0) return;
+    onDragStateChange({
+      activeId: String(active.id),
+      activeIndex,
+      overIndex: activeIndex,
+    });
+  };
+
+  const handleDragOver = ({ active, over }: DragOverEvent) => {
+    const activeIndex = surfaces.findIndex((surface) => surface.id === active.id);
+    const overIndex = over ? surfaces.findIndex((surface) => surface.id === over.id) : activeIndex;
+    if (activeIndex < 0) return;
+    onDragStateChange({
+      activeId: String(active.id),
+      activeIndex,
+      overIndex: overIndex >= 0 ? overIndex : activeIndex,
+    });
+  };
+
   const handleDragEnd = ({ active, over }: DragEndEvent) => {
+    onDragStateChange(null);
     if (!over || active.id === over.id) return;
     const toIndex = surfaces.findIndex((surface) => surface.id === over.id);
     if (toIndex >= 0) onMove?.(String(active.id), toIndex);
   };
+
+  const handleDragCancel = () => {
+    onDragStateChange(null);
+  };
+
   return (
     <DndContext
       sensors={sensors}
       collisionDetection={closestCenter}
       modifiers={TAB_DRAG_MODIFIERS}
+      onDragStart={handleDragStart}
+      onDragOver={handleDragOver}
       onDragEnd={handleDragEnd}
+      onDragCancel={handleDragCancel}
     >
       <SortableContext items={surfaceIds} strategy={horizontalListSortingStrategy}>
         {props.children}
@@ -948,6 +1017,9 @@ function RightPanelTab(
     surface: RightPanelSurface;
     dragDisabled: boolean;
     active: boolean;
+    indicatorActive: boolean;
+    rippleOffsetPx: number;
+    rippleDelayMs: number;
     pending: boolean;
     title: string;
     audio: TabAudioState;
@@ -1016,7 +1088,7 @@ function RightPanelTab(
               <button
                 type="button"
                 className={cn(
-                  "flex size-4 shrink-0 cursor-pointer items-center justify-center rounded-sm outline-none transition-[background-color,color,scale] duration-150 ease-out hover:bg-muted focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring active:scale-90 motion-reduce:transition-none motion-reduce:active:scale-100",
+                  "group/audio relative flex size-4 shrink-0 cursor-pointer items-center justify-center rounded-sm outline-none transition-[background-color,color,scale] duration-150 ease-out hover:bg-muted focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring active:scale-90 motion-reduce:transition-none motion-reduce:active:scale-100",
                   audio === "audible"
                     ? "text-primary"
                     : "text-muted-foreground hover:text-foreground",
@@ -1036,7 +1108,19 @@ function RightPanelTab(
                 {audio === "muted" ? (
                   <VolumeOffIcon key="muted" className="t3-icon-pop size-3" />
                 ) : (
-                  <Volume2Icon key="audible" className="t3-icon-pop size-3" />
+                  <>
+                    <span
+                      ref={observeVisibleAnimation}
+                      aria-hidden="true"
+                      data-slot="tab-audio-eq"
+                      className="tab-audio-eq flex h-2.5 items-end gap-px transition-[opacity,scale] duration-150 ease-out group-hover/audio:scale-75 group-hover/audio:opacity-0 group-focus-visible/audio:scale-75 group-focus-visible/audio:opacity-0 motion-reduce:transition-none"
+                    >
+                      <span className="tab-audio-eq-bar tab-audio-eq-bar-1 h-full w-0.5 rounded-full bg-current" />
+                      <span className="tab-audio-eq-bar tab-audio-eq-bar-2 h-full w-0.5 rounded-full bg-current" />
+                      <span className="tab-audio-eq-bar tab-audio-eq-bar-3 h-full w-0.5 rounded-full bg-current" />
+                    </span>
+                    <VolumeOffIcon className="pointer-events-none absolute size-3 scale-75 opacity-0 transition-[opacity,scale] duration-150 ease-(--spring-snappy) group-hover/audio:scale-100 group-hover/audio:opacity-100 group-focus-visible/audio:scale-100 group-focus-visible/audio:opacity-100 motion-reduce:transition-none" />
+                  </>
                 )}
               </button>
             }
@@ -1103,6 +1187,17 @@ function RightPanelTab(
       )}
     </>
   );
+  const combinedX = (transform?.x ?? 0) + (isDragging ? 0 : props.rippleOffsetPx);
+  const combinedY = transform?.y ?? 0;
+  const tabTransform =
+    combinedX !== 0 || combinedY !== 0
+      ? `translate3d(${Math.round(combinedX * 100) / 100}px, ${Math.round(combinedY * 100) / 100}px, 0)`
+      : undefined;
+  const tabTransition = isDragging
+    ? transition
+    : (transition ??
+      (props.rippleOffsetPx !== 0 ? "transform 180ms var(--spring-snappy)" : undefined));
+
   return (
     <div
       data-active-tab={props.active}
@@ -1112,12 +1207,19 @@ function RightPanelTab(
       onContextMenu={(event) => onContextMenu(event, surface)}
       {...listeners}
       ref={setNodeRef}
-      style={{ transform: CSS.Translate.toString(transform), transition }}
+      style={{
+        transform: tabTransform,
+        transition: tabTransition,
+        transitionDelay:
+          !isDragging && props.rippleDelayMs > 0 ? `${props.rippleDelayMs}ms` : undefined,
+      }}
       className={cn(
-        "t3-panel-tab-enter cursor-pointer group/tab flex h-6 max-w-36 shrink-0 items-center gap-0.5 rounded-md pr-2 pl-1.5 text-xs motion-reduce:transition-none",
+        "t3-panel-tab-enter relative z-1 cursor-pointer group/tab flex h-6 max-w-36 shrink-0 items-center gap-0.5 rounded-md pr-2 pl-1.5 text-xs motion-reduce:transition-none",
         props.ownsDesktopTitleBar && "[-webkit-app-region:no-drag]",
         props.active
-          ? "bg-accent text-foreground shadow-xs/5 ring-1 ring-inset ring-border/60 dark:ring-white/10"
+          ? props.indicatorActive
+            ? "text-foreground"
+            : "bg-accent text-foreground shadow-xs/5 ring-1 ring-inset ring-border/60 dark:ring-white/10"
           : "text-muted-foreground hover:bg-accent/60 hover:text-foreground",
         isDragging &&
           "relative z-10 cursor-grabbing bg-popover text-foreground shadow-md ring-1 ring-inset ring-primary/40",
@@ -1136,13 +1238,27 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
   const browserProfiles = useBrowserDefaults().profiles;
   const { resolvedTheme } = useTheme();
   const tabListRef = useRef<HTMLDivElement>(null);
+  const tabStripContainerRef = useRef<HTMLDivElement>(null);
+  const activeTabIndicatorRef = useRef<HTMLDivElement>(null);
   const addSurfaceTriggerRef = useRef<HTMLButtonElement>(null);
   const [renamingDevice, setRenamingDevice] = useState<string | null>(null);
   const [addSurfaceMenuOpen, setAddSurfaceMenuOpen] = useState(false);
+  const [dragRippleState, setDragRippleState] = useState<TabDragRippleState | null>(null);
   const [tabScrollState, setTabScrollState] = useState({
     hasOverflow: false,
     canScrollLeft: false,
     canScrollRight: false,
+  });
+
+  const sharedIndicatorActive = dragRippleState === null && props.activeSurfaceId !== null;
+  useSharedIndicator({
+    containerRef: tabStripContainerRef,
+    indicatorRef: activeTabIndicatorRef,
+    activeSelector: "[data-active-tab='true']",
+    activeKey: sharedIndicatorActive ? props.activeSurfaceId : null,
+    preset: "fluid",
+    maxSquash: 0.15,
+    axis: "x",
   });
 
   if (props.open === false && addSurfaceMenuOpen) setAddSurfaceMenuOpen(false);
@@ -1526,21 +1642,47 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
             )}
             data-right-panel-tab-list
           >
-            <div className="flex h-full w-max min-w-full items-center gap-1">
-              <SortableTabList surfaces={props.surfaces} onMove={props.onMoveSurface}>
-                {props.surfaces.map((surface) => {
+            <div
+              ref={tabStripContainerRef}
+              className="relative flex h-full w-max min-w-full items-center gap-1"
+            >
+              <div
+                ref={activeTabIndicatorRef}
+                aria-hidden="true"
+                data-slot="right-panel-active-tab-indicator"
+                className={cn(
+                  "pointer-events-none absolute top-0 left-0 z-0 rounded-md bg-accent opacity-0 shadow-xs/5 ring-1 ring-inset ring-border/60 will-change-transform dark:ring-white/10",
+                  !sharedIndicatorActive && "hidden",
+                )}
+              />
+              <SortableTabList
+                surfaces={props.surfaces}
+                onMove={props.onMoveSurface}
+                onDragStateChange={setDragRippleState}
+              >
+                {props.surfaces.map((surface, tabIndex) => {
                   const previewTabId = previewTabIdOf(surface, props.previewSessions);
                   const favicon = previewFaviconOf(
                     surface,
                     props.previewSessions,
                     props.desktopByTabId,
                   );
+                  const ripple = dragRippleState
+                    ? computeTabDragRipple(
+                        tabIndex,
+                        dragRippleState.activeIndex,
+                        dragRippleState.overIndex,
+                      )
+                    : { offsetPx: 0, delayMs: 0 };
                   return (
                     <RightPanelTab
                       key={surface.id}
                       surface={surface}
                       dragDisabled={!props.onMoveSurface || renamingDevice === surface.id}
                       active={surface.id === props.activeSurfaceId}
+                      indicatorActive={sharedIndicatorActive}
+                      rippleOffsetPx={ripple.offsetPx}
+                      rippleDelayMs={ripple.delayMs}
                       pending={props.pendingSurfaceIds.has(surface.id)}
                       title={surfaceTitle(
                         surface,

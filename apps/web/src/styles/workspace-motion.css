@@ -226,3 +226,60 @@
     transition: none;
   }
 }
+
+/* --------------------------------------------------------------------------
+   D19 / C062: RightPanelTabs Live Audio Equalizer Bars
+   -------------------------------------------------------------------------- */
+
+@keyframes tab-audio-eq-pulse {
+  0%,
+  100% {
+    transform: scaleY(0.32);
+  }
+  45% {
+    transform: scaleY(1);
+  }
+  75% {
+    transform: scaleY(0.56);
+  }
+}
+
+.tab-audio-eq {
+  contain: layout style;
+}
+
+.tab-audio-eq-bar {
+  transform-origin: bottom center;
+  animation: tab-audio-eq-pulse 780ms ease-in-out infinite;
+  animation-play-state: var(--visible-animation-state, running);
+  will-change: transform;
+}
+
+.tab-audio-eq-bar-1 {
+  animation-delay: 0ms;
+}
+
+.tab-audio-eq-bar-2 {
+  animation-delay: -260ms;
+  animation-duration: 640ms;
+}
+
+.tab-audio-eq-bar-3 {
+  animation-delay: -520ms;
+  animation-duration: 860ms;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tab-audio-eq-bar {
+    animation: none;
+  }
+  .tab-audio-eq-bar-1 {
+    transform: scaleY(0.55);
+  }
+  .tab-audio-eq-bar-2 {
+    transform: scaleY(0.95);
+  }
+  .tab-audio-eq-bar-3 {
+    transform: scaleY(0.7);
+  }
+}

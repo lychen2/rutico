@@ -2,6 +2,7 @@ import { EnvironmentId, type ThreadPullRequestLink } from "@t3tools/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
 import {
+  computeTabDragRipple,
   resolvePullRequestTabLink,
   surfaceShortcutActionForKey,
   surfaceShortcutTargetsTypingContext,
@@ -165,5 +166,18 @@ describe("pull request tab snapshots", () => {
         link,
       ),
     ).toBe(newer);
+  });
+});
+
+describe("computeTabDragRipple", () => {
+  it("applies Kubai Tip 005 A * 0.7^n decay and 24ms * n stagger to neighbors", () => {
+    // Dragging tab 0 over tab 2: neighbors at hop 1 (idx 1 & 3) and hop 2 (idx 4)
+    expect(computeTabDragRipple(0, 0, 2)).toEqual({ offsetPx: 0, delayMs: 0 });
+    expect(computeTabDragRipple(2, 0, 2)).toEqual({ offsetPx: 0, delayMs: 0 });
+    expect(computeTabDragRipple(3, 0, 2)).toEqual({ offsetPx: 2.8, delayMs: 24 });
+    expect(computeTabDragRipple(1, 0, 2)).toEqual({ offsetPx: -2.8, delayMs: 24 });
+    expect(computeTabDragRipple(4, 0, 2)).toEqual({ offsetPx: 1.96, delayMs: 48 });
+    expect(computeTabDragRipple(5, 0, 2)).toEqual({ offsetPx: 1.37, delayMs: 72 });
+    expect(computeTabDragRipple(8, 0, 2)).toEqual({ offsetPx: 0, delayMs: 0 });
   });
 });
