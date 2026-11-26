@@ -55,11 +55,12 @@ const emptyMediaVariants = cva(
 function EmptyMedia({
   className,
   variant = "default",
+  children,
   ...props
 }: React.ComponentProps<"div"> & VariantProps<typeof emptyMediaVariants>) {
   return (
     <div
-      className={cn("relative mb-6", className)}
+      className={cn("group/empty-media relative mb-6", className)}
       data-slot="empty-media"
       data-variant={variant}
       {...props}
@@ -70,26 +71,41 @@ function EmptyMedia({
             aria-hidden="true"
             className={cn(
               emptyMediaVariants({ className, variant }),
-              "-translate-x-0.5 -rotate-10 pointer-events-none absolute bottom-px origin-bottom-left scale-84 shadow-none",
+              "-translate-x-0.5 -rotate-10 pointer-events-none absolute bottom-px origin-bottom-left scale-84 opacity-70 shadow-none transition-transform duration-240 ease-(--ease-spring-snappy) pointer-fine:group-hover/empty-media:-translate-x-1.5 pointer-fine:group-hover/empty-media:-rotate-16 pointer-fine:group-hover/empty-media:scale-88 motion-reduce:transition-none",
             )}
           />
           <div
             aria-hidden="true"
             className={cn(
               emptyMediaVariants({ className, variant }),
-              "pointer-events-none absolute bottom-px origin-bottom-right translate-x-0.5 rotate-10 scale-84 shadow-none",
+              "pointer-events-none absolute bottom-px origin-bottom-right translate-x-0.5 rotate-10 scale-84 opacity-70 shadow-none transition-transform duration-240 ease-(--ease-spring-snappy) pointer-fine:group-hover/empty-media:translate-x-1.5 pointer-fine:group-hover/empty-media:rotate-16 pointer-fine:group-hover/empty-media:scale-88 motion-reduce:transition-none",
             )}
           />
         </>
       )}
-      <div className={cn(emptyMediaVariants({ className, variant }))} {...props} />
+      <div
+        className={cn(
+          emptyMediaVariants({ className, variant }),
+          variant === "icon" &&
+            "transition-transform duration-240 ease-(--ease-spring-snappy) pointer-fine:group-hover/empty-media:-translate-y-0.5 motion-reduce:transition-none",
+        )}
+      >
+        {children}
+      </div>
     </div>
   );
 }
 
 function EmptyTitle({ className, ...props }: React.ComponentProps<"div">) {
   return (
-    <div className={cn("font-semibold text-xl", className)} data-slot="empty-title" {...props} />
+    <div
+      className={cn(
+        "text-balance font-semibold text-xl leading-snug tracking-[-0.015em]",
+        className,
+      )}
+      data-slot="empty-title"
+      {...props}
+    />
   );
 }
 
@@ -97,7 +113,7 @@ function EmptyDescription({ className, ...props }: React.ComponentProps<"p">) {
   return (
     <div
       className={cn(
-        "text-muted-foreground text-sm [&>a:hover]:text-primary [&>a]:underline [&>a]:underline-offset-4 [[data-slot=empty-title]+&]:mt-1 [[data-slot=empty-description]+&]:mt-1",
+        "text-pretty text-muted-foreground text-sm leading-relaxed [&>a:hover]:text-primary [&>a]:underline [&>a]:underline-offset-4 [[data-slot=empty-title]+&]:mt-1 [[data-slot=empty-description]+&]:mt-1",
         className,
       )}
       data-slot="empty-description"
@@ -110,7 +126,7 @@ function EmptyContent({ className, ...props }: React.ComponentProps<"div">) {
   return (
     <div
       className={cn(
-        "flex w-full min-w-0 max-w-sm flex-col items-center gap-4 text-balance text-sm",
+        "flex w-full min-w-0 max-w-sm flex-col items-center gap-4 text-pretty text-sm",
         className,
       )}
       data-slot="empty-content"
