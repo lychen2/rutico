@@ -141,6 +141,86 @@ describe("RightPanelTabs", () => {
 
     expect(navigateHistory).not.toHaveBeenCalled();
   });
+
+  it("updates horizontal scroll-edge fade mask attributes as an overflowing tab strip scrolls", async () => {
+    const panelEl = document.createElement("div");
+    panelEl.style.cssText = "width: 320px; height: 200px; display: flex";
+    const noop = () => {};
+    await using screen = await render(
+      <RightPanelTabs
+        mode="embedded"
+        keybindings={[]}
+        getShortcutContext={() => ({
+          terminalFocus: false,
+          terminalOpen: false,
+          previewFocus: false,
+          previewOpen: false,
+          isWeb: true,
+          isDesktop: false,
+        })}
+        surfaces={surfaces}
+        environmentId={null}
+        activeSurfaceId={null}
+        pendingSurfaceIds={new Set()}
+        previewSessions={{}}
+        desktopByTabId={{}}
+        terminalLabelsById={new Map(surfaces.map((surface) => [surface.id, "Terminal"]))}
+        onActivate={noop}
+        onCloseSurface={noop}
+        onCloseOtherSurfaces={noop}
+        onCloseSurfacesToRight={noop}
+        onCloseAllSurfaces={noop}
+        onCopyFilePath={noop}
+        onAddBrowser={noop}
+        onAddBrowserInProfile={noop}
+        onAddTerminal={noop}
+        onAddDiff={noop}
+        onAddFiles={noop}
+        onAddPullRequest={noop}
+        onAddPullRequests={noop}
+        onAddDevice={noop}
+        browserAvailable={false}
+        terminalAvailable
+        diffAvailable={false}
+        filesAvailable={false}
+        pullRequestAvailable={false}
+        pullRequestsAvailable={false}
+        deviceAvailable={false}
+      >
+        {null}
+      </RightPanelTabs>,
+      { container: panelEl },
+    );
+
+    const maskHost = screen.container.querySelector<HTMLElement>(
+      "[data-right-panel-tab-strip-mask]",
+    )!;
+    const viewport = screen.container.querySelector<HTMLElement>(
+      '[data-right-panel-tab-list] [data-slot="scroll-area-viewport"]',
+    )!;
+
+    await vi.waitFor(() => {
+      expect(maskHost.hasAttribute("data-overflow-x-start")).toBe(false);
+      expect(maskHost.hasAttribute("data-overflow-x-end")).toBe(true);
+      expect(getComputedStyle(maskHost).maskImage).not.toBe("none");
+    });
+
+    viewport.scrollLeft = 120;
+    viewport.dispatchEvent(new Event("scroll"));
+    await vi.waitFor(() => {
+      expect(maskHost.hasAttribute("data-overflow-x-start")).toBe(true);
+      expect(maskHost.hasAttribute("data-overflow-x-end")).toBe(true);
+      expect(getComputedStyle(maskHost).maskImage).not.toBe("none");
+    });
+
+    viewport.scrollLeft = viewport.scrollWidth;
+    viewport.dispatchEvent(new Event("scroll"));
+    await vi.waitFor(() => {
+      expect(maskHost.hasAttribute("data-overflow-x-start")).toBe(true);
+      expect(maskHost.hasAttribute("data-overflow-x-end")).toBe(false);
+      expect(getComputedStyle(maskHost).maskImage).not.toBe("none");
+    });
+  });
 });
 
 const BROWSER_SURFACE: RightPanelSurface = {
