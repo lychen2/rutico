@@ -2858,6 +2858,8 @@ code {
 
   .t3-stop-pulse-ring {
     animation: t3-stop-pulse 1.9s cubic-bezier(0.22, 1, 0.36, 1) infinite;
+    animation-play-state: var(--visible-animation-state, running);
+    will-change: var(--visible-animation-will-change, auto);
   }
 
   .t3-dropzone-overlay {
