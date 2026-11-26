@@ -18,8 +18,12 @@ import {
   CheckIcon,
   ChevronDownIcon,
   Columns2Icon,
+  FileDiffIcon,
   FlaskConicalOffIcon,
   FolderTreeIcon,
+  GitBranchIcon,
+  HistoryIcon,
+  LockIcon,
   PilcrowIcon,
   Rows3Icon,
   TextWrapIcon,
@@ -28,7 +32,7 @@ import {
   ChevronsUpDownIcon,
 } from "lucide-react";
 import * as Schema from "effect/Schema";
-import { type MouseEvent, useEffect, useRef, useState } from "react";
+import { type MouseEvent, type ReactNode, useEffect, useRef, useState } from "react";
 import { useCodeViewFileReveal } from "./diffs/useCodeViewFileReveal";
 import { useCodeViewScrollRestore } from "./diffs/useCodeViewScrollRestore";
 import { useFilesystemReadAccess } from "~/state/filesystem";
@@ -82,6 +86,7 @@ import { FileExplorerPane } from "./files/FileExplorerPane";
 import { diffFileTreeEntries } from "./diffs/diffFileTree.logic";
 import { getDiffHeaderClickAction } from "./diffs/diffHeaderClick";
 import { Button } from "./ui/button";
+import { Empty, EmptyDescription, EmptyHeader, EmptyMedia } from "./ui/empty";
 import { ToggleGroup, Toggle } from "./ui/toggle-group";
 import { Switch } from "./ui/switch";
 import {
@@ -186,14 +191,26 @@ function DiffFileCollapseToggle({
           />
         }
       >
-        {collapsed ? (
-          <ChevronRightIcon className="size-4 text-muted-foreground/80" />
-        ) : (
-          <ChevronDownIcon className="size-4 text-muted-foreground/80" />
-        )}
+        <ChevronRightIcon
+          className={cn(
+            "size-4 text-muted-foreground/80 transition-transform duration-180 ease-(--ease-drawer) motion-reduce:transition-none",
+            !collapsed && "rotate-90",
+          )}
+        />
       </TooltipTrigger>
       <TooltipPopup side="top">{collapsed ? gt("Expand diff") : gt("Collapse diff")}</TooltipPopup>
     </Tooltip>
+  );
+}
+
+function DiffPanelEmptyState({ icon, message }: { icon: ReactNode; message: ReactNode }) {
+  return (
+    <Empty size="compact">
+      <EmptyMedia variant="icon">{icon}</EmptyMedia>
+      <EmptyHeader>
+        <EmptyDescription>{message}</EmptyDescription>
+      </EmptyHeader>
+    </Empty>
   );
 }
 
@@ -993,7 +1010,7 @@ export default function DiffPanel({
             data-workspace-focus-default
           >
             <span className="truncate">{selectedScopeLabel}</span>
-            <ChevronDownIcon className="size-3.5 shrink-0 opacity-70" />
+            <ChevronDownIcon className="size-3.5 shrink-0 opacity-70 transition-transform duration-180 ease-(--ease-drawer) in-data-popup-open:rotate-180 motion-reduce:transition-none" />
           </DropdownMenuTrigger>
           {headerCommitSha !== null ? (
             selectedCommitUrl ? (
@@ -1186,7 +1203,7 @@ export default function DiffPanel({
               })}
             >
               <span className="truncate">{gitRepository?.name ?? threadFolderName}</span>
-              <ChevronDownIcon className="size-3.5 shrink-0 opacity-70" />
+              <ChevronDownIcon className="size-3.5 shrink-0 opacity-70 transition-transform duration-180 ease-(--ease-drawer) in-data-popup-open:rotate-180 motion-reduce:transition-none" />
             </DropdownMenuTrigger>
             <DropdownMenuContent align="start" className="max-h-80 max-w-72">
               <DropdownMenuRadioGroup
@@ -1221,7 +1238,7 @@ export default function DiffPanel({
               })}
             >
               <span className="truncate">{selectedSection?.name ?? gt("All repositories")}</span>
-              <ChevronDownIcon className="size-3.5 shrink-0 opacity-70" />
+              <ChevronDownIcon className="size-3.5 shrink-0 opacity-70 transition-transform duration-180 ease-(--ease-drawer) in-data-popup-open:rotate-180 motion-reduce:transition-none" />
             </DropdownMenuTrigger>
             <DropdownMenuContent align="start" className="max-h-80 max-w-72">
               <DropdownMenuRadioGroup
@@ -1302,7 +1319,7 @@ export default function DiffPanel({
                 })}
               >
                 <span className="min-w-0 truncate">{comparisonBaseRef}</span>
-                <ChevronDownIcon className="size-3.5 shrink-0 opacity-70" />
+                <ChevronDownIcon className="size-3.5 shrink-0 opacity-70 transition-transform duration-180 ease-(--ease-drawer) in-data-popup-open:rotate-180 motion-reduce:transition-none" />
               </ComboboxTrigger>
               <ComboboxPopup
                 align="start"
@@ -1577,24 +1594,28 @@ export default function DiffPanel({
   return (
     <DiffPanelShell mode={mode} header={headerRow}>
       {!activeThread ? (
-        <div className="flex flex-1 items-center justify-center px-5 text-center text-xs text-muted-foreground/70">
-          <T>Select a thread to inspect turn diffs.</T>
-        </div>
+        <DiffPanelEmptyState
+          icon={<FileDiffIcon className="size-4.5 text-muted-foreground" />}
+          message={<T>Select a thread to inspect turn diffs.</T>}
+        />
       ) : !isGitRepo && !hasRepositoryChanges && !toolCallSelection ? (
-        <div className="flex flex-1 items-center justify-center px-5 text-center text-xs text-muted-foreground/70">
-          <T>Turn diffs are unavailable because this project is not a git repository.</T>
-        </div>
+        <DiffPanelEmptyState
+          icon={<GitBranchIcon className="size-4.5 text-muted-foreground" />}
+          message={<T>Turn diffs are unavailable because this project is not a git repository.</T>}
+        />
       ) : selectedRunId !== null && orderedTurnDiffSummaries.length === 0 ? (
-        <div className="flex flex-1 items-center justify-center px-5 text-center text-xs text-muted-foreground/70">
-          <T>No completed turns yet.</T>
-        </div>
+        <DiffPanelEmptyState
+          icon={<HistoryIcon className="size-4.5 text-muted-foreground" />}
+          message={<T>No completed turns yet.</T>}
+        />
       ) : isGitSelection && !canReadFiles ? (
         fileAccess.isPending ? (
           <DiffPanelLoadingState label={gt("Checking file access...")} />
         ) : (
-          <div className="flex flex-1 items-center justify-center px-5 text-center text-xs text-muted-foreground/70">
-            {fileAccess.error ?? gt("This connection cannot read local diffs.")}
-          </div>
+          <DiffPanelEmptyState
+            icon={<LockIcon className="size-4.5 text-muted-foreground" />}
+            message={fileAccess.error ?? gt("This connection cannot read local diffs.")}
+          />
         )
       ) : (
         <>
@@ -1668,13 +1689,14 @@ export default function DiffPanel({
                   }
                 />
               ) : (
-                <div className="flex h-full items-center justify-center px-3 py-2 text-xs text-muted-foreground/70">
-                  <p>
-                    {hasNoNetChanges
+                <DiffPanelEmptyState
+                  icon={<FileDiffIcon className="size-4.5 text-muted-foreground" />}
+                  message={
+                    hasNoNetChanges
                       ? gt("No net changes in this selection.")
-                      : gt("No patch available for this selection.")}
-                  </p>
-                </div>
+                      : gt("No patch available for this selection.")
+                  }
+                />
               )
             ) : lazySource || renderablePatch?.kind === "files" ? (
               <div className="flex min-h-0 flex-1 overflow-hidden">
