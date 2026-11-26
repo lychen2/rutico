@@ -9,6 +9,7 @@ import {
 } from "react";
 
 import { getSpringWaapiTiming, prefersReducedMotion } from "~/lib/motion/springs";
+import { AnimatedHeight } from "./AnimatedHeight";
 import { Command, CommandFooter, CommandInput, CommandPanel } from "./ui/command";
 import { Kbd, KbdGroup } from "./ui/kbd";
 
@@ -58,6 +59,7 @@ type CommandPaletteContentProps = Omit<ComponentProps<typeof Command>, "children
   readonly heightBucket?: number;
   readonly inputAccessory?: ReactNode;
   readonly inputProps: ComponentProps<typeof CommandInput>;
+  readonly inspectorFooter?: ReactNode;
   readonly onBack?: () => void;
   readonly pendingSelectionRef?: RefObject<PendingInputSelection | null>;
   readonly panelSize?: "list" | "tall-list" | "fill";
@@ -77,6 +79,7 @@ export function CommandPaletteContent({
   heightBucket,
   inputAccessory,
   inputProps,
+  inspectorFooter,
   onBack,
   pendingSelectionRef,
   panelSize = "list",
@@ -189,6 +192,7 @@ export function CommandPaletteContent({
             </div>
           </CommandPanel>
         </div>
+        {inspectorFooter !== undefined ? <AnimatedHeight>{inspectorFooter}</AnimatedHeight> : null}
         <CommandFooter className="max-sm:flex-col max-sm:items-start">
           <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1.5">
             <KbdGroup>

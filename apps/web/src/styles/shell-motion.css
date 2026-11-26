@@ -367,3 +367,41 @@
     transition: none;
   }
 }
+
+/* ==========================================================================
+   D27 / C091: Contextual Inspector Footer & Translucent Drag-Pickup Ghost
+   ========================================================================== */
+
+html[data-palette-dragging="true"] [data-slot="command-dialog-popup"] {
+  opacity: 0.22;
+  scale: 0.97;
+  transition:
+    opacity 150ms var(--spring-snappy),
+    scale 150ms var(--spring-snappy);
+}
+
+html[data-palette-dragging="true"] [data-slot="command-dialog-backdrop"] {
+  opacity: 0.16;
+  transition: opacity 150ms ease-out;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  html[data-palette-dragging="true"] [data-slot="thread-context-drag-ghost"] .drag-flight-card {
+    transform: rotate(-1.5deg) scale(1.02);
+    transition: transform 180ms var(--spring-snappy);
+  }
+}
+
+html[data-palette-dragging="true"] [data-slot="thread-context-drag-ghost"] .drag-flight-card > div {
+  box-shadow:
+    0 0 0 1px color-mix(in oklch, var(--primary) 26%, var(--border)),
+    0 14px 32px -12px rgb(0 0 0 / 32%),
+    inset 0 1px 0 rgb(255 255 255 / 32%);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html[data-palette-dragging="true"] [data-slot="command-dialog-popup"],
+  html[data-palette-dragging="true"] [data-slot="command-dialog-backdrop"] {
+    transition: none;
+  }
+}

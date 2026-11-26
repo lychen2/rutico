@@ -384,4 +384,60 @@ describe("CommandPalette open intents", () => {
     await userEvent.keyboard("{Escape}");
     await expect.element(palette).not.toBeInTheDocument();
   });
+
+  it("opens with zero-latency transition, pushes/pops subviews with breadcrumb pill, shows magnetic rail and contextual inspector footer", async () => {
+    const project = makeProject("acme");
+    const thread = makeThreadFixture({
+      environmentId: project.environmentId,
+      projectId: project.id,
+      id: ThreadId.make("inspected-thread"),
+      title: "Inspectable thread",
+      branch: "feat/spotlight",
+    });
+    setup({ projects: [project], threads: [thread] });
+    await using _screen = await render(<CommandPalette>{null}</CommandPalette>);
+
+    openCommandPalette({});
+    const palette = page.getByTestId("command-palette");
+    await expect.element(palette).toBeVisible();
+    // 0ms open latency: initial panel transition is "none".
+    expect(palette.element().querySelector('[data-command-view-transition="none"]')).not.toBeNull();
+
+    // Virtualized magnetic highlight rail mounts and positions on the active item.
+    await vi.waitFor(() => {
+      const rail = palette
+        .element()
+        .querySelector<HTMLElement>('[data-slot="command-magnetic-rail"]');
+      expect(rail).not.toBeNull();
+      expect(rail?.getAttribute("data-indicator-ready")).toBe("true");
+    });
+
+    // Pushing into "New thread in..." sets directional "push" and renders the breadcrumb pill.
+    await userEvent.keyboard("{ArrowDown}{Enter}");
+    await vi.waitFor(() => {
+      expect(
+        palette.element().querySelector('[data-command-view-transition="push"]'),
+      ).not.toBeNull();
+      expect(
+        palette.element().querySelector('[data-slot="command-breadcrumb-pill"]'),
+      ).not.toBeNull();
+    });
+
+    // Highlighted project reveals the contextual inspector footer with its workspace path.
+    await vi.waitFor(() => {
+      const inspector = palette
+        .element()
+        .querySelector<HTMLElement>('[data-slot="command-inspector-footer"]');
+      expect(inspector).not.toBeNull();
+      expect(inspector?.textContent).toContain("/work/acme");
+    });
+
+    // Backspace pops back with directional "pop" transition.
+    await userEvent.keyboard("{Backspace}");
+    await vi.waitFor(() => {
+      expect(
+        palette.element().querySelector('[data-command-view-transition="pop"]'),
+      ).not.toBeNull();
+    });
+  });
 });

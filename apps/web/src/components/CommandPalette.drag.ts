@@ -8,12 +8,25 @@ import {
   moveThreadContextDrag,
 } from "./chat/threadContextDrag";
 
+function setPaletteDraggingAttribute(active: boolean): void {
+  if (typeof document === "undefined") return;
+  if (active) {
+    document.documentElement.dataset.paletteDragging = "true";
+  } else {
+    delete document.documentElement.dataset.paletteDragging;
+  }
+}
+
 export function startPaletteThreadDrag(
   event: PointerEvent,
   thread: ScopedThreadRef,
   title: string,
 ) {
   if (!event.isPrimary || event.button !== 0 || event.pointerType === "touch") return;
+  const finishDrag = () => {
+    setPaletteDraggingAttribute(false);
+    endThreadContextDrag();
+  };
   // The document-owned sensor must survive closing and unmounting the palette on activation.
   return new SidebarPointerSensor({
     event,
@@ -21,16 +34,25 @@ export function startPaletteThreadDrag(
     options: {
       distance: 6,
       onAttach: () => {},
-      onFinish: endThreadContextDrag,
+      onFinish: finishDrag,
       onDrop: (point) => dropThreadContext(point, [{ ...thread, title }]),
     },
     onStart: () => {
+      setPaletteDraggingAttribute(true);
       flushSync(() => dispatchCommandPalette({ _tag: "SetOpen", open: false }));
     },
     onMove: (point) => moveThreadContextDrag(point, { title, count: 1 }),
-    onPending: () => {},
-    onAbort: () => {},
-    onCancel: () => {},
-    onEnd: () => {},
+    onPending: () => {
+      setPaletteDraggingAttribute(true);
+    },
+    onAbort: () => {
+      setPaletteDraggingAttribute(false);
+    },
+    onCancel: () => {
+      setPaletteDraggingAttribute(false);
+    },
+    onEnd: () => {
+      setPaletteDraggingAttribute(false);
+    },
   });
 }
