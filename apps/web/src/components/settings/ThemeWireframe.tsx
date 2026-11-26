@@ -116,7 +116,7 @@ export function ThemeWireframe({
     <span
       aria-hidden
       className={cn(
-        "relative block w-full overflow-hidden rounded-lg border border-border/60",
+        "relative block w-full overflow-hidden rounded-lg border border-border/60 transition-transform duration-(--duration-snappy) ease-(--spring-snappy) group-hover:scale-[1.015] motion-reduce:transition-none",
         className,
       )}
     >

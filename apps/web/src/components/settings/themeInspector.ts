@@ -133,6 +133,56 @@ function spotlightRect(element: Element): {
   };
 }
 
+function parseCssRgb(color: string): readonly [number, number, number, number] | null {
+  const match = color.match(
+    /^rgba?\(\s*([\d.]+)(?:[\s,]+)([\d.]+)(?:[\s,]+)([\d.]+)(?:[\s,/]+([\d.]+%?))?\s*\)$/i,
+  );
+  if (!match) return null;
+  const r = Number.parseFloat(match[1]!);
+  const g = Number.parseFloat(match[2]!);
+  const b = Number.parseFloat(match[3]!);
+  const rawAlpha = match[4];
+  const a =
+    rawAlpha === undefined
+      ? 1
+      : rawAlpha.endsWith("%")
+        ? Number.parseFloat(rawAlpha) / 100
+        : Number.parseFloat(rawAlpha);
+  if ([r, g, b, a].some((channel) => Number.isNaN(channel))) return null;
+  return [r, g, b, Math.max(0, Math.min(1, a))];
+}
+
+function relativeLuminance([r, g, b]: readonly [number, number, number]): number {
+  const toLinear = (channel: number) => {
+    const normalized = channel / 255;
+    return normalized <= 0.03928 ? normalized / 12.92 : ((normalized + 0.055) / 1.055) ** 2.4;
+  };
+  return 0.2126 * toLinear(r) + 0.7152 * toLinear(g) + 0.0722 * toLinear(b);
+}
+
+function formatElementContrastBadge(element: Element): string {
+  const fg = parseCssRgb(window.getComputedStyle(element).color);
+  if (!fg || fg[3] <= 0.05) return "";
+  let current: Element | null = element;
+  let bg: readonly [number, number, number, number] | null = null;
+  while (current) {
+    const candidate = parseCssRgb(window.getComputedStyle(current).backgroundColor);
+    if (candidate && candidate[3] >= 0.85) {
+      bg = candidate;
+      break;
+    }
+    current = current.parentElement;
+  }
+  if (!bg) return "";
+  const fgLum = relativeLuminance([fg[0], fg[1], fg[2]]);
+  const bgLum = relativeLuminance([bg[0], bg[1], bg[2]]);
+  const ratio = (Math.max(fgLum, bgLum) + 0.05) / (Math.min(fgLum, bgLum) + 0.05);
+  if (!Number.isFinite(ratio) || ratio < 1.05) return "";
+  const grade = ratio >= 7 ? "AAA" : ratio >= 4.5 ? "AA" : ratio >= 3 ? "AA+" : "";
+  const rounded = ratio.toFixed(1);
+  return grade ? `${grade} ${rounded}:1` : `${rounded}:1`;
+}
+
 export function showThemeInspectorHover(inspection: ThemeElementInspection, label: string): void {
   const rectangle = spotlightRect(inspection.element);
   if (!rectangle) {
@@ -141,24 +191,42 @@ export function showThemeInspectorHover(inspection: ThemeElementInspection, labe
   }
 
   let hover = document.getElementById(THEME_HOVER_ID);
+  const created = !hover;
   if (!hover) {
     hover = document.createElement("div");
     hover.id = THEME_HOVER_ID;
     hover.setAttribute("aria-hidden", "true");
     const tokenLabel = document.createElement("span");
     tokenLabel.dataset.themeInspectorHoverLabel = "";
+    const textSpan = document.createElement("span");
+    textSpan.dataset.themeInspectorHoverText = "";
+    const contrastSpan = document.createElement("span");
+    contrastSpan.dataset.themeInspectorHoverContrast = "";
+    tokenLabel.append(textSpan, contrastSpan);
     hover.append(tokenLabel);
     document.body.append(hover);
   }
 
-  hover.style.left = `${rectangle.x}px`;
-  hover.style.top = `${rectangle.y}px`;
+  hover.style.left = "0px";
+  hover.style.top = "0px";
+  hover.style.transform = `translate3d(${rectangle.x}px, ${rectangle.y}px, 0)`;
   hover.style.width = `${rectangle.width}px`;
   hover.style.height = `${rectangle.height}px`;
   hover.style.borderRadius = `${rectangle.radius}px`;
   hover.dataset.placement = rectangle.y < 32 ? "below" : "above";
-  const tokenLabel = hover.querySelector<HTMLElement>("[data-theme-inspector-hover-label]");
-  if (tokenLabel) tokenLabel.textContent = label;
+  const textSpan = hover.querySelector<HTMLElement>("[data-theme-inspector-hover-text]");
+  if (textSpan) textSpan.textContent = label;
+  const contrastSpan = hover.querySelector<HTMLElement>("[data-theme-inspector-hover-contrast]");
+  if (contrastSpan) contrastSpan.textContent = formatElementContrastBadge(inspection.element);
+
+  if (created) {
+    const createdHover = hover;
+    window.requestAnimationFrame(() => {
+      if (createdHover.isConnected) {
+        createdHover.dataset.themeInspectorReady = "true";
+      }
+    });
+  }
 }
 
 function renderThemeInspectorSpotlight(elements: ReadonlyArray<Element>): void {

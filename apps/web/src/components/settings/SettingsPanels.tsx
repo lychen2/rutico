@@ -58,8 +58,12 @@ import {
   readAppearanceModePreference,
   readThemeHalves,
   readThemePreference,
+  useRenderedAppearance,
   useTheme,
 } from "../../hooks/useTheme";
+import { buildFileDiffEntries, getRenderablePatch } from "../../lib/diffRendering";
+import { StyledDiffCodeView } from "../diffs/StyledDiffCodeView";
+import { Badge } from "../ui/badge";
 import {
   useScopedSettings,
   useScopedSettingsMixed,
@@ -1663,6 +1667,119 @@ function DiffColorsSettingsRow() {
   );
 }
 
+const DIFF_SANDBOX_PATCH_WITH_WHITESPACE = [
+  "diff --git a/src/cache/retryPolicy.ts b/src/cache/retryPolicy.ts",
+  "--- a/src/cache/retryPolicy.ts",
+  "+++ b/src/cache/retryPolicy.ts",
+  "@@ -1,7 +1,8 @@",
+  " export interface RetryPolicy {",
+  "-  maxAttempts: number;",
+  "+  maxAttempts:   number;",
+  "   backoffMs: number;",
+  " }",
+  "-export const DEFAULT_RETRY: RetryPolicy = { maxAttempts: 2, backoffMs: 250 };",
+  "+export const DEFAULT_RETRY: RetryPolicy = { maxAttempts: 4, backoffMs: 180 };",
+  "+export const MAX_BACKOFF_MS = 3_000;",
+  "",
+].join("\n");
+
+const DIFF_SANDBOX_PATCH_IGNORE_WHITESPACE = [
+  "diff --git a/src/cache/retryPolicy.ts b/src/cache/retryPolicy.ts",
+  "--- a/src/cache/retryPolicy.ts",
+  "+++ b/src/cache/retryPolicy.ts",
+  "@@ -1,7 +1,8 @@",
+  " export interface RetryPolicy {",
+  "   maxAttempts: number;",
+  "   backoffMs: number;",
+  " }",
+  "-export const DEFAULT_RETRY: RetryPolicy = { maxAttempts: 2, backoffMs: 250 };",
+  "+export const DEFAULT_RETRY: RetryPolicy = { maxAttempts: 4, backoffMs: 180 };",
+  "+export const MAX_BACKOFF_MS = 3_000;",
+  "",
+].join("\n");
+
+function parseSandboxDiffEntries(patch: string) {
+  const parsed = getRenderablePatch(patch);
+  return parsed?.kind === "files" ? buildFileDiffEntries(parsed.files) : [];
+}
+
+const DIFF_SANDBOX_ENTRIES_WITH_WHITESPACE = parseSandboxDiffEntries(
+  DIFF_SANDBOX_PATCH_WITH_WHITESPACE,
+);
+const DIFF_SANDBOX_ENTRIES_IGNORE_WHITESPACE = parseSandboxDiffEntries(
+  DIFF_SANDBOX_PATCH_IGNORE_WHITESPACE,
+);
+
+function DiffLiveSandbox({
+  diffLayout,
+  diffIgnoreWhitespace,
+  diffFilesCollapsed,
+  diffColorScheme,
+}: {
+  diffLayout: DiffLayout;
+  diffIgnoreWhitespace: boolean;
+  diffFilesCollapsed: boolean;
+  diffColorScheme: "red-green" | "blue-orange";
+}) {
+  const gt = useGT();
+  const messages = useMessages();
+  const renderedAppearance = useRenderedAppearance();
+  const entries = diffIgnoreWhitespace
+    ? DIFF_SANDBOX_ENTRIES_IGNORE_WHITESPACE
+    : DIFF_SANDBOX_ENTRIES_WITH_WHITESPACE;
+  const items = entries.map(({ fileDiff, fileKey, fileVersion }) => ({
+    type: "diff" as const,
+    id: `${fileKey}:${diffIgnoreWhitespace ? "no-ws" : "ws"}`,
+    fileDiff,
+    version: fileVersion + (diffFilesCollapsed ? 1 : 0) + (diffIgnoreWhitespace ? 10 : 0),
+    collapsed: diffFilesCollapsed,
+  }));
+
+  return (
+    <div
+      data-slot="diff-sandbox"
+      data-diff-color-scheme={diffColorScheme}
+      className="space-y-2 px-3 py-3 sm:px-4"
+    >
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <span className="text-xs font-medium text-muted-foreground">
+          <T>Live preview</T>
+        </span>
+        <div className="flex flex-wrap items-center gap-1.5">
+          <Badge variant="outline" size="sm">
+            {messages(DIFF_LAYOUT_LABELS[diffLayout])}
+          </Badge>
+          {diffIgnoreWhitespace ? (
+            <Badge variant="outline" size="sm">
+              <T>Whitespace hidden</T>
+            </Badge>
+          ) : null}
+          <Badge variant="outline" size="sm">
+            {diffFilesCollapsed ? gt("Collapsed") : gt("Expanded")}
+          </Badge>
+        </div>
+      </div>
+      <div
+        className={
+          diffFilesCollapsed
+            ? "h-12 overflow-hidden rounded-lg border border-border/70 bg-background transition-[height] duration-(--duration-snappy) ease-(--spring-snappy) motion-reduce:transition-none"
+            : "h-52 overflow-hidden rounded-lg border border-border/70 bg-background transition-[height] duration-(--duration-snappy) ease-(--spring-snappy) motion-reduce:transition-none"
+        }
+      >
+        <StyledDiffCodeView
+          className="h-full w-full"
+          items={items}
+          options={{
+            theme: renderedAppearance === "dark" ? "pierre-dark" : "pierre-light",
+            diffStyle: diffLayout === "split" ? "split" : "unified",
+            overflow: "scroll",
+          }}
+        />
+      </div>
+    </div>
+  );
+}
+
 export function DiffsSettingsPanel() {
   const messages = useMessages();
   const setting = useSearchableSetting();
@@ -1673,6 +1790,12 @@ export function DiffsSettingsPanel() {
   return (
     <SettingsPageContainer>
       <SettingsSection id="diffs" title={gt("Diffs")}>
+        <DiffLiveSandbox
+          diffLayout={settings.diffLayout}
+          diffIgnoreWhitespace={settings.diffIgnoreWhitespace}
+          diffFilesCollapsed={settings.diffFilesCollapsed}
+          diffColorScheme={settings.diffColorScheme}
+        />
         <SettingsRow
           {...setting("diff-layout")}
           description={gt(
