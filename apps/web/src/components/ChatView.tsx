@@ -405,6 +405,7 @@ import { currentRoundActivity } from "./chat/currentRoundActivity";
 import { selectOmpTodo, ThreadOmpTodo, withoutOmpTodoSnapshots } from "./chat/ThreadOmpTodo";
 import { TaskPlanCapsule } from "./chat/TaskPlanCapsule";
 import { TaskPlanSummary } from "./chat/TaskPlanSummary";
+import type { FlipRect } from "~/lib/motion/flip";
 import { antigravityTaskTrail } from "./chat/antigravityTaskTrail";
 import styles from "./chat/taskPlanCapsule.module.css";
 import { ThreadNow } from "./chat/ThreadNow";
@@ -1687,8 +1688,23 @@ export default function ChatView(props: ChatViewProps) {
       : null;
   const taskTrailKey = taskTrail === null ? null : `${routeThreadKey}:${taskTrail.key}`;
   const [dismissedTaskTrailKey, setDismissedTaskTrailKey] = useState<string | null>(null);
+  const taskTrailHandoffRef = useRef<{
+    readonly key: string;
+    readonly rect: FlipRect;
+  } | null>(null);
   const showTaskSummary = taskTrail?.complete === true && dismissedTaskTrailKey === taskTrailKey;
-  const dismissTaskTrail = useStableCallback(() => setDismissedTaskTrailKey(taskTrailKey));
+  const dismissTaskTrail = useStableCallback((handoffRect?: FlipRect) => {
+    if (taskTrailKey !== null && handoffRect !== undefined) {
+      taskTrailHandoffRef.current = { key: taskTrailKey, rect: handoffRect };
+    }
+    setDismissedTaskTrailKey(taskTrailKey);
+  });
+  const consumeTaskTrailHandoffRect = useStableCallback((): FlipRect | null => {
+    const pending = taskTrailHandoffRef.current;
+    if (pending === null || pending.key !== taskTrailKey) return null;
+    taskTrailHandoffRef.current = null;
+    return pending.rect;
+  });
   const extensionStatuses = deriveProviderExtensionStatuses(serverProjection);
   const ompTodo = serverProjection ? selectOmpTodo(serverProjection) : null;
 
@@ -3442,6 +3458,7 @@ export default function ChatView(props: ChatViewProps) {
             key={taskTrailKey}
             progress={taskTrail}
             onOpenFile={openFileSurfaceStable}
+            consumeHandoffRect={consumeTaskTrailHandoffRect}
           />
         ) : null}
         {pendingHandoff === null ? null : (

@@ -305,7 +305,14 @@
   stroke-dasharray: var(--plan-percent, 0) 100;
   transform: rotate(-90deg);
   transform-origin: 9px 9px;
-  transition: stroke-dasharray 400ms var(--plan-ease-open);
+  transition: stroke-dasharray 380ms var(--plan-ease-open);
+}
+.plan-ring-bloom {
+  stroke: var(--success);
+  stroke-width: 1.5;
+  opacity: 0;
+  transform-origin: 9px 9px;
+  pointer-events: none;
 }
 .plan-ring-dash {
   stroke: var(--warning);
@@ -316,6 +323,7 @@
 .plan-ring .plan-ring-fill {
   fill: var(--success);
   opacity: 0;
+  transform-origin: 9px 9px;
 }
 .plan-ring-check {
   stroke: #fff;
@@ -323,6 +331,45 @@
   stroke-linecap: round;
   stroke-linejoin: round;
   opacity: 0;
+}
+.plan-ring[data-just-completed="true"] .plan-ring-bloom {
+  animation: plan-ring-bloom 420ms cubic-bezier(0.22, 1, 0.36, 1) 1 both;
+}
+.plan-ring[data-just-completed="true"] .plan-ring-fill {
+  animation: plan-ring-fill-pop 280ms var(--spring-bouncy, cubic-bezier(0.22, 1.24, 0.36, 1)) 1 both;
+}
+.plan-ring[data-just-completed="true"] .plan-ring-check {
+  stroke-dasharray: 100;
+  animation: plan-check-draw 240ms var(--spring-snappy, cubic-bezier(0.22, 1, 0.36, 1)) 60ms 1 both;
+}
+@keyframes plan-ring-bloom {
+  0% {
+    opacity: 0.72;
+    transform: scale(0.88);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(1.72);
+  }
+}
+@keyframes plan-ring-fill-pop {
+  0% {
+    transform: scale(0.82);
+  }
+  60% {
+    transform: scale(1.06);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+@keyframes plan-check-draw {
+  from {
+    stroke-dashoffset: 100;
+  }
+  to {
+    stroke-dashoffset: 0;
+  }
 }
 .plan-ring-alert {
   stroke: var(--destructive);
@@ -378,13 +425,17 @@
 @keyframes plan-title-in {
   from {
     opacity: 0;
-    transform: translateY(var(--plan-shift));
+    transform: translate3d(0, 10px, 0) scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) scale(1);
   }
 }
 @keyframes plan-title-out {
   to {
     opacity: 0;
-    transform: translateY(calc(var(--plan-shift) * -0.75));
+    transform: translate3d(0, -8px, 0) scale(0.985);
   }
 }
 .plan-pill {
@@ -516,6 +567,10 @@ button.plan-stage-row:active {
 .plan-stage-mark[data-status="done"] {
   background: var(--foreground);
   border-color: var(--foreground);
+}
+.plan-stage-mark[data-just-done="true"] svg path {
+  stroke-dasharray: 100;
+  animation: plan-check-draw 220ms var(--spring-snappy, cubic-bezier(0.22, 1, 0.36, 1)) both;
 }
 .plan-stage-mark[data-status="run"] {
   border-color: var(--plan-accent);
@@ -784,11 +839,25 @@ html[data-theme-id="porcelain"] .plan-summary {
   font-family: var(--font-mono);
   flex-wrap: wrap;
 }
+.plan-stage[data-open="true"] .plan-tool-chip[data-chip-stagger="true"] {
+  animation: plan-chip-in 200ms var(--spring-snappy, cubic-bezier(0.22, 1, 0.36, 1))
+    var(--plan-chip-delay, 0ms) both;
+}
+@keyframes plan-chip-in {
+  from {
+    opacity: 0;
+    transform: translate3d(-4px, 3px, 0);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
 .plan-tool-tag {
   font-family: var(--font-sans);
   font-size: 10.5px;
   padding: 1px 6px;
-  border-radius: 5px;
+  border-radius: 8px;
   background: var(--secondary);
   color: var(--plan-muted);
   white-space: nowrap;
@@ -819,11 +888,36 @@ html[data-theme-id="porcelain"] .plan-summary {
   background: transparent;
   color: inherit;
   font: inherit;
-  padding: 0;
+  padding: 1px 4px;
+  margin: -1px -2px;
+  border-radius: 6px;
   cursor: pointer;
   text-decoration: none;
+  transition:
+    background-color 140ms ease-out,
+    color 140ms ease-out,
+    transform 160ms var(--spring-snappy, ease-out);
 }
 .plan-tool-file:hover {
   color: var(--foreground);
-  text-decoration: underline;
+  background: color-mix(in srgb, var(--foreground) 7%, transparent);
+  text-decoration: none;
+}
+.plan-tool-file:active {
+  transform: scale(0.97);
+}
+@media (prefers-reduced-motion: reduce) {
+  .plan-ring[data-just-completed="true"] .plan-ring-bloom,
+  .plan-ring[data-just-completed="true"] .plan-ring-fill,
+  .plan-ring[data-just-completed="true"] .plan-ring-check,
+  .plan-stage-mark[data-just-done="true"] svg path,
+  .plan-stage[data-open="true"] .plan-tool-chip[data-chip-stagger="true"] {
+    animation: none;
+  }
+  .plan-tool-file {
+    transition: none;
+  }
+  .plan-tool-file:active {
+    transform: none;
+  }
 }

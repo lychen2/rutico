@@ -5,6 +5,7 @@ import { useGT } from "gt-react";
 import { useStableCallback } from "~/hooks/useStableCallback";
 import { cancelFlip, captureFlipSnapshot, playFlipBatch, type FlipRect } from "~/lib/motion/flip";
 import type { SpringConfig } from "~/lib/motion/springs";
+import { AnimatedNumber } from "../ui/animated-number";
 import type { AntigravityTaskTrail } from "./antigravityTaskTrail";
 import styles from "./taskPlanCapsule.module.css";
 import { TaskPlanStages, completedTitle } from "./TaskPlanStages";
@@ -28,7 +29,7 @@ export interface TaskPlanCapsuleProps {
   readonly progress: AntigravityTaskTrail;
   readonly onOpenFile?: ((path: string) => void) | undefined;
   /** Called once the finished capsule has faded, or at once when the plan was already finished. */
-  readonly onDismissed?: (() => void) | undefined;
+  readonly onDismissed?: ((handoffRect?: FlipRect) => void) | undefined;
 }
 
 /** The step the capsule's wait belongs to: the running one, else the next, else the last. */
@@ -40,20 +41,30 @@ function waitingStepId(progress: AntigravityTaskTrail) {
   );
 }
 
-function Ring({ mode, percent }: { mode: CapsuleMode; percent: number }) {
+function Ring({
+  mode,
+  percent,
+  justCompleted,
+}: {
+  mode: CapsuleMode;
+  percent: number;
+  justCompleted: boolean;
+}) {
   return (
     <svg
       className={styles["plan-ring"]}
       viewBox="0 0 18 18"
       data-mode={mode}
+      data-just-completed={justCompleted ? "true" : undefined}
       style={{ "--plan-percent": percent } as CSSProperties}
       aria-hidden
     >
+      <circle className={styles["plan-ring-bloom"]} cx="9" cy="9" r="8.5" />
       <circle className={styles["plan-ring-fill"]} cx="9" cy="9" r="9" />
       <circle className={styles["plan-ring-track"]} cx="9" cy="9" r="7.5" />
       <circle className={styles["plan-ring-dash"]} cx="9" cy="9" r="7.5" />
       <circle className={styles["plan-ring-arc"]} cx="9" cy="9" r="7.5" pathLength="100" />
-      <path className={styles["plan-ring-check"]} d="M5.4 9.3l2.5 2.5 4.7-5" />
+      <path className={styles["plan-ring-check"]} d="M5.4 9.3l2.5 2.5 4.7-5" pathLength="100" />
       <path className={styles["plan-ring-alert"]} d="M9 5.2v4.4M9 12.3v.1" />
     </svg>
   );
@@ -100,6 +111,13 @@ export function TaskPlanCapsule({ progress, onOpenFile, onDismissed }: TaskPlanC
     complete,
     failed: progress.failed,
   });
+  const [previousMode, setPreviousMode] = useState(mode);
+  const [justCompleted, setJustCompleted] = useState(false);
+  if (previousMode !== mode) {
+    setPreviousMode(mode);
+    setJustCompleted(previousMode !== "done" && mode === "done");
+  }
+  const dismissHandoffRectRef = useRef<FlipRect | undefined>(undefined);
   const liveFallback = progress.planId === undefined;
   const currentIndex = currentMilestoneIndex(milestones);
   const current: Milestone | undefined = milestones[currentIndex];
@@ -231,16 +249,25 @@ export function TaskPlanCapsule({ progress, onOpenFile, onDismissed }: TaskPlanC
     // oxlint-disable-next-line react/exhaustive-effect-dependencies -- Only the first render decides whether the plan was already finished.
   }, []);
   if (!complete && fading) setFading(false);
-  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- One timeout starts the fade of a finished plan.
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- One timeout starts the fade of a finished plan after capturing its FLIP handoff rect.
   useEffect(() => {
     if (!complete || startedComplete || holding || open) return;
-    const timer = window.setTimeout(() => setFading(true), DONE_LINGER_MS);
+    const timer = window.setTimeout(() => {
+      dismissHandoffRectRef.current = cardRef.current
+        ? captureFlipSnapshot(cardRef.current)
+        : undefined;
+      setFading(true);
+    }, DONE_LINGER_MS);
     return () => window.clearTimeout(timer);
   }, [complete, startedComplete, holding, open]);
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- One timeout hands over to the history summary once the fade ends.
   useEffect(() => {
     if (!fading) return;
-    const timer = window.setTimeout(() => onDismissed?.(), FADE_OUT_MS);
+    const timer = window.setTimeout(() => {
+      const handoffRect = dismissHandoffRectRef.current;
+      dismissHandoffRectRef.current = undefined;
+      onDismissed?.(handoffRect);
+    }, FADE_OUT_MS);
     return () => window.clearTimeout(timer);
   }, [fading, onDismissed]);
 
@@ -335,7 +362,7 @@ export function TaskPlanCapsule({ progress, onOpenFile, onDismissed }: TaskPlanC
           aria-label={barLabel}
           onClick={() => setOpenWithFlip(!open)}
         >
-          <Ring mode={mode} percent={complete ? 100 : percent} />
+          <Ring mode={mode} percent={complete ? 100 : percent} justCompleted={justCompleted} />
           <span className={styles["plan-bar-ico"]} data-mode={mode} aria-hidden>
             {mode === "done" ? (
               <svg viewBox="0 0 16 16">
@@ -366,7 +393,8 @@ export function TaskPlanCapsule({ progress, onOpenFile, onDismissed }: TaskPlanC
                 ))}
               </span>
               <span className={styles["plan-count"]}>
-                {complete ? milestones.length : finished}/{milestones.length}
+                <AnimatedNumber value={complete ? milestones.length : finished} />/
+                {milestones.length}
               </span>
             </>
           )}
