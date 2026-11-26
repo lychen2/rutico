@@ -713,6 +713,10 @@ function NodeDetails({
   const saved = environment ? renderSavedEnvironment(environment) : null;
   const note = linksNote(node, gt);
   const loaded = node.outgoing === "loaded";
+  const routes = graph.edges.filter(
+    (edge): edge is Extract<(typeof graph.edges)[number], { kind: "route" }> =>
+      edge.kind === "route" && edge.to === node.id,
+  );
   return (
     <>
       {saved ??
@@ -733,6 +737,36 @@ function NodeDetails({
           />
         ) : null)}
       <div className={cn(SECTION, "space-y-3 border-t border-border/60")}>
+        {routes.length > 0 ? (
+          <div className="flex flex-wrap items-center gap-1.5">
+            {routes.map((route) => (
+              <span
+                key={route.id}
+                className={cn(
+                  "inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-2xs leading-4",
+                  route.state === "in-use"
+                    ? "border-success/55 bg-success/10 font-medium text-foreground"
+                    : "border-border/70 bg-muted/30 text-muted-foreground",
+                )}
+              >
+                <span
+                  aria-hidden
+                  className={cn(
+                    "size-1.5 rounded-full",
+                    route.state === "in-use"
+                      ? "bg-success"
+                      : route.state === "trying"
+                        ? "bg-warning"
+                        : route.state === "refused"
+                          ? "bg-destructive"
+                          : "bg-muted-foreground/50",
+                  )}
+                />
+                <span>{route.routeLabel ?? route.routeKind.toUpperCase()}</span>
+              </span>
+            ))}
+          </div>
+        ) : null}
         {environment && saved !== null ? <Reconnect environment={environment} /> : null}
         {note ? <p className="max-w-2xl text-muted-foreground">{note}</p> : null}
         <LinkList

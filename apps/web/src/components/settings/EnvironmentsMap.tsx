@@ -55,6 +55,7 @@ import { useNowMinute } from "~/hooks/useNowMinute";
 import { useStableCallback } from "~/hooks/useStableCallback";
 import { observeResize } from "~/lib/observeResize";
 import { cn } from "~/lib/utils";
+import "~/styles/workspace-hubs.css";
 import {
   type EnvironmentPresentation,
   useEnvironments,
@@ -714,15 +715,32 @@ function FleetCanvas({
       false,
     );
   });
-  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- measures the canvas with ResizeObserver, and React's wheel listener is passive so it cannot stop the page zooming
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- measures the canvas with ResizeObserver, pauses off-screen pulse animations via IntersectionObserver, and React's wheel listener is passive so it cannot stop the page zooming
   useEffect(() => {
     if (canvas === null) return;
+    canvas.style.setProperty("--fleet-animation-state", "running");
     const stopObserving = observeResize(canvas, ([entry]) => {
       if (entry) setWidth(entry.contentRect.width);
     });
+    let intersectionObserver: IntersectionObserver | null = null;
+    if (typeof IntersectionObserver !== "undefined") {
+      intersectionObserver = new IntersectionObserver(
+        (entries) => {
+          const entry = entries[0];
+          if (!entry) return;
+          canvas.style.setProperty(
+            "--fleet-animation-state",
+            entry.isIntersecting ? "running" : "paused",
+          );
+        },
+        { threshold: 0.01 },
+      );
+      intersectionObserver.observe(canvas);
+    }
     canvas.addEventListener("wheel", onWheel, { passive: false });
     return () => {
       stopObserving();
+      intersectionObserver?.disconnect();
       canvas.removeEventListener("wheel", onWheel);
     };
   }, [canvas]);
@@ -1473,6 +1491,15 @@ const FleetScene = memo(function FleetScene({
     type: "button" as const,
     "data-fleet-item": "",
     "data-fleet-node": target.id,
+    "data-fleet-found":
+      target.kind === "node" && matches !== null && matches.has(target.id) ? "true" : undefined,
+    "data-fleet-drop-target":
+      target.kind === "node" &&
+      linkDrag !== null &&
+      target.id !== linkDrag.sourceId &&
+      dragAction(target.id) !== null
+        ? "true"
+        : undefined,
     "aria-label": selected.has(target.id)
       ? gt("{label}, selected", { label, $context: "a machine ticked on a map" })
       : label,
@@ -1602,14 +1629,25 @@ const FleetScene = memo(function FleetScene({
           if (geometry === undefined) return null;
           const style = ROUTE_STYLES[edge.state];
           return (
-            <path
-              key={edge.id}
-              d={geometry.d}
-              stroke="currentColor"
-              strokeWidth={style.width}
-              strokeDasharray={style.dash}
-              className={cn(style.wire, fadeLine(!routeLit(edge)))}
-            />
+            <g key={edge.id}>
+              <path
+                d={geometry.d}
+                stroke="currentColor"
+                strokeWidth={style.width}
+                strokeDasharray={style.dash}
+                className={cn(style.wire, fadeLine(!routeLit(edge)))}
+              />
+              {edge.state === "in-use" ? (
+                <path
+                  d={geometry.d}
+                  data-fleet-pulse="in-use"
+                  stroke="currentColor"
+                  strokeWidth={style.width + 0.5}
+                  strokeDasharray="6 18"
+                  className={cn("pointer-events-none text-success", fadeLine(!routeLit(edge)))}
+                />
+              ) : null}
+            </g>
           );
         })}
         {stacks.map((stack) => {

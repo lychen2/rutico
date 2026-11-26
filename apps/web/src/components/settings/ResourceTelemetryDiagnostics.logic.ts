@@ -64,6 +64,17 @@ export function resourceHistoryCpuScaleMax(
   return Math.max(1, ...buckets.map((bucket) => bucket.avgCpuPercent));
 }
 
+export function clampOscilloscopeBucketIndex(ratio: number, bucketCount: number): number {
+  if (bucketCount <= 0) return -1;
+  const clamped = Math.max(0, Math.min(1, ratio));
+  return Math.min(bucketCount - 1, Math.floor(clamped * bucketCount));
+}
+
+export function processCpuUtilizationRatio(cpuPercent: number, maxCpuPercent: number): number {
+  if (!Number.isFinite(cpuPercent) || cpuPercent <= 0) return 0;
+  return Math.max(0, Math.min(1, cpuPercent / Math.max(10, maxCpuPercent)));
+}
+
 export function formatCpuTime(seconds: number, resolve: MessageResolver = m): string {
   const format = (value: number) => value.toFixed(value >= 10 ? 1 : 2).replace(/\.0+$/, "");
   // Pick the unit after rounding so 59.97 seconds never renders as "60s".
