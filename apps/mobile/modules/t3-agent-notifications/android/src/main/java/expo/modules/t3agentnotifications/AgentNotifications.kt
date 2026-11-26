@@ -319,7 +319,14 @@ object AgentNotifications {
       .setDeleteIntent(dismissIntent)
     presentation.applyTo(builder, context)
     val action = presentation.action
-    if (action != null && openThread != null) builder.addAction(0, action, openThread)
+    if (action != null && openThread != null) {
+      // Phase A Live Updates: explicit thread-targeted unlock-and-open deep link only.
+      // Never execute unauthenticated approvals from a dead process; require unlock for
+      // lock-screen Approve/Answer actions.
+      val actionBuilder = NotificationCompat.Action.Builder(0, action, openThread)
+        .setAuthenticationRequired(presentation.requiresAuthenticationForAction)
+      builder.addAction(actionBuilder.build())
+    }
     if (ongoing) builder.addAction(0, "Dismiss", dismissIntent)
     manager(context).notify(ACTIVITY_TAG, ACTIVITY_ID, builder.build())
     if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) {
