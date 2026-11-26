@@ -2,7 +2,7 @@ import type { SubagentPillSegment } from "@t3tools/client-runtime/state/thread-s
 import { useIsFocused } from "@react-navigation/native";
 import { GlassContainer, GlassView } from "expo-glass-effect";
 import { useGT } from "gt-react-native";
-import { Fragment, type ReactNode, useEffect, useRef, useState } from "react";
+import { Fragment, type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Animated as RNAnimated,
   Easing as RNEasing,
@@ -13,25 +13,33 @@ import {
   useWindowDimensions,
   View,
 } from "react-native";
+import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import Animated, {
   Easing,
+  Extrapolation,
   FadeIn,
   FadeOut,
+  interpolate,
   ReduceMotion,
+  runOnJS,
   type SharedValue,
   useAnimatedStyle,
   useReducedMotion,
   useSharedValue,
+  withSpring,
   withTiming,
 } from "react-native-reanimated";
 import { withUniwind } from "uniwind";
 
 import { AppActivityIndicator } from "../../components/ui/AppActivityIndicator";
-import { AppText as Text } from "../../components/ui/AppText";
 import { SymbolView } from "../../components/ui/AppSymbol";
+import { AppText as Text } from "../../components/ui/AppText";
 import { ControlPill } from "../../components/ui/ControlPill";
 import { GlassBackdrop } from "../../components/ui/GlassBackdrop";
 import { useAppActive } from "../../lib/appState";
+import { androidTonalSurfaceChrome, MOBILE_SHAPE } from "../../lib/designTokens";
+import { triggerSemanticHaptic } from "../../lib/hapticChoreography";
+import { SPRING_SPATIAL_SNAPPY, startNativePulseLoop } from "../../lib/mobileMotion";
 import { NATIVE_LIQUID_GLASS_SUPPORTED } from "../../native/native-glass";
 import { BrowserPreviewButton } from "../browser/browser-preview-button";
 import { DevicePreviewButton } from "../devices/device-preview-button";
@@ -53,6 +61,8 @@ const CONTROL_ROW_GAP = 14;
 const CONTROL_SEPARATION = (CONTROL_ROW_GAP + CONTROL_HEIGHT) / 2;
 const LABEL_ENTERING = FadeIn.duration(160).delay(80).reduceMotion(ReduceMotion.System);
 const LABEL_EXITING = FadeOut.duration(100).reduceMotion(ReduceMotion.System);
+const EXPANDED_BODY_ENTERING = FadeIn.duration(150).reduceMotion(ReduceMotion.System);
+const EXPANDED_BODY_EXITING = FadeOut.duration(100).reduceMotion(ReduceMotion.System);
 
 // Expo reapplies glass after layout or reattachment, restoring material UIKit can lose behind visible labels.
 const UniwindGlassView = withUniwind(GlassView, {
@@ -71,6 +81,95 @@ function settleWidth(next: number) {
 const CONTROL_OVERLAY_OFFSET = CONTROL_HEIGHT + CONTROL_GAP - COMPOSER_CAPSULE_INSET;
 export const FLOATING_WORKING_CONTROL_COVERAGE = CONTROL_OVERLAY_OFFSET + CONTROL_GAP;
 
+function CapsuleActivityHalo(props: { readonly tone: "primary" | "warning" | "danger" }) {
+  const appActive = useAppActive();
+  const isFocused = useIsFocused();
+  const reducedMotion = useReducedMotion();
+  const shouldPulse = appActive && isFocused && !reducedMotion;
+  const pulse = useAnimatedValue(0, { useNativeDriver: true });
+
+  // Safe RN Animated native pulse obeys DISABLE_COMMIT_PAUSING_MECHANISM: true.
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- drives native pulse halo on the Android Dynamic Capsule when active, focused, and motion is allowed
+  useEffect(
+    () =>
+      startNativePulseLoop(pulse, {
+        active: shouldPulse,
+        duration: 1650,
+        mode: "expand",
+      }),
+    [pulse, shouldPulse],
+  );
+
+  const opacity = pulse.interpolate({
+    inputRange: [0, 1],
+    outputRange: [0.6, 0],
+  });
+  const scale = pulse.interpolate({
+    inputRange: [0, 1],
+    outputRange: [1, 2.35],
+  });
+
+  const dotClass =
+    props.tone === "danger"
+      ? "bg-danger-foreground"
+      : props.tone === "warning"
+        ? "bg-warning-foreground"
+        : "bg-primary";
+
+  return (
+    <View className="relative size-2.5 items-center justify-center">
+      {shouldPulse ? (
+        <RNAnimated.View
+          pointerEvents="none"
+          className={`absolute inset-0 rounded-full ${dotClass}`}
+          style={{ opacity, transform: [{ scale }] }}
+        />
+      ) : null}
+      <View className={`size-2 rounded-full ${dotClass}`} />
+    </View>
+  );
+}
+
+function UnreadStreamBreathDot(props: { readonly active: boolean }) {
+  const appActive = useAppActive();
+  const isFocused = useIsFocused();
+  const reducedMotion = useReducedMotion();
+  const shouldPulse = props.active && appActive && isFocused && !reducedMotion;
+  const pulse = useAnimatedValue(0, { useNativeDriver: true });
+
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- drives native breathing unread indicator on Scroll-to-End while new tokens stream
+  useEffect(
+    () =>
+      startNativePulseLoop(pulse, {
+        active: shouldPulse,
+        duration: 1500,
+        mode: "breathe",
+      }),
+    [pulse, shouldPulse],
+  );
+
+  if (!props.active) return null;
+
+  const opacity = pulse.interpolate({
+    inputRange: [0, 1],
+    outputRange: [0.45, 1],
+  });
+  const scale = pulse.interpolate({
+    inputRange: [0, 1],
+    outputRange: [0.85, 1.18],
+  });
+
+  return (
+    <RNAnimated.View
+      pointerEvents="none"
+      accessibilityElementsHidden
+      importantForAccessibility="no-hide-descendants"
+      className="absolute right-1.5 top-1.5 size-2 rounded-full bg-primary"
+      style={shouldPulse ? { opacity, transform: [{ scale }] } : undefined}
+    />
+  );
+}
+
 export function FloatingWorkingControl(props: {
   readonly colorScheme: "light" | "dark";
   readonly status: FloatingWorkingStatus | null;
@@ -79,6 +178,8 @@ export function FloatingWorkingControl(props: {
   readonly browserPreview: { readonly count: number; readonly onPress: () => void } | null;
   readonly showScrollToEnd: boolean;
   readonly onScrollToEnd: () => void;
+  /** True while new streaming tokens arrive off-screen below the viewport. */
+  readonly hasUnreadStream?: boolean;
   readonly agents: SubagentPillSegment | null;
   readonly onOpenAgents: () => void;
   readonly queuedCount: number;
@@ -92,6 +193,7 @@ export function FloatingWorkingControl(props: {
   const [queueWidth, setQueueWidth] = useState(0);
   const [actionWidth, setActionWidth] = useState(0);
   const [extensionWidth, setExtensionWidth] = useState(0);
+  const [capsuleExpanded, setCapsuleExpanded] = useState(false);
   const extensionStatus = props.extensionStatus ?? null;
   const extensionOnly = props.status?.kind === "extension";
   const useGlass = NATIVE_LIQUID_GLASS_SUPPORTED && !extensionOnly;
@@ -107,6 +209,58 @@ export function FloatingWorkingControl(props: {
   const [previewWidth, setPreviewWidth] = useState(0);
   const agents = props.agents;
   const hasAgents = agents !== null;
+  const hasStatus = props.status !== null;
+  const hasCapsule = hasStatus || hasQueue || hasAgents || hasPreview;
+  const isAndroidDynamicCapsule = Platform.OS === "android" && !useGlass && hasCapsule;
+  const canExpandCapsule =
+    isAndroidDynamicCapsule &&
+    (hasAgents || hasQueue || hasPreview || actions.length > 0 || extensionStatus !== null);
+
+  if ((!hasCapsule || !canExpandCapsule) && capsuleExpanded) {
+    setCapsuleExpanded(false);
+  }
+
+  const expandProgress = useSharedValue(0);
+  const capsuleDragOffset = useSharedValue(0);
+
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- drives in-place Material 3 Dynamic Capsule spring expansion
+  useEffect(() => {
+    expandProgress.set(withSpring(capsuleExpanded ? 1 : 0, SPRING_SPATIAL_SNAPPY));
+  }, [capsuleExpanded, expandProgress]);
+
+  const setExpandedWithHaptic = useCallback((next: boolean) => {
+    setCapsuleExpanded((current) => {
+      if (current === next) return current;
+      triggerSemanticHaptic(next ? "toggleOn" : "toggleOff");
+      return next;
+    });
+  }, []);
+
+  const capsulePanGesture = useMemo(
+    () =>
+      // oxlint-disable-next-line react/capitalized-calls -- Gesture.Pan is a gesture factory, not a React component.
+      Gesture.Pan()
+        .enabled(canExpandCapsule)
+        .activeOffsetY([-10, 10])
+        .failOffsetX([-20, 20])
+        .onUpdate((event) => {
+          const clamped = Math.max(-28, Math.min(28, event.translationY * 0.4));
+          capsuleDragOffset.set(clamped);
+        })
+        .onEnd((event) => {
+          capsuleDragOffset.set(withSpring(0, SPRING_SPATIAL_SNAPPY));
+          if (!capsuleExpanded && (event.translationY > 18 || event.velocityY > 360)) {
+            runOnJS(setExpandedWithHaptic)(true);
+          } else if (capsuleExpanded && (event.translationY < -18 || event.velocityY < -360)) {
+            runOnJS(setExpandedWithHaptic)(false);
+          }
+        })
+        .onFinalize(() => {
+          capsuleDragOffset.set(withSpring(0, SPRING_SPATIAL_SNAPPY));
+        }),
+    [canExpandCapsule, capsuleDragOffset, capsuleExpanded, setExpandedWithHaptic],
+  );
+
   // Only reserve the scroll button's slot while it is visible.
   const reservedWidth = props.showScrollToEnd ? CONTROL_HEIGHT + 32 : 16;
   const availableLabelWidth = Math.max(
@@ -116,7 +270,8 @@ export function FloatingWorkingControl(props: {
       (actions.length > 0 ? actionWidth : 0) -
       (hasQueue ? queueWidth : 0) -
       (hasAgents ? agentsWidth : 0) -
-      (hasPreview ? previewWidth : 0),
+      (hasPreview ? previewWidth : 0) -
+      (canExpandCapsule ? 34 : 0),
   );
   const labelWidth = Math.max(
     0,
@@ -131,13 +286,13 @@ export function FloatingWorkingControl(props: {
 
   const lift = props.lift;
   const liftStyle = useAnimatedStyle(() => ({
-    transform: [{ translateY: -(lift?.value ?? 0) }],
+    transform: [{ translateY: -(lift?.get() ?? 0) }],
   }));
   const arrowTransformStyle = useAnimatedStyle(() => ({
-    transform: [{ translateX: -CONTROL_SEPARATION * (1 - separationProgress.value) }],
+    transform: [{ translateX: -CONTROL_SEPARATION * (1 - separationProgress.get()) }],
   }));
   const arrowContentStyle = useAnimatedStyle(() => ({
-    opacity: separationProgress.value,
+    opacity: separationProgress.get(),
   }));
 
   // Animate an in-flow sizer for native glass layout. Measure labels at fixed width to avoid repeated animation retargeting.
@@ -152,8 +307,6 @@ export function FloatingWorkingControl(props: {
     measuredWidthRef.current = width;
     capsuleWidth.set(first ? width : withTiming(width, CONTROL_TIMING));
   };
-  const hasStatus = props.status !== null;
-  const hasCapsule = hasStatus || hasQueue || hasAgents || hasPreview;
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- clears the Reanimated capsule width value and measured width when the status goes away
   useEffect(() => {
     if (!hasStatus) {
@@ -162,10 +315,31 @@ export function FloatingWorkingControl(props: {
     }
   }, [capsuleWidth, hasStatus]);
   const capsuleStyle = useAnimatedStyle(() => ({
-    transform: [{ translateX: CONTROL_SEPARATION * (1 - separationProgress.value) }],
+    transform: [
+      { translateX: CONTROL_SEPARATION * (1 - separationProgress.get()) },
+      { translateY: capsuleDragOffset.get() },
+    ],
   }));
   const capsuleSizerStyle = useAnimatedStyle(() => ({
-    width: capsuleWidth.value ?? 0,
+    width: capsuleWidth.get() ?? 0,
+  }));
+  const androidDynamicShellStyle = useAnimatedStyle(() => {
+    const progress = expandProgress.get();
+    return {
+      borderRadius: interpolate(
+        progress,
+        [0, 1],
+        [22, MOBILE_SHAPE.capsuleCard],
+        Extrapolation.CLAMP,
+      ),
+    };
+  });
+  const expandChevronStyle = useAnimatedStyle(() => ({
+    transform: [
+      {
+        rotate: `${interpolate(expandProgress.get(), [0, 1], [0, 180], Extrapolation.CLAMP)}deg`,
+      },
+    ],
   }));
 
   if (!hasCapsule && !props.showScrollToEnd) {
@@ -187,7 +361,19 @@ export function FloatingWorkingControl(props: {
     actions.length > 0 ||
     hasQueue ||
     hasAgents ||
-    hasPreview;
+    hasPreview ||
+    canExpandCapsule;
+
+  const isDark = props.colorScheme === "dark";
+  const androidChrome = androidTonalSurfaceChrome(isDark, capsuleExpanded ? "high" : "medium");
+  const expandedCardMaxWidth = Math.min(Math.max(260, overlayWidth - 28), 380);
+  const capsuleTone: "primary" | "warning" | "danger" =
+    props.status?.kind === "connection"
+      ? "danger"
+      : props.status?.kind === "stop" && props.status.unresponsive
+        ? "warning"
+        : "primary";
+
   const statusContent =
     props.status !== null ? (
       <View
@@ -215,6 +401,11 @@ export function FloatingWorkingControl(props: {
 
   const capsuleContent = (
     <View className="flex-row items-center">
+      {isAndroidDynamicCapsule && !hasStatus ? (
+        <View className="pl-3.5 pr-1">
+          <CapsuleActivityHalo tone={capsuleTone} />
+        </View>
+      ) : null}
       {statusContent}
       {extensionStatus !== null ? (
         <Pressable
@@ -232,7 +423,7 @@ export function FloatingWorkingControl(props: {
           </Text>
         </Pressable>
       ) : null}
-      {actions.length > 0 ? (
+      {actions.length > 0 && !capsuleExpanded ? (
         <View
           onLayout={(event) => setActionWidth(settleWidth(event.nativeEvent.layout.width))}
           className="h-11 flex-row items-center"
@@ -256,7 +447,7 @@ export function FloatingWorkingControl(props: {
           ))}
         </View>
       ) : null}
-      {hasPreview ? (
+      {hasPreview && !capsuleExpanded ? (
         <View
           className="h-11 flex-row items-center"
           onLayout={(event) => setPreviewWidth(settleWidth(event.nativeEvent.layout.width))}
@@ -286,7 +477,7 @@ export function FloatingWorkingControl(props: {
           </Text>
         </Pressable>
       ) : null}
-      {hasQueue ? (
+      {hasQueue && !capsuleExpanded ? (
         <Pressable
           accessibilityRole="button"
           accessibilityLabel={gt("{count, plural, other {Open queue, {count} messages}}", {
@@ -307,8 +498,157 @@ export function FloatingWorkingControl(props: {
           </Text>
         </Pressable>
       ) : null}
+      {canExpandCapsule ? (
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={
+            capsuleExpanded ? gt("Collapse status capsule") : gt("Expand status capsule")
+          }
+          accessibilityState={{ expanded: capsuleExpanded }}
+          hitSlop={6}
+          onPress={() => setExpandedWithHaptic(!capsuleExpanded)}
+          className="h-11 w-9 items-center justify-center active:opacity-70"
+        >
+          <Animated.View style={expandChevronStyle}>
+            <SymbolView
+              name="chevron.down"
+              size={11}
+              tintColorClassName="accent-foreground-muted"
+              type="monochrome"
+            />
+          </Animated.View>
+        </Pressable>
+      ) : null}
     </View>
   );
+
+  const expandedCardDetails =
+    isAndroidDynamicCapsule && capsuleExpanded ? (
+      <Animated.View
+        entering={reducedMotion ? undefined : EXPANDED_BODY_ENTERING}
+        exiting={reducedMotion ? undefined : EXPANDED_BODY_EXITING}
+        className="gap-2 border-t border-border/60 px-3.5 pb-3 pt-2.5"
+        style={{ width: expandedCardMaxWidth }}
+      >
+        {agents !== null ? (
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={gt("Open agents, {agents}", { agents: agents.accessibilityLabel })}
+            onPress={() => {
+              setExpandedWithHaptic(false);
+              props.onOpenAgents();
+            }}
+            className="min-h-10 flex-row items-center justify-between rounded-xl bg-subtle/60 px-3 py-2 active:opacity-75"
+          >
+            <View className="flex-row items-center gap-2">
+              <CapsuleActivityHalo tone="primary" />
+              <Text className="font-t3-medium text-xs text-foreground">{gt("Active agents")}</Text>
+            </View>
+            <View className="flex-row items-center gap-1.5">
+              <Text className="font-t3-semibold text-xs tabular-nums text-foreground">
+                {agents.label}
+              </Text>
+              <SymbolView
+                name="chevron.right"
+                size={11}
+                tintColorClassName="accent-foreground-muted"
+                type="monochrome"
+              />
+            </View>
+          </Pressable>
+        ) : null}
+        {hasQueue ? (
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={gt("{count, plural, other {Open queue, {count} messages}}", {
+              count: props.queuedCount,
+            })}
+            onPress={() => {
+              setExpandedWithHaptic(false);
+              props.onOpenQueue();
+            }}
+            className="min-h-10 flex-row items-center justify-between rounded-xl bg-subtle/60 px-3 py-2 active:opacity-75"
+          >
+            <View className="flex-row items-center gap-2">
+              <SymbolView name="list.number" size={13} tintColorClassName="accent-foreground" />
+              <Text className="font-t3-medium text-xs tabular-nums text-foreground">
+                {gt("{count, plural, other {{count} queued}}", { count: props.queuedCount })}
+              </Text>
+            </View>
+            <SymbolView
+              name="chevron.right"
+              size={11}
+              tintColorClassName="accent-foreground-muted"
+              type="monochrome"
+            />
+          </Pressable>
+        ) : null}
+        {hasPreview ? (
+          <View className="flex-row items-center gap-2">
+            {props.devicePreview !== null ? (
+              <Pressable
+                accessibilityRole="button"
+                onPress={() => {
+                  setExpandedWithHaptic(false);
+                  props.devicePreview?.onPress();
+                }}
+                className="min-h-9 flex-1 flex-row items-center justify-center gap-1.5 rounded-xl bg-subtle/60 px-3 py-1.5 active:opacity-75"
+              >
+                <SymbolView
+                  name={{ ios: "iphone", android: "smartphone" }}
+                  size={13}
+                  tintColorClassName="accent-foreground"
+                />
+                <Text className="font-t3-medium text-xs tabular-nums text-foreground">
+                  {gt("Devices ({count})", { count: props.devicePreview.count })}
+                </Text>
+              </Pressable>
+            ) : null}
+            {props.browserPreview !== null ? (
+              <Pressable
+                accessibilityRole="button"
+                onPress={() => {
+                  setExpandedWithHaptic(false);
+                  props.browserPreview?.onPress();
+                }}
+                className="min-h-9 flex-1 flex-row items-center justify-center gap-1.5 rounded-xl bg-subtle/60 px-3 py-1.5 active:opacity-75"
+              >
+                <SymbolView
+                  name={{ ios: "globe", android: "public" }}
+                  size={13}
+                  tintColorClassName="accent-foreground"
+                />
+                <Text className="font-t3-medium text-xs tabular-nums text-foreground">
+                  {gt("Browser ({count})", { count: props.browserPreview.count })}
+                </Text>
+              </Pressable>
+            ) : null}
+          </View>
+        ) : null}
+        {actions.length > 0 ? (
+          <View className="flex-row items-center gap-2">
+            {actions.map((action) => (
+              <Pressable
+                key={action.label}
+                accessibilityRole="button"
+                accessibilityLabel={action.accessibilityLabel}
+                accessibilityState={{ disabled: action.disabled }}
+                disabled={action.disabled}
+                onPress={() => {
+                  triggerSemanticHaptic("contextClick");
+                  action.onPress();
+                }}
+                className={`min-h-9 flex-1 items-center justify-center rounded-xl border border-border bg-card px-3 py-1.5 active:opacity-75 ${action.disabled ? "opacity-50" : ""}`}
+              >
+                <Text className="font-t3-semibold text-xs text-foreground" numberOfLines={1}>
+                  {action.label}
+                </Text>
+              </Pressable>
+            ))}
+          </View>
+        ) : null}
+      </Animated.View>
+    ) : null;
 
   return (
     <Animated.View
@@ -347,47 +687,57 @@ export function FloatingWorkingControl(props: {
             style={arrowTransformStyle}
           >
             <Animated.View style={arrowContentStyle}>
-              <ScrollToEndButton disabled={!props.showScrollToEnd} onPress={props.onScrollToEnd} />
+              <ScrollToEndButton
+                disabled={!props.showScrollToEnd}
+                hasUnreadStream={props.hasUnreadStream}
+                onPress={props.onScrollToEnd}
+              />
             </Animated.View>
           </AnimatedGlassView>
         </UniwindGlassContainer>
       ) : hasCapsule ? (
-        <View pointerEvents="box-none" className="flex-row items-center gap-4">
-          <Animated.View
-            pointerEvents={capsuleInteractive ? "box-none" : "none"}
-            style={[
-              capsuleStyle,
-              Platform.OS === "android"
-                ? {
-                    borderRadius: 9999,
-                    overflow: "visible",
-                    boxShadow: [
-                      {
-                        offsetX: 0,
-                        offsetY: 4,
-                        blurRadius: 14,
-                        color:
-                          props.colorScheme === "dark"
-                            ? "rgba(0, 0, 0, 0.34)"
-                            : "rgba(0, 0, 0, 0.12)",
-                      },
-                    ],
-                  }
-                : {
-                    borderRadius: 9999,
-                    overflow: "visible",
-                    shadowColor: "#000000",
-                    shadowOpacity: props.colorScheme === "dark" ? 0.22 : 0.08,
-                    shadowRadius: 16,
-                    shadowOffset: { width: 0, height: 6 },
-                  },
-            ]}
-          >
-            <View className="h-11 items-center justify-center overflow-hidden rounded-full border border-border">
-              <GlassBackdrop />
-              {capsuleContent}
-            </View>
-          </Animated.View>
+        <View pointerEvents="box-none" className="flex-row items-start gap-3">
+          <GestureDetector gesture={capsulePanGesture}>
+            <Animated.View
+              pointerEvents={capsuleInteractive ? "box-none" : "none"}
+              style={[
+                capsuleStyle,
+                Platform.OS === "android"
+                  ? {
+                      overflow: "visible",
+                      boxShadow: [...androidChrome.boxShadow],
+                    }
+                  : {
+                      borderRadius: 9999,
+                      overflow: "visible",
+                      shadowColor: "#000000",
+                      shadowOpacity: isDark ? 0.22 : 0.08,
+                      shadowRadius: 16,
+                      shadowOffset: { width: 0, height: 6 },
+                    },
+                Platform.OS === "android" ? androidDynamicShellStyle : undefined,
+              ]}
+            >
+              <Animated.View
+                className="overflow-hidden border"
+                style={[
+                  Platform.OS === "android"
+                    ? [
+                        androidDynamicShellStyle,
+                        {
+                          borderColor: androidChrome.borderColor,
+                          borderTopColor: androidChrome.specularTopBorderColor,
+                        },
+                      ]
+                    : { borderRadius: 9999 },
+                ]}
+              >
+                <GlassBackdrop />
+                <View className="min-h-11 items-center justify-center">{capsuleContent}</View>
+                {expandedCardDetails}
+              </Animated.View>
+            </Animated.View>
+          </GestureDetector>
 
           <Animated.View
             pointerEvents={props.showScrollToEnd ? "auto" : "none"}
@@ -395,14 +745,19 @@ export function FloatingWorkingControl(props: {
             importantForAccessibility={props.showScrollToEnd ? "auto" : "no-hide-descendants"}
             style={[arrowTransformStyle, arrowContentStyle]}
           >
-            <ControlPill
-              accessibilityLabel={gt("Scroll to end")}
-              activateOnPressIn
-              className="h-11 w-11 border border-border bg-glass-fallback shadow-md shadow-black/10"
-              disabled={!props.showScrollToEnd}
-              icon={{ ios: "chevron.down", android: "keyboard_arrow_down" }}
-              onPress={props.onScrollToEnd}
-            />
+            <View className="relative">
+              <ControlPill
+                accessibilityLabel={gt("Scroll to end")}
+                activateOnPressIn
+                className="h-11 w-11 border border-border bg-glass-fallback shadow-md shadow-black/10"
+                disabled={!props.showScrollToEnd}
+                icon={{ ios: "chevron.down", android: "keyboard_arrow_down" }}
+                onPress={props.onScrollToEnd}
+              />
+              <UnreadStreamBreathDot
+                active={Boolean(props.showScrollToEnd && props.hasUnreadStream)}
+              />
+            </View>
           </Animated.View>
         </View>
       ) : NATIVE_LIQUID_GLASS_SUPPORTED ? (
@@ -412,16 +767,22 @@ export function FloatingWorkingControl(props: {
           isInteractive
           className="h-11 w-11 items-center justify-center overflow-hidden rounded-full"
         >
-          <ScrollToEndButton onPress={props.onScrollToEnd} />
+          <ScrollToEndButton
+            hasUnreadStream={props.hasUnreadStream}
+            onPress={props.onScrollToEnd}
+          />
         </UniwindGlassView>
       ) : (
-        <ControlPill
-          accessibilityLabel={gt("Scroll to end")}
-          activateOnPressIn
-          className="h-11 w-11 border border-border bg-glass-fallback shadow-md shadow-black/10"
-          icon={{ ios: "chevron.down", android: "keyboard_arrow_down" }}
-          onPress={props.onScrollToEnd}
-        />
+        <View className="relative">
+          <ControlPill
+            accessibilityLabel={gt("Scroll to end")}
+            activateOnPressIn
+            className="h-11 w-11 border border-border bg-glass-fallback shadow-md shadow-black/10"
+            icon={{ ios: "chevron.down", android: "keyboard_arrow_down" }}
+            onPress={props.onScrollToEnd}
+          />
+          <UnreadStreamBreathDot active={Boolean(props.hasUnreadStream)} />
+        </View>
       )}
     </Animated.View>
   );
@@ -642,16 +1003,23 @@ function StatusLabelRow(props: {
   );
 }
 
-function ScrollToEndButton(props: { readonly disabled?: boolean; readonly onPress: () => void }) {
+function ScrollToEndButton(props: {
+  readonly disabled?: boolean;
+  readonly hasUnreadStream?: boolean;
+  readonly onPress: () => void;
+}) {
   const gt = useGT();
   return (
-    <ControlPill
-      accessibilityLabel={gt("Scroll to end")}
-      activateOnPressIn
-      className="h-11 w-11 bg-transparent"
-      disabled={props.disabled}
-      icon={{ ios: "chevron.down", android: "keyboard_arrow_down" }}
-      onPress={props.onPress}
-    />
+    <View className="relative">
+      <ControlPill
+        accessibilityLabel={gt("Scroll to end")}
+        activateOnPressIn
+        className="h-11 w-11 bg-transparent"
+        disabled={props.disabled}
+        icon={{ ios: "chevron.down", android: "keyboard_arrow_down" }}
+        onPress={props.onPress}
+      />
+      <UnreadStreamBreathDot active={Boolean(!props.disabled && props.hasUnreadStream)} />
+    </View>
   );
 }

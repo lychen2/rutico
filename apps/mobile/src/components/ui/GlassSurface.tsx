@@ -11,7 +11,7 @@ import {
 } from "react-native";
 import { withUniwind } from "uniwind";
 
-import { MOBILE_SHAPE } from "../../lib/designTokens";
+import { androidTonalSurfaceChrome, MOBILE_SHAPE } from "../../lib/designTokens";
 import { cn } from "../../lib/cn";
 import { useAppearancePreferences } from "../../features/settings/appearance/AppearancePreferencesProvider";
 import { GlassBackdrop } from "./GlassBackdrop";
@@ -190,6 +190,7 @@ export function GlassSurface({
   const isDarkMode = themeAppearance === "dark";
   const supportsGlass = Platform.OS === "ios" && isGlassEffectAPIAvailable();
   const hasShadow = chrome !== "none";
+  const androidChrome = androidTonalSurfaceChrome(isDarkMode, "medium");
 
   // Keep chrome="none" as a single native view so Animated.createAnimatedComponent(GlassSurface)
   // drives layout/borderRadius directly on the clipped host without an intermediate wrapper.
@@ -197,6 +198,13 @@ export function GlassSurface({
     const bareSurfaceStyle: ViewStyle = {
       borderRadius: MOBILE_SHAPE.glass,
       overflow: "hidden",
+      ...(Platform.OS === "android"
+        ? {
+            borderWidth: StyleSheet.hairlineWidth,
+            borderColor: androidChrome.borderColor,
+            borderTopColor: androidChrome.specularTopBorderColor,
+          }
+        : null),
     };
 
     if (supportsGlass) {
@@ -237,14 +245,7 @@ export function GlassSurface({
       ? {
           ...outerStyle,
           overflow: "visible",
-          boxShadow: [
-            {
-              offsetX: 0,
-              offsetY: 6,
-              blurRadius: 18,
-              color: isDarkMode ? "rgba(0, 0, 0, 0.34)" : "rgba(0, 0, 0, 0.12)",
-            },
-          ],
+          boxShadow: [...androidChrome.boxShadow],
         }
       : {
           ...outerStyle,
@@ -257,6 +258,12 @@ export function GlassSurface({
   const clippedContentStyle: ViewStyle = {
     ...innerStyle,
     overflow: "hidden",
+    ...(Platform.OS === "android"
+      ? {
+          borderColor: androidChrome.borderColor,
+          borderTopColor: androidChrome.specularTopBorderColor,
+        }
+      : null),
   };
 
   if (supportsGlass) {
