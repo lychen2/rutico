@@ -679,3 +679,36 @@ html[data-theme-transition="iris"]::view-transition-old(root) {
 html[data-theme-transition="iris"]::view-transition-new(root) {
   z-index: 2;
 }
+
+/* ==========================================================================
+   D03 / C011: Double-Buffered Theme Wallpaper GPU Crossfade
+   ========================================================================== */
+
+@keyframes theme-wallpaper-fade-out {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
+
+html[data-theme-background-crossfade="active"]::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background-image: var(--theme-background-image-prev);
+  background-position: center;
+  background-size: cover;
+  contain: strict;
+  transform: translateZ(0);
+  animation: theme-wallpaper-fade-out 360ms cubic-bezier(0.23, 1, 0.32, 1) forwards;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html[data-theme-background-crossfade="active"]::before {
+    display: none;
+  }
+}
