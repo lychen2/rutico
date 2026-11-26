@@ -9,9 +9,10 @@ import {
   type ThreadId,
 } from "@t3tools/contracts";
 import * as Clipboard from "expo-clipboard";
+import * as Haptics from "expo-haptics";
 import { useGT, useMessages } from "gt-react-native";
 import { useMemo, useRef, useState } from "react";
-import { Pressable, ScrollView, View } from "react-native";
+import { Pressable, ScrollView, StyleSheet, View } from "react-native";
 
 import { AppText as Text } from "../../components/ui/AppText";
 import { IconButton } from "../../components/ui/IconButton";
@@ -148,7 +149,7 @@ export function ThreadWorkbenchTerminalPane(props: ThreadWorkbenchTerminalPanePr
 
   if (!props.workspaceRoot) {
     return (
-      <View className="flex-1 bg-screen">
+      <View className="flex-1 justify-center bg-screen p-4">
         <EmptyState
           title={gt("Terminal unavailable")}
           detail={gt(
@@ -165,7 +166,7 @@ export function ThreadWorkbenchTerminalPane(props: ThreadWorkbenchTerminalPanePr
 
   if (environment.presentation?.connection.phase !== "connected") {
     return (
-      <View className="flex-1 bg-screen">
+      <View className="flex-1 justify-center bg-screen p-4">
         <EmptyState
           title={gt("Environment disconnected")}
           detail={gt("Reconnect this environment to inspect or run terminal sessions.")}
@@ -176,7 +177,7 @@ export function ThreadWorkbenchTerminalPane(props: ThreadWorkbenchTerminalPanePr
 
   if (!canReadTerminal && !canOperateTerminal) {
     return (
-      <View className="flex-1 bg-screen">
+      <View className="flex-1 justify-center bg-screen p-4">
         <EmptyState
           title={gt("Terminal access unavailable")}
           detail={gt("This connection does not have permission to view terminals.")}
@@ -187,7 +188,7 @@ export function ThreadWorkbenchTerminalPane(props: ThreadWorkbenchTerminalPanePr
 
   if (sessionsError !== null) {
     return (
-      <View className="flex-1 bg-screen">
+      <View className="flex-1 justify-center bg-screen p-4">
         <EmptyState title={gt("Could not load terminals")} detail={sessionsError} />
       </View>
     );
@@ -209,9 +210,13 @@ export function ThreadWorkbenchTerminalPane(props: ThreadWorkbenchTerminalPanePr
                 key={session.terminalId}
                 accessibilityRole="button"
                 accessibilityState={{ selected }}
-                onPress={() => setSelectedTerminalId(session.terminalId)}
+                hitSlop={6}
+                onPress={() => {
+                  void Haptics.selectionAsync().catch(() => undefined);
+                  setSelectedTerminalId(session.terminalId);
+                }}
                 className={cn(
-                  "flex-row items-center gap-1.5 rounded-full border px-2.5 py-1",
+                  "min-h-[36px] flex-row items-center gap-1.5 rounded-full border px-3 py-1.5 active:opacity-70",
                   selected ? "border-primary bg-primary/15" : "border-border bg-card",
                 )}
               >
@@ -219,9 +224,9 @@ export function ThreadWorkbenchTerminalPane(props: ThreadWorkbenchTerminalPanePr
                   className={cn(
                     "size-1.5 rounded-full",
                     session.status === "running"
-                      ? "bg-success"
+                      ? "bg-adaptive-emerald-600-400"
                       : session.status === "error"
-                        ? "bg-danger"
+                        ? "bg-danger-foreground"
                         : "bg-foreground-muted",
                   )}
                 />
@@ -446,11 +451,62 @@ function ThreadWorkbenchTerminalSession(props: {
 
   if (terminal.error !== null && (!props.canOperate || terminal.status === "error")) {
     return (
-      <View className="flex-1 bg-screen">
+      <View className="flex-1 justify-center bg-screen p-4">
         <EmptyState title={gt("Terminal unavailable")} detail={terminal.error} />
       </View>
     );
   }
+
+  const quickKeys: ReadonlyArray<{
+    readonly key: string;
+    readonly label: string;
+    readonly accessibilityLabel: string;
+    readonly active?: boolean;
+    readonly onPress: () => void;
+  }> = [
+    {
+      key: "esc",
+      label: "Esc",
+      accessibilityLabel: gt("Escape"),
+      onPress: () => {
+        setPendingModifier(null);
+        void writeInput("\u001b");
+      },
+    },
+    {
+      key: "tab",
+      label: "Tab",
+      accessibilityLabel: gt("Tab"),
+      onPress: () => {
+        void writeInput("\t");
+      },
+    },
+    {
+      key: "ctrl",
+      label: "Ctrl",
+      accessibilityLabel: gt("Control modifier"),
+      active: pendingModifier === "ctrl",
+      onPress: () => {
+        setPendingModifier((current) => (current === "ctrl" ? null : "ctrl"));
+      },
+    },
+    {
+      key: "up",
+      label: "↑",
+      accessibilityLabel: gt("Up arrow"),
+      onPress: () => {
+        handleInput("\u001b[A");
+      },
+    },
+    {
+      key: "down",
+      label: "↓",
+      accessibilityLabel: gt("Down arrow"),
+      onPress: () => {
+        handleInput("\u001b[B");
+      },
+    },
+  ];
 
   return (
     <View className="flex-1" style={{ backgroundColor: terminalTheme.background }}>
@@ -473,6 +529,43 @@ function ThreadWorkbenchTerminalSession(props: {
         terminalKey={`${props.environmentId}:${props.threadId}:${props.terminalId}:workbench`}
         theme={terminalTheme}
       />
+      {props.canOperate && isRunning ? (
+        <View
+          className="flex-row items-center gap-1.5 px-2 py-1.5"
+          style={{
+            backgroundColor: terminalTheme.background,
+            borderTopWidth: StyleSheet.hairlineWidth,
+            borderTopColor: terminalTheme.border,
+          }}
+        >
+          {quickKeys.map((item) => (
+            <Pressable
+              key={item.key}
+              accessibilityRole="button"
+              accessibilityLabel={item.accessibilityLabel}
+              accessibilityState={item.active === undefined ? undefined : { selected: item.active }}
+              hitSlop={6}
+              onPress={() => {
+                void Haptics.selectionAsync().catch(() => undefined);
+                item.onPress();
+              }}
+              className={cn(
+                "min-h-[36px] min-w-[40px] items-center justify-center rounded-lg border px-2.5 active:opacity-65",
+                item.active ? "border-primary bg-primary/15" : "border-border/60 bg-card/40",
+              )}
+            >
+              <Text
+                className={cn(
+                  "text-xs font-t3-medium",
+                  item.active ? "text-foreground" : "text-foreground-muted",
+                )}
+              >
+                {item.label}
+              </Text>
+            </Pressable>
+          ))}
+        </View>
+      ) : null}
     </View>
   );
 }
