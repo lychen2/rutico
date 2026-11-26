@@ -3,3 +3,39 @@
    Reserved modular stylesheet pre-imported by index.css for conflict-free
    parallel Stage 2 edits.
    ========================================================================== */
+
+/* ==========================================================================
+   D30 / C096: Zero-Pop In-Window Boot Curtain & First-Frame Settle
+   ========================================================================== */
+
+#boot-curtain[data-boot-curtain="dismiss"] {
+  opacity: 0;
+  transition: opacity 220ms var(--spring-fluid, cubic-bezier(0.23, 1, 0.32, 1));
+  will-change: opacity;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  html[data-boot-transition="entering"] #root {
+    transform: scale(1.012);
+    transform-origin: center center;
+  }
+
+  html[data-boot-transition="settling"] #root {
+    transform: scale(1);
+    transform-origin: center center;
+    transition: transform 220ms var(--spring-fluid, cubic-bezier(0.23, 1, 0.32, 1));
+    will-change: transform;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #boot-curtain {
+    display: none;
+    transition: none;
+  }
+
+  html[data-boot-transition] #root {
+    transform: none;
+    transition: none;
+  }
+}

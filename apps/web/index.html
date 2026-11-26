@@ -688,6 +688,33 @@
         clip-path: inset(50%);
         white-space: nowrap;
       }
+
+      /* Theme-synced in-window Boot Curtain: eliminates cold-start frame pop on Linux/Web. */
+      #boot-curtain {
+        position: fixed;
+        inset: 0;
+        z-index: 2147483000;
+        pointer-events: none;
+        opacity: 0;
+        background: #ffffff;
+        contain: strict;
+      }
+
+      html.dark #boot-curtain {
+        background: #000000;
+      }
+
+      html[data-theme-selected="true"] #boot-curtain {
+        background: var(--boot-background);
+      }
+
+      #boot-curtain[data-boot-curtain="holding"] {
+        opacity: 1;
+      }
+
+      body:has(#boot-error) #boot-curtain {
+        display: none;
+      }
     </style>
     <script>
       // Desktop's preload injects branding before page scripts. Titling before the <title> below
@@ -706,6 +733,7 @@
         </div>
       </div>
     </div>
+    <div id="boot-curtain" data-boot-curtain="idle" aria-hidden="true"></div>
     <script type="module" src="/src/bootstrap.ts"></script>
   </body>
 </html>

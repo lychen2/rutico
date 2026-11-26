@@ -95,6 +95,17 @@ const TITLEBAR_DARK_SYMBOL_COLOR = "#f8fafc";
 const TITLEBAR_DARK_INACTIVE_SYMBOL_COLOR = "#94a3b8";
 const SPLASH_FADE_STEP_MS = 30;
 const SPLASH_FADE_OPACITIES = [0.75, 0.5, 0.25, 0] as const;
+const LINUX_SPLASH_CONTENT_FADE_MS = 130;
+const LINUX_SPLASH_DISMISS_TIMEOUT_MS = 140;
+export const LINUX_SPLASH_DISMISS_CONTENT_SCRIPT = `(() => {
+  if (typeof window.matchMedia === "function" && window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+    return false;
+  }
+  const content = document.querySelector(".splash-content");
+  if (!content) return false;
+  content.classList.add("dismissing");
+  return true;
+})();`;
 const MAIN_WINDOW_BOUNDS_PERSIST_DEBOUNCE_MS = 500;
 const DEVELOPMENT_LOAD_RETRY_DELAYS_MS = [100, 250, 500, 1_000, 2_000] as const;
 const RENDERER_RECOVERY_RELOAD_DELAY_MS = 500;
@@ -338,7 +349,9 @@ export function buildConnectingSplashDataUrl(
   const accent = shouldUseDarkColors ? "#b4a3fd" : "#684dc6";
   const track = shouldUseDarkColors ? "rgba(180,163,253,0.22)" : "rgba(104,77,198,0.18)";
   const hairline = shouldUseDarkColors ? "rgba(255,255,255,0.08)" : "rgba(28,23,41,0.08)";
-  const html = `<!doctype html><html><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'"><style>html,body{margin:0;height:100%}body{box-sizing:border-box;background:${background};color:${foreground};border:1px solid ${hairline};border-radius:12px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif;-webkit-font-smoothing:antialiased;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;-webkit-user-select:none;user-select:none;-webkit-app-region:drag}.emblem{display:block;color:${foreground}}.status{display:flex;align-items:center;gap:9px;color:${label};font-size:12.5px;line-height:1.2;letter-spacing:-0.005em}.spinner{width:14px;height:14px;box-sizing:border-box;border:2px solid ${track};border-top-color:${accent};border-radius:50%;animation:spin .8s linear infinite}@keyframes spin{to{transform:rotate(360deg)}}@media (prefers-reduced-motion: reduce){.spinner{animation:none;border-color:${accent};opacity:0.55}}</style></head><body>${RUTICO_SPLASH_EMBLEM_SVG}<div class="status"><div class="spinner" aria-hidden="true"></div><span>Connecting to WSL…</span></div></body></html>`;
+  const specular = shouldUseDarkColors ? "rgba(255,255,255,0.14)" : "rgba(255,255,255,0.72)";
+  const ribbon = shouldUseDarkColors ? "rgba(180,163,253,0.34)" : "rgba(104,77,198,0.26)";
+  const html = `<!doctype html><html><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'"><style>html,body{margin:0;height:100%}body{box-sizing:border-box;background:${background};color:${foreground};border:1px solid ${hairline};border-radius:14px;box-shadow:inset 0 1px 0 ${specular};font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif;-webkit-font-smoothing:antialiased;display:flex;align-items:center;justify-content:center;-webkit-user-select:none;user-select:none;-webkit-app-region:drag}@supports (corner-shape: superellipse(1.25)){body{corner-shape:superellipse(1.25)}}.splash-content{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;opacity:1;transform:scale(1);transition:opacity ${LINUX_SPLASH_CONTENT_FADE_MS}ms cubic-bezier(0.23,1,0.32,1),transform ${LINUX_SPLASH_CONTENT_FADE_MS}ms cubic-bezier(0.23,1,0.32,1)}.splash-content.dismissing{opacity:0;transform:scale(0.985)}.emblem-wrap{position:relative;display:flex;flex-direction:column;align-items:center;gap:10px}.emblem{display:block;color:${foreground}}.ribbon{position:relative;width:54px;height:2px;border-radius:999px;background:${track};overflow:hidden}.ribbon::after{content:'';position:absolute;inset:0;width:55%;background:linear-gradient(90deg,transparent,${ribbon},transparent);transform:translateX(-120%);animation:sheen 1.6s cubic-bezier(0.23,1,0.32,1) infinite}@keyframes sheen{to{transform:translateX(220%)}}.status{display:flex;align-items:center;gap:9px;color:${label};font-size:12.5px;line-height:1.2;letter-spacing:-0.005em}.spinner{width:14px;height:14px;box-sizing:border-box;border:2px solid ${track};border-top-color:${accent};border-radius:50%;animation:spin .8s linear infinite}@keyframes spin{to{transform:rotate(360deg)}}@media (prefers-reduced-motion: reduce){.spinner{animation:none;border-color:${accent};opacity:0.55}.ribbon::after{animation:none;transform:none;width:100%;opacity:0.45}.splash-content{transition:none}}</style></head><body><div class="splash-content"><div class="emblem-wrap">${RUTICO_SPLASH_EMBLEM_SVG}<div class="ribbon" aria-hidden="true"></div></div><div class="status"><div class="spinner" aria-hidden="true"></div><span>Connecting to WSL…</span></div></div></body></html>`;
   return `data:text/html;charset=utf-8,${encodeURIComponent(html)}`;
 }
 
@@ -592,6 +605,32 @@ export const make = Effect.gen(function* () {
   );
   let flushMainWindowBounds: Effect.Effect<void> = Effect.void;
   let remoteRequestHeaderOwner: Electron.BrowserWindow | null = null;
+  const scopedFibers = new Set<Fiber.Fiber<void, never>>();
+  const trackFork = (effect: Effect.Effect<void, never, DesktopWindowRuntimeServices>) => {
+    const fiber = runFork(
+      effect.pipe(
+        Effect.ensuring(
+          Effect.sync(() => {
+            scopedFibers.delete(fiber);
+          }),
+        ),
+      ),
+    );
+    scopedFibers.add(fiber);
+    return fiber;
+  };
+  yield* Effect.addFinalizer(() =>
+    Effect.forEach([...scopedFibers], (fiber) => Fiber.interrupt(fiber), {
+      concurrency: "unbounded",
+      discard: true,
+    }).pipe(
+      Effect.ensuring(
+        Effect.sync(() => {
+          scopedFibers.clear();
+        }),
+      ),
+    ),
+  );
 
   const dismissConnectingSplash = Effect.gen(function* () {
     const splash = yield* Ref.getAndSet(splashWindowRef, Option.none());
@@ -599,12 +638,41 @@ export const make = Effect.gen(function* () {
       return;
     }
     const target = splash.value;
-    // Linux lacks Electron window opacity; close immediately there.
+    // Linux lacks Electron window.setOpacity(); perform a bounded in-DOM content fade
+    // (the main window's In-Window Boot Curtain owns the visual handoff) and always close.
     if (environment.platform === "linux") {
-      target.close();
+      if (
+        target.webContents === undefined ||
+        target.webContents.isDestroyed() ||
+        typeof target.webContents.executeJavaScript !== "function"
+      ) {
+        target.close();
+        return;
+      }
+      trackFork(
+        Effect.tryPromise({
+          try: () => target.webContents.executeJavaScript(LINUX_SPLASH_DISMISS_CONTENT_SCRIPT),
+          catch: () => false,
+        }).pipe(
+          Effect.timeoutOption(LINUX_SPLASH_DISMISS_TIMEOUT_MS),
+          Effect.flatMap((result) =>
+            Option.isSome(result) && result.value === true
+              ? Effect.sleep(LINUX_SPLASH_CONTENT_FADE_MS)
+              : Effect.void,
+          ),
+          Effect.ignore,
+          Effect.ensuring(
+            Effect.sync(() => {
+              if (!target.isDestroyed()) {
+                target.close();
+              }
+            }),
+          ),
+        ),
+      );
       return;
     }
-    runFork(
+    trackFork(
       Effect.forEach(
         SPLASH_FADE_OPACITIES,
         (opacity) =>

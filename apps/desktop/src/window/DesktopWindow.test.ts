@@ -86,7 +86,7 @@ function makeFakeBrowserWindow() {
       },
     },
     copyImageAt: vi.fn(),
-    executeJavaScript: vi.fn((_script: string) => Promise.resolve()),
+    executeJavaScript: vi.fn((_script: string): Promise<unknown> => Promise.resolve()),
     focus: vi.fn(),
     insertCSS: vi.fn((_css: string) => Promise.resolve("")),
     isDestroyed: vi.fn(() => false),
@@ -410,7 +410,10 @@ function layerTest(input: {
   );
 }
 
-const makeSplashScenario = (createOutcomes: readonly (Electron.BrowserWindow | null)[]) =>
+const makeSplashScenario = (
+  createOutcomes: readonly (Electron.BrowserWindow | null)[],
+  platform: NodeJS.Platform = environmentInput.platform,
+) =>
   Effect.gen(function* () {
     const createdWindows = yield* Ref.make<Electron.BrowserWindow[]>([]);
     const createCalls = yield* Ref.make(0);
@@ -485,7 +488,7 @@ const makeSplashScenario = (createOutcomes: readonly (Electron.BrowserWindow | n
             recordMetrics: () => Effect.void,
             shutdown: Effect.void,
           }),
-          layerDesktopEnvironment,
+          layerDesktopEnvironmentFor(platform),
           DesktopAppSettings.layerTest(),
           layerDesktopClientSettings,
           layerDesktopServerExposure,
@@ -1421,7 +1424,58 @@ describe("DesktopWindow", () => {
       ),
     );
     assert.include(lightGroveHtml, "background:#f3f7f4");
+    assert.include(darkHtml, "corner-shape:superellipse(1.25)");
+    assert.include(darkHtml, "splash-content");
   });
+
+  it.effect(
+    "dissolves Linux splash content within a 130ms bound without calling setOpacity and closes immediately under reduced motion",
+    () =>
+      Effect.gen(function* () {
+        const splash = makeFakeBrowserWindow();
+        const main = makeFakeBrowserWindow();
+        splash.executeJavaScript.mockResolvedValueOnce(true);
+        const scenario = yield* makeSplashScenario([splash.window, main.window], "linux");
+
+        yield* Effect.gen(function* () {
+          const desktopWindow = yield* DesktopWindow.DesktopWindow;
+          yield* desktopWindow.showConnectingSplash;
+          yield* desktopWindow.handleBackendReady(new URL("http://127.0.0.1:3773"));
+
+          main.windowListeners.get("ready-to-show")?.();
+          yield* Effect.promise(() => Promise.resolve());
+          yield* Effect.promise(() => Promise.resolve());
+          assert.deepEqual(splash.executeJavaScript.mock.calls, [
+            [DesktopWindow.LINUX_SPLASH_DISMISS_CONTENT_SCRIPT],
+          ]);
+          assert.equal(splash.setOpacity.mock.calls.length, 0);
+          assert.equal(vi.mocked(splash.window.close).mock.calls.length, 0);
+
+          yield* TestClock.adjust(130);
+          yield* Effect.promise(() => Promise.resolve());
+          assert.equal(vi.mocked(splash.window.close).mock.calls.length, 1);
+        }).pipe(Effect.provide(scenario.layer));
+
+        const reducedSplash = makeFakeBrowserWindow();
+        const reducedMain = makeFakeBrowserWindow();
+        reducedSplash.executeJavaScript.mockResolvedValueOnce(false);
+        const reducedScenario = yield* makeSplashScenario(
+          [reducedSplash.window, reducedMain.window],
+          "linux",
+        );
+
+        yield* Effect.gen(function* () {
+          const desktopWindow = yield* DesktopWindow.DesktopWindow;
+          yield* desktopWindow.showConnectingSplash;
+          yield* desktopWindow.handleBackendReady(new URL("http://127.0.0.1:3773"));
+
+          reducedMain.windowListeners.get("ready-to-show")?.();
+          yield* Effect.promise(() => Promise.resolve());
+          yield* Effect.promise(() => Promise.resolve());
+          assert.equal(vi.mocked(reducedSplash.window.close).mock.calls.length, 1);
+        }).pipe(Effect.provide(reducedScenario.layer));
+      }),
+  );
 
   it.effect("fades the connecting splash out smoothly before closing on main reveal", () =>
     Effect.gen(function* () {
