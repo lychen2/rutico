@@ -348,3 +348,102 @@
     filter: none;
   }
 }
+
+/* ==========================================================================
+   D02 / C005: Concentric Radius Algebra, Superellipse(1.25) with Pill Guard,
+   5-Tier OKLCH Elevation Ladder, 3-Layer Hairline Rim, and Optical Typography
+   ========================================================================== */
+
+:root {
+  /* Concentric inner radius algebra: r_in = max(0px, R_out - padding). */
+  --radius-concentric-dialog: var(--radius-2xl);
+  --radius-concentric-dialog-inner: calc(var(--radius-2xl) - 0.5rem);
+  --radius-concentric-popover: var(--radius-lg);
+  --radius-concentric-popover-inner: calc(var(--radius-lg) - 0.25rem);
+  --radius-concentric-menu: var(--radius-lg);
+  --radius-concentric-menu-inner: calc(var(--radius-lg) - 0.25rem);
+
+  /* 5-tier perceptually uniform OKLCH surface elevation ladder. */
+  --elevation-0: var(--background);
+  --elevation-1: color-mix(in oklch, var(--card) 92%, var(--background));
+  --elevation-2: var(--card);
+  --elevation-3: var(--popover);
+  --elevation-4: color-mix(in oklch, var(--popover) 96%, oklch(1 0 0));
+
+  /* 3-layer transparent micro-shadow rim (border + tight contact + soft ambient). */
+  --shadow-hairline-rim:
+    0 0 0 1px color-mix(in oklch, var(--contrast-foreground) 9%, transparent),
+    0 1px 2px -0.5px rgb(0 0 0 / 6%), 0 6px 16px -6px rgb(0 0 0 / 10%);
+
+  @variant dark {
+    --elevation-1: color-mix(in oklch, var(--card) 96%, oklch(1 0 0));
+    --elevation-2: color-mix(in oklch, var(--card) 92%, oklch(1 0 0));
+    --elevation-3: color-mix(in oklch, var(--popover) 90%, oklch(1 0 0));
+    --elevation-4: color-mix(in oklch, var(--popover) 85%, oklch(1 0 0));
+    --shadow-hairline-rim:
+      0 0 0 1px color-mix(in oklch, oklch(1 0 0) 10%, transparent), 0 1px 2px rgb(0 0 0 / 42%),
+      0 10px 26px -10px rgb(0 0 0 / 68%);
+  }
+}
+
+@utility surface-elevated-rim {
+  border: 1px solid transparent;
+  box-shadow: var(--shadow-hairline-rim);
+
+  @media (forced-colors: active) {
+    border-color: CanvasText;
+    box-shadow: none;
+  }
+}
+
+/* Continuous-curvature superellipse corners on Chromium 139+ / Electron 44+,
+   strictly guarding circular and pill controls so capsule ends never flatten. */
+@supports (corner-shape: superellipse(1.25)) {
+  [data-slot="dialog-popup"],
+  [data-slot="alert-dialog-popup"],
+  [data-slot="command-dialog-popup"],
+  [data-slot="popover-popup"],
+  [data-slot="menu-popup"],
+  [data-slot="select-popup"],
+  [data-slot="combobox-popup"],
+  [data-slot="autocomplete-popup"],
+  [data-slot="preview-card-popup"],
+  [data-slot="sheet-popup"],
+  [data-slot="button"],
+  [data-slot="toggle-group"],
+  [data-slot="toggle"] {
+    corner-shape: superellipse(1.25);
+  }
+
+  .rounded-full,
+  [data-slot="switch"],
+  [data-slot="switch-thumb"],
+  [data-slot="radio"],
+  [data-slot="radio-indicator"] {
+    corner-shape: round;
+  }
+}
+
+/* Scoped optical cap-height trim: restricted to Latin short controls so CJK
+   and diacritic-heavy locales never clip inside fixed-height badges/keycaps. */
+@supports (text-box: trim-both cap alphabetic) {
+  :lang(en) [data-slot="kbd"],
+  :lang(en) [data-slot="badge"] {
+    text-box: trim-both cap alphabetic;
+  }
+}
+
+/* CJK punctuation kerning & phrase-aware wrapping scoped to short headings only. */
+:lang(zh),
+:lang(ja) {
+  text-spacing-trim: trim-start;
+}
+
+[data-slot="dialog-title"],
+[data-slot="alert-dialog-title"],
+[data-slot="sheet-title"],
+[data-slot="empty-title"],
+[data-slot="popover-title"] {
+  word-break: auto-phrase;
+  overflow-wrap: anywhere;
+}

@@ -197,7 +197,7 @@ function CommandItem({
   return (
     <AutocompleteItem
       className={cn(
-        "py-1.5 transition-[background-color,color,scale] duration-120 ease-out active:not-data-disabled:scale-[0.99] motion-reduce:transition-none motion-reduce:active:scale-100 data-selected:bg-foreground/[0.06] data-highlighted:bg-foreground/[0.09] data-highlighted:text-foreground data-highlighted:[&_svg:not([class*='text-'])]:text-foreground [&[data-highlighted][data-selected]]:bg-foreground/[0.09] [&[data-highlighted][data-selected]]:text-foreground",
+        "rounded-[var(--radius-concentric-dialog-inner)] py-1.5 transition-[background-color,color,scale] duration-120 ease-out active:not-data-disabled:scale-[0.99] motion-reduce:transition-none motion-reduce:active:scale-100 data-selected:bg-foreground/[0.06] data-highlighted:bg-foreground/[0.09] data-highlighted:text-foreground data-highlighted:[&_svg:not([class*='text-'])]:text-foreground [&[data-highlighted][data-selected]]:bg-foreground/[0.09] [&[data-highlighted][data-selected]]:text-foreground",
         active !== undefined &&
           "cursor-pointer hover:bg-transparent hover:text-inherit data-highlighted:bg-transparent data-highlighted:text-inherit data-highlighted:[&_svg:not([class*='text-'])]:text-muted-foreground data-selected:bg-transparent data-selected:text-inherit [&[data-highlighted][data-selected]]:bg-transparent [&[data-highlighted][data-selected]]:text-inherit",
         active &&
