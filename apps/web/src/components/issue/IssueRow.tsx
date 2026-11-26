@@ -3,6 +3,7 @@ import { MessageSquareIcon } from "lucide-react";
 import { memo } from "react";
 
 import { cn } from "~/lib/utils";
+import "~/styles/workspace-hubs.css";
 
 import {
   PULL_REQUEST_ROW_CLASS,
@@ -43,11 +44,21 @@ function IssueRowImpl({
   const tracker = issueTrackerPresentation(entry.tracker);
   return (
     <div
+      data-slot="issue-row-container"
+      data-selected={selected ? "true" : "false"}
       className={cn(
-        "flex items-center rounded-md [content-visibility:auto] [contain-intrinsic-block-size:56.5px]",
-        selected ? "bg-accent" : "hover:bg-accent/60",
+        "relative flex items-center rounded-md [content-visibility:auto] [contain-intrinsic-block-size:56.5px]",
+        selected ? "bg-accent ring-1 ring-inset ring-primary/18" : "hover:bg-accent/60",
       )}
     >
+      <span
+        aria-hidden
+        data-slot="issue-row-indicator"
+        className={cn(
+          "pointer-events-none absolute inset-y-2 left-0.5 w-0.5 rounded-full bg-primary transition-[opacity,transform] duration-(--duration-snappy) ease-(--spring-snappy) motion-reduce:transition-none",
+          selected ? "scale-y-100 opacity-100" : "scale-y-50 opacity-0",
+        )}
+      />
       <button
         type="button"
         aria-current={selected ? "true" : undefined}

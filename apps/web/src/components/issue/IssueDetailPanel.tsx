@@ -51,6 +51,7 @@ import { Button, InlineButton } from "../ui/button";
 import { Input } from "../ui/input";
 import { Menu, MenuItem, MenuPopup, MenuTrigger } from "../ui/menu";
 import { cn } from "~/lib/utils";
+import "~/styles/workspace-hubs.css";
 import { PullRequestMetaRow, PullRequestSection } from "../pullRequest/PullRequestSummaryTab";
 import { toastManager } from "../ui/toast";
 import { PullRequestCandidatePicker } from "../pullRequest/PullRequestCandidatePicker";
@@ -597,7 +598,7 @@ export function IssueDetailPanel({
     );
 
   return (
-    <div className="relative flex h-full min-h-0 flex-col">
+    <div data-slot="issue-detail-stage" className="relative flex h-full min-h-0 flex-col">
       <div
         className={cn(
           "min-h-0 flex-1 overflow-y-auto",

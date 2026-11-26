@@ -32,11 +32,14 @@ import {
   Plug2Icon,
   UserCheckIcon,
   UsersIcon,
+  XIcon,
 } from "lucide-react";
 import { msg, T, useGT, useMessages, Var } from "gt-react";
 import { Fragment, useEffect, useEffectEvent, useState, type ReactNode } from "react";
 
+import { AnimatedHeight } from "~/components/AnimatedHeight";
 import { RefreshIcon } from "~/components/ui/refresh-icon";
+import "~/styles/workspace-hubs.css";
 import { IssueDetailPanel } from "~/components/issue/IssueDetailPanel";
 import { IssueRow, type IssueRowTarget } from "~/components/issue/IssueRow";
 import {
@@ -504,6 +507,104 @@ export function IssuesPage() {
   const showTracker = groups.length > 1;
   const noneAnswered = list.answers.length === 0;
 
+  const stateOptions = resolveFilterOptions(STATE_TABS, resolve);
+  const involvementOptions = resolveFilterOptions(INVOLVEMENT_TABS, resolve);
+  const sortOptions = resolveFilterOptions(SORT_OPTIONS, resolve);
+
+  // Derived purely in render from URL search so active filters stay in lockstep with navigation.
+  const activeFilterChips: Array<{
+    readonly key: string;
+    readonly dotClassName: string;
+    readonly label: string;
+    readonly removeLabel: string;
+    readonly onRemove: () => void;
+  }> = [];
+  if (search.status !== "open") {
+    const stateLabel =
+      stateOptions.find((option) => option.value === search.status)?.label ?? search.status;
+    activeFilterChips.push({
+      key: `status:${search.status}`,
+      dotClassName: "bg-info",
+      label: gt("State: {value}", { value: stateLabel }),
+      removeLabel: gt("Reset state filter"),
+      onRemove: () => updateSearch({ status: "open" }),
+    });
+  }
+  if (search.who !== "all") {
+    const whoLabel =
+      involvementOptions.find((option) => option.value === search.who)?.label ?? search.who;
+    activeFilterChips.push({
+      key: `who:${search.who}`,
+      dotClassName: "bg-primary",
+      label: whoLabel,
+      removeLabel: gt("Reset involvement filter"),
+      onRemove: () => updateSearch({ who: "all" }),
+    });
+  }
+  if (search.host) {
+    activeFilterChips.push({
+      key: `host:${search.host}`,
+      dotClassName: "bg-muted-foreground",
+      label: gt("Host: {host}", { host: search.host }),
+      removeLabel: gt("Clear host filter"),
+      onRemove: () => updateSearch({ host: undefined }),
+    });
+  }
+  if (search.assignee) {
+    activeFilterChips.push({
+      key: `assignee:${search.assignee}`,
+      dotClassName: "bg-primary",
+      label: gt("Assignee: {assignee}", { assignee: search.assignee }),
+      removeLabel: gt("Clear assignee filter"),
+      onRemove: () => updateSearch({ assignee: undefined }),
+    });
+  }
+  for (const labelName of search.label ?? []) {
+    activeFilterChips.push({
+      key: `label:${labelName}`,
+      dotClassName: "bg-warning",
+      label: gt("Label: {label}", { label: labelName }),
+      removeLabel: gt("Remove label filter {label}", { label: labelName }),
+      onRemove: () => {
+        const remaining = (search.label ?? []).filter((item) => item !== labelName);
+        updateSearch({ label: remaining.length > 0 ? remaining : undefined });
+      },
+    });
+  }
+  if (hiddenProjects.size > 0) {
+    activeFilterChips.push({
+      key: `hiddenProjects:${hiddenProjects.size}`,
+      dotClassName: "bg-muted-foreground",
+      label: gt("{count, plural, one {{count} project hidden} other {{count} projects hidden}}", {
+        count: hiddenProjects.size,
+      }),
+      removeLabel: gt("Show all projects"),
+      onRemove: () => updateSearch({ hideProjects: undefined }),
+    });
+  }
+  if (search.order === "created") {
+    const orderLabel =
+      sortOptions.find((option) => option.value === "created")?.label ?? gt("Newest");
+    activeFilterChips.push({
+      key: "order:created",
+      dotClassName: "bg-muted-foreground",
+      label: gt("Sort: {order}", { order: orderLabel }),
+      removeLabel: gt("Reset sort order"),
+      onRemove: () => updateSearch({ order: undefined }),
+    });
+  }
+
+  const clearAllFilters = () =>
+    updateSearch({
+      status: "open",
+      who: "all",
+      host: undefined,
+      assignee: undefined,
+      label: undefined,
+      hideProjects: undefined,
+      order: undefined,
+    });
+
   const listBody: ReactNode = !issuesSupported ? (
     <PullRequestsUnavailableState
       title={gt("Issues unavailable")}
@@ -721,17 +822,17 @@ export function IssuesPage() {
                   triggerLabel={gt("Sort", { $context: "verb, button that sorts a list" })}
                   outlined
                   value={search.order ?? "updated"}
-                  options={resolveFilterOptions(SORT_OPTIONS, resolve)}
+                  options={sortOptions}
                   onChange={(order) =>
                     updateSearch({ order: order === "created" ? "created" : undefined })
                   }
                 />
                 <IssueFiltersMenu
                   state={search.status}
-                  stateOptions={resolveFilterOptions(STATE_TABS, resolve)}
+                  stateOptions={stateOptions}
                   onState={(status) => updateSearch({ status })}
                   involvement={search.who}
-                  involvementOptions={resolveFilterOptions(INVOLVEMENT_TABS, resolve)}
+                  involvementOptions={involvementOptions}
                   onInvolvement={(who) => updateSearch({ who })}
                   scopes={filterScopes}
                   labels={search.label ?? []}
@@ -777,6 +878,45 @@ export function IssuesPage() {
                   <RefreshIcon size="md" refreshing={list.isPending} />
                 </Button>
               </div>
+              <AnimatedHeight>
+                {activeFilterChips.length > 0 ? (
+                  <div
+                    data-slot="issue-filter-chips"
+                    className="flex flex-wrap items-center gap-1.5 pt-0.5 pb-1"
+                  >
+                    {activeFilterChips.map((chip) => (
+                      <span
+                        key={chip.key}
+                        data-slot="issue-filter-chip"
+                        className="inline-flex max-w-full items-center gap-1.5 rounded-full border border-border/80 bg-muted/55 py-0.5 pr-1 pl-2 text-xs text-foreground"
+                      >
+                        <span
+                          aria-hidden
+                          className={`size-1.5 shrink-0 rounded-full ${chip.dotClassName}`}
+                        />
+                        <span className="truncate">{chip.label}</span>
+                        <button
+                          type="button"
+                          aria-label={chip.removeLabel}
+                          onClick={chip.onRemove}
+                          className="inline-flex size-4 shrink-0 cursor-pointer items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring"
+                        >
+                          <XIcon aria-hidden className="size-2.5" />
+                        </button>
+                      </span>
+                    ))}
+                    {activeFilterChips.length > 1 ? (
+                      <button
+                        type="button"
+                        onClick={clearAllFilters}
+                        className="cursor-pointer rounded-full px-2 py-0.5 text-xs text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring"
+                      >
+                        <T>Clear all</T>
+                      </button>
+                    ) : null}
+                  </div>
+                ) : null}
+              </AnimatedHeight>
               {listBody}
             </WorkspacePageContainer>
           </div>
