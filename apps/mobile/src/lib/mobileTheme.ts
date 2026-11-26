@@ -315,6 +315,28 @@ export function themeAccentWithContrast(
   return lighten ? "#ffffff" : "#000000";
 }
 
+export const GLASS_BLUR_VEIL_ALPHA = {
+  dark: 0.48,
+  light: 0.56,
+} as const;
+
+export const GLASS_FALLBACK_VEIL_ALPHA = {
+  dark: 0.76,
+  light: 0.82,
+} as const;
+
+/** Lowers the veil alpha over native iOS BlurView so underlying content genuinely blurs through. */
+export function resolveGlassBackdropTintColor(
+  color: string,
+  appearance: MobileThemeAppearance,
+  supportsBlur: boolean,
+): string {
+  const alpha = supportsBlur
+    ? GLASS_BLUR_VEIL_ALPHA[appearance]
+    : GLASS_FALLBACK_VEIL_ALPHA[appearance];
+  return themeColorWithAlpha(color, alpha);
+}
+
 export function themeColorWithAlpha(color: string, alpha: number): string {
   const channels = rgbChannels(color);
   if (channels) {
