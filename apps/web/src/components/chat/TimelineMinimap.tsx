@@ -110,7 +110,7 @@ export function TimelineMinimap({
         "group/minimap pointer-events-none absolute inset-y-0 left-0 z-40 w-18",
         hasPersistentGutter
           ? "opacity-100"
-          : "hidden opacity-0 transition-opacity duration-150 hover:opacity-100 focus-within:opacity-100 [@media(pointer:fine)]:block",
+          : "hidden opacity-0 transition-opacity duration-150 motion-reduce:transition-none hover:opacity-100 focus-within:opacity-100 [@media(pointer:fine)]:block",
       )}
       data-testid="timeline-minimap"
       data-persistent-gutter={hasPersistentGutter ? "true" : "false"}
@@ -288,7 +288,7 @@ function TimelineMinimapNavigationButton({
         render={
           <span
             className={cn(
-              "absolute left-1 z-10 inline-flex -translate-x-1/2 opacity-0 transition-opacity duration-150 hover:opacity-100 focus-within:opacity-100",
+              "absolute left-1 z-10 inline-flex -translate-x-1/2 opacity-0 transition-opacity duration-150 ease-out motion-reduce:transition-none group-hover/minimap:opacity-100 group-focus-within/minimap:opacity-100 hover:opacity-100 focus-within:opacity-100",
               interactive ? "pointer-events-auto" : "pointer-events-none",
               previous ? "bottom-[calc(100%+6px)]" : "top-[calc(100%+6px)]",
             )}
