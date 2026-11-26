@@ -1,7 +1,13 @@
 package expo.modules.t3nativecontrols
 
 import android.content.Context
+import android.os.Build
+import android.os.Handler
+import android.os.Looper
+import android.provider.Settings
+import android.view.HapticFeedbackConstants
 import android.view.ViewGroup
+import androidx.activity.BackEventCompat
 import androidx.activity.ComponentActivity
 import androidx.activity.OnBackPressedCallback
 import androidx.compose.animation.core.animateFloatAsState
@@ -64,9 +70,285 @@ import expo.modules.kotlin.modules.ModuleDefinition
 import expo.modules.kotlin.viewevent.EventDispatcher
 import expo.modules.kotlin.views.ExpoView
 
+internal enum class T3PredictiveBackOwner {
+  MODAL,
+  RAIL,
+  PANEL,
+  SCREEN_STACK,
+}
+
+/**
+ * Deterministic single-owner arbitration for Android Predictive Back across native and JS layers.
+ * Priority: modal -> expanded rail -> side panel -> screen stack.
+ * Locks the winning owner at gesture start so mid-gesture updates cannot split or double-commit.
+ */
+internal object T3PredictiveBackCoordinator {
+  @Volatile
+  var modalOwnerCount: Int = 0
+    private set
+
+  @Volatile
+  var railExpanded: Boolean = false
+    private set
+
+  @Volatile
+  var panelOwnerCount: Int = 0
+    private set
+
+  @Volatile
+  var activeGestureOwner: T3PredictiveBackOwner? = null
+    private set
+
+  private val listeners = linkedSetOf<() -> Unit>()
+
+  @Synchronized
+  fun setModalOwnerCount(count: Int) {
+    val next = count.coerceAtLeast(0)
+    if (modalOwnerCount == next) return
+    modalOwnerCount = next
+    notifyListenersLocked()
+  }
+
+  @Synchronized
+  fun setRailExpanded(expanded: Boolean) {
+    if (railExpanded == expanded) return
+    railExpanded = expanded
+    notifyListenersLocked()
+  }
+
+  @Synchronized
+  fun setPanelOwnerCount(count: Int) {
+    val next = count.coerceAtLeast(0)
+    if (panelOwnerCount == next) return
+    panelOwnerCount = next
+    notifyListenersLocked()
+  }
+
+  @Synchronized
+  fun resolveOwner(): T3PredictiveBackOwner = when {
+    modalOwnerCount > 0 -> T3PredictiveBackOwner.MODAL
+    railExpanded -> T3PredictiveBackOwner.RAIL
+    panelOwnerCount > 0 -> T3PredictiveBackOwner.PANEL
+    else -> T3PredictiveBackOwner.SCREEN_STACK
+  }
+
+  fun shouldRailOwnBack(): Boolean = railExpanded && modalOwnerCount == 0
+
+  fun shouldPanelOwnBack(): Boolean = panelOwnerCount > 0 && modalOwnerCount == 0 && !railExpanded
+
+  @Synchronized
+  fun beginGesture(): T3PredictiveBackOwner {
+    val owner = activeGestureOwner ?: resolveOwner()
+    activeGestureOwner = owner
+    return owner
+  }
+
+  @Synchronized
+  fun cancelGesture(): T3PredictiveBackOwner? {
+    val owner = activeGestureOwner
+    activeGestureOwner = null
+    return owner
+  }
+
+  @Synchronized
+  fun commitGesture(): T3PredictiveBackOwner {
+    val owner = activeGestureOwner ?: resolveOwner()
+    activeGestureOwner = null
+    return owner
+  }
+
+  @Synchronized
+  fun addListener(listener: () -> Unit): () -> Unit {
+    listeners.add(listener)
+    return {
+      synchronized(this) {
+        listeners.remove(listener)
+      }
+    }
+  }
+
+  @Synchronized
+  internal fun resetForTesting() {
+    modalOwnerCount = 0
+    railExpanded = false
+    panelOwnerCount = 0
+    activeGestureOwner = null
+    listeners.clear()
+  }
+
+  private fun notifyListenersLocked() {
+    val snapshot = listeners.toList()
+    snapshot.forEach { it() }
+  }
+}
+
+internal fun isAnimatorScaleDisabled(context: Context): Boolean = try {
+  Settings.Global.getFloat(
+    context.contentResolver,
+    Settings.Global.ANIMATOR_DURATION_SCALE,
+    1f,
+  ) == 0f
+} catch (_: Throwable) {
+  false
+}
+
 class T3WorkspaceNavigationModule : Module() {
+  private val mainHandler = Handler(Looper.getMainLooper())
+  private var panelBackCallback: OnBackPressedCallback? = null
+  private var attachedActivityHash: Int = 0
+  private var unsubscribeCoordinator: (() -> Unit)? = null
+  private var lastPanelProgress = -1f
+  private var panelGestureActive = false
+
+  private fun runOnMain(block: () -> Unit) {
+    if (Looper.myLooper() == Looper.getMainLooper()) {
+      block()
+    } else {
+      mainHandler.post(block)
+    }
+  }
+
+  private fun syncPanelBackCallback() {
+    val activity = appContext.currentActivity as? ComponentActivity
+    if (activity == null) {
+      panelBackCallback?.isEnabled = false
+      return
+    }
+    val hash = System.identityHashCode(activity)
+    if (panelBackCallback == null || attachedActivityHash != hash) {
+      panelBackCallback?.remove()
+      attachedActivityHash = hash
+      val callback = object : OnBackPressedCallback(T3PredictiveBackCoordinator.shouldPanelOwnBack()) {
+        override fun handleOnBackStarted(backEvent: BackEventCompat) {
+          T3PredictiveBackCoordinator.beginGesture()
+          panelGestureActive = true
+          lastPanelProgress = backEvent.progress.coerceIn(0f, 1f)
+          if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            appContext.currentActivity?.window?.decorView?.performHapticFeedback(
+              HapticFeedbackConstants.GESTURE_START,
+            )
+          }
+          sendEvent(
+            "onPredictiveBack",
+            mapOf(
+              "phase" to "start",
+              "progress" to lastPanelProgress,
+              "swipeEdge" to backEvent.swipeEdge,
+              "touchX" to backEvent.touchX,
+              "touchY" to backEvent.touchY,
+              "source" to "native-panel",
+            ),
+          )
+        }
+
+        override fun handleOnBackProgressed(backEvent: BackEventCompat) {
+          val next = backEvent.progress.coerceIn(0f, 1f)
+          if (kotlin.math.abs(next - lastPanelProgress) < 0.004f && next > 0f && next < 1f) {
+            return
+          }
+          lastPanelProgress = next
+          sendEvent(
+            "onPredictiveBack",
+            mapOf(
+              "phase" to "progress",
+              "progress" to next,
+              "swipeEdge" to backEvent.swipeEdge,
+              "touchX" to backEvent.touchX,
+              "touchY" to backEvent.touchY,
+              "source" to "native-panel",
+            ),
+          )
+        }
+
+        override fun handleOnBackCancelled() {
+          T3PredictiveBackCoordinator.cancelGesture()
+          panelGestureActive = false
+          lastPanelProgress = -1f
+          sendEvent(
+            "onPredictiveBack",
+            mapOf(
+              "phase" to "cancel",
+              "progress" to 0f,
+              "swipeEdge" to 0,
+              "touchX" to 0f,
+              "touchY" to 0f,
+              "source" to "native-panel",
+            ),
+          )
+        }
+
+        override fun handleOnBackPressed() {
+          T3PredictiveBackCoordinator.commitGesture()
+          val hadGesture = panelGestureActive
+          panelGestureActive = false
+          lastPanelProgress = -1f
+          if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            appContext.currentActivity?.window?.decorView?.performHapticFeedback(
+              HapticFeedbackConstants.GESTURE_END,
+            )
+          }
+          sendEvent(
+            "onPredictiveBack",
+            mapOf(
+              "phase" to "commit",
+              "progress" to 1f,
+              "swipeEdge" to 0,
+              "touchX" to 0f,
+              "touchY" to 0f,
+              "hadGesture" to hadGesture,
+              "source" to "native-panel",
+            ),
+          )
+        }
+      }
+      panelBackCallback = callback
+      activity.onBackPressedDispatcher.addCallback(activity, callback)
+    } else {
+      panelBackCallback?.isEnabled = T3PredictiveBackCoordinator.shouldPanelOwnBack()
+    }
+  }
+
   override fun definition() = ModuleDefinition {
     Name("T3WorkspaceNavigation")
+    Events("onPredictiveBack")
+
+    OnCreate {
+      unsubscribeCoordinator = T3PredictiveBackCoordinator.addListener {
+        runOnMain { syncPanelBackCallback() }
+      }
+      runOnMain { syncPanelBackCallback() }
+    }
+
+    OnActivityEntersForeground {
+      runOnMain { syncPanelBackCallback() }
+    }
+
+    OnActivityDestroys {
+      runOnMain {
+        panelBackCallback?.remove()
+        panelBackCallback = null
+        attachedActivityHash = 0
+      }
+    }
+
+    OnDestroy {
+      unsubscribeCoordinator?.invoke()
+      unsubscribeCoordinator = null
+      runOnMain {
+        panelBackCallback?.remove()
+        panelBackCallback = null
+        attachedActivityHash = 0
+      }
+    }
+
+    Function("setModalBackOwnerCount") { count: Int ->
+      T3PredictiveBackCoordinator.setModalOwnerCount(count)
+    }
+
+    Function("setPanelBackOwnerCount") { count: Int ->
+      T3PredictiveBackCoordinator.setPanelOwnerCount(count)
+    }
+
     View(T3WorkspaceNavigationView::class) {
       Prop("tabs") { view: T3WorkspaceNavigationView, value: List<String> -> view.tabs = value }
       Prop("tabTitles") { view: T3WorkspaceNavigationView, value: Map<String, String> ->
@@ -272,18 +554,64 @@ class T3WorkspaceNavigationView(
     // React Native sizes this view to the rail. While the rail is open it spans the workspace,
     // and it only widens once the host has made room, so the surface is never clipped.
     var roomy by remember { mutableStateOf(false) }
+    var backProgress by remember { mutableStateOf<Float?>(null) }
+    var modalOwnerCount by remember { mutableStateOf(T3PredictiveBackCoordinator.modalOwnerCount) }
+    val reducedMotion = isAnimatorScaleDisabled(context)
+
+    DisposableEffect(Unit) {
+      val unsubscribe = T3PredictiveBackCoordinator.addListener {
+        modalOwnerCount = T3PredictiveBackCoordinator.modalOwnerCount
+      }
+      onDispose {
+        unsubscribe()
+        T3PredictiveBackCoordinator.setRailExpanded(false)
+      }
+    }
+
+    LaunchedEffect(expanded) {
+      T3PredictiveBackCoordinator.setRailExpanded(expanded)
+      if (!expanded) {
+        backProgress = null
+      }
+    }
+
     val progress by animateFloatAsState(
       targetValue = if (expanded && roomy) 1f else 0f,
       animationSpec = MaterialTheme.motionScheme.defaultSpatialSpec(),
     )
-    val overlay = expanded || progress != 0f
+    val overlay = expanded || progress != 0f || backProgress != null
     LaunchedEffect(overlay) { onOverlayChange(mapOf("overlay" to overlay)) }
-    // The activity handles Back before React Native, so an open rail closes first.
+
+    // Single-owner arbitration: modal -> expanded rail -> side panel -> screen stack.
+    // The rail callback is enabled only when expanded and no modal owns back.
+    val railOwnsBack = expanded && modalOwnerCount == 0
     val backDispatcher = (appContext.currentActivity as? ComponentActivity)?.onBackPressedDispatcher
-    DisposableEffect(backDispatcher, expanded) {
-      val callback = object : OnBackPressedCallback(expanded) {
+    DisposableEffect(backDispatcher, railOwnsBack) {
+      val callback = object : OnBackPressedCallback(railOwnsBack) {
+        override fun handleOnBackStarted(backEvent: BackEventCompat) {
+          T3PredictiveBackCoordinator.beginGesture()
+          backProgress = backEvent.progress.coerceIn(0f, 1f)
+          if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            performHapticFeedback(HapticFeedbackConstants.GESTURE_START)
+          }
+        }
+
+        override fun handleOnBackProgressed(backEvent: BackEventCompat) {
+          backProgress = backEvent.progress.coerceIn(0f, 1f)
+        }
+
+        override fun handleOnBackCancelled() {
+          T3PredictiveBackCoordinator.cancelGesture()
+          backProgress = null
+        }
+
         override fun handleOnBackPressed() {
+          T3PredictiveBackCoordinator.commitGesture()
+          backProgress = null
           expanded = false
+          if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            performHapticFeedback(HapticFeedbackConstants.GESTURE_END)
+          }
         }
       }
       backDispatcher?.addCallback(callback)
@@ -295,19 +623,46 @@ class T3WorkspaceNavigationView(
         roomy = with(density) { it.width.toDp() } >= EXPANDED_RAIL_WIDTH
       },
     ) {
-      val fraction = progress.coerceIn(0f, 1f)
+      val liveBack = backProgress
+      val baseFraction = if (reducedMotion) {
+        if (expanded && roomy) 1f else 0f
+      } else {
+        progress.coerceIn(0f, 1f)
+      }
+      val fraction = if (liveBack != null) {
+        if (reducedMotion) baseFraction else (1f - liveBack * 0.85f).coerceIn(0.15f, 1f)
+      } else {
+        baseFraction
+      }
+      val scrimAlpha = if (liveBack != null) {
+        (1f - liveBack * (if (reducedMotion) 0.45f else 0.72f)).coerceIn(0.15f, 1f)
+      } else {
+        fraction
+      }
+      val surfaceAlpha = if (liveBack != null && reducedMotion) {
+        (1f - liveBack * 0.2f).coerceIn(0.8f, 1f)
+      } else {
+        1f
+      }
       val railShape = RoundedCornerShape(topEnd = 16.dp * fraction, bottomEnd = 16.dp * fraction)
       if (fraction > 0f) {
         Scrim(
           contentDescription = "Close navigation rail",
           onClick = { expanded = false },
-          alpha = { fraction },
+          alpha = { scrimAlpha },
         )
       }
       Column(
         Modifier
           .fillMaxHeight()
-          .width(lerp(RAIL_WIDTH, EXPANDED_RAIL_WIDTH, progress.coerceAtLeast(0f)))
+          .width(
+            lerp(
+              RAIL_WIDTH,
+              EXPANDED_RAIL_WIDTH,
+              if (liveBack != null) fraction else if (reducedMotion) baseFraction else progress.coerceAtLeast(0f),
+            ),
+          )
+          .alpha(surfaceAlpha)
           .shadow(RAIL_SHADOW * fraction, railShape, clip = false)
           .background(Color(containerColor), railShape)
           .padding(top = safeAreaTop.dp, bottom = safeAreaBottom.dp + 12.dp)

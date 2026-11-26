@@ -18,9 +18,19 @@ import {
   type NativeStackTypeBag,
 } from "@react-navigation/native-stack";
 import { use, type ComponentProps } from "react";
+import Animated, {
+  Extrapolation,
+  interpolate,
+  useAnimatedStyle,
+  useReducedMotion,
+} from "react-native-reanimated";
 
 import { BottomSheetContext } from "../../components/ui/BottomSheetContext";
 import { RoutedFormSheetContext } from "../../components/ui/RoutedFormSheetContext";
+import {
+  useAndroidPredictiveBackProgress,
+  useSyncAndroidModalBackCount,
+} from "../../native/androidPredictiveBack";
 
 import {
   isPresentedRoute,
@@ -37,16 +47,81 @@ type Route = ViewProps["state"]["routes"][number];
 
 function WorkspaceStackView(props: ViewProps) {
   const renderColumns = use(WorkspaceColumnsRendererContext);
-  if (!renderColumns) return <NativeStackView {...props} />;
+  const reducedMotion = useReducedMotion();
 
   const isOverlay = (route: Route) => {
     const descriptor = props.descriptors[route.key] ?? props.describe(route, true);
     return isPresentedRoute(descriptor.options);
   };
-  const projection = projectStackPresentation(props.state, isOverlay);
-  const workspaceRoutes = projection.workspace;
+  const projection = renderColumns ? projectStackPresentation(props.state, isOverlay) : null;
+  const overlayCount = projection?.overlays.length ?? 0;
+  const workspaceRoutes = projection?.workspace ?? props.state.routes;
+  const canPopWorkspace = workspaceRoutes.length > 1;
+
+  // Report modal overlays to native single-owner arbitration so modals strictly beat
+  // the expanded Compose navigation rail and side panels.
+  useSyncAndroidModalBackCount(overlayCount);
+
+  // Subscribe to API 34-35 predictive back progress for whichever stack tier owns back
+  // (modal overlay when present, otherwise workspace screen stack). React Navigation /
+  // react-native-screens performs the single commit via RN back dispatch, so this layer
+  // drives interactive preview only and never triggers a second pop.
+  const modalPreview = useAndroidPredictiveBackProgress({
+    layer: "modal",
+    enabled: overlayCount > 0,
+  });
+  const stackPreview = useAndroidPredictiveBackProgress({
+    layer: "screen-stack",
+    enabled: overlayCount === 0 && canPopWorkspace,
+  });
+
+  const activeProgress = overlayCount > 0 ? modalPreview.progress : stackPreview.progress;
+  const activeEdge = overlayCount > 0 ? modalPreview.swipeEdge : stackPreview.swipeEdge;
+
+  const predictiveBackPreviewStyle = useAnimatedStyle(() => {
+    const p = activeProgress.get();
+    if (p <= 0.001) {
+      return {
+        opacity: 1,
+        borderRadius: 0,
+        transform: [{ translateX: 0 }, { scale: 1 }],
+      };
+    }
+    if (reducedMotion) {
+      return {
+        opacity: interpolate(p, [0, 1], [1, 0.86], Extrapolation.CLAMP),
+        borderRadius: 0,
+        transform: [{ translateX: 0 }, { scale: 1 }],
+      };
+    }
+    const direction = activeEdge.get() === 1 ? -1 : 1;
+    return {
+      opacity: interpolate(p, [0, 1], [1, 0.94], Extrapolation.CLAMP),
+      borderRadius: interpolate(p, [0, 0.15, 1], [0, 16, 24], Extrapolation.CLAMP),
+      overflow: "hidden" as const,
+      transform: [
+        { translateX: direction * interpolate(p, [0, 1], [0, 28], Extrapolation.CLAMP) },
+        { scale: interpolate(p, [0, 1], [1, 0.94], Extrapolation.CLAMP) },
+      ],
+    };
+  });
+
+  if (!renderColumns || !projection) {
+    return (
+      <Animated.View style={[{ flex: 1 }, predictiveBackPreviewStyle]}>
+        <NativeStackView {...props} />
+      </Animated.View>
+    );
+  }
+
   const visibleRoute = workspaceRoutes.at(-1);
-  if (!visibleRoute) return <NativeStackView {...props} />;
+  if (!visibleRoute) {
+    return (
+      <Animated.View style={[{ flex: 1 }, predictiveBackPreviewStyle]}>
+        <NativeStackView {...props} />
+      </Animated.View>
+    );
+  }
 
   const visibleDescriptor = props.descriptors[visibleRoute.key]!;
   // Home is the sidebar beside the pages, and under them the page shown when none is selected.
@@ -71,17 +146,19 @@ function WorkspaceStackView(props: ViewProps) {
   };
   const routes = [baseRoute, ...projection.overlays];
   return (
-    <NativeStackView
-      {...props}
-      presentationEnvelope
-      state={{
-        ...props.state,
-        routes,
-        index: routes.length - 1,
-        preloadedRoutes: props.state.preloadedRoutes.filter(isOverlay),
-      }}
-      descriptors={{ ...props.descriptors, [baseRoute.key]: baseDescriptor }}
-    />
+    <Animated.View style={[{ flex: 1 }, predictiveBackPreviewStyle]}>
+      <NativeStackView
+        {...props}
+        presentationEnvelope
+        state={{
+          ...props.state,
+          routes,
+          index: routes.length - 1,
+          preloadedRoutes: props.state.preloadedRoutes.filter(isOverlay),
+        }}
+        descriptors={{ ...props.descriptors, [baseRoute.key]: baseDescriptor }}
+      />
+    </Animated.View>
   );
 }
 
