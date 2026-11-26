@@ -100,6 +100,12 @@ import { terminalEnvironment } from "../state/terminal";
 import { useEnvironmentScope } from "../state/session";
 import { openTerminalLinkInPreview } from "./preview/openTerminalLinkInPreview";
 import { terminalInputWriter } from "./terminal/terminalInputWriter";
+import {
+  nextTerminalDrawerDoubleClickHeight,
+  resolveTerminalDrawerDragHeight,
+  type TerminalDrawerDetentKind,
+} from "./terminal/terminalDrawerDetents";
+import { prefersReducedMotion } from "~/lib/motion/springs";
 import { useAtomCommand } from "../state/use-atom-command";
 import { preventTerminalCloseShortcut } from "../lib/terminalCloseShortcut";
 import { observeResize } from "../lib/observeResize";
@@ -139,8 +145,6 @@ function resolveTerminalDrawerMaxHeight(input: DrawerLayout): number {
     Math.max(0, input.chatColumnHeight - (input.headerHeight ?? 0) - (input.composerHeight ?? 0)),
   );
 }
-
-const DRAG_HEIGHT_PROPERTY = "--terminal-drawer-drag-height";
 
 function clampDrawerHeight(height: number, maxHeight: number): number {
   const safeHeight = Number.isFinite(height) ? height : DEFAULT_THREAD_TERMINAL_HEIGHT;
@@ -1256,6 +1260,7 @@ interface ThreadTerminalDrawerProps {
   onActiveTerminalChange: (terminalId: string) => void;
   onCloseTerminal: (terminalId: string, threadRef?: ScopedThreadRef) => void;
   onHeightChange: (height: number) => void;
+  onCollapseDrawer?: () => void;
   onAddTerminalContext: (selection: TerminalContextSelection) => void;
   keybindings: ResolvedKeybindingsConfig;
   terminalLabelsById?: ReadonlyMap<string, string>;
@@ -1528,6 +1533,7 @@ export default function ThreadTerminalDrawer({
   onActiveTerminalChange,
   onCloseTerminal,
   onHeightChange,
+  onCollapseDrawer,
   onAddTerminalContext,
   keybindings,
   terminalLabelsById,
@@ -1544,17 +1550,36 @@ export default function ThreadTerminalDrawer({
     Schema.Boolean,
   );
   const drawerRef = useRef<HTMLElement | null>(null);
+  const resizeHudRef = useRef<HTMLDivElement | null>(null);
+  const resizeHudTextRef = useRef<HTMLSpanElement | null>(null);
+  const resizeHandleRef = useRef<HTMLDivElement | null>(null);
+  const snapSettleTimerRef = useRef<number | null>(null);
   const [drawerLayout, setDrawerLayout] = useState(() => readDrawerLayout(null));
   const [isResizing, setIsResizing] = useState(false);
   const maxDrawerHeight = resolveTerminalDrawerMaxHeight({ ...drawerLayout, composerHeight });
+  const referenceDrawerHeight =
+    drawerLayout.chatColumnHeight ?? drawerLayout.viewportHeight ?? maxDrawerHeight;
   const drawerHeight = clampDrawerHeight(height, maxDrawerHeight);
-  // A drag only writes the drawer's style; the store hears the height once, at
-  // pointerup. The custom property outranks the rendered height while it is set.
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Clears any pending spring-snap resize coalescing timer on unmount.
+  useEffect(
+    () => () => {
+      if (snapSettleTimerRef.current !== null) window.clearTimeout(snapSettleTimerRef.current);
+    },
+    [],
+  );
+  // A drag only writes directly to the drawer's height style and leaf HUD ref;
+  // the store hears the settled height once, at pointerup.
   const resizeStateRef = useRef<{
     pointerId: number;
     startY: number;
     startHeight: number;
     height: number;
+    shouldCollapse: boolean;
+    snappedDetent: TerminalDrawerDetentKind | null;
+    cellWidth: number;
+    cellHeight: number;
+    cellPadding: number;
+    paneWidth: number;
     drawer: HTMLElement | null;
   } | null>(null);
 
@@ -1729,33 +1754,100 @@ export default function ThreadTerminalDrawer({
     });
   };
 
+  const detentLabels: Record<TerminalDrawerDetentKind, string> = {
+    compact: gt("Compact"),
+    balanced: gt("Balanced"),
+    tall: gt("Tall"),
+  };
+  const releaseToCollapseLabel = gt("Release to collapse");
+
+  const updateResizeHud = (state: NonNullable<typeof resizeStateRef.current>) => {
+    const hud = resizeHudRef.current;
+    const textNode = resizeHudTextRef.current;
+    const handle = resizeHandleRef.current;
+    if (!hud || !textNode) return;
+    hud.setAttribute("data-visible", "true");
+    if (state.shouldCollapse && onCollapseDrawer) {
+      hud.setAttribute("data-collapsing", "true");
+      handle?.setAttribute("data-collapsing", "true");
+      textNode.textContent = releaseToCollapseLabel;
+      return;
+    }
+    hud.removeAttribute("data-collapsing");
+    handle?.removeAttribute("data-collapsing");
+    const cols = Math.max(
+      1,
+      Math.floor((state.paneWidth - state.cellPadding * 2) / state.cellWidth),
+    );
+    const rows = Math.max(1, Math.floor((state.height - state.cellPadding * 2) / state.cellHeight));
+    const baseText = `${cols} cols × ${rows} rows`;
+    textNode.textContent = state.snappedDetent
+      ? `${baseText} · ${detentLabels[state.snappedDetent]}`
+      : baseText;
+    if (state.snappedDetent) hud.setAttribute("data-snapped", state.snappedDetent);
+    else hud.removeAttribute("data-snapped");
+  };
+
   const handleResizePointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
     if (event.button !== 0) return;
     event.preventDefault();
     event.currentTarget.setPointerCapture(event.pointerId);
+    const drawer = event.currentTarget.parentElement;
+    const sampleMount = drawer?.querySelector<HTMLElement>("[data-terminal-cell-width]") ?? null;
+    const cellWidth = Number(sampleMount?.dataset.terminalCellWidth) || 7.8;
+    const cellHeight = Number(sampleMount?.dataset.terminalCellHeight) || 17;
+    const cellPadding = Number(sampleMount?.dataset.terminalCellPadding) || 4;
+    const paneWidth = sampleMount?.clientWidth || drawer?.clientWidth || 640;
+    if (snapSettleTimerRef.current !== null) {
+      window.clearTimeout(snapSettleTimerRef.current);
+      snapSettleTimerRef.current = null;
+    }
+    drawer?.removeAttribute("data-drawer-snapping");
+    drawer?.setAttribute("data-terminal-resizing", "true");
     setIsResizing(true);
-    resizeStateRef.current = {
+    const state = {
       pointerId: event.pointerId,
       startY: event.clientY,
       startHeight: drawerHeight,
       height: drawerHeight,
-      drawer: event.currentTarget.parentElement,
+      shouldCollapse: false,
+      snappedDetent: null as TerminalDrawerDetentKind | null,
+      cellWidth,
+      cellHeight,
+      cellPadding,
+      paneWidth,
+      drawer,
     };
+    resizeStateRef.current = state;
+    updateResizeHud(state);
   };
 
   const handleResizePointerMove = (event: ReactPointerEvent<HTMLDivElement>) => {
     const resizeState = resizeStateRef.current;
     if (!resizeState || resizeState.pointerId !== event.pointerId) return;
     event.preventDefault();
-    const clampedHeight = clampDrawerHeight(
-      resizeState.startHeight + (resizeState.startY - event.clientY),
-      maxDrawerHeight,
-    );
-    if (clampedHeight === resizeState.height) {
+    const rawHeight = resizeState.startHeight + (resizeState.startY - event.clientY);
+    const resolved = resolveTerminalDrawerDragHeight({
+      rawHeight,
+      minHeight: MIN_DRAWER_HEIGHT,
+      maxHeight: maxDrawerHeight,
+      referenceHeight: referenceDrawerHeight,
+      bypassSnap: event.altKey,
+    });
+    const changed =
+      resolved.height !== resizeState.height ||
+      resolved.shouldCollapse !== resizeState.shouldCollapse ||
+      resolved.snappedDetent !== resizeState.snappedDetent;
+    if (!changed) {
       return;
     }
-    resizeState.height = clampedHeight;
-    resizeState.drawer?.style.setProperty(DRAG_HEIGHT_PROPERTY, `${clampedHeight}px`);
+    resizeState.height = resolved.height;
+    resizeState.shouldCollapse = resolved.shouldCollapse;
+    resizeState.snappedDetent = resolved.snappedDetent;
+    if (resizeState.drawer) {
+      resizeState.drawer.style.height = `${resolved.height}px`;
+    }
+    updateResizeHud(resizeState);
   };
 
   const handleResizePointerEnd = (event: ReactPointerEvent<HTMLDivElement>) => {
@@ -1766,11 +1858,49 @@ export default function ThreadTerminalDrawer({
     if (event.currentTarget.hasPointerCapture(event.pointerId)) {
       event.currentTarget.releasePointerCapture(event.pointerId);
     }
-    resizeState.drawer?.style.removeProperty(DRAG_HEIGHT_PROPERTY);
+    resizeHudRef.current?.removeAttribute("data-visible");
+    resizeHudRef.current?.removeAttribute("data-collapsing");
+    resizeHudRef.current?.removeAttribute("data-snapped");
+    resizeHandleRef.current?.removeAttribute("data-collapsing");
+    resizeState.drawer?.removeAttribute("data-terminal-resizing");
+    if (resizeState.shouldCollapse && onCollapseDrawer) {
+      if (resizeState.drawer) resizeState.drawer.style.height = `${drawerHeight}px`;
+      window.dispatchEvent(new Event("t3-terminal-resize-settled"));
+      onCollapseDrawer();
+      return;
+    }
+    if (resizeState.drawer) {
+      resizeState.drawer.style.height = `${resizeState.height}px`;
+    }
+    window.dispatchEvent(new Event("t3-terminal-resize-settled"));
     // A drag that ends where it started keeps the stored preference, which may
     // be taller than the capped height the drag started from.
     if (resizeState.height === resizeState.startHeight || resizeState.height === height) return;
     onHeightChange(resizeState.height);
+  };
+
+  const handleResizeDoubleClick = () => {
+    if (isPanel) return;
+    const nextHeight = nextTerminalDrawerDoubleClickHeight({
+      currentHeight: drawerHeight,
+      minHeight: MIN_DRAWER_HEIGHT,
+      maxHeight: maxDrawerHeight,
+      referenceHeight: referenceDrawerHeight,
+    });
+    if (nextHeight === drawerHeight) return;
+    const drawer = drawerRef.current;
+    if (drawer && !prefersReducedMotion()) {
+      drawer.setAttribute("data-terminal-resizing", "true");
+      drawer.setAttribute("data-drawer-snapping", "true");
+      if (snapSettleTimerRef.current !== null) window.clearTimeout(snapSettleTimerRef.current);
+      snapSettleTimerRef.current = window.setTimeout(() => {
+        snapSettleTimerRef.current = null;
+        drawer.removeAttribute("data-drawer-snapping");
+        drawer.removeAttribute("data-terminal-resizing");
+        window.dispatchEvent(new Event("t3-terminal-resize-settled"));
+      }, 240);
+    }
+    onHeightChange(nextHeight);
   };
 
   const drawerLayoutRef = useRef(drawerLayout);
@@ -1794,7 +1924,7 @@ export default function ThreadTerminalDrawer({
         );
         if (liveHeight !== resizeState.height) {
           resizeState.height = liveHeight;
-          resizeState.drawer?.style.setProperty(DRAG_HEIGHT_PROPERTY, `${liveHeight}px`);
+          if (resizeState.drawer) resizeState.drawer.style.height = `${liveHeight}px`;
         }
       }
       if (heightBudgetChanged) setDrawerLayout(layout);
@@ -1824,20 +1954,35 @@ export default function ThreadTerminalDrawer({
   }, [isPanel, visible]);
 
   const resizeHandle = isPanel ? null : (
-    <div
-      data-resizing={isResizing || undefined}
-      className="group/resize absolute inset-x-0 top-0 z-20 h-1.5 cursor-row-resize touch-none any-pointer-coarse:h-4"
-      onPointerDown={handleResizePointerDown}
-      onPointerMove={handleResizePointerMove}
-      onPointerUp={handleResizePointerEnd}
-      onPointerCancel={handleResizePointerEnd}
-      onLostPointerCapture={handleResizePointerEnd}
-    >
-      <span
+    <>
+      <div
+        ref={resizeHandleRef}
+        data-resizing={isResizing || undefined}
+        className="group/resize absolute inset-x-0 top-0 z-20 flex h-2 cursor-row-resize touch-none items-start justify-center any-pointer-coarse:h-4"
+        onPointerDown={handleResizePointerDown}
+        onPointerMove={handleResizePointerMove}
+        onPointerUp={handleResizePointerEnd}
+        onPointerCancel={handleResizePointerEnd}
+        onLostPointerCapture={handleResizePointerEnd}
+        onDoubleClick={handleResizeDoubleClick}
+      >
+        <span
+          aria-hidden="true"
+          className="pointer-events-none absolute inset-x-0 top-0 h-0.5 bg-transparent transition-colors duration-150 ease-out group-hover/resize:bg-primary/50 group-data-resizing/resize:bg-primary/80 group-data-[collapsing=true]/resize:bg-destructive motion-reduce:transition-none"
+        />
+        <span
+          aria-hidden="true"
+          className="pointer-events-none mt-0.5 h-1 w-8 rounded-full bg-border/75 opacity-70 transition-[width,opacity,background-color] duration-150 ease-out group-hover/resize:w-10 group-hover/resize:bg-primary/70 group-hover/resize:opacity-100 group-data-resizing/resize:w-12 group-data-resizing/resize:bg-primary group-data-resizing/resize:opacity-100 group-data-[collapsing=true]/resize:bg-destructive motion-reduce:transition-none"
+        />
+      </div>
+      <div
+        ref={resizeHudRef}
         aria-hidden="true"
-        className="pointer-events-none absolute inset-x-0 top-0 h-0.5 bg-transparent transition-colors duration-150 ease-out group-hover/resize:bg-primary/50 group-data-resizing/resize:bg-primary/80 motion-reduce:transition-none"
-      />
-    </div>
+        className="terminal-resize-hud surface-optical-chrome surface-elevated-rim pointer-events-none absolute top-3 left-1/2 z-30 -translate-x-1/2 rounded-full px-2.5 py-0.5 font-mono text-2xs font-medium text-foreground tabular-nums"
+      >
+        <span ref={resizeHudTextRef} />
+      </div>
+    </>
   );
 
   if (normalizedTerminalIds.length === 0) {
@@ -1848,12 +1993,12 @@ export default function ThreadTerminalDrawer({
         data-thread-terminal-drawer
         data-terminal-owner={isPanel ? "right-panel" : "drawer"}
         className={cn(
-          "relative flex min-w-0 flex-col overflow-hidden bg-background",
+          "terminal-drawer-shell relative flex min-w-0 flex-col overflow-hidden bg-background",
           isPanel
             ? "h-full flex-1"
             : "t3-terminal-drawer-enter z-45 shrink-0 border-t border-border/80",
         )}
-        style={isPanel ? undefined : { height: `var(${DRAG_HEIGHT_PROPERTY}, ${drawerHeight}px)` }}
+        style={isPanel ? undefined : { height: `${drawerHeight}px` }}
       >
         {resizeHandle}
         <Empty size="compact" className="min-h-0">
@@ -1887,12 +2032,12 @@ export default function ThreadTerminalDrawer({
       data-thread-terminal-drawer
       data-terminal-owner={isPanel ? "right-panel" : "drawer"}
       className={cn(
-        "relative flex min-w-0 flex-col overflow-hidden bg-background",
+        "terminal-drawer-shell relative flex min-w-0 flex-col overflow-hidden bg-background",
         isPanel
           ? "h-full flex-1"
           : "t3-terminal-drawer-enter z-45 shrink-0 border-t border-border/80",
       )}
-      style={isPanel ? undefined : { height: `var(${DRAG_HEIGHT_PROPERTY}, ${drawerHeight}px)` }}
+      style={isPanel ? undefined : { height: `${drawerHeight}px` }}
     >
       {resizeHandle}
 

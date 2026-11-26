@@ -622,6 +622,9 @@ export class GhosttyTerminalSurface {
   private composing = false;
   private focused = false;
   private resizeNotified = false;
+  private lastNotifiedCols = -1;
+  private lastNotifiedRows = -1;
+  private pendingCoalescedResize = false;
   private canvasConfigured = false;
   private canvasDevicePixelRatio = 0;
   private pendingCanvasConfiguration: {
@@ -683,6 +686,7 @@ export class GhosttyTerminalSurface {
     this.fontFamily = fontFamily;
     this.requestedFontFamily = options.font?.family;
     this.fontSize = terminalFontSize(options.font?.size);
+    this.syncMountCellMetrics();
     this.installEvents();
     // The input is mounted before the core loads, so focus can land before the listeners.
     this.focused = document.activeElement === input;
@@ -836,8 +840,16 @@ export class GhosttyTerminalSurface {
     this.applyFontMetrics();
   }
 
+  private syncMountCellMetrics(): void {
+    if (!this.mount.dataset) return;
+    this.mount.dataset.terminalCellWidth = String(this.metrics.width);
+    this.mount.dataset.terminalCellHeight = String(this.metrics.height);
+    this.mount.dataset.terminalCellPadding = String(CONTENT_PADDING);
+  }
+
   private applyFontMetrics(): void {
     this.metrics = measureGhosttyCell(this.context, this.fontSize, this.fontFamily);
+    this.syncMountCellMetrics();
     this.core.resize(this.cols, this.rows, this.metrics.width, this.metrics.height);
     this.inputLeft = -1;
     this.inputTop = -1;
@@ -877,6 +889,8 @@ export class GhosttyTerminalSurface {
 
   resendSize(): void {
     this.resizeNotified = false;
+    this.lastNotifiedCols = -1;
+    this.lastNotifiedRows = -1;
     this.fit();
   }
 
@@ -919,7 +933,8 @@ export class GhosttyTerminalSurface {
     if (
       grid.cols !== this.measuredCols ||
       grid.rows !== this.measuredRows ||
-      !this.resizeNotified
+      !this.resizeNotified ||
+      (this.pendingCoalescedResize && !this.isResizeCoalescing())
     ) {
       this.measuredCols = grid.cols;
       this.measuredRows = grid.rows;
@@ -956,6 +971,27 @@ export class GhosttyTerminalSurface {
     return true;
   }
 
+  private isResizeCoalescing(): boolean {
+    return (
+      typeof this.mount.closest === "function" &&
+      this.mount.closest("[data-terminal-resizing='true']") !== null
+    );
+  }
+
+  private emitResizeIfChanged(): void {
+    if (this.disposed) return;
+    if (
+      this.lastNotifiedCols === this.measuredCols &&
+      this.lastNotifiedRows === this.measuredRows &&
+      this.lastNotifiedCols >= 0
+    ) {
+      return;
+    }
+    this.lastNotifiedCols = this.measuredCols;
+    this.lastNotifiedRows = this.measuredRows;
+    this.options.onResize(this.measuredCols, this.measuredRows);
+  }
+
   /**
    * The local grid reflows immediately, but the PTY only hears about settled
    * dimensions: notifying on every drag step makes the shell reprint its
@@ -963,21 +999,57 @@ export class GhosttyTerminalSurface {
    */
   private notifyResize(): void {
     this.resizeNotified = true;
+    // Preserve the very first initial fit() notification; coalesce subsequent drags/springs.
+    if (this.lastNotifiedCols >= 0 && this.isResizeCoalescing()) {
+      this.pendingCoalescedResize = true;
+      if (this.resizeNotifyTimer !== null) {
+        window.clearTimeout(this.resizeNotifyTimer);
+        this.resizeNotifyTimer = null;
+      }
+      return;
+    }
+    this.pendingCoalescedResize = false;
+    if (
+      this.lastNotifiedCols === this.measuredCols &&
+      this.lastNotifiedRows === this.measuredRows &&
+      this.lastNotifiedCols >= 0
+    ) {
+      if (this.resizeNotifyTimer !== null) {
+        window.clearTimeout(this.resizeNotifyTimer);
+        this.resizeNotifyTimer = null;
+      }
+      return;
+    }
     if (this.resizeNotifyTimer !== null) window.clearTimeout(this.resizeNotifyTimer);
     this.resizeNotifyTimer = window.setTimeout(() => {
       this.resizeNotifyTimer = null;
-      if (!this.disposed) this.options.onResize(this.measuredCols, this.measuredRows);
+      this.emitResizeIfChanged();
     }, 150);
   }
 
   // Flush on release so immediate typing reaches a shell with the settled width.
   private readonly onWindowPointerRelease = () => {
-    if (this.disposed || this.resizeNotifyTimer === null) return;
+    if (this.disposed || (this.resizeNotifyTimer === null && !this.pendingCoalescedResize)) return;
+    if (this.isResizeCoalescing()) return;
+    this.pendingCoalescedResize = false;
     this.fit();
-    if (this.resizeNotifyTimer === null) return;
-    window.clearTimeout(this.resizeNotifyTimer);
-    this.resizeNotifyTimer = null;
-    this.options.onResize(this.measuredCols, this.measuredRows);
+    if (this.resizeNotifyTimer !== null) {
+      window.clearTimeout(this.resizeNotifyTimer);
+      this.resizeNotifyTimer = null;
+    }
+    this.emitResizeIfChanged();
+  };
+
+  private readonly onResizeSettled = () => {
+    if (this.disposed || this.isResizeCoalescing()) return;
+    if (!this.pendingCoalescedResize && this.resizeNotifyTimer === null) return;
+    this.pendingCoalescedResize = false;
+    this.fit();
+    if (this.resizeNotifyTimer !== null) {
+      window.clearTimeout(this.resizeNotifyTimer);
+      this.resizeNotifyTimer = null;
+    }
+    this.emitResizeIfChanged();
   };
 
   focus(): void {
@@ -1083,7 +1155,14 @@ export class GhosttyTerminalSurface {
     if (this.resizeNotifyTimer !== null) {
       window.clearTimeout(this.resizeNotifyTimer);
       this.resizeNotifyTimer = null;
-      this.options.onResize(this.measuredCols, this.measuredRows);
+      if (
+        this.lastNotifiedCols !== this.measuredCols ||
+        this.lastNotifiedRows !== this.measuredRows
+      ) {
+        this.lastNotifiedCols = this.measuredCols;
+        this.lastNotifiedRows = this.measuredRows;
+        this.options.onResize(this.measuredCols, this.measuredRows);
+      }
     }
     this.cancelRender();
     if (this.compositionSuppressionTimer !== null) {
@@ -1904,6 +1983,7 @@ export class GhosttyTerminalSurface {
     this.scrollbar.addEventListener("keydown", this.onScrollbarKeyDown);
     window.addEventListener("pointerup", this.onWindowPointerRelease);
     window.addEventListener("pointercancel", this.onWindowPointerRelease);
+    window.addEventListener("t3-terminal-resize-settled", this.onResizeSettled);
   }
 
   private removeEvents(): void {
@@ -1934,6 +2014,7 @@ export class GhosttyTerminalSurface {
     this.scrollbar.removeEventListener("keydown", this.onScrollbarKeyDown);
     window.removeEventListener("pointerup", this.onWindowPointerRelease);
     window.removeEventListener("pointercancel", this.onWindowPointerRelease);
+    window.removeEventListener("t3-terminal-resize-settled", this.onResizeSettled);
   }
 
   private scrollViewport(deltaRows: number): void {

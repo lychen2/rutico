@@ -119,6 +119,7 @@ export const PersistentThreadTerminalDrawer = memo(function PersistentThreadTerm
   const serverOrderedTerminalIds = drawerTerminalSessions.map(
     (session) => session.target.terminalId,
   );
+  const storeSetTerminalOpen = useTerminalUiStateStore((state) => state.setTerminalOpen);
   const storeSetTerminalHeight = useTerminalUiStateStore((state) => state.setTerminalHeight);
   const storeSplitTerminal = useTerminalUiStateStore((state) => state.splitTerminal);
   const storeSplitTerminalVertical = useTerminalUiStateStore(
@@ -234,6 +235,7 @@ export const PersistentThreadTerminalDrawer = memo(function PersistentThreadTerm
           onActiveTerminalChange={activateTerminal}
           onCloseTerminal={closeTerminal}
           onHeightChange={setTerminalHeight}
+          onCollapseDrawer={() => storeSetTerminalOpen(threadRef, false)}
           onAddTerminalContext={handleAddTerminalContext}
           terminalLabelsById={terminalLabelsById}
           terminalLaunchLocationsById={terminalLaunchLocationsById}

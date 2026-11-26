@@ -346,6 +346,43 @@ describe("GhosttyTerminalSurface visibility", () => {
     expect(pasteFromClipboard).toHaveBeenCalledOnce();
   });
 
+  it("coalesces PTY onResize notifications while resizing and deduplicates identical integer cols x rows", async () => {
+    const harness = createHarness();
+    const onResize = vi.fn();
+    let resizing = false;
+    Object.assign(harness.mount, {
+      closest: (selector: string) =>
+        resizing && selector === "[data-terminal-resizing='true']" ? harness.mount : null,
+    });
+    const surface = await harness.create({ onResize });
+
+    vi.advanceTimersByTime(200);
+    expect(onResize).toHaveBeenCalledTimes(1);
+    const [initialCols, initialRows] = onResize.mock.calls[0]!;
+
+    // Mid-drag pixel changes stay local without flooding PTY onResize.
+    resizing = true;
+    harness.mount.clientWidth = 248;
+    harness.mount.clientHeight = 160;
+    harness.resize();
+    vi.advanceTimersByTime(300);
+    expect(onResize).toHaveBeenCalledTimes(1);
+
+    // Settling flushes exactly one PTY notification for the final integer grid.
+    resizing = false;
+    window.dispatchEvent(new Event("t3-terminal-resize-settled"));
+    expect(onResize).toHaveBeenCalledTimes(2);
+    const [settledCols, settledRows] = onResize.mock.calls[1]!;
+    expect(settledCols).toBeGreaterThan(initialCols);
+    expect(settledRows).toBeGreaterThan(initialRows);
+
+    // Sub-cell jitter keeping the same integer cols x rows is deduplicated.
+    harness.mount.clientWidth = 249;
+    surface.fit();
+    vi.advanceTimersByTime(200);
+    expect(onResize).toHaveBeenCalledTimes(2);
+  });
+
   it("leaves modified history keys with alternate-screen applications", async () => {
     vi.stubGlobal("navigator", { platform: "Linux x86_64" });
     const harness = createHarness();

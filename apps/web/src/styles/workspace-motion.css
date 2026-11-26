@@ -668,3 +668,42 @@
   cursor: grabbing;
   user-select: none;
 }
+
+/* --------------------------------------------------------------------------
+   D22 / C072: Terminal Drawer Spring Snap & Live Cols×Rows Resize HUD
+   -------------------------------------------------------------------------- */
+
+.terminal-drawer-shell[data-drawer-snapping="true"] {
+  transition: height 220ms var(--spring-snappy);
+}
+
+.terminal-resize-hud {
+  opacity: 0;
+  transform: translate3d(0, -4px, 0) scale(0.96);
+  transition:
+    opacity 120ms ease-out,
+    transform 160ms var(--spring-snappy),
+    border-color 120ms ease-out,
+    color 120ms ease-out;
+}
+
+.terminal-resize-hud[data-visible="true"] {
+  opacity: 1;
+  transform: translate3d(0, 0, 0) scale(1);
+}
+
+.terminal-resize-hud[data-snapped] {
+  border-color: color-mix(in oklch, var(--primary) 55%, var(--border));
+}
+
+.terminal-resize-hud[data-collapsing="true"] {
+  border-color: color-mix(in oklch, var(--destructive) 65%, var(--border));
+  color: var(--destructive);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .terminal-drawer-shell[data-drawer-snapping="true"],
+  .terminal-resize-hud {
+    transition: none;
+  }
+}
