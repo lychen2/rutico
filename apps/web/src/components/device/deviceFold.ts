@@ -83,3 +83,52 @@ export const setAndroidFold = (
   posture: AndroidFoldPosture,
   signal?: AbortSignal,
 ) => foldRequest(access, deviceId, posture, signal);
+
+export const ANDROID_FOLD_TABLETOP_ANGLE = 90;
+
+/** Formats a hinge angle in degrees (`0°`–`180°`) for compact telemetry badges. */
+export function formatAndroidFoldAngle(angle: number | null): string {
+  if (angle === null || !Number.isFinite(angle)) return "--";
+  const clamped = Math.max(0, Math.min(180, Math.round(angle)));
+  return `${clamped}°`;
+}
+
+/** Builds a copyable Android / iOS Accessibility locator string for pasting into T3 Chat. */
+export function formatDeviceAxLocator(
+  element: {
+    readonly id: string;
+    readonly role: string;
+    readonly label: string;
+    readonly x: number;
+    readonly y: number;
+    readonly width: number;
+    readonly height: number;
+  },
+  screen: { readonly width: number; readonly height: number } | null,
+): {
+  readonly boundsLabel: string;
+  readonly summary: string;
+  readonly clipboardText: string;
+} {
+  const sw = screen?.width ?? 100;
+  const sh = screen?.height ?? 100;
+  const pxX = Math.round(element.x * sw);
+  const pxY = Math.round(element.y * sh);
+  const pxW = Math.round(element.width * sw);
+  const pxH = Math.round(element.height * sh);
+  const unit = screen ? "px" : "%";
+  const boundsLabel = `${pxX},${pxY} · ${pxW}×${pxH}${unit}`;
+  const parts = [element.role || "view", element.label || element.id].filter(
+    (part) => part.length > 0,
+  );
+  const summary = `${parts.join(" · ")} · ${boundsLabel}`;
+  const clipboardText = [
+    element.role ? `role=${element.role}` : null,
+    element.label ? `label=${JSON.stringify(element.label)}` : null,
+    element.id ? `id=${element.id}` : null,
+    `bounds=[${pxX},${pxY},${pxW}x${pxH}${unit}]`,
+  ]
+    .filter(Boolean)
+    .join(" ");
+  return { boundsLabel, summary, clipboardText };
+}

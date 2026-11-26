@@ -88,6 +88,8 @@ export function DeviceToolsPanel(props: {
   readonly access: DeviceHubAccess | null;
   readonly axOverlay: boolean;
   readonly onAxOverlayChange: (enabled: boolean) => void;
+  readonly axInspect?: boolean;
+  readonly onAxInspectChange?: (enabled: boolean) => void;
   readonly onClose: () => void;
   readonly className?: string;
 }) {
@@ -313,6 +315,17 @@ export function DeviceToolsPanel(props: {
               return Promise.resolve();
             }}
           />
+          {props.axOverlay && props.onAxInspectChange ? (
+            <SwitchRow
+              label={gt("Inspect element frames")}
+              checked={props.axInspect ?? false}
+              disabled={props.access === null}
+              onChange={(value) => {
+                props.onAxInspectChange?.(value);
+                return Promise.resolve();
+              }}
+            />
+          ) : null}
         </Section>
 
         <LocationSection

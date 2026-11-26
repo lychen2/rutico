@@ -551,3 +551,46 @@
     transition: none;
   }
 }
+
+/* --------------------------------------------------------------------------
+   D21 / C069: Android Foldable Hinge Telemetry & Settle Pulse
+   -------------------------------------------------------------------------- */
+
+@keyframes device-fold-pending-ring {
+  0%,
+  100% {
+    border-color: color-mix(in oklch, var(--primary) 35%, var(--border));
+    box-shadow: 0 0 0 1px color-mix(in oklch, var(--primary) 12%, transparent);
+  }
+  50% {
+    border-color: color-mix(in oklch, var(--primary) 78%, var(--border));
+    box-shadow: 0 0 0 2px color-mix(in oklch, var(--primary) 22%, transparent);
+  }
+}
+
+@keyframes device-fold-settled-ring {
+  0% {
+    border-color: color-mix(in oklch, var(--success) 75%, var(--border));
+    box-shadow: 0 0 0 2px color-mix(in oklch, var(--success) 24%, transparent);
+  }
+  100% {
+    border-color: var(--border);
+    box-shadow: 0 0 0 0 transparent;
+  }
+}
+
+.device-fold-pending {
+  animation: device-fold-pending-ring 1100ms ease-in-out infinite;
+  animation-play-state: var(--visible-animation-state, running);
+}
+
+.device-fold-settled {
+  animation: device-fold-settled-ring 650ms ease-out both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .device-fold-pending,
+  .device-fold-settled {
+    animation: none;
+  }
+}

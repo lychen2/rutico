@@ -32,6 +32,7 @@ export function DeviceWorkspace(props: {
   const gt = useGT();
   const [toolsOpen, setToolsOpen] = useState(false);
   const [axOverlay, setAxOverlay] = useState(false);
+  const [axInspect, setAxInspect] = useState(false);
   const [screenshotPending, setScreenshotPending] = useState(false);
   const [screenshotConfirmed, setScreenshotConfirmed] = useState(false);
   const [shutterSequence, setShutterSequence] = useState(0);
@@ -113,6 +114,7 @@ export function DeviceWorkspace(props: {
             visible={props.visible}
             serveSimOnly={props.hostKind === "simlock"}
             axOverlay={axOverlay}
+            axInspect={axOverlay && axInspect}
             allowPhoneView
             renderControls={(view) => (
               <DeviceControlsRail
@@ -148,7 +150,12 @@ export function DeviceWorkspace(props: {
           hostDiagnostics={props.hostDiagnostics}
           access={access}
           axOverlay={axOverlay}
-          onAxOverlayChange={setAxOverlay}
+          onAxOverlayChange={(enabled) => {
+            setAxOverlay(enabled);
+            if (!enabled) setAxInspect(false);
+          }}
+          axInspect={axInspect}
+          onAxInspectChange={setAxInspect}
           onClose={() => setToolsOpen(false)}
           className="absolute inset-y-0 right-0 z-10 w-full max-w-72 border-l shadow-lg @[700px]:static @[700px]:w-72 @[700px]:shrink-0 @[700px]:shadow-none"
         />

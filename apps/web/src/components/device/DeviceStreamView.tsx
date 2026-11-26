@@ -6,8 +6,10 @@ import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 
 import { cn } from "~/lib/utils";
 import { Button } from "~/components/ui/button";
+import { writeTextToClipboard } from "~/hooks/useCopyToClipboard";
 import { renewDeviceHubAccess, useDeviceHubAccess } from "~/state/device";
 import { resolveDeviceShape } from "@t3tools/client-runtime/device/shape-profile";
+import { formatDeviceAxLocator } from "./deviceFold";
 import { deviceKeyboard, deviceModel } from "./deviceModels";
 import { fitDeviceFrame } from "./deviceFrameLayout";
 import { DeviceDuoViewport } from "./DeviceDuoViewport";
@@ -92,6 +94,7 @@ export function DeviceStreamView(props: {
   readonly allowPhoneView?: boolean;
   readonly renderControls?: (view: DeviceViewControls) => ReactNode;
   readonly axOverlay?: boolean;
+  readonly axInspect?: boolean;
   /** Lets a parent read this view's own stream state, such as its screen size. */
   readonly viewId?: string;
   /** The host serves only serve-sim's stream and input socket (Simlock). */
@@ -102,6 +105,17 @@ export function DeviceStreamView(props: {
   const gt = useGT();
   const [presentation, setPresentation] = useState<"phone" | "flat">("phone");
   const [keyboardAttached, setKeyboardAttached] = useState(false);
+  const [hoveredAxId, setHoveredAxId] = useState<string | null>(null);
+  const [copiedAxId, setCopiedAxId] = useState<string | null>(null);
+  const copiedAxTimerRef = useRef<number | null>(null);
+
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- clears the accessibility locator copied confirmation timer on unmount
+  useEffect(
+    () => () => {
+      if (copiedAxTimerRef.current !== null) window.clearTimeout(copiedAxTimerRef.current);
+    },
+    [],
+  );
   const cancelPhoneInputRef = useRef<(() => void) | null>(null);
   const cancelPhoneInput = () => cancelPhoneInputRef.current?.();
   const resetViewRef = useRef<(() => void) | null>(null);
@@ -388,25 +402,91 @@ export function DeviceStreamView(props: {
             />
           ) : null}
           {axElements.length > 0 ? (
-            <div className="pointer-events-none absolute inset-0" aria-hidden>
-              {axElements.map((element) => (
-                <div
-                  key={element.id}
-                  className="absolute border border-info/80 bg-info/10"
-                  style={{
-                    left: `${element.x * 100}%`,
-                    top: `${element.y * 100}%`,
-                    width: `${element.width * 100}%`,
-                    height: `${element.height * 100}%`,
-                  }}
-                >
-                  {element.label ? (
-                    <span className="absolute -top-3.5 left-0 max-w-full truncate rounded-sm bg-info px-1 text-3xs leading-3.5 text-white">
-                      {element.label}
-                    </span>
-                  ) : null}
-                </div>
-              ))}
+            <div
+              data-slot="device-ax-overlay"
+              data-inspecting={props.axInspect ? "true" : undefined}
+              className={cn(
+                "absolute inset-0",
+                props.axInspect ? "pointer-events-auto z-20" : "pointer-events-none",
+              )}
+              aria-hidden={!props.axInspect}
+              onPointerLeave={() => setHoveredAxId(null)}
+            >
+              {axElements.map((element) => {
+                const isInspect = props.axInspect === true;
+                const isHovered = isInspect && hoveredAxId === element.id;
+                const isDimmed = isInspect && hoveredAxId !== null && hoveredAxId !== element.id;
+                const isCopied = isInspect && copiedAxId === element.id;
+                const locator =
+                  isHovered || isCopied ? formatDeviceAxLocator(element, screen) : null;
+                return (
+                  <div
+                    key={element.id}
+                    role={isInspect ? "button" : undefined}
+                    tabIndex={isInspect ? 0 : undefined}
+                    aria-label={
+                      isInspect
+                        ? gt("Copy locator for {label}", {
+                            label: element.label || element.role || element.id,
+                          })
+                        : undefined
+                    }
+                    className={cn(
+                      "absolute border transition-[opacity,border-color,background-color] duration-120 ease-out motion-reduce:transition-none",
+                      isInspect ? "cursor-crosshair" : "pointer-events-none",
+                      isHovered
+                        ? "z-20 border-primary bg-primary/15 ring-1 ring-inset ring-primary/60"
+                        : "border-info/80 bg-info/10",
+                      isDimmed && "opacity-25",
+                    )}
+                    style={{
+                      left: `${element.x * 100}%`,
+                      top: `${element.y * 100}%`,
+                      width: `${element.width * 100}%`,
+                      height: `${element.height * 100}%`,
+                    }}
+                    onPointerEnter={isInspect ? () => setHoveredAxId(element.id) : undefined}
+                    onPointerDown={
+                      isInspect
+                        ? (event) => {
+                            event.stopPropagation();
+                          }
+                        : undefined
+                    }
+                    onClick={
+                      isInspect
+                        ? (event) => {
+                            event.stopPropagation();
+                            const text = formatDeviceAxLocator(element, screen).clipboardText;
+                            void writeTextToClipboard(text).then(
+                              () => {
+                                setCopiedAxId(element.id);
+                                if (copiedAxTimerRef.current !== null) {
+                                  window.clearTimeout(copiedAxTimerRef.current);
+                                }
+                                copiedAxTimerRef.current = window.setTimeout(() => {
+                                  setCopiedAxId(null);
+                                  copiedAxTimerRef.current = null;
+                                }, 1000);
+                              },
+                              () => undefined,
+                            );
+                          }
+                        : undefined
+                    }
+                  >
+                    {locator ? (
+                      <span className="surface-optical-chrome surface-elevated-rim pointer-events-none absolute -top-6 left-0 z-30 max-w-64 truncate rounded-md px-1.5 py-0.5 font-mono text-3xs tabular-nums text-foreground">
+                        {isCopied ? gt("Copied locator") : locator.summary}
+                      </span>
+                    ) : element.label ? (
+                      <span className="absolute -top-3.5 left-0 max-w-full truncate rounded-sm bg-info px-1 text-3xs leading-3.5 text-white">
+                        {element.label}
+                      </span>
+                    ) : null}
+                  </div>
+                );
+              })}
             </div>
           ) : null}
         </div>
