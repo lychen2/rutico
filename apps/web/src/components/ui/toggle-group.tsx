@@ -13,16 +13,104 @@ const ToggleGroupContext = React.createContext<VariantProps<typeof toggleVariant
   variant: "default",
 });
 
+// Enforced inline so unstyled mounts never intercept clicks or shift segment layout.
+const CLIP_LAYER_STYLE: React.CSSProperties = {
+  pointerEvents: "none",
+  position: "absolute",
+  inset: 0,
+};
+
+const STRIPPED_MIRROR_ATTRIBUTES = [
+  "id",
+  "tabindex",
+  "role",
+  "name",
+  "for",
+  "aria-controls",
+  "aria-labelledby",
+  "aria-describedby",
+] as const;
+
+const INTERACTIVE_MIRROR_TAGS = new Set(["button", "a", "input", "select", "textarea"]);
+
+/**
+ * Mirrors child nodes without duplicating light-DOM text nodes: contiguous
+ * non-whitespace text is rendered via `[data-slot="toggle-clip-text"]::after`
+ * (`content: attr(data-clip-text)`), preventing duplicate `getByText` /
+ * `textContent` / find-in-page matches while preserving pixel-identical clipping.
+ */
+function appendVisualOnlyNodes(sourceParent: Node, targetParent: Element, doc: Document): void {
+  let pendingText = "";
+
+  const flushPendingText = () => {
+    if (pendingText.length === 0) return;
+    const text = pendingText;
+    pendingText = "";
+    if (!/\S/.test(text)) {
+      targetParent.append(doc.createTextNode(text));
+      return;
+    }
+    const textHost = doc.createElement("span");
+    textHost.setAttribute("aria-hidden", "true");
+    textHost.dataset.slot = "toggle-clip-text";
+    textHost.dataset.clipText = text;
+    targetParent.append(textHost);
+  };
+
+  for (const child of Array.from(sourceParent.childNodes)) {
+    if (child.nodeType === Node.TEXT_NODE) {
+      pendingText += child.nodeValue ?? "";
+      continue;
+    }
+    flushPendingText();
+    if (!(child instanceof Element)) continue;
+
+    if (child.namespaceURI === "http://www.w3.org/2000/svg") {
+      const clonedSvg = child.cloneNode(true);
+      if (!(clonedSvg instanceof Element)) continue;
+      for (const meta of clonedSvg.querySelectorAll("title, desc")) {
+        meta.remove();
+      }
+      for (const el of [clonedSvg, ...clonedSvg.querySelectorAll("*")]) {
+        for (const attr of STRIPPED_MIRROR_ATTRIBUTES) {
+          el.removeAttribute(attr);
+        }
+        el.setAttribute("aria-hidden", "true");
+      }
+      targetParent.append(clonedSvg);
+      continue;
+    }
+
+    const tag = child.tagName.toLowerCase();
+    const cloned = INTERACTIVE_MIRROR_TAGS.has(tag)
+      ? doc.createElement("span")
+      : child.cloneNode(false);
+    if (!(cloned instanceof Element)) continue;
+    if (INTERACTIVE_MIRROR_TAGS.has(tag)) {
+      cloned.className = child.className;
+    }
+    for (const attr of STRIPPED_MIRROR_ATTRIBUTES) {
+      cloned.removeAttribute(attr);
+    }
+    cloned.setAttribute("aria-hidden", "true");
+    appendVisualOnlyNodes(child, cloned, doc);
+    targetParent.append(cloned);
+  }
+
+  flushPendingText();
+}
+
 /**
  * Builds an inert, non-interactive visual mirror of segmented toggle labels for
  * Emil Kowalski's dual-layer `clip-path: inset()` effect — zero duplicate buttons,
- * zero duplicate IDs, zero focusable elements (Astra P1-3).
+ * zero duplicate IDs, zero duplicate DOM text nodes, zero focusable elements (Astra P1-3).
  */
 function buildVisualOnlyMirror(sourceRoot: HTMLElement, mirrorContainer: HTMLElement): void {
+  const doc = sourceRoot.ownerDocument;
   const buttons = sourceRoot.querySelectorAll<HTMLElement>(':scope > [data-slot="toggle"]');
-  const fragment = sourceRoot.ownerDocument.createDocumentFragment();
+  const fragment = doc.createDocumentFragment();
   for (const button of buttons) {
-    const mirrorItem = sourceRoot.ownerDocument.createElement("span");
+    const mirrorItem = doc.createElement("span");
     mirrorItem.className = button.className;
     mirrorItem.setAttribute("aria-hidden", "true");
     mirrorItem.dataset.slot = "toggle-clip-label";
@@ -33,22 +121,7 @@ function buildVisualOnlyMirror(sourceRoot: HTMLElement, mirrorContainer: HTMLEle
     mirrorItem.style.width = `${button.offsetWidth}px`;
     mirrorItem.style.height = `${button.offsetHeight}px`;
 
-    for (const child of Array.from(button.childNodes)) {
-      const cloned = child.cloneNode(true);
-      if (cloned instanceof Element) {
-        for (const el of [cloned, ...cloned.querySelectorAll("*")]) {
-          el.removeAttribute("id");
-          el.removeAttribute("tabindex");
-          el.removeAttribute("role");
-          el.removeAttribute("name");
-          el.removeAttribute("for");
-          el.removeAttribute("aria-controls");
-          el.removeAttribute("aria-labelledby");
-          el.removeAttribute("aria-describedby");
-        }
-      }
-      mirrorItem.append(cloned);
-    }
+    appendVisualOnlyNodes(button, mirrorItem, doc);
     fragment.append(mirrorItem);
   }
   mirrorContainer.replaceChildren(fragment);
@@ -192,6 +265,7 @@ function ToggleGroup({
           aria-hidden="true"
           inert
           data-slot="toggle-group-clip-layer"
+          style={CLIP_LAYER_STYLE}
           className={cn(
             "pointer-events-none absolute inset-0 z-10 flex select-none gap-0.5 p-0.5 bg-background text-foreground shadow-xs/10 opacity-0 dark:bg-input/72",
             orientation === "vertical" && "flex-col",

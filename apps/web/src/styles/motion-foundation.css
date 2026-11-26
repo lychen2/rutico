@@ -744,6 +744,12 @@ html[data-theme-background-crossfade="active"]::before {
   background-color: transparent;
 }
 
+/* Segmented ToggleGroup dual-layer clip mirror renders text via CSS content so
+   light-DOM text nodes (getByText, textContent, find-in-page) are never duplicated. */
+[data-slot="toggle-clip-text"]::after {
+  content: attr(data-clip-text);
+}
+
 /* ==========================================================================
    D04 / C013: Choice Control Tactile Confirmation Ring & <=64px Bounce
    ========================================================================== */

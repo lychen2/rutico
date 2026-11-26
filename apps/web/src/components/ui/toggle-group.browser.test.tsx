@@ -52,7 +52,7 @@ describe("ToggleGroup segmented dual-layer clip-path", () => {
     const afterMountMutations = mirrorMutationCount;
     expect(afterMountMutations).toBeLessThanOrEqual(2);
 
-    // P1-3 invariants: strictly inert, aria-hidden, pointer-events: none, zero duplicate IDs or buttons.
+    // P1-3 invariants: strictly inert, aria-hidden, pointer-events: none, zero duplicate IDs, buttons, or DOM text.
     expect(clipLayer.getAttribute("aria-hidden")).toBe("true");
     expect(clipLayer.hasAttribute("inert")).toBe(true);
     expect(getComputedStyle(clipLayer).pointerEvents).toBe("none");
@@ -61,6 +61,12 @@ describe("ToggleGroup segmented dual-layer clip-path", () => {
     expect(document.querySelectorAll("#seg-label-first")).toHaveLength(1);
     expect(document.querySelectorAll("#seg-label-second")).toHaveLength(1);
     expect(clipLayer.querySelectorAll('[data-slot="toggle-clip-label"]')).toHaveLength(3);
+    expect(clipLayer.textContent).toBe("");
+    const firstClipText = clipLayer.querySelector<HTMLElement>('[data-slot="toggle-clip-text"]');
+    expect(firstClipText?.dataset.clipText).toBe("First");
+    expect(firstClipText ? getComputedStyle(firstClipText, "::after").content : "").toBe('"First"');
+    await expect.element(page.getByText("First", { exact: true })).toBeVisible();
+    await expect.element(page.getByText("Third", { exact: true })).toBeVisible();
 
     const firstClipPath = clipLayer.style.clipPath;
 

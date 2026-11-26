@@ -1,8 +1,17 @@
-import { useEffect, useRef } from "react";
+import { type CSSProperties, useEffect, useRef } from "react";
 
 import { prefersReducedMotion } from "~/lib/motion/springs";
 import { observeResize } from "~/lib/observeResize";
 import { cn } from "~/lib/utils";
+
+// Enforced inline so unstyled mounts (without Tailwind utilities) never intercept pointer hit-testing.
+const FLOATING_HIGHLIGHT_STYLE: CSSProperties = {
+  pointerEvents: "none",
+  position: "absolute",
+  top: 0,
+  left: 0,
+  zIndex: 0,
+};
 
 export interface Point2D {
   readonly x: number;
@@ -123,8 +132,10 @@ export function FloatingHighlight({
     <div
       ref={plateRef}
       aria-hidden="true"
+      inert
       data-slot="floating-highlight"
       data-active="false"
+      style={FLOATING_HIGHLIGHT_STYLE}
       className={cn(
         "pointer-events-none absolute top-0 left-0 z-0 rounded-(--radius-concentric-menu-inner) bg-accent opacity-0 will-change-transform",
         className,
