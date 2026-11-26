@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { useRef, type ReactNode, type UIEvent } from "react";
 
 import { isElectron } from "~/env";
 import { cn } from "~/lib/utils";
@@ -18,12 +18,99 @@ function getDiffPanelHeaderRowClassName(mode: DiffPanelMode) {
   );
 }
 
+interface DiffHeatRibbonSegment {
+  readonly fileKey: string;
+  readonly additions: number;
+  readonly deletions: number;
+  readonly weight: number;
+  readonly additionShare: number;
+}
+
+function buildDiffHeatSegments(
+  files: ReadonlyArray<{
+    readonly fileKey: string;
+    readonly filePath: string;
+    readonly fileDiff: {
+      readonly hunks: ReadonlyArray<{
+        readonly additionLines: number;
+        readonly deletionLines: number;
+      }>;
+    };
+  }>,
+  lazyFiles?: ReadonlyArray<{
+    readonly path: string;
+    readonly additions: number;
+    readonly deletions: number;
+  }>,
+): DiffHeatRibbonSegment[] {
+  const statsByPath = lazyFiles ? new Map(lazyFiles.map((file) => [file.path, file])) : null;
+  return files.map(({ fileDiff, fileKey, filePath }) => {
+    const lazyStat = statsByPath?.get(filePath);
+    let additions = lazyStat?.additions ?? 0;
+    let deletions = lazyStat?.deletions ?? 0;
+    if (!lazyStat) {
+      for (const hunk of fileDiff.hunks) {
+        additions += hunk.additionLines;
+        deletions += hunk.deletionLines;
+      }
+    }
+    const total = Math.max(1, additions + deletions);
+    return {
+      fileKey,
+      additions,
+      deletions,
+      weight: total,
+      additionShare: additions / total,
+    };
+  });
+}
+
 export function DiffPanelShell(props: {
   mode: DiffPanelMode;
   header: ReactNode;
+  heatFiles?: ReadonlyArray<{
+    readonly fileKey: string;
+    readonly filePath: string;
+    readonly fileDiff: {
+      readonly hunks: ReadonlyArray<{
+        readonly additionLines: number;
+        readonly deletionLines: number;
+      }>;
+    };
+  }>;
+  heatLazyFiles?: ReadonlyArray<{
+    readonly path: string;
+    readonly additions: number;
+    readonly deletions: number;
+  }>;
   children: ReactNode;
 }) {
   const shouldUseDragRegion = isElectron && props.mode !== "sheet" && props.mode !== "embedded";
+  const heatSegments = props.heatFiles
+    ? buildDiffHeatSegments(props.heatFiles, props.heatLazyFiles)
+    : null;
+  const cursorRef = useRef<HTMLDivElement | null>(null);
+  const frameRef = useRef<number | null>(null);
+  const ratioRef = useRef(0);
+
+  const handleScrollCapture = (event: UIEvent<HTMLDivElement>) => {
+    const target = event.target;
+    if (!(target instanceof HTMLElement)) return;
+    const maxScroll = target.scrollHeight - target.clientHeight;
+    if (maxScroll <= 0) return;
+    // Ignore inner horizontal-only scrollers or tiny sub-elements inside the diff body.
+    if (target.clientHeight < 120) return;
+    ratioRef.current = Math.max(0, Math.min(1, target.scrollTop / maxScroll));
+    if (frameRef.current !== null) return;
+    frameRef.current = window.requestAnimationFrame(() => {
+      frameRef.current = null;
+      const cursor = cursorRef.current;
+      if (!cursor) return;
+      const next = ratioRef.current;
+      cursor.style.transform = `scaleX(${next.toFixed(4)})`;
+      cursor.style.opacity = next > 0.002 ? "1" : "0";
+    });
+  };
 
   return (
     <div
@@ -33,6 +120,7 @@ export function DiffPanelShell(props: {
           ? "w-[42vw] min-w-[360px] max-w-[560px] shrink-0 border-l border-border"
           : "w-full",
       )}
+      onScrollCapture={heatSegments && heatSegments.length > 0 ? handleScrollCapture : undefined}
     >
       {shouldUseDragRegion ? (
         <div className={getDiffPanelHeaderRowClassName(props.mode)}>{props.header}</div>
@@ -41,6 +129,51 @@ export function DiffPanelShell(props: {
           {props.header}
         </div>
       )}
+      {heatSegments && heatSegments.length > 0 ? (
+        <div
+          aria-hidden="true"
+          data-slot="diff-heat-ribbon"
+          className="relative h-0.5 w-full shrink-0 overflow-hidden bg-border/35"
+        >
+          <div className="flex h-full w-full gap-px opacity-55">
+            {heatSegments.map((segment) => (
+              <div
+                key={segment.fileKey}
+                className="flex h-full min-w-0.5 overflow-hidden"
+                style={{ flexGrow: segment.weight }}
+              >
+                {segment.additions > 0 ? (
+                  <span
+                    className="h-full bg-diff-addition-foreground/80"
+                    style={{ width: `${Math.round(segment.additionShare * 100)}%` }}
+                  />
+                ) : null}
+                {segment.deletions > 0 ? (
+                  <span
+                    className="h-full bg-diff-deletion-foreground/80"
+                    style={{ width: `${Math.round((1 - segment.additionShare) * 100)}%` }}
+                  />
+                ) : null}
+              </div>
+            ))}
+          </div>
+          <div
+            ref={(node) => {
+              cursorRef.current = node;
+              return () => {
+                if (cursorRef.current === node) cursorRef.current = null;
+                if (frameRef.current !== null) {
+                  window.cancelAnimationFrame(frameRef.current);
+                  frameRef.current = null;
+                }
+              };
+            }}
+            data-slot="diff-scroll-ribbon-cursor"
+            className="pointer-events-none absolute inset-0 origin-left bg-primary/90 opacity-0 will-change-transform"
+            style={{ transform: "scaleX(0)" }}
+          />
+        </div>
+      ) : null}
       {props.children}
     </div>
   );

@@ -1500,6 +1500,7 @@ export default function DiffPanel({
               deletions={diffLineStat.deletions}
               className="mr-1 text-2xs"
               layout="inline"
+              showHeatBlocks
             />
           </span>
         ) : null}
@@ -1667,7 +1668,12 @@ export default function DiffPanel({
   );
 
   return (
-    <DiffPanelShell mode={mode} header={headerRow}>
+    <DiffPanelShell
+      mode={mode}
+      header={headerRow}
+      heatFiles={codeViewFiles}
+      {...(lazySource?.files ? { heatLazyFiles: lazySource.files } : {})}
+    >
       {!activeThread ? (
         <DiffPanelEmptyState
           icon={<FileDiffIcon className="size-4.5 text-muted-foreground" />}

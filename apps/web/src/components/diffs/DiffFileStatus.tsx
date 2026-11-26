@@ -29,7 +29,11 @@ export function DiffFileStatus({
           />
         }
       >
-        {error ? <RotateCwIcon className="size-3" /> : <InfoIcon className="size-3" />}
+        {error ? (
+          <RotateCwIcon className="size-3 text-destructive transition-transform duration-180 ease-(--spring-snappy) group-hover:rotate-45 motion-reduce:transition-none" />
+        ) : (
+          <InfoIcon className="size-3 text-warning/85" />
+        )}
       </TooltipTrigger>
       <TooltipPopup>
         {error
