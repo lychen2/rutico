@@ -350,6 +350,47 @@ export function resizeBrowserViewportFromRail(
   );
 }
 
+export const BROWSER_GOLDEN_BREAKPOINTS = [360, 412, 768, 1024, 1280] as const;
+const BROWSER_BREAKPOINT_SNAP_PX = 8;
+
+/** Maps a CSS viewport width to an Android / Tailwind breakpoint badge label. */
+export function resolveViewportBreakpointLabel(width: number): string {
+  if (width < 360) return "xs";
+  if (width < 768) return "sm";
+  if (width < 1024) return "md";
+  if (width < 1280) return "lg";
+  if (width < 1536) return "xl";
+  return "2xl";
+}
+
+/**
+ * Lightly snaps dragged browser widths across Android & Tailwind golden breakpoints
+ * (`360 / 412 / 768 / 1024 / 1280` within `±8px`), bypassed while `Alt` is held.
+ */
+export function snapBrowserViewportWidth(
+  width: number,
+  options?: {
+    readonly bypassSnap?: boolean | undefined;
+    readonly thresholdPx?: number | undefined;
+  },
+): { readonly width: number; readonly snapped: boolean } {
+  const clamped = clampViewportDimension(Math.round(width));
+  if (options?.bypassSnap) {
+    return { width: clamped, snapped: false };
+  }
+  const threshold = options?.thresholdPx ?? BROWSER_BREAKPOINT_SNAP_PX;
+  let best = clamped;
+  let bestDistance = threshold + 1;
+  for (const breakpoint of BROWSER_GOLDEN_BREAKPOINTS) {
+    const distance = Math.abs(clamped - breakpoint);
+    if (distance <= threshold && distance < bestDistance) {
+      bestDistance = distance;
+      best = breakpoint;
+    }
+  }
+  return { width: best, snapped: bestDistance <= threshold };
+}
+
 export function resolveResponsiveBrowserViewportSize(
   container: { readonly width: number; readonly height: number },
   zoomFactor = 1,

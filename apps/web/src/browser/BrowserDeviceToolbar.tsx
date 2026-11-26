@@ -5,10 +5,11 @@ import {
   type PreviewViewportSetting,
 } from "@t3tools/contracts";
 import { PREVIEW_VIEWPORT_PRESETS, resolvePreviewViewport } from "@t3tools/shared/previewViewport";
-import { Link2, Unlink2, X } from "lucide-react";
-import { useState } from "react";
+import { Columns2, Link2, Maximize2, Smartphone, Tablet, Unlink2, X } from "lucide-react";
+import { useRef, useState } from "react";
 import { msg, T, useGT, useMessages } from "gt-react";
 
+import { pulseBrowserSurfaceGeometrySync } from "~/browser/BrowserSurfaceSlot";
 import { Button } from "~/components/ui/button";
 import { Input } from "~/components/ui/input";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "~/components/ui/tooltip";
@@ -21,6 +22,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "~/components/ui/select";
+import { useSharedIndicator } from "~/lib/motion/useSharedIndicator";
 import { cn } from "~/lib/utils";
 
 import { BROWSER_DEVICE_TOOLBAR_HEIGHT, resizeFreeformViewport } from "./browserViewportLayout";
@@ -28,6 +30,35 @@ import { commitViewportAndAspectRatio } from "./browserDeviceToolbarState";
 import { ScreenRotationIcon } from "./ScreenRotationIcon";
 
 const RESPONSIVE_VALUE = "responsive";
+const QUICK_FORM_FACTORS = [
+  {
+    id: "pixel-7",
+    shortLabel: msg("Pixel 7"),
+    detail: "412 × 915",
+    icon: Smartphone,
+  },
+  {
+    id: "galaxy-z-fold-5",
+    shortLabel: msg("Fold 5"),
+    detail: "344 × 882",
+    icon: Columns2,
+  },
+  {
+    id: "nest-hub",
+    shortLabel: msg("Tablet"),
+    detail: "1024 × 600",
+    icon: Tablet,
+  },
+  {
+    id: RESPONSIVE_VALUE,
+    shortLabel: msg("Responsive", {
+      $context: "browser viewport preset that follows the panel size",
+    }),
+    detail: null,
+    icon: Maximize2,
+  },
+] as const;
+
 const SELECT_ITEMS = [
   {
     value: RESPONSIVE_VALUE,
@@ -53,6 +84,8 @@ export function BrowserDeviceToolbar({
 }: Props) {
   const gt = useGT();
   const m = useMessages();
+  const quickSegmentRef = useRef<HTMLDivElement | null>(null);
+  const quickIndicatorRef = useRef<HTMLDivElement | null>(null);
   const [pending, setPending] = useState(false);
   const [customSize, setCustomSize] = useState<{
     readonly width: string;
@@ -89,8 +122,23 @@ export function BrowserDeviceToolbar({
     typedHeight <= PREVIEW_VIEWPORT_MAX_DIMENSION &&
     customWidth * customHeight <= PREVIEW_VIEWPORT_MAX_AREA;
 
+  const activeQuickFactorId = QUICK_FORM_FACTORS.some((factor) => factor.id === selectedValue)
+    ? selectedValue
+    : null;
+  const showQuickFactors = width >= 520;
+  useSharedIndicator({
+    containerRef: quickSegmentRef,
+    indicatorRef: quickIndicatorRef,
+    activeSelector: "[data-quick-factor-active='true']",
+    activeKey: showQuickFactors ? activeQuickFactorId : null,
+    preset: "fluid",
+    maxSquash: 0.14,
+    axis: "x",
+  });
+
   const apply = (next: PreviewViewportSetting, nextAspectRatio = aspectRatio) => {
     setPending(true);
+    pulseBrowserSurfaceGeometrySync(280);
     void commitViewportAndAspectRatio(next, nextAspectRatio, onChange, onAspectRatioChange).then(
       () => {
         setPending(false);
@@ -174,7 +222,7 @@ export function BrowserDeviceToolbar({
 
   return (
     <div
-      className="sticky left-0 top-0 z-50 flex items-center gap-0.5 overflow-x-auto border-b border-border/70 bg-background/95 px-1.5 shadow-xs backdrop-blur-md [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+      className="surface-optical-chrome sticky top-0 left-0 z-50 flex items-center gap-1 overflow-x-auto border-b border-border/75 bg-background px-1.5 shadow-xs [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
       style={{ width, height: BROWSER_DEVICE_TOOLBAR_HEIGHT }}
       role="toolbar"
       aria-label={gt("Browser device toolbar")}
@@ -194,10 +242,52 @@ export function BrowserDeviceToolbar({
         applyCustomSize();
       }}
     >
-      {width >= 560 ? (
-        <span className="mr-0.5 shrink-0 text-2xs font-medium text-muted-foreground">
-          <T>Dimensions</T>
-        </span>
+      {showQuickFactors ? (
+        <div
+          ref={quickSegmentRef}
+          role="group"
+          aria-label={gt("Quick device presets")}
+          data-slot="browser-quick-presets"
+          className="relative mr-0.5 inline-flex shrink-0 items-center gap-0.5 rounded-md border border-border/60 bg-muted/45 p-0.5"
+        >
+          <div
+            ref={quickIndicatorRef}
+            aria-hidden="true"
+            className="pointer-events-none absolute top-0 left-0 z-0 rounded-sm bg-background opacity-0 shadow-xs/10 ring-1 ring-inset ring-border/70 will-change-transform"
+          />
+          {QUICK_FORM_FACTORS.map((factor) => {
+            const Icon = factor.icon;
+            const active = activeQuickFactorId === factor.id;
+            const shortLabelText = m(factor.shortLabel);
+            const titleLabel = factor.detail
+              ? `${shortLabelText} (${factor.detail})`
+              : shortLabelText;
+            return (
+              <Tooltip key={factor.id}>
+                <TooltipTrigger
+                  render={
+                    <button
+                      type="button"
+                      disabled={pending}
+                      data-quick-factor-active={active ? "true" : undefined}
+                      aria-pressed={active}
+                      aria-label={titleLabel}
+                      onClick={() => selectViewport(factor.id)}
+                      className={cn(
+                        "relative z-1 inline-flex h-5 cursor-pointer items-center gap-1 rounded-sm px-1.5 text-2xs font-medium transition-colors duration-120 ease-out outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring motion-reduce:transition-none",
+                        active ? "text-foreground" : "text-muted-foreground hover:text-foreground",
+                      )}
+                    >
+                      <Icon className="size-3 shrink-0" />
+                      {width >= 660 ? <span>{shortLabelText}</span> : null}
+                    </button>
+                  }
+                />
+                <TooltipPopup side="bottom">{titleLabel}</TooltipPopup>
+              </Tooltip>
+            );
+          })}
+        </div>
       ) : null}
       <Select
         modal={false}
@@ -332,7 +422,7 @@ export function BrowserDeviceToolbar({
       >
         <ScreenRotationIcon />
       </Button>
-      <span className="sticky right-0 ml-auto flex bg-background/95">
+      <span className="sticky right-0 ml-auto flex bg-background">
         <Button
           variant="ghost"
           size="icon-xs"

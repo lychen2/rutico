@@ -16,12 +16,14 @@ import {
   resolveBrowserDeviceViewportArea,
   resolveBrowserDeviceViewportLayout,
   resolveBrowserViewportLayout,
+  snapBrowserViewportWidth,
   type BrowserViewportResizeDirection,
 } from "./browserViewportLayout";
 
 interface ViewportDrag extends PreviewViewportSize {
   readonly sourceKey: string;
   readonly direction: BrowserViewportResizeDirection;
+  readonly snapped?: boolean;
 }
 
 const KEYBOARD_RESIZE_COMMIT_DELAY_MS = 150;
@@ -194,7 +196,7 @@ export function useBrowserViewportResize(options: {
         return;
       }
       moveEvent.preventDefault();
-      const { width, height } = resizeBrowserViewportFromRail(
+      const rawResized = resizeBrowserViewportFromRail(
         { width: startWidth, height: startHeight },
         {
           x: moveEvent.clientX - startX,
@@ -205,8 +207,28 @@ export function useBrowserViewportResize(options: {
         direction,
         aspectRatio ?? undefined,
       );
-      latest = { width, height };
-      setDragViewport({ sourceKey: sourceViewportKey, width, height, direction });
+      const controlsWidth = direction.includes("east") || direction.includes("west");
+      const snappedResult = controlsWidth
+        ? snapBrowserViewportWidth(rawResized.width, { bypassSnap: moveEvent.altKey })
+        : { width: rawResized.width, snapped: false };
+      const finalSize =
+        snappedResult.snapped && aspectRatio !== null
+          ? resizeFreeformViewport(
+              { width: snappedResult.width, height: rawResized.height },
+              { x: 0, y: 0 },
+              1,
+              "east",
+              aspectRatio,
+            )
+          : { width: snappedResult.width, height: rawResized.height };
+      latest = finalSize;
+      setDragViewport({
+        sourceKey: sourceViewportKey,
+        width: finalSize.width,
+        height: finalSize.height,
+        direction,
+        snapped: snappedResult.snapped,
+      });
     };
     function cleanup() {
       window.removeEventListener("pointermove", move);

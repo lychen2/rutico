@@ -25,6 +25,7 @@ import {
   resolveFittedBrowserViewport,
   resolveHiddenBrowserViewportFitScale,
   resolveHiddenBrowserViewportSize,
+  resolveViewportBreakpointLabel,
 } from "./browserViewportLayout";
 import { BrowserDeviceToolbar } from "./BrowserDeviceToolbar";
 import { BrowserViewportResizeHandles } from "./BrowserViewportResizeHandles";
@@ -394,7 +395,14 @@ export function HostedBrowserWebview(props: {
         <div
           // Keyed here, not on the webview: a destroyed guest's element may already be detached.
           key={webviewGeneration}
-          className="absolute"
+          className={cn(
+            "absolute",
+            active && !layout.fillsPanel && activeDrag === null && "browser-device-frame-morph",
+            active &&
+              !layout.fillsPanel &&
+              effectiveViewport._tag === "preset" &&
+              "overflow-hidden rounded-xl shadow-lg/15 ring-1 ring-border/80",
+          )}
           style={{
             left: layout.viewportX * fitScale,
             top: layout.viewportY * fitScale,
@@ -452,14 +460,22 @@ export function HostedBrowserWebview(props: {
             />
             {activeDrag ? (
               <div
-                className="pointer-events-none absolute z-40 -translate-x-1/2 rounded-md border border-border/80 bg-background/95 px-2 py-1 text-2xs font-medium tabular-nums text-foreground shadow-md backdrop-blur-sm"
+                data-slot="browser-viewport-hud"
+                data-snapped={activeDrag.snapped ? "true" : undefined}
+                className="browser-viewport-hud surface-optical-chrome surface-elevated-rim pointer-events-none absolute z-40 flex -translate-x-1/2 items-center gap-1.5 rounded-md px-2.5 py-1 font-mono text-2xs font-medium tabular-nums text-foreground"
                 style={{
                   left: layout.viewportX + layout.viewportWidth / 2,
-                  top: layout.viewportY + 10,
+                  top: Math.max(8, layout.viewportY + layout.viewportHeight - 34),
                 }}
                 aria-hidden="true"
               >
-                {activeDrag.width} × {activeDrag.height}
+                <span>
+                  {activeDrag.width} × {activeDrag.height}
+                </span>
+                <span className="text-muted-foreground">·</span>
+                <span className={cn(activeDrag.snapped ? "text-primary" : "text-muted-foreground")}>
+                  {resolveViewportBreakpointLabel(activeDrag.width)}
+                </span>
               </div>
             ) : null}
           </>

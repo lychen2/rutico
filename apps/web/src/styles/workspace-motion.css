@@ -308,3 +308,26 @@
     transition: none;
   }
 }
+
+/* --------------------------------------------------------------------------
+   D20 / C064: Elastic Android-First Browser Device Frame & Breakpoint HUD
+   -------------------------------------------------------------------------- */
+
+.browser-device-frame-morph {
+  transition:
+    left 240ms var(--spring-gentle),
+    top 240ms var(--spring-gentle),
+    width 240ms var(--spring-gentle),
+    height 240ms var(--spring-gentle),
+    border-radius 240ms var(--spring-gentle);
+}
+
+.browser-viewport-hud[data-snapped="true"] {
+  border-color: color-mix(in oklch, var(--primary) 65%, var(--border));
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .browser-device-frame-morph {
+    transition: none;
+  }
+}
