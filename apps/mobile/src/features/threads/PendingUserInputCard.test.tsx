@@ -21,17 +21,43 @@ vi.mock("react-native", () => ({
     <div onClick={onPress}>{children}</div>
   ),
 }));
+vi.mock("react-native-gesture-handler", () => {
+  const createPan = () => {
+    const pan = {
+      activeOffsetY: () => pan,
+      failOffsetX: () => pan,
+      onUpdate: () => pan,
+      onEnd: () => pan,
+      onFinalize: () => pan,
+    };
+    return pan;
+  };
+  return {
+    Gesture: { Pan: createPan },
+    GestureDetector: ({ children }: Children) => <>{children}</>,
+  };
+});
 vi.mock("react-native-reanimated", () => {
-  const animation = { duration: () => ({ easing: () => ({}) }) };
+  const animation = {
+    duration: () => ({ easing: () => ({}), reduceMotion: () => ({}) }),
+    reduceMotion: () => ({}),
+  };
   return {
     default: { View: ({ children }: Children) => <div>{children}</div> },
     Easing: { out: () => () => 0, cubic: () => 0 },
+    FadeIn: animation,
     FadeInUp: animation,
     FadeOutDown: animation,
+    ReduceMotion: { System: "system" },
+    runOnJS: <T extends (...args: never[]) => unknown>(fn: T) => fn,
+    withSpring: (value: number) => value,
     useAnimatedStyle: () => ({}),
-    useSharedValue: (value: number) => ({ value, set: () => {} }),
+    useSharedValue: (value: number) => ({ value, get: () => value, set: () => {} }),
   };
 });
+vi.mock("../../lib/hapticChoreography", () => ({
+  triggerSemanticHaptic: vi.fn(),
+}));
 vi.mock("../../components/ui/AppSymbol", () => ({ SymbolView: () => null }));
 vi.mock("../../components/ui/AppText", () => ({
   AppText: ({ children }: Children) => <span>{children}</span>,
@@ -101,9 +127,9 @@ function setup(questionMarkdown: string) {
         workspaceRoot="/repo"
         canOperateThread
         pendingUserInput={pendingUserInput}
-        maxHeight={{ value: 600 } as never}
-        cardProgress={{ value: 1, set: () => {} } as never}
-        cardCoverage={{ value: 0, set: () => {} } as never}
+        maxHeight={{ value: 600, get: () => 600 } as never}
+        cardProgress={{ value: 1, get: () => 1, set: () => {} } as never}
+        cardCoverage={{ value: 0, get: () => 0, set: () => {} } as never}
         collapsed={false}
         onToggleCollapsed={() => {}}
         drafts={{}}
@@ -142,4 +168,60 @@ it("opens a workspace file link in a question in the thread's file viewer", asyn
       { environmentId: "env-1", threadId: "thread-1", path: ["docs", "probe.md"], line: "12" },
     ],
   ]);
+});
+
+it("steps cleanly between multiple pending questions", async () => {
+  (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+  const pendingUserInput = {
+    requestId: "request-multi" as RuntimeRequestId,
+    responseCapability: "resumable",
+    questions: [
+      {
+        id: "q-1",
+        header: "First",
+        question: "Pick [first.md](docs/first.md)",
+        options: [],
+        allowCustomAnswer: false,
+      },
+      {
+        id: "q-2",
+        header: "Second",
+        question: "Pick [second.md](docs/second.md)",
+        options: [],
+        allowCustomAnswer: false,
+      },
+    ],
+  } as unknown as PendingUserInput;
+
+  const container = document.createElement("div");
+  const root = createRoot(container);
+  using _root = { [Symbol.dispose]: () => act(() => root.unmount()) };
+
+  act(() =>
+    root.render(
+      <PendingUserInputCard
+        environmentId={"env-1" as EnvironmentId}
+        threadId={"thread-1" as ThreadId}
+        workspaceRoot="/repo"
+        canOperateThread
+        pendingUserInput={pendingUserInput}
+        maxHeight={{ value: 600, get: () => 600 } as never}
+        cardProgress={{ value: 1, get: () => 1, set: () => {} } as never}
+        cardCoverage={{ value: 0, get: () => 0, set: () => {} } as never}
+        collapsed={false}
+        onToggleCollapsed={() => {}}
+        drafts={{}}
+        answers={null}
+        respondingUserInputId={null}
+        onSelectOption={() => {}}
+        onChangeCustomAnswer={() => {}}
+        onSubmit={async () => {}}
+        onDismiss={async () => {}}
+      />,
+    ),
+  );
+
+  expect(container.textContent).toContain("First");
+  expect(container.textContent).toContain("1/2");
+  expect(container.textContent).not.toContain("Second");
 });
