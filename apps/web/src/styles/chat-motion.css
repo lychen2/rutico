@@ -2019,3 +2019,37 @@
     transform: none;
   }
 }
+
+/* ==========================================================================
+   D16 / C052: Liquid Voice Capsule Reveal & Global Voice Indicator Entrance
+   ========================================================================== */
+
+@media (prefers-reduced-motion: no-preference) {
+  [data-voice-capsule-reveal="true"] {
+    transition:
+      opacity 160ms ease-out,
+      transform 220ms var(--spring-snappy);
+    @starting-style {
+      opacity: 0;
+      transform: translate3d(8px, 0, 0) scaleX(0.45);
+    }
+  }
+
+  [data-global-voice-indicator="true"] {
+    transition:
+      opacity 180ms ease-out,
+      transform 240ms var(--spring-snappy);
+    @starting-style {
+      opacity: 0;
+      transform: translate3d(0, -10px, 0) scale(0.95);
+    }
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-voice-capsule-reveal="true"],
+  [data-global-voice-indicator="true"] {
+    transition: none;
+    transform: none;
+  }
+}
