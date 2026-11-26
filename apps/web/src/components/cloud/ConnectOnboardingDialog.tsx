@@ -48,6 +48,7 @@ import { Dialog } from "../ui/dialog";
 import { Switch } from "../ui/switch";
 import { toastManager } from "../ui/toast";
 import { WizardSteps, WizardPopup, WizardHeader, WizardPanel, WizardFooter } from "../ui/wizard";
+import "~/styles/pairing-motion.css";
 
 export function ConnectOnboardingDialog() {
   if (!hasCloudPublicConfig()) return null;
@@ -273,29 +274,32 @@ function ConfiguredConnectOnboardingDialog() {
           ) : null}
         </WizardHeader>
         <WizardPanel>
-          {step === "publish" ? (
-            <PublishStep
-              exposeEnvironment={exposeEnvironment}
-              publishAgentActivity={publishAgentActivity}
-              requireDeviceApproval={
-                canRequireDeviceApproval ? requireDeviceApproval || deviceApprovalRequired : null
-              }
-              requireDeviceApprovalLocked={deviceApprovalRequired}
-              onRequireDeviceApprovalChange={setRequireDeviceApproval}
-              disabled={isApplying || !canManageRelay || linkStateData === null}
-              operationError={controller.operationError ?? controller.linkState.error}
-              tunnelLimit={controller.tunnelLimit}
-              onOpenAccountPage={leaveForAccountPage}
-              onExposeEnvironmentChange={(enabled) => {
-                if (canPublishOnEnvironment(primaryEnvironmentId)) setExposeEnvironment(enabled);
-              }}
-              onPublishAgentActivityChange={(enabled) => {
-                if (canPublishOnEnvironment(primaryEnvironmentId)) setPublishAgentActivity(enabled);
-              }}
-            />
-          ) : (
-            <DevicesStep />
-          )}
+          <div key={step} data-slot="pairing-step-panel">
+            {step === "publish" ? (
+              <PublishStep
+                exposeEnvironment={exposeEnvironment}
+                publishAgentActivity={publishAgentActivity}
+                requireDeviceApproval={
+                  canRequireDeviceApproval ? requireDeviceApproval || deviceApprovalRequired : null
+                }
+                requireDeviceApprovalLocked={deviceApprovalRequired}
+                onRequireDeviceApprovalChange={setRequireDeviceApproval}
+                disabled={isApplying || !canManageRelay || linkStateData === null}
+                operationError={controller.operationError ?? controller.linkState.error}
+                tunnelLimit={controller.tunnelLimit}
+                onOpenAccountPage={leaveForAccountPage}
+                onExposeEnvironmentChange={(enabled) => {
+                  if (canPublishOnEnvironment(primaryEnvironmentId)) setExposeEnvironment(enabled);
+                }}
+                onPublishAgentActivityChange={(enabled) => {
+                  if (canPublishOnEnvironment(primaryEnvironmentId))
+                    setPublishAgentActivity(enabled);
+                }}
+              />
+            ) : (
+              <DevicesStep />
+            )}
+          </div>
         </WizardPanel>
         <WizardFooter
           leading={

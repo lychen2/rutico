@@ -9,11 +9,14 @@ import { type AuthMcpApprovalDetails, EnvironmentId } from "@t3tools/contracts";
 import * as Result from "effect/Result";
 import * as Schema from "effect/Schema";
 import { msg, T, useGT } from "gt-react";
+import { CloudIcon, ShieldAlertIcon, UserCheckIcon } from "lucide-react";
 import { type ReactNode, useEffect, useEffectEvent, useRef, useState } from "react";
 
 import { m } from "../../i18n/messages";
 
 import { isElectron } from "../../env";
+import { observeVisibleAnimation } from "~/lib/visibleAnimation";
+import "~/styles/pairing-motion.css";
 import { runConnectMcpApproval } from "../../state/connectMcpApproval";
 import { resolveClerkSignInProps } from "../clerk/authRedirect";
 import { retryClerkLoad, useClerkLoadFailed } from "../clerk/clerkLoadFailure";
@@ -120,7 +123,14 @@ export function ApproveAgentSurface() {
       <Message
         title={gt("Open this page in its own window")}
         description={gt("For your safety, agent sign-ins cannot be approved inside another site.")}
-      />
+      >
+        <div className="mt-5 flex items-center gap-2.5 rounded-xl border border-warning/35 bg-warning/10 px-3.5 py-2.5 text-xs text-warning-foreground">
+          <ShieldAlertIcon className="size-4 shrink-0" aria-hidden />
+          <span>
+            <T>Embedded approval frames are blocked to prevent clickjacking.</T>
+          </span>
+        </div>
+      </Message>
     );
   }
 
@@ -147,7 +157,43 @@ export function ApproveAgentSurface() {
           title={gt("Connecting to T3 Connect")}
           description={gt("One moment while your account loads.")}
         />
-        <Spinner className="mt-6" size="lg" tone="muted" />
+        <div className="mt-5 flex items-center justify-between gap-3 rounded-xl border border-border/70 bg-muted/25 px-3.5 py-2.5">
+          <div className="flex items-center gap-2">
+            <span className="flex size-7 items-center justify-center rounded-lg border border-border/60 bg-background text-foreground">
+              <UserCheckIcon className="size-3.5" aria-hidden />
+            </span>
+            <span className="text-xs font-medium text-foreground">
+              <T>Account</T>
+            </span>
+          </div>
+          <div className="flex items-center gap-1.5" aria-hidden="true">
+            <span
+              ref={observeVisibleAnimation}
+              data-slot="pairing-bridge-dot"
+              data-active="true"
+              className="size-1.5 rounded-full bg-primary"
+            />
+            <span
+              ref={observeVisibleAnimation}
+              data-slot="pairing-bridge-dot"
+              data-active="true"
+              className="size-1.5 rounded-full bg-primary"
+            />
+            <span
+              ref={observeVisibleAnimation}
+              data-slot="pairing-bridge-dot"
+              data-active="true"
+              className="size-1.5 rounded-full bg-primary"
+            />
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-medium text-foreground">T3 Connect</span>
+            <span className="flex size-7 items-center justify-center rounded-lg border border-border/60 bg-background text-foreground">
+              <CloudIcon className="size-3.5" aria-hidden />
+            </span>
+          </div>
+        </div>
+        <Spinner className="mt-5" size="lg" tone="muted" />
       </StandalonePage>
     );
   }
