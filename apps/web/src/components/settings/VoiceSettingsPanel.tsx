@@ -319,14 +319,16 @@ function ModelCard(props: ModelCardProps) {
                 aria-valuemin={0}
                 aria-valuemax={100}
                 aria-valuenow={Math.round(progress)}
-                className="h-1 overflow-hidden rounded-full bg-muted"
+                className="h-1.5 overflow-hidden rounded-full bg-muted"
               >
                 <div
-                  className="h-full bg-primary transition-[width] duration-200"
-                  style={{ width: `${progress}%` }}
+                  className="h-full w-full origin-left bg-primary transition-transform duration-(--duration-snappy) ease-(--spring-snappy) motion-reduce:transition-none"
+                  style={{
+                    transform: `scaleX(${Math.max(0, Math.min(1, progress / 100))})`,
+                  }}
                 />
               </div>
-              <p className="mt-1 text-2xs text-muted-foreground">
+              <p className="mt-1 text-2xs tabular-nums text-muted-foreground">
                 {model.state === "verifying"
                   ? gt("Verifying download…")
                   : gt("{percent}% downloaded", { percent: Math.round(progress) })}

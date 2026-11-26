@@ -79,7 +79,7 @@ export function ModelBenchmarks({
             {score ? (
               <T>
                 <Var>{languageLabel(code, locale)}</Var>:{" "}
-                <strong className="font-medium text-foreground">
+                <strong className="rounded-sm bg-muted px-1 py-0.5 text-2xs font-semibold text-foreground">
                   <Var>{score.grade}</Var>
                 </strong>{" "}
                 (<Var>{score.errorPercent}</Var>% error)

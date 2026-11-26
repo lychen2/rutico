@@ -554,3 +554,102 @@
     transition: none;
   }
 }
+
+/* ============================================================================
+ * D26 · C087 — Keybindings Mechanical Recorder, Conflict Shake & Schedule Rhythm
+ * ============================================================================ */
+
+@keyframes keybinding-conflict-shake {
+  0%,
+  100% {
+    transform: translate3d(0, 0, 0);
+  }
+  20% {
+    transform: translate3d(-3px, 0, 0);
+  }
+  45% {
+    transform: translate3d(3px, 0, 0);
+  }
+  70% {
+    transform: translate3d(-2px, 0, 0);
+  }
+  88% {
+    transform: translate3d(1.5px, 0, 0);
+  }
+}
+
+@keyframes keybinding-record-pulse {
+  0%,
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.4;
+    transform: scale(0.85);
+  }
+}
+
+@keyframes schedule-rhythm-dot-pop {
+  0% {
+    transform: scale(0.6);
+    opacity: 0.4;
+  }
+  70% {
+    transform: scale(1.18);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+[data-slot="keycap-live"] {
+  transition:
+    transform 90ms cubic-bezier(0.23, 1, 0.32, 1),
+    background-color 90ms ease-out,
+    border-color 90ms ease-out,
+    color 90ms ease-out;
+}
+
+[data-slot="keycap-live"][data-pressed="true"] {
+  transform: translate3d(0, 1px, 0) scale(0.95);
+  border-color: color-mix(in oklch, var(--primary) 65%, transparent);
+  background-color: color-mix(in oklch, var(--primary) 16%, transparent);
+  color: var(--primary);
+}
+
+[data-slot="mic-waveform-bar"] {
+  transition: background-color 80ms ease-out;
+}
+
+[data-slot="mic-waveform-bar"][data-passed="true"] {
+  background-color: var(--primary);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  [data-slot="keybinding-conflict-shake"] {
+    animation: keybinding-conflict-shake 260ms cubic-bezier(0.23, 1, 0.32, 1);
+  }
+
+  [data-slot="keybinding-record-dot"] {
+    animation: keybinding-record-pulse 1.2s ease-in-out infinite;
+    animation-play-state: var(--visible-animation-state, running);
+  }
+
+  [data-slot="schedule-rhythm-dot"][data-active="true"] {
+    animation: schedule-rhythm-dot-pop 180ms cubic-bezier(0.23, 1, 0.32, 1);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-slot="keycap-live"],
+  [data-slot="mic-waveform-bar"],
+  [data-slot="keybinding-conflict-shake"],
+  [data-slot="keybinding-record-dot"],
+  [data-slot="schedule-rhythm-dot"] {
+    animation: none;
+    transition: none;
+  }
+}

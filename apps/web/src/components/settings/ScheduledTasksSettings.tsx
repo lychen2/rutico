@@ -53,6 +53,7 @@ import { msg, T, useGT, useLocale, useMessages, Var } from "gt-react";
 import { m, type MessageResolver } from "../../i18n/messages";
 
 import { formatRelativeTime } from "../../timestampFormat";
+import { cn } from "../../lib/utils";
 import { useClientSettings, useEnvironmentSettings } from "../../hooks/useSettings";
 import { getCustomModelOptionsByInstance, selectsPlanAgent } from "../../modelSelection";
 import { providerInstanceEntriesFor } from "../../providerInstances";
@@ -364,6 +365,138 @@ export function ScheduledRelativeLabel(props: { value: string | null }) {
   const messages = useMessages();
   const nowMinute = useNowMinute();
   return relativeLabel(props.value, Date.parse(`${nowMinute}:00.000Z`), messages);
+}
+
+function computeUpcomingScheduleRuns(draft: DraftState, nowMs: number, count = 3): Date[] {
+  if (draft.scheduleMode === "webhook") return [];
+  if (draft.scheduleMode === "once") {
+    const parsed = new Date(draft.runAt);
+    return Number.isNaN(parsed.getTime()) ? [] : [parsed];
+  }
+  if (draft.scheduleMode === "interval") {
+    const minutes = Number(draft.intervalMinutes);
+    if (!Number.isFinite(minutes) || minutes < 1) return [];
+    const stepMs = minutes * 60_000;
+    return Array.from({ length: count }, (_, index) => new Date(nowMs + stepMs * (index + 1)));
+  }
+  const match = draft.timeOfDay.match(/^(\d{1,2}):(\d{2})$/);
+  if (!match) return [];
+  const hours = Number(match[1]);
+  const minutes = Number(match[2]);
+  if (hours < 0 || hours > 23 || minutes < 0 || minutes > 59) return [];
+  const allowedDays = draft.weekdays.size > 0 ? draft.weekdays : new Set([0, 1, 2, 3, 4, 5, 6]);
+  const upcoming: Date[] = [];
+  const cursor = new Date(nowMs);
+  cursor.setSeconds(0, 0);
+  for (let offsetDays = 0; offsetDays < 21 && upcoming.length < count; offsetDays += 1) {
+    const candidate = new Date(
+      cursor.getFullYear(),
+      cursor.getMonth(),
+      cursor.getDate() + offsetDays,
+      hours,
+      minutes,
+      0,
+      0,
+    );
+    if (candidate.getTime() > nowMs && allowedDays.has(candidate.getDay())) {
+      upcoming.push(candidate);
+    }
+  }
+  return upcoming;
+}
+
+function ScheduleRhythmPreview({ draft, locale }: { draft: DraftState; locale: string }) {
+  const gt = useGT();
+  const messages = useMessages();
+  const nowMinute = useNowMinute();
+  if (draft.scheduleMode === "webhook") return null;
+
+  const nowMs = Date.parse(`${nowMinute}:00.000Z`);
+  const upcoming = computeUpcomingScheduleRuns(draft, nowMs, 3);
+  const onceDay =
+    draft.scheduleMode === "once" && draft.runAt
+      ? (() => {
+          const parsed = new Date(draft.runAt);
+          return Number.isNaN(parsed.getTime()) ? null : parsed.getDay();
+        })()
+      : null;
+
+  const activeDays = new Set<number>(
+    draft.scheduleMode === "interval"
+      ? WEEKDAY_ORDER
+      : draft.scheduleMode === "fixed"
+        ? draft.weekdays.size > 0
+          ? [...draft.weekdays]
+          : WEEKDAY_ORDER
+        : onceDay !== null
+          ? [onceDay]
+          : [],
+  );
+
+  const formatter = new Intl.DateTimeFormat(locale, {
+    weekday: "short",
+    hour: "numeric",
+    minute: "2-digit",
+  });
+
+  return (
+    <div
+      data-slot="schedule-rhythm-preview"
+      className="space-y-2 rounded-lg border border-border/60 bg-muted/20 px-3 py-2.5"
+    >
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <span className="text-2xs font-medium text-muted-foreground">
+          <T>Weekly rhythm</T>
+        </span>
+        <div
+          className="grid grid-cols-7 gap-1"
+          role="list"
+          aria-label={gt("Active days of the week")}
+        >
+          {WEEKDAY_ORDER.map((day) => {
+            const active = activeDays.has(day);
+            return (
+              <span
+                key={day}
+                role="listitem"
+                aria-label={`${weekdayShortLabel(day, locale)}: ${active ? gt("Active") : gt("Inactive")}`}
+                className={cn(
+                  "flex flex-col items-center gap-1 rounded-md border px-1.5 py-1 text-3xs leading-none transition-colors duration-(--duration-snappy) motion-reduce:transition-none",
+                  active
+                    ? "border-primary/40 bg-primary/12 font-medium text-foreground"
+                    : "border-border/50 bg-background/50 text-muted-foreground/60",
+                )}
+              >
+                <span>{messages(WEEKDAY_SHORT[day])}</span>
+                <span
+                  aria-hidden
+                  data-slot="schedule-rhythm-dot"
+                  data-active={active ? "true" : undefined}
+                  className={cn(
+                    "size-1.5 rounded-full",
+                    active ? "bg-primary" : "bg-muted-foreground/25",
+                  )}
+                />
+              </span>
+            );
+          })}
+        </div>
+      </div>
+      {upcoming.length > 0 ? (
+        <div className="flex flex-wrap items-center gap-1.5 text-2xs text-muted-foreground">
+          <span className="shrink-0">{gt("Next runs:")}</span>
+          {upcoming.map((date) => (
+            <span
+              key={date.toISOString()}
+              className="rounded-md border border-border/60 bg-background px-1.5 py-0.5 font-mono text-3xs tabular-nums text-foreground"
+            >
+              {formatter.format(date)}
+            </span>
+          ))}
+        </div>
+      ) : null}
+    </div>
+  );
 }
 
 function deliveryOutcomeVariant(outcome: string) {
@@ -2331,9 +2464,12 @@ function ScheduledTaskEditorForm({
                     setDraft((current) => ({ ...current, intervalMinutes: event.target.value }))
                   }
                 />
-                <span className="text-xs text-muted-foreground">minutes</span>
+                <span className="text-xs text-muted-foreground">
+                  <T>minutes</T>
+                </span>
               </div>
             )}
+            <ScheduleRhythmPreview draft={draft} locale={locale} />
           </div>
 
           <div className="flex items-center justify-between gap-4">

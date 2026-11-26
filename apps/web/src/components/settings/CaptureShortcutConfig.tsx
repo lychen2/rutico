@@ -16,7 +16,9 @@ import { resolveDiffThemeName } from "../../lib/diffRendering";
 import { PREFERRED_HIGHLIGHTER } from "../../lib/syntaxHighlighting";
 import { useRenderedAppearance } from "../../hooks/useTheme";
 import { useCopyToClipboard } from "../../hooks/useCopyToClipboard";
+import { observeVisibleAnimation } from "~/lib/visibleAnimation";
 import { Button } from "../ui/button";
+import { Kbd } from "../ui/kbd";
 import { toastManager } from "../ui/toast";
 import { shortcutToKeybindingInput } from "./KeybindingsSettings.logic";
 import { useSnapShotShortcutRecorder } from "./useSnapShotShortcutRecorder";
@@ -151,8 +153,25 @@ export function CaptureShortcutConfig({
         </div>
       ) : null}
       {recorder.recording ? (
-        <p role="status" className="text-xs text-muted-foreground">
-          <T>Press your shortcut. Esc cancels.</T>
+        <p
+          role="status"
+          className="flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground"
+        >
+          <span
+            ref={observeVisibleAnimation}
+            aria-hidden
+            data-slot="keybinding-record-dot"
+            className="size-1.5 shrink-0 rounded-full bg-destructive"
+          />
+          <span>
+            <T>
+              Press your shortcut.{" "}
+              <Var>
+                <Kbd>Esc</Kbd>
+              </Var>{" "}
+              cancels.
+            </T>
+          </span>
         </p>
       ) : null}
       {result ? (
