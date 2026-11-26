@@ -505,3 +505,105 @@
     box-shadow: none;
   }
 }
+
+/* ==========================================================================
+   D02 / C007: Pointer-Tracked Ambient Specular Edge Prism & Shimmer Skeleton
+   ========================================================================== */
+
+@utility surface-specular-prism {
+  position: relative;
+
+  &::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    padding: 1px;
+    pointer-events: none;
+    opacity: 0;
+    background: radial-gradient(
+      260px circle at var(--specular-x, 50%) var(--specular-y, 0%),
+      color-mix(in oklch, var(--contrast-foreground) 22%, transparent) 0%,
+      color-mix(in oklch, var(--primary) 16%, transparent) 34%,
+      transparent 72%
+    );
+    -webkit-mask:
+      linear-gradient(#000 0 0) content-box,
+      linear-gradient(#000 0 0);
+    -webkit-mask-composite: xor;
+    mask:
+      linear-gradient(#000 0 0) content-box,
+      linear-gradient(#000 0 0);
+    mask-composite: exclude;
+    transition: opacity 200ms ease-out;
+  }
+
+  @variant dark {
+    &::after {
+      background: radial-gradient(
+        280px circle at var(--specular-x, 50%) var(--specular-y, 0%),
+        rgb(255 255 255 / 24%) 0%,
+        color-mix(in oklch, var(--primary) 24%, rgb(255 255 255 / 12%)) 34%,
+        transparent 72%
+      );
+    }
+  }
+
+  &[data-specular-active="true"]::after {
+    opacity: 1;
+  }
+
+  @media (prefers-reduced-motion: reduce), (forced-colors: active), (pointer: coarse) {
+    &::after {
+      display: none;
+    }
+  }
+}
+
+@keyframes skeleton-optical-sweep {
+  from {
+    transform: translate3d(-100%, 0, 0);
+  }
+  to {
+    transform: translate3d(100%, 0, 0);
+  }
+}
+
+@utility surface-skeleton-sweep {
+  position: relative;
+  overflow: hidden;
+
+  &::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    width: max(100%, 320px);
+    background-image: linear-gradient(
+      108deg,
+      transparent 18%,
+      color-mix(in oklch, var(--contrast-foreground) 7%, transparent) 50%,
+      transparent 82%
+    );
+    pointer-events: none;
+    animation: skeleton-optical-sweep 1.85s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+    animation-play-state: var(--visible-animation-state, paused);
+    will-change: var(--visible-animation-will-change, auto);
+  }
+
+  @variant dark {
+    &::after {
+      background-image: linear-gradient(
+        108deg,
+        transparent 18%,
+        rgb(255 255 255 / 7%) 50%,
+        transparent 82%
+      );
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce), (forced-colors: active) {
+    &::after {
+      display: none;
+    }
+  }
+}

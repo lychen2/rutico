@@ -2,15 +2,17 @@ import { useAtomValue } from "@effect/atom-react";
 import { workspaceAreaProps } from "../lib/workspaceFocus";
 import { T, useGT } from "gt-react";
 import { MessageSquareDashedIcon, PlusIcon } from "lucide-react";
+import { useRef } from "react";
 
 import { openCommandPalette } from "../commandPaletteBus";
 import { isElectron } from "../env";
 import { useScratchProject } from "../hooks/useScratchProject";
 import { shortcutLabelForCommand } from "../keybindings";
+import { useSpecularPointer } from "../lib/motion/useSpecularPointer";
 import { usePrimaryEnvironmentId } from "../state/environments";
 import { primaryServerKeybindingsAtom } from "../state/server";
 import { Button } from "./ui/button";
-import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "./ui/empty";
+import { Empty, EmptyDescription, EmptyHeader, EmptyTitle, EmptyWireframe } from "./ui/empty";
 import { Kbd } from "./ui/kbd";
 import { SidebarInset } from "./ui/sidebar";
 import { WorkspacePageHeader } from "./WorkspacePageHeader";
@@ -23,6 +25,8 @@ export function NoProjectsHero() {
   const scratchTargetEnvironmentId = scratchEnvironmentId(primaryEnvironmentId);
   const keybindings = useAtomValue(primaryServerKeybindingsAtom);
   const commandPaletteShortcut = shortcutLabelForCommand(keybindings, "commandPalette.toggle");
+  const heroCardRef = useRef<HTMLDivElement>(null);
+  useSpecularPointer(heroCardRef);
 
   return (
     <SidebarInset
@@ -35,8 +39,12 @@ export function NoProjectsHero() {
         <div className="relative z-10 flex min-h-0 flex-1 flex-col">
           {isElectron ? <WorkspacePageHeader electron /> : null}
           <Empty size="hero" className="flex-1">
-            <div className="surface-glass w-full max-w-lg rounded-2xl border border-border/50 px-8 py-10 dark:border-white/8">
+            <div
+              ref={heroCardRef}
+              className="surface-glass surface-specular-prism w-full max-w-lg rounded-2xl border border-border/50 px-8 py-10 dark:border-white/8"
+            >
               <EmptyHeader className="max-w-none">
+                <EmptyWireframe variant="workspace" />
                 <div className="t3-draft-hero-title">
                   <EmptyTitle>
                     <T>What should we work on?</T>

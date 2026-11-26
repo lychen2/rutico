@@ -4,6 +4,7 @@ import { XIcon } from "lucide-react";
 import { useRef, useState, type CSSProperties, type ReactNode } from "react";
 
 import { getCommandPaletteOpener } from "../commandPaletteStore";
+import { useSpecularPointer } from "../lib/motion/useSpecularPointer";
 import { useNativeTitlebarHeight } from "../lib/windowControlsOverlay";
 import { requestWorkspaceFocus } from "../lib/workspaceFocus";
 import { useCloseAppModal } from "./sidebar/mainAppLocation";
@@ -26,6 +27,7 @@ export function AppRouteModal({ label, children }: { label: string; children: Re
   // On close, return focus to the opener only after a keyboard close; after a pointer close it
   // would paint a focus ring.
   const popupRef = useRef<HTMLDivElement>(null);
+  useSpecularPointer(popupRef);
   const [opener] = useState(
     () =>
       getCommandPaletteOpener() ??
@@ -100,7 +102,7 @@ export function AppRouteModal({ label, children }: { label: string; children: Re
             aria-label={label}
             data-slot="dialog-popup"
             data-app-modal=""
-            className="relative flex size-full min-h-0 min-w-0 flex-col overflow-hidden bg-background max-sm:pt-(--app-modal-top-inset) max-sm:pb-safe text-foreground outline-none transition-[opacity,scale] duration-150 ease-out [-webkit-app-region:no-drag] data-ending-style:scale-[0.985] data-ending-style:opacity-0 data-starting-style:scale-[0.985] data-starting-style:opacity-0 sm:max-h-[60rem] sm:max-w-[80rem] sm:rounded-2xl sm:border sm:shadow-2xl/40"
+            className="surface-specular-prism relative flex size-full min-h-0 min-w-0 flex-col overflow-hidden bg-background max-sm:pt-(--app-modal-top-inset) max-sm:pb-safe text-foreground outline-none transition-[opacity,scale] duration-150 ease-out [-webkit-app-region:no-drag] data-ending-style:scale-[0.985] data-ending-style:opacity-0 data-starting-style:scale-[0.985] data-starting-style:opacity-0 sm:max-h-[60rem] sm:max-w-[80rem] sm:rounded-2xl sm:border sm:shadow-2xl/40"
           >
             {/* The emptied strip still moves the window, as the titlebar it replaces does. */}
             <div

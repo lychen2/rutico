@@ -1,12 +1,21 @@
-import type { ReactNode } from "react";
+import { useRef, type ReactNode } from "react";
 
+import { useSpecularPointer } from "~/lib/motion/useSpecularPointer";
 import { T3Wordmark } from "../T3Wordmark";
 
 export function StandalonePage({ children }: { readonly children: ReactNode }) {
+  const cardRef = useRef<HTMLElement>(null);
+  useSpecularPointer(cardRef);
+
   return (
     // The page owns scrolling because root cannot scroll; safe centering keeps oversized cards top-aligned.
     <div className="flex h-full items-center-safe justify-center overflow-y-auto scrollbar-gutter-both bg-background px-4 py-10 text-foreground sm:px-6">
-      <section className="dialog-glass w-full max-w-xl rounded-2xl border p-6">{children}</section>
+      <section
+        ref={cardRef}
+        className="dialog-glass surface-specular-prism w-full max-w-xl rounded-2xl border p-6"
+      >
+        {children}
+      </section>
     </div>
   );
 }
