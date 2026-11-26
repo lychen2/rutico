@@ -179,8 +179,8 @@ export function ThemePreviewCircles({
                   }
                   aria-pressed={isPicked}
                   className={cn(
-                    "relative flex size-[68px] shrink-0 transform-gpu cursor-pointer items-center justify-center rounded-full p-1.5 outline-none transition-transform hover:scale-105 focus-visible:outline-2 focus-visible:outline-solid focus-visible:-outline-offset-5 focus-visible:outline-foreground/60",
-                    isPicked && "hover:scale-100",
+                    "relative flex size-[68px] shrink-0 transform-gpu cursor-pointer items-center justify-center rounded-full p-1.5 outline-none transition-transform duration-150 ease-(--ease-spring-snappy) any-hover:scale-105 active:scale-95 motion-reduce:transition-none motion-reduce:any-hover:scale-100 motion-reduce:active:scale-100 focus-visible:outline-2 focus-visible:outline-solid focus-visible:-outline-offset-5 focus-visible:outline-foreground/60",
+                    isPicked && "any-hover:scale-100",
                   )}
                   onClick={(event) => {
                     event.stopPropagation();
@@ -193,8 +193,7 @@ export function ThemePreviewCircles({
                     <>
                       <span
                         aria-hidden
-                        className="pointer-events-none absolute inset-0 rounded-full"
-                        style={{ boxShadow: "inset 0 0 0 2px var(--ring)" }}
+                        className="pointer-events-none absolute inset-0 rounded-full ring-2 ring-inset ring-ring"
                       />
                       <span
                         aria-hidden
