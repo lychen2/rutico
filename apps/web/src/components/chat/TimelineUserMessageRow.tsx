@@ -337,6 +337,7 @@ function AutomationMessageRow({ row }: { row: Extract<TimelineRow, { kind: "mess
         )}
         data-user-message-bubble=""
         data-user-message-state={row.message.runId === null ? "launching" : "settled"}
+        data-rewind-target={ctx.revertPreviewMessageId === row.message.id ? "true" : undefined}
       >
         <MessageAuthorHeading>{gt("Automation")}</MessageAuthorHeading>
         <FoldedMessageHeader
@@ -1020,6 +1021,7 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
         )}
         data-user-message-bubble=""
         data-user-message-state={row.message.runId === null ? "launching" : "settled"}
+        data-rewind-target={ctx.revertPreviewMessageId === row.message.id ? "true" : undefined}
       >
         {/* Outside the fold so a collapsed message still has a heading to navigate to. */}
         {mediaAboveText ? null : (

@@ -1335,3 +1335,46 @@
     transition: none;
   }
 }
+
+/* ==========================================================================
+   D12 / C040: Non-Blur Checkpoint Time-Travel Veil, Ruler & Restore Bloom
+   ========================================================================== */
+
+[data-rewind-preview-veil="true"] > [data-timeline-root="true"] {
+  opacity: 0.36;
+  filter: saturate(0.42);
+  transition:
+    opacity 180ms ease-out,
+    filter 180ms ease-out;
+}
+
+[data-rewind-target="true"] {
+  box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--warning) 52%, transparent);
+}
+
+@keyframes chat-rewind-ruler-in {
+  from {
+    opacity: 0;
+    transform: translate3d(0, -4px, 0);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  [data-rewind-boundary-ruler="true"] {
+    animation: chat-rewind-ruler-in 180ms var(--spring-snappy) both;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-rewind-preview-veil="true"] > [data-timeline-root="true"] {
+    transition: none;
+  }
+
+  [data-rewind-boundary-ruler="true"] {
+    animation: none;
+  }
+}

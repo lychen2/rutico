@@ -127,6 +127,7 @@ import {
 
 import { forwardWheelToTimeline } from "./timelineMinimapWheel";
 import { TimelineMinimap } from "./TimelineMinimap";
+import { useRevertPreviewMessageId } from "./ChatOverlayHosts";
 import {
   type TimelineRowSharedState,
   type TimelineRowActivityState,
@@ -837,7 +838,20 @@ const ConversationTimeline = memo(function ConversationTimeline({
   );
   // Run status/timestamps change per stream event; keep them out of shared row context.
   const runs = useStableHandoffRuns(runsProp);
+  const revertPreviewMessageId = useRevertPreviewMessageId(routeThreadKey);
   const minimapItems = deriveTimelineMinimapItems(rows);
+  const revertPreviewRowIndex =
+    revertPreviewMessageId === null
+      ? -1
+      : rows.findIndex(
+          (row) => row.kind === "message" && row.message.id === revertPreviewMessageId,
+        );
+  const revertPreviewTurnIndex =
+    revertPreviewMessageId === null
+      ? -1
+      : minimapItems.findIndex((item) => item.id === revertPreviewMessageId);
+  const revertAffectedTurnCount =
+    revertPreviewTurnIndex >= 0 ? Math.max(1, minimapItems.length - revertPreviewTurnIndex) : 0;
   const minimapRowIndices = minimapItems.map((item) => item.rowIndex);
   const restoreRowIndex =
     restoringThreadPosition && rememberedPosition?.atEnd === false
@@ -1270,6 +1284,7 @@ const ConversationTimeline = memo(function ConversationTimeline({
     runs,
     activeThreadEnvironmentId,
     onRevertToTurnCount,
+    revertPreviewMessageId,
     onRunShellCommand,
     findActive,
     onImageExpand,
@@ -1568,16 +1583,49 @@ const ConversationTimeline = memo(function ConversationTimeline({
       }
     }
   }
-  const renderItem = ({ item }: { item: MessagesTimelineRow }) => {
+  const renderItem = ({ item, index }: { item: MessagesTimelineRow; index: number }) => {
     const foldCascadeDelay = revealingTurnFoldDelays.get(item.id);
+    const inRewindPreviewVeil = revertPreviewRowIndex >= 0 && index >= revertPreviewRowIndex;
+    const isRewindBoundary = revertPreviewRowIndex >= 0 && index === revertPreviewRowIndex;
     return (
       <TimelineRowCtx value={sharedState}>
         <div
           className="messages-timeline-row-frame"
+          data-rewind-preview-veil={inRewindPreviewVeil ? "true" : undefined}
           onPlayCapture={(event) => onAudioPlaybackChange(item.id, event)}
           onPauseCapture={(event) => onAudioPlaybackChange(item.id, event)}
           onEndedCapture={(event) => onAudioPlaybackChange(item.id, event)}
         >
+          {isRewindBoundary ? (
+            <div
+              role="separator"
+              data-rewind-boundary-ruler="true"
+              className="chat-content-lane mb-2 flex items-center gap-2.5 text-2xs font-medium text-warning-foreground tabular-nums"
+            >
+              <span
+                aria-hidden="true"
+                className="h-px flex-1 border-t border-dashed border-warning/60"
+              />
+              <span className="shrink-0 rounded-full border border-warning/35 bg-warning/10 px-2.5 py-0.5">
+                {revertPreviewTurnIndex >= 0 ? (
+                  <T>
+                    Rewind to Turn <Var>{revertPreviewTurnIndex + 1}</Var> ·{" "}
+                    <Var>
+                      {gt("{count, plural, one {{count} turn} other {{count} turns}}", {
+                        count: revertAffectedTurnCount,
+                      })}
+                    </Var>
+                  </T>
+                ) : (
+                  <T>Rewind point</T>
+                )}
+              </span>
+              <span
+                aria-hidden="true"
+                className="h-px flex-1 border-t border-dashed border-warning/60"
+              />
+            </div>
+          ) : null}
           <div
             ref={observeLaneWidth}
             // An HTML preview can run wider than this lane, which stays the chat column's width.
@@ -1598,7 +1646,12 @@ const ConversationTimeline = memo(function ConversationTimeline({
       </TimelineRowCtx>
     );
   };
-  const listExtraData = { identity: listIdentityKey, rowCount: rows.length, sharedState };
+  const listExtraData = {
+    identity: listIdentityKey,
+    rowCount: rows.length,
+    sharedState,
+    revertPreviewMessageId,
+  };
   const timelineListFooter = (
     <TimelineListFooter
       composerInset={anchoredEndSpace ? 0 : contentInsetEndAdjustment}
