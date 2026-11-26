@@ -1112,9 +1112,10 @@ function RightPanelTab(
         "t3-panel-tab-enter cursor-pointer group/tab flex h-6 max-w-36 shrink-0 items-center gap-0.5 rounded-md pr-2 pl-1.5 text-xs motion-reduce:transition-none",
         props.ownsDesktopTitleBar && "[-webkit-app-region:no-drag]",
         props.active
-          ? "bg-accent text-foreground shadow-xs/5"
+          ? "bg-accent text-foreground shadow-xs/5 ring-1 ring-inset ring-border/60 dark:ring-white/10"
           : "text-muted-foreground hover:bg-accent/60 hover:text-foreground",
-        isDragging && "relative z-10",
+        isDragging &&
+          "relative z-10 cursor-grabbing bg-popover text-foreground shadow-md ring-1 ring-inset ring-primary/40",
       )}
     >
       {content}
