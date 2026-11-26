@@ -32,4 +32,36 @@ describe("sidebar list motion", () => {
 
     expect(above.getBoundingClientRect().top).toBe(before);
   });
+
+  it("uses the workbench curve on FLIP moves and subtle scale(0.985) on exiting ghosts", async () => {
+    await using screen = await render(null);
+    const list = document.createElement("ul");
+    list.style.cssText = "position: relative; margin: 0; padding: 0; list-style: none";
+    const first = document.createElement("li");
+    first.style.height = "40px";
+    first.dataset.sidebarMotionKey = "first";
+    const second = document.createElement("li");
+    second.style.height = "40px";
+    second.dataset.sidebarMotionKey = "second";
+    list.append(first, second);
+    screen.container.append(list);
+
+    const motion = createSidebarListMotion(list);
+    using _motion = { [Symbol.dispose]: () => motion.dispose() };
+    motion.update(false);
+
+    first.remove();
+    motion.update(true);
+
+    const canonicalWorkbenchEase = "cubic-bezier(0.2, 0.8, 0.2, 1)";
+    const moveAnimation = second.getAnimations()[0];
+    expect(moveAnimation?.effect?.getTiming().easing).toBe(canonicalWorkbenchEase);
+
+    const ghost = list.querySelector<HTMLElement>('[data-sidebar-motion-exit="first"]');
+    expect(ghost).not.toBeNull();
+    const exitEffect = ghost!.getAnimations()[0]?.effect as KeyframeEffect | undefined;
+    expect(exitEffect?.getTiming().easing).toBe(canonicalWorkbenchEase);
+    const keyframes = exitEffect?.getKeyframes() ?? [];
+    expect(keyframes[keyframes.length - 1]?.transform).toContain("scale(0.985)");
+  });
 });
