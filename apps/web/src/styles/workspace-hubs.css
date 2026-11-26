@@ -391,3 +391,113 @@
     transform: none;
   }
 }
+
+/* --------------------------------------------------------------------------
+   D26 / C085: Settings magnetic sliding route pill, search-jump spotlight,
+   route stage cross-fade, and breadcrumb micro-slide
+   -------------------------------------------------------------------------- */
+
+@keyframes settings-route-stage-enter {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 5px, 0);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+@keyframes settings-breadcrumb-enter {
+  from {
+    opacity: 0;
+    transform: translate3d(-4px, 0, 0);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+@keyframes settings-spotlight-beacon {
+  0% {
+    opacity: 0;
+    transform: scale(0.985);
+  }
+  20% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.35;
+    transform: scale(1.006);
+  }
+  74% {
+    opacity: 0.95;
+    transform: scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(1.01);
+  }
+}
+
+[data-slot="settings-nav-indicator"] {
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 0;
+  border-radius: var(--radius-md);
+  background-color: var(--sidebar-row-selected, var(--accent));
+  box-shadow: inset 2px 0 0 var(--primary);
+  pointer-events: none;
+  opacity: 0;
+  will-change: transform;
+}
+
+[data-settings-nav-groups]:has([data-slot="settings-nav-indicator"][data-indicator-ready="true"])
+  [data-settings-section][aria-current="page"] {
+  background-color: transparent;
+}
+
+[data-settings-nav-groups] [data-settings-section] {
+  position: relative;
+  z-index: 1;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  [data-slot="settings-route-stage"] {
+    animation: settings-route-stage-enter 150ms cubic-bezier(0.23, 1, 0.32, 1) both;
+  }
+
+  [data-slot="settings-breadcrumb-active"] {
+    animation: settings-breadcrumb-enter 140ms cubic-bezier(0.23, 1, 0.32, 1) both;
+  }
+
+  [data-settings-page-scroll] div.settings-search-target-pulse,
+  [data-settings-page-scroll] section.settings-search-target-pulse > div:first-child {
+    position: relative;
+  }
+
+  [data-settings-page-scroll] div.settings-search-target-pulse::after,
+  [data-settings-page-scroll] section.settings-search-target-pulse > div:first-child::after {
+    content: "";
+    position: absolute;
+    inset: -1px;
+    border-radius: 0.75rem;
+    border: 1.5px solid color-mix(in oklch, var(--primary) 72%, transparent);
+    background-color: color-mix(in oklch, var(--primary) 6%, transparent);
+    pointer-events: none;
+    animation: settings-spotlight-beacon 900ms cubic-bezier(0.23, 1, 0.32, 1) both;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-slot="settings-route-stage"],
+  [data-slot="settings-breadcrumb-active"],
+  [data-settings-page-scroll] div.settings-search-target-pulse::after,
+  [data-settings-page-scroll] section.settings-search-target-pulse > div:first-child::after {
+    animation: none;
+    transition: none;
+  }
+}

@@ -91,6 +91,7 @@ export function FontFamilyPicker({
   requireMonospace = false,
   initialOpen = false,
   onSelect,
+  onPreviewChange,
 }: {
   ariaLabel: string;
   defaultFamily: string;
@@ -98,6 +99,7 @@ export function FontFamilyPicker({
   requireMonospace?: boolean;
   initialOpen?: boolean;
   onSelect: (family: string) => void;
+  onPreviewChange?: (family: string | null) => void;
 }) {
   const gt = useGT();
   const [open, setOpen] = useState(false);
@@ -121,7 +123,11 @@ export function FontFamilyPicker({
 
   const handleOpenChange = (nextOpen: boolean) => {
     setOpen(nextOpen);
-    if (nextOpen) setQuery("");
+    if (nextOpen) {
+      setQuery("");
+    } else {
+      onPreviewChange?.(null);
+    }
   };
 
   const families = enumeration.status === "granted" ? enumeration.families : [];
@@ -142,6 +148,7 @@ export function FontFamilyPicker({
 
   const handlePick = (value: string) => {
     setOpen(false);
+    onPreviewChange?.(null);
     if (value !== DEFAULT_FONT_VALUE && requireMonospace && !isMonospaceFamily(value)) {
       toastManager.add(
         stackedThreadToast({
@@ -195,8 +202,20 @@ export function FontFamilyPicker({
       onValueChange={(next) => {
         if (typeof next === "string") handlePick(next);
       }}
-      onItemHighlighted={(_value, eventDetails) => {
-        if (!open || eventDetails.index < 0 || eventDetails.reason !== "keyboard") return;
+      onItemHighlighted={(highlightedValue, eventDetails) => {
+        if (!open) return;
+        if (typeof highlightedValue === "string") {
+          if (highlightedValue === DEFAULT_FONT_VALUE) {
+            onPreviewChange?.("");
+          } else if (!requireMonospace || isMonospaceFamily(highlightedValue)) {
+            onPreviewChange?.(highlightedValue);
+          } else {
+            onPreviewChange?.(null);
+          }
+        } else {
+          onPreviewChange?.(null);
+        }
+        if (eventDetails.index < 0 || eventDetails.reason !== "keyboard") return;
         void listRef.current?.scrollIndexIntoView?.({ index: eventDetails.index, animated: false });
       }}
     >

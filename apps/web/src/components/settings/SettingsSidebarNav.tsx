@@ -38,6 +38,8 @@ import { useLocation, useNavigate } from "@tanstack/react-router";
 import { T, useGT, useMessages } from "gt-react";
 
 import { cn } from "../../lib/utils";
+import { useSharedIndicator } from "../../lib/motion/useSharedIndicator";
+import "~/styles/workspace-hubs.css";
 import { Button } from "../ui/button";
 import { Kbd } from "../ui/kbd";
 import {
@@ -141,6 +143,8 @@ export function SettingsSidebarNav({ pathname }: { pathname: string }) {
   const currentHash = useLocation({ select: (location) => location.hash });
   const activePath = SETTINGS_DETAIL_PAGE_PARENTS[pathname] ?? pathname;
   const searchInputRef = useRef<HTMLInputElement>(null);
+  const navGroupsRef = useRef<HTMLDivElement>(null);
+  const navIndicatorRef = useRef<HTMLSpanElement>(null);
   const [query, setQuery] = useState("");
   // Below md the nav is an icon rail; searching expands it over the page.
   const [compactSearchOpen, setCompactSearchOpen] = useState(false);
@@ -149,6 +153,15 @@ export function SettingsSidebarNav({ pathname }: { pathname: string }) {
   const navGroups = settingsNavGroups(useHasSecretProvidersEnvironment());
   const results = searchSettings(query, searchableItems, m);
   const isSearching = query.trim().length > 0;
+
+  useSharedIndicator({
+    containerRef: navGroupsRef,
+    indicatorRef: navIndicatorRef,
+    activeSelector: '[data-settings-section][aria-current="page"]',
+    activeKey: isSearching ? null : activePath,
+    preset: "snappy",
+    axis: "y",
+  });
   const hasResults = results.length > 0;
   const maxResultIndex = Math.max(results.length - 1, 0);
   // Persist the clamp so a shrink-then-recover of results keeps the clamped highlight.
@@ -395,7 +408,17 @@ export function SettingsSidebarNav({ pathname }: { pathname: string }) {
                     </SidebarMenuItem>
                   </SidebarMenu>
                 )}
-                <div onKeyDown={handleSettingsSectionKeyDown} className="flex flex-col gap-4">
+                <div
+                  ref={navGroupsRef}
+                  data-settings-nav-groups=""
+                  onKeyDown={handleSettingsSectionKeyDown}
+                  className="relative flex flex-col gap-4"
+                >
+                  <span
+                    ref={navIndicatorRef}
+                    aria-hidden="true"
+                    data-slot="settings-nav-indicator"
+                  />
                   {navGroups.map((group, index) => (
                     <div
                       key={group.heading}

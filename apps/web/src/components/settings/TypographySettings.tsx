@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import type { CSSProperties, ReactNode } from "react";
 import { useEffect, useEffectEvent, useRef, useState } from "react";
 import {
   DEFAULT_UNIFIED_SETTINGS,
@@ -20,6 +20,7 @@ import { Input } from "../ui/input";
 import {
   DEFAULT_CODE_FONT_STACK,
   DEFAULT_SANS_FONT_STACK,
+  displayFontFamily,
   isFontFamilyAvailable,
   isMonospaceFamily,
   resolveDefaultFamilyLabel,
@@ -97,6 +98,7 @@ function InterfaceFontRow({ preview }: { preview?: ReactNode }) {
         defaultValue: DEFAULT_UNIFIED_SETTINGS.fontSizeInterface,
         onChange: (fontSizeInterface) => updateSettings({ fontSizeInterface }),
       }}
+      previewVar="sans"
       {...(preview !== undefined ? { preview } : {})}
     />
   );
@@ -131,6 +133,7 @@ function PromptFontRow() {
         defaultValue: DEFAULT_UNIFIED_SETTINGS.fontSizePrompt,
         onChange: (fontSizePrompt) => updateSettings({ fontSizePrompt }),
       }}
+      previewVar="composer"
       preview={<PromptFontPreview />}
     />
   );
@@ -141,11 +144,13 @@ function CodeFontRow({
   resetLabel,
   description,
   preview,
+  onPreviewChange,
 }: {
   title?: string;
   resetLabel?: string;
   description?: string;
   preview?: ReactNode;
+  onPreviewChange?: (family: string | null) => void;
 }) {
   const gt = useGT();
   const searchableSetting = useSearchableSetting();
@@ -177,6 +182,8 @@ function CodeFontRow({
         defaultValue: DEFAULT_UNIFIED_SETTINGS.fontSizeCode,
         onChange: (fontSizeCode) => updateSettings({ fontSizeCode }),
       }}
+      previewVar="code"
+      {...(onPreviewChange !== undefined ? { onPreviewChange } : {})}
       preview={preview ?? <CodeFontPreview />}
     />
   );
@@ -188,6 +195,7 @@ function TerminalFontRow() {
   const settings = useScopedSettings();
   const updateSettings = useUpdateScopedSettings();
   const defaults = useFontDefaultFamilies();
+  const [previewTerminal, setPreviewTerminal] = useState<string | null>(null);
   return (
     <FontFamilySettingsRow
       {...searchableSetting("terminal-font")}
@@ -212,12 +220,14 @@ function TerminalFontRow() {
         defaultValue: DEFAULT_UNIFIED_SETTINGS.fontSizeTerminal,
         onChange: (fontSizeTerminal) => updateSettings({ fontSizeTerminal }),
       }}
+      previewVar="terminal"
+      onPreviewChange={setPreviewTerminal}
       preview={
         <TerminalFontPreview
           family={resolveTerminalFontPreference({
             advanced: true,
             code: settings.fontFamilyCode,
-            terminal: settings.fontFamilyTerminal,
+            terminal: previewTerminal ?? settings.fontFamilyTerminal,
           })}
           size={settings.fontSizeTerminal}
         />
@@ -325,6 +335,7 @@ function SeparateFontsRow({
 function SimpleFontRows() {
   const gt = useGT();
   const settings = useScopedSettings();
+  const [previewMono, setPreviewMono] = useState<string | null>(null);
   return (
     <>
       <InterfaceFontRow preview={<PromptFontPreview />} />
@@ -332,13 +343,14 @@ function SimpleFontRows() {
         title={gt("Monospace font")}
         resetLabel={gt("Reset monospace font to default")}
         description={gt("Code blocks, diffs, file previews, and the terminal.")}
+        onPreviewChange={setPreviewMono}
         preview={
           <>
             <CodeFontPreview />
             <TerminalFontPreview
               family={resolveTerminalFontPreference({
                 advanced: false,
-                code: settings.fontFamilyCode,
+                code: previewMono ?? settings.fontFamilyCode,
                 terminal: settings.fontFamilyTerminal,
               })}
               size={resolveTerminalFontSizePreference({
@@ -394,6 +406,8 @@ function FontFamilySettingsRow({
   defaultFamily,
   defaultValue,
   preview,
+  previewVar,
+  onPreviewChange,
   value,
   onValueChange,
   onReset,
@@ -407,6 +421,8 @@ function FontFamilySettingsRow({
   defaultFamily: string;
   defaultValue: string;
   preview?: ReactNode;
+  previewVar?: "sans" | "composer" | "code" | "terminal";
+  onPreviewChange?: (family: string | null) => void;
   value: string;
   onValueChange: (value: string) => void;
   onReset: () => void;
@@ -424,6 +440,11 @@ function FontFamilySettingsRow({
   const trimmed = value.trim();
   const [draft, setDraft] = useState(value);
   const [draftSettled, setDraftSettled] = useState(true);
+  const [previewFamily, setPreviewFamily] = useState<string | null>(null);
+  const handlePreviewChange = (next: string | null) => {
+    setPreviewFamily(next);
+    onPreviewChange?.(next);
+  };
   // Each pending commit remembers the value it was typed against, so one that outlives
   // an external change (hydration, reset, picker selection) drops its stale draft.
   const commitTimerRef = useRef<{ readonly id: number; readonly value: string } | null>(null);
@@ -483,6 +504,7 @@ function FontFamilySettingsRow({
         requireMonospace={requireMonospace}
         initialOpen={inputFocused}
         onSelect={onValueChange}
+        onPreviewChange={handlePreviewChange}
       />
     ) : (
       <Input
@@ -562,6 +584,30 @@ function FontFamilySettingsRow({
       </Select>
     </div>
   );
+  const previewFontStack =
+    previewFamily === null
+      ? undefined
+      : previewFamily.length === 0
+        ? requireMonospace
+          ? DEFAULT_CODE_FONT_STACK
+          : DEFAULT_SANS_FONT_STACK
+        : `${displayFontFamily(previewFamily)}, ${requireMonospace ? DEFAULT_CODE_FONT_STACK : DEFAULT_SANS_FONT_STACK}`;
+  const previewStyle: CSSProperties | undefined =
+    previewFontStack === undefined
+      ? undefined
+      : previewVar === "code"
+        ? ({
+            "--font-mono": previewFontStack,
+            "--diffs-font-family": previewFontStack,
+          } as CSSProperties)
+        : previewVar === "composer"
+          ? ({ "--font-composer": previewFontStack } as CSSProperties)
+          : previewVar === "sans"
+            ? ({
+                "--font-sans": previewFontStack,
+                "--font-composer": previewFontStack,
+              } as CSSProperties)
+            : undefined;
   return (
     <SettingsRow
       {...(id !== undefined ? { id } : {})}
@@ -570,7 +616,24 @@ function FontFamilySettingsRow({
       resetAction={resetAction}
       control={control}
     >
-      {preview}
+      {preview ? (
+        <div
+          style={previewStyle}
+          data-font-previewing={previewFamily !== null ? "true" : undefined}
+        >
+          {previewFamily !== null ? (
+            <div className="mb-1 flex items-center gap-1.5 text-2xs text-primary">
+              <span className="size-1.5 rounded-full bg-primary" aria-hidden />
+              <span>
+                {gt("Previewing {family}", {
+                  family: previewFamily.length === 0 ? defaultFamily : previewFamily,
+                })}
+              </span>
+            </div>
+          ) : null}
+          {preview}
+        </div>
+      ) : null}
     </SettingsRow>
   );
 }

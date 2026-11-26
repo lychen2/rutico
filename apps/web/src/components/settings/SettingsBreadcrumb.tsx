@@ -6,6 +6,7 @@ import {
   WorkspaceBreadcrumbSeparator,
 } from "../WorkspaceBreadcrumb";
 import { SETTINGS_SECTION_LABELS } from "./settingsSearch";
+import "~/styles/workspace-hubs.css";
 
 const SETTINGS_LABEL = msg("Settings");
 
@@ -34,7 +35,13 @@ export function SettingsBreadcrumb({ pathname }: { pathname: string }) {
         </>
       ) : null}
       <WorkspaceBreadcrumbItem current className="truncate">
-        {m(sectionLabel ?? SETTINGS_LABEL)}
+        <span
+          key={sectionLabel ?? SETTINGS_LABEL}
+          data-slot="settings-breadcrumb-active"
+          className="inline-block truncate"
+        >
+          {m(sectionLabel ?? SETTINGS_LABEL)}
+        </span>
       </WorkspaceBreadcrumbItem>
     </WorkspaceBreadcrumb>
   );
