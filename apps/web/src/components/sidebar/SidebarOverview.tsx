@@ -193,7 +193,7 @@ function OverviewProgress({ row }: { row: OverviewRow }) {
         className="h-0.75 w-8 shrink-0 overflow-hidden rounded-full bg-sidebar-border"
       >
         <span
-          className="block h-full origin-left rounded-full bg-current rtl:origin-right"
+          className="block h-full origin-left rounded-full bg-current transition-transform duration-300 ease-(--ease-drawer) motion-reduce:transition-none rtl:origin-right"
           style={{ transform: `scaleX(${progress.done / progress.total})` }}
         />
       </span>
@@ -229,7 +229,7 @@ function OverviewActionIconButton({
               onClick();
             }}
             className={cn(
-              "inline-flex size-5.5 shrink-0 cursor-pointer items-center justify-center rounded-md text-sidebar-muted-foreground outline-none transition-colors hover:bg-sidebar-row-hover hover:text-sidebar-foreground focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring",
+              "inline-flex size-5.5 shrink-0 cursor-pointer items-center justify-center rounded-md text-sidebar-muted-foreground outline-none transition-[background-color,color,scale] duration-150 ease-out hover:bg-sidebar-row-hover hover:text-sidebar-foreground focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring active:scale-90 motion-reduce:transition-none motion-reduce:active:scale-100",
               tone === "done" && "hover:text-success-foreground",
               tone === "stop" && "hover:text-error-foreground",
             )}
@@ -338,9 +338,9 @@ function OverviewRowQuickActions({
     <span
       data-overview-quick-actions={mode}
       className={cn(
-        "pointer-events-none absolute top-1 end-1 flex items-center gap-px rounded-md bg-sidebar/90 opacity-0 backdrop-blur-xs transition-opacity motion-reduce:transition-none",
-        "group-hover/overview-row:pointer-events-auto group-hover/overview-row:opacity-100 group-focus-within/overview-row:pointer-events-auto group-focus-within/overview-row:opacity-100",
-        menuOpen && "pointer-events-auto opacity-100",
+        "pointer-events-none absolute top-1 end-1 flex items-center gap-px rounded-md bg-sidebar/92 p-0.5 opacity-0 shadow-xs ring-1 ring-inset ring-sidebar-border/70 backdrop-blur-sm transition-[opacity,transform] duration-150 ease-(--ease-drawer) ltr:translate-x-1 rtl:-translate-x-1 motion-reduce:translate-x-0 motion-reduce:transition-none dark:ring-white/8",
+        "group-hover/overview-row:pointer-events-auto group-hover/overview-row:translate-x-0 group-hover/overview-row:opacity-100 group-focus-within/overview-row:pointer-events-auto group-focus-within/overview-row:translate-x-0 group-focus-within/overview-row:opacity-100",
+        menuOpen && "pointer-events-auto translate-x-0 opacity-100",
       )}
     >
       {handleStop ? (
@@ -406,7 +406,7 @@ function OverviewRowQuickActions({
                       aria-label={gt("More actions")}
                       data-overview-quick-action="more"
                       onClick={(event) => event.stopPropagation()}
-                      className="inline-flex size-5.5 shrink-0 cursor-pointer items-center justify-center rounded-md text-sidebar-muted-foreground outline-none transition-colors hover:bg-sidebar-row-hover hover:text-sidebar-foreground focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring"
+                      className="inline-flex size-5.5 shrink-0 cursor-pointer items-center justify-center rounded-md text-sidebar-muted-foreground outline-none transition-[background-color,color,scale] duration-150 ease-out hover:bg-sidebar-row-hover hover:text-sidebar-foreground focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring active:scale-90 motion-reduce:transition-none motion-reduce:active:scale-100"
                     />
                   }
                 />
@@ -587,6 +587,11 @@ function OverviewThreadButton({
     done: "bg-emerald-600/75 dark:bg-emerald-400/75",
     today: "bg-sidebar-muted-foreground/50",
   };
+  const criticalHalo: Partial<Record<OverviewStatus, string>> = {
+    approval: "ring-[3px] ring-orange-500/20 dark:ring-orange-400/22",
+    input: "ring-[3px] ring-orange-500/20 dark:ring-orange-400/22",
+    failed: "ring-[3px] ring-red-500/20 dark:ring-red-400/22",
+  };
   return (
     <div className="group/overview-row relative flex min-w-0 flex-1 items-center">
       <Tooltip>
@@ -611,7 +616,7 @@ function OverviewThreadButton({
                   : undefined
               }
               className={cn(
-                "block min-w-0 flex-1 cursor-pointer rounded-md px-2 py-1.5 text-start text-sidebar-foreground outline-none hover:bg-sidebar-row-hover focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring aria-[current=page]:bg-sidebar-row-active",
+                "block min-w-0 flex-1 cursor-pointer rounded-md px-2 py-1.5 text-start text-sidebar-foreground outline-none transition-[background-color,color,opacity,box-shadow] duration-150 ease-out hover:bg-sidebar-row-hover focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring aria-[current=page]:bg-sidebar-row-active aria-[current=page]:light:ring-1 aria-[current=page]:light:ring-inset aria-[current=page]:light:ring-sidebar-border/70 aria-[current=page]:dark:ring-1 aria-[current=page]:dark:ring-inset aria-[current=page]:dark:ring-white/8 motion-reduce:transition-none",
                 mode === "today" &&
                   row.status === "done" &&
                   "opacity-75 hover:opacity-100 aria-[current=page]:opacity-100",
@@ -622,7 +627,11 @@ function OverviewThreadButton({
           <span className="flex min-w-0 items-center gap-2">
             <span
               aria-hidden
-              className={cn("size-1.5 shrink-0 rounded-full", indicator[row.status])}
+              className={cn(
+                "size-1.5 shrink-0 rounded-full",
+                indicator[row.status],
+                criticalHalo[row.status],
+              )}
             />
             <span className="min-w-0 flex-1 truncate text-sm">{title}</span>
             {time === null ? null : (
@@ -790,12 +799,12 @@ export function SidebarOverview({
                       return next;
                     })
                   }
-                  className="grid size-6 shrink-0 cursor-pointer place-items-center rounded-md text-sidebar-muted-foreground outline-none hover:bg-sidebar-row-hover focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring"
+                  className="grid size-6 shrink-0 cursor-pointer place-items-center rounded-md text-sidebar-muted-foreground outline-none transition-colors duration-150 ease-out hover:bg-sidebar-row-hover hover:text-sidebar-foreground focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring motion-reduce:transition-none"
                 >
                   <ChevronDownIcon
                     aria-hidden
                     className={cn(
-                      "size-3 motion-safe:transition-transform motion-safe:duration-150",
+                      "size-3 motion-safe:transition-transform motion-safe:duration-150 motion-safe:ease-(--ease-drawer)",
                       !expanded && "-rotate-90 rtl:rotate-90",
                     )}
                   />
@@ -912,7 +921,7 @@ export function SidebarOverview({
             onClick={() => setShowTodayTasks((expanded) => !expanded)}
             className={cn(
               headingClass,
-              "w-full cursor-pointer rounded-md text-start outline-none hover:text-sidebar-foreground focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring",
+              "w-full cursor-pointer rounded-md text-start outline-none transition-colors duration-150 ease-out hover:text-sidebar-foreground focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring motion-reduce:transition-none",
             )}
           >
             <span>{todayTasksLabel}</span>
@@ -921,7 +930,7 @@ export function SidebarOverview({
               <ChevronDownIcon
                 aria-hidden
                 className={cn(
-                  "size-3 motion-safe:transition-transform motion-safe:duration-150",
+                  "size-3 motion-safe:transition-transform motion-safe:duration-150 motion-safe:ease-(--ease-drawer)",
                   !showTodayTasks && "-rotate-90 rtl:rotate-90",
                 )}
               />
