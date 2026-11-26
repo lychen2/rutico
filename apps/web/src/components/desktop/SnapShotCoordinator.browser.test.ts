@@ -24,6 +24,7 @@ import {
   beginSnapShotAnimation,
   dismissAllSnapShotAnimations,
   getPendingSnapShotAnimations,
+  recordSnapShotTelemetry,
   scheduleSnapShotAnimationDestination,
 } from "../../lib/snapShotAnimation";
 
@@ -298,4 +299,53 @@ describe("snapshot destination ownership", () => {
       );
     },
   );
+});
+
+describe("Linux Tier 4 direct delivery landing choreography", () => {
+  it("applies data-snapshot-landed and capability attributes on Composer attachment without overlay flight", async () => {
+    using _env = setup();
+    const target = scopeThreadRef(environmentId, ThreadId.make("niri-direct-thread"));
+    const capture = {
+      id: "87654321-4321-4321-4321-cba987654321",
+      name: "niri-window.png",
+      mimeType: "image/png" as const,
+      sizeBytes: 3,
+      dataUrl: "data:image/png;base64,AQID",
+      source: {
+        kind: "snap-shot" as const,
+        capturedAt: "2026-09-01T00:00:00.000Z",
+        appName: "Alacritty",
+        windowTitle: "zsh",
+      },
+    };
+    const frame = document.createElement("div");
+    frame.className = "composer-attachment-card";
+    const img = document.createElement("img");
+    img.alt = capture.name;
+    frame.append(img);
+    document.body.append(frame);
+    const acknowledgeSnapShot = vi.fn(async () => undefined);
+    const bridge = {
+      readSnapShot: async () => capture,
+      acknowledgeSnapShot,
+    } as unknown as DesktopBridge;
+
+    try {
+      recordSnapShotTelemetry(capture.id, {
+        tier: 4,
+        coordinateSpace: "window-local",
+        helperAvailable: false,
+        backend: "niri",
+        sourceScaleFactor: 1,
+        targetScaleFactor: 1.5,
+      });
+      await deliverSnapShot(bridge, capture, () => target);
+      expect(frame.getAttribute("data-snapshot-landed")).toBe("true");
+      expect(frame.getAttribute("data-snapshot-tier")).toBe("4");
+      expect(frame.getAttribute("data-snapshot-coord-space")).toBe("window-local");
+      expect(acknowledgeSnapShot).toHaveBeenCalledExactlyOnceWith(capture.id);
+    } finally {
+      frame.remove();
+    }
+  });
 });

@@ -20,6 +20,7 @@ import {
   type SnapShotShortcut,
   type DesktopSnapShotEvent,
   type DesktopSnapShotId,
+  type LinuxSnapShotTelemetry,
 } from "@t3tools/contracts";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
@@ -303,6 +304,100 @@ function captureMode(platform: NodeJS.Platform): DesktopSnapShotState["mode"] {
   return platform === "darwin" || platform === "win32" ? "direct" : "unavailable";
 }
 
+function readDisplayScaleFactorForBounds(
+  bounds: Electron.Rectangle | undefined,
+): number | undefined {
+  if (!bounds) return undefined;
+  try {
+    if (typeof Electron.screen?.getDisplayMatching !== "function") return undefined;
+    const display = Electron.screen.getDisplayMatching(bounds);
+    return Number.isFinite(display?.scaleFactor) && display.scaleFactor > 0
+      ? display.scaleFactor
+      : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * Classifies Linux SnapShot execution into 4 capability tiers (Tier 3 helper/X11 flight,
+ * Tier 2 trusted-bounds direct, Tier 4 portal/Niri direct + landing, Tier 1 untrusted).
+ */
+export function resolveLinuxSnapShotCapability(input: {
+  readonly isWayland: boolean;
+  readonly backend?:
+    | "screenshot-portal"
+    | "gnome-extension"
+    | "niri"
+    | "kde"
+    | "hyprland"
+    | "picker"
+    | "x11";
+  readonly feedbackAvailable: boolean;
+  readonly hasTrustedSourceBounds: boolean;
+  readonly sourceScaleFactor?: number;
+  readonly targetScaleFactor?: number;
+}): LinuxSnapShotTelemetry {
+  const scaleFields = {
+    ...(input.sourceScaleFactor !== undefined
+      ? { sourceScaleFactor: input.sourceScaleFactor }
+      : {}),
+    ...(input.targetScaleFactor !== undefined
+      ? { targetScaleFactor: input.targetScaleFactor }
+      : {}),
+  };
+
+  if (!input.isWayland) {
+    if (input.hasTrustedSourceBounds) {
+      return {
+        tier: 3,
+        coordinateSpace: "global-dip",
+        helperAvailable: true,
+        backend: input.backend ?? "x11",
+        ...scaleFields,
+      };
+    }
+    return {
+      tier: 1,
+      coordinateSpace: "unknown",
+      helperAvailable: false,
+      backend: input.backend ?? "x11",
+      ...scaleFields,
+    };
+  }
+
+  const isCompositorHelperBackend =
+    input.backend === "gnome-extension" || input.backend === "kde" || input.backend === "hyprland";
+
+  if (isCompositorHelperBackend && input.feedbackAvailable) {
+    return {
+      tier: 3,
+      coordinateSpace: "compositor-logical",
+      helperAvailable: true,
+      backend: input.backend,
+      ...scaleFields,
+    };
+  }
+
+  if (isCompositorHelperBackend && input.hasTrustedSourceBounds) {
+    return {
+      tier: 2,
+      coordinateSpace: "compositor-logical",
+      helperAvailable: false,
+      backend: input.backend,
+      ...scaleFields,
+    };
+  }
+
+  return {
+    tier: 4,
+    coordinateSpace: input.backend === "niri" ? "window-local" : "unknown",
+    helperAvailable: false,
+    ...(input.backend ? { backend: input.backend } : {}),
+    ...scaleFields,
+  };
+}
+
 function shouldAnimateSnapShot(settings: SnapShotSystemAnimationSettings): boolean {
   return settings.shouldRenderRichAnimation && !settings.prefersReducedMotion;
 }
@@ -451,6 +546,7 @@ async function captureSource({
   transition,
   imageTempPath,
   linuxAppId,
+  linuxBackend,
   kdeCapturePaths,
   hyprlandCapturePaths,
   accessibilityProcessPool,
@@ -466,6 +562,7 @@ async function captureSource({
   transition: SnapShotTransition;
   imageTempPath: string;
   linuxAppId: string;
+  linuxBackend?: DesktopSnapShotState["linuxBackend"];
   kdeCapturePaths: KdeCapturePaths;
   hyprlandCapturePaths: HyprlandCapturePaths;
   accessibilityProcessPool: AccessibilityProcessPool;
@@ -579,6 +676,12 @@ async function captureSource({
         linuxActivationFailure = { cause };
       });
     }
+    const isWayland = platform === "linux" && isWaylandSession(platform, process.env);
+    const sourceScaleFactor = readDisplayScaleFactorForBounds(
+      active?.bounds ??
+        (linuxWindow?.accessibilityBoundsReliable === false ? undefined : linuxWindow?.bounds),
+    );
+    const targetScaleFactor = readDisplayScaleFactorForBounds(destinationWindowBounds);
     const animationStarted =
       linuxFeedback?.animationStarted ??
       (await showCaptureFeedback(
@@ -590,12 +693,41 @@ async function captureSource({
         active,
         platform,
         destinationWindowBounds,
+        isWayland,
       ));
+    const resolvedLinuxBackend =
+      linuxBackend ??
+      (niriSocketPath()
+        ? ("niri" as const)
+        : isHyprlandCaptureSession()
+          ? ("hyprland" as const)
+          : isKdeCaptureSession()
+            ? ("kde" as const)
+            : isGnomeCaptureSession(process.env)
+              ? ("gnome-extension" as const)
+              : isWayland
+                ? ("screenshot-portal" as const)
+                : ("x11" as const));
+    const linuxCaptureTelemetry =
+      platform === "linux"
+        ? resolveLinuxSnapShotCapability({
+            isWayland,
+            backend: resolvedLinuxBackend,
+            feedbackAvailable: Boolean(linuxFeedback?.animationStarted),
+            hasTrustedSourceBounds: Boolean(
+              active !== undefined ||
+              (linuxWindow !== undefined && linuxWindow.accessibilityBoundsReliable !== false),
+            ),
+            ...(sourceScaleFactor !== undefined ? { sourceScaleFactor } : {}),
+            ...(targetScaleFactor !== undefined ? { targetScaleFactor } : {}),
+          })
+        : undefined;
     return {
       source,
       active,
       linuxWindow,
       linuxActivationFailure,
+      linuxCaptureTelemetry,
       contextPromise,
       animationStarted,
       png,
@@ -697,9 +829,12 @@ async function showCaptureFeedback(
   active: ActiveWindow | undefined,
   platform: NodeJS.Platform,
   destinationWindowBounds?: Electron.Rectangle,
+  isWayland = platform === "linux" && isWaylandSession(platform, process.env),
 ): Promise<boolean> {
-  // Wayland does not let this client position overlays on another app's window.
-  if (platform === "linux") return false;
+  // On Linux Wayland without a compositor helper, arbitrary global overlay positioning is
+  // unavailable; Tier 2/4 captures flow directly into in-Composer landing choreography.
+  // X11 is explicitly decoupled and only animates when trusted global source bounds exist.
+  if (platform === "linux" && (isWayland || active === undefined)) return false;
   const bounds = snapShotFlashBounds(active, platform);
   const animationsEnabled =
     settings.snapShotAnimations &&
@@ -924,6 +1059,7 @@ export const make = Effect.gen(function* () {
       transition.dispose();
       yield* fileSystem.makeDirectory(captureDirectory, { recursive: true });
       yield* emit({ type: "requested", id: id as DesktopSnapShotId });
+      const currentState = yield* Ref.get(stateRef);
       const snapshot = yield* Effect.tryPromise({
         try: () =>
           captureSource({
@@ -935,6 +1071,7 @@ export const make = Effect.gen(function* () {
             transition,
             imageTempPath,
             linuxAppId,
+            ...(currentState.linuxBackend ? { linuxBackend: currentState.linuxBackend } : {}),
             kdeCapturePaths,
             hyprlandCapturePaths,
             accessibilityProcessPool,
@@ -954,7 +1091,13 @@ export const make = Effect.gen(function* () {
         );
       }
       if (snapshot.animationStarted) {
-        yield* emit({ type: "started", id: id as DesktopSnapShotId });
+        yield* emit({
+          type: "started",
+          id: id as DesktopSnapShotId,
+          ...(snapshot.linuxCaptureTelemetry
+            ? { linuxCaptureTelemetry: snapshot.linuxCaptureTelemetry }
+            : {}),
+        });
       } else {
         yield* desktopWindow.activate.pipe(Effect.ignoreCause);
       }
@@ -1034,7 +1177,15 @@ export const make = Effect.gen(function* () {
     yield* persistCapture(capture).pipe(
       Effect.tap(() =>
         Ref.update(stateRef, (state) => ({ ...state, message: null })).pipe(
-          Effect.andThen(emit({ type: "ready", id: capture.id as DesktopSnapShotId })),
+          Effect.andThen(
+            emit({
+              type: "ready",
+              id: capture.id as DesktopSnapShotId,
+              ...(capture.linuxCaptureTelemetry
+                ? { linuxCaptureTelemetry: capture.linuxCaptureTelemetry }
+                : {}),
+            }),
+          ),
         ),
       ),
       Effect.tapError((error) =>
@@ -1689,6 +1840,23 @@ export const make = Effect.gen(function* () {
             state.linuxBackend === "hyprland"
               ? yield* Effect.promise(() => hyprlandCaptureShortcut(linuxAppId, home))
               : undefined;
+          const resolvedFeedbackAvailable = hyprlandHelper
+            ? hyprlandHelper.status === "ready" && hyprlandHelper.feedbackAvailable === true
+            : kdeHelper
+              ? kdeHelper.status === "ready" && kdeHelper.feedbackAvailable === true
+              : state.linuxFeedbackAvailable === true;
+          const linuxCaptureTelemetry =
+            environment.platform === "linux"
+              ? resolveLinuxSnapShotCapability({
+                  isWayland: isWaylandSession(environment.platform, process.env),
+                  ...(state.linuxBackend ? { backend: state.linuxBackend } : {}),
+                  feedbackAvailable: resolvedFeedbackAvailable,
+                  hasTrustedSourceBounds:
+                    state.linuxBackend === "gnome-extension" ||
+                    (state.linuxBackend === "kde" && kdeHelper?.status === "ready") ||
+                    (state.linuxBackend === "hyprland" && hyprlandHelper?.status === "ready"),
+                })
+              : undefined;
           return {
             ...state,
             ...portalShortcut?.state,
@@ -1710,6 +1878,12 @@ export const make = Effect.gen(function* () {
                   kdeHelper,
                   linuxFeedbackAvailable:
                     kdeHelper.status === "ready" && kdeHelper.feedbackAvailable === true,
+                }
+              : {}),
+            ...(linuxCaptureTelemetry
+              ? {
+                  linuxCaptureTier: linuxCaptureTelemetry.tier,
+                  linuxCaptureTelemetry,
                 }
               : {}),
             shortcutVerified,

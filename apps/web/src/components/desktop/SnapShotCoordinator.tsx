@@ -35,6 +35,8 @@ import {
   dismissSnapShotAnimation,
   finishSnapShotAnimation,
   getPendingSnapShotAnimations,
+  recordSnapShotTelemetry,
+  triggerSnapShotLandingChoreography,
   updateSnapShotAnimationSource,
   waitForSnapShotAnimationDestination,
 } from "../../lib/snapShotAnimation";
@@ -224,7 +226,10 @@ export async function deliverSnapShot(
     await waitForSnapShotAnimationDestination(capture.id).catch(() => undefined);
     finishSnapShotAnimation(capture.id);
     await afterNextPaint();
+  } else {
+    await afterNextPaint();
   }
+  triggerSnapShotLandingChoreography(capture.id, { fileName: file.name });
   await bridge.acknowledgeSnapShot(capture.id);
   dispatchSnapShotComposerFocus();
 }
@@ -452,6 +457,9 @@ export function SnapShotCoordinator() {
           return;
         }
         case "started": {
+          if (event.linuxCaptureTelemetry) {
+            recordSnapShotTelemetry(event.id, event.linuxCaptureTelemetry);
+          }
           playCaptureSound(event.id);
           const target = resolveSnapShotDeliveryTarget(
             captureTargetsRef.current,
@@ -471,6 +479,9 @@ export function SnapShotCoordinator() {
           return;
         }
         case "ready":
+          if (event.linuxCaptureTelemetry) {
+            recordSnapShotTelemetry(event.id, event.linuxCaptureTelemetry);
+          }
           void drain();
           return;
         case "failed": {

@@ -414,3 +414,51 @@ html.electron-linux[data-desktop-window-focused="false"] .linux-window-control-b
     display: none;
   }
 }
+
+/* ==========================================================================
+   D31 / C104: 4-Tier Capability-Graded Linux SnapShot In-Composer Landing
+   ========================================================================== */
+
+[data-snapshot-landed="true"] {
+  transform-origin: center center;
+  animation: t3-snapshot-land-squircle 450ms var(--spring-bouncy, cubic-bezier(0.23, 1, 0.32, 1))
+    both;
+  will-change: transform, box-shadow;
+}
+
+@supports (corner-shape: superellipse(1.25)) {
+  [data-snapshot-landed="true"] {
+    corner-shape: superellipse(1.25);
+  }
+}
+
+@keyframes t3-snapshot-land-squircle {
+  0% {
+    transform: scale(0.92);
+    box-shadow: 0 0 0 0 color-mix(in oklch, var(--primary) 0%, transparent);
+  }
+  42% {
+    transform: scale(1.03);
+    box-shadow: 0 0 0 2px color-mix(in oklch, var(--primary) 62%, transparent);
+  }
+  100% {
+    transform: scale(1);
+    box-shadow: 0 0 0 0 color-mix(in oklch, var(--primary) 0%, transparent);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-snapshot-landed="true"] {
+    animation: t3-snapshot-land-reduced 120ms ease-out both;
+    will-change: opacity;
+  }
+}
+
+@keyframes t3-snapshot-land-reduced {
+  from {
+    opacity: 0.72;
+  }
+  to {
+    opacity: 1;
+  }
+}

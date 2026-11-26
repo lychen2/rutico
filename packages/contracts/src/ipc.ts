@@ -184,6 +184,35 @@ export const DesktopCaptureConfigApplied = Schema.Struct({
 });
 export type DesktopCaptureConfigApplied = typeof DesktopCaptureConfigApplied.Type;
 
+const LinuxSnapShotCapabilityTierSchema = Schema.Literals([1, 2, 3, 4]);
+
+const LinuxSnapShotCoordinateSpaceSchema = Schema.Literals([
+  "global-dip",
+  "compositor-logical",
+  "window-local",
+  "unknown",
+]);
+
+const LinuxSnapShotTelemetrySchema = Schema.Struct({
+  tier: LinuxSnapShotCapabilityTierSchema,
+  coordinateSpace: LinuxSnapShotCoordinateSpaceSchema,
+  helperAvailable: Schema.Boolean,
+  backend: Schema.optionalKey(
+    Schema.Literals([
+      "screenshot-portal",
+      "gnome-extension",
+      "niri",
+      "kde",
+      "hyprland",
+      "picker",
+      "x11",
+    ]),
+  ),
+  sourceScaleFactor: Schema.optionalKey(Schema.Finite.check(Schema.isGreaterThan(0))),
+  targetScaleFactor: Schema.optionalKey(Schema.Finite.check(Schema.isGreaterThan(0))),
+});
+export type LinuxSnapShotTelemetry = typeof LinuxSnapShotTelemetrySchema.Type;
+
 export const DesktopSnapShotState = Schema.Struct({
   mode: DesktopSnapShotMode,
   windows: Schema.optional(Schema.Boolean),
@@ -192,6 +221,8 @@ export const DesktopSnapShotState = Schema.Struct({
     Schema.Literals(["screenshot-portal", "gnome-extension", "niri", "kde", "hyprland", "picker"]),
   ),
   linuxFeedbackAvailable: Schema.optional(Schema.Boolean),
+  linuxCaptureTier: Schema.optionalKey(LinuxSnapShotCapabilityTierSchema),
+  linuxCaptureTelemetry: Schema.optionalKey(LinuxSnapShotTelemetrySchema),
   shortcut: SnapShotShortcut,
   shortcutRegistered: Schema.Boolean,
   shortcutPending: Schema.optional(Schema.Boolean),
@@ -227,8 +258,16 @@ export type DesktopSnapShotId = typeof DesktopSnapShotId.Type;
 /** `id` is absent for failures before a capture exists. */
 export const DesktopSnapShotEvent = Schema.Union([
   Schema.Struct({ type: Schema.Literal("requested"), id: DesktopSnapShotId }),
-  Schema.Struct({ type: Schema.Literal("started"), id: DesktopSnapShotId }),
-  Schema.Struct({ type: Schema.Literal("ready"), id: DesktopSnapShotId }),
+  Schema.Struct({
+    type: Schema.Literal("started"),
+    id: DesktopSnapShotId,
+    linuxCaptureTelemetry: Schema.optionalKey(LinuxSnapShotTelemetrySchema),
+  }),
+  Schema.Struct({
+    type: Schema.Literal("ready"),
+    id: DesktopSnapShotId,
+    linuxCaptureTelemetry: Schema.optionalKey(LinuxSnapShotTelemetrySchema),
+  }),
   Schema.Struct({ type: Schema.Literal("failed"), id: Schema.optional(DesktopSnapShotId) }),
   Schema.Struct({ type: Schema.Literal("shortcut-changed") }),
 ]);
