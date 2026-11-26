@@ -471,6 +471,7 @@ export function AppSidebarLayout({
       <SidebarProvider
         className="h-dvh! min-h-0! overflow-hidden"
         data-panel-animations={routePanelAnimationsActive ? "true" : "false"}
+        data-spatial-recess="true"
         storageKey="chat_thread_sidebar_open"
         style={sidebarProviderStyle}
       >

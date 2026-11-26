@@ -20,14 +20,24 @@ import {
   DIALOG_MEDIA_POPUP_CLASS,
   DIALOG_MOBILE_SHEET_CLASS,
   DIALOG_POPUP_CLASS,
+  useSpatialModalDepth,
 } from "~/components/ui/dialog-styles";
 import { ScrollArea } from "~/components/ui/scroll-area";
 
 const ControlledOpenContext = createContext<boolean | undefined>(undefined);
 
-function RetainedWhileClosed({ open, children }: { open: boolean; children: ReactNode }) {
+function RetainedWhileClosed({
+  open,
+  spatialDepth = false,
+  children,
+}: {
+  open: boolean;
+  spatialDepth?: boolean;
+  children: ReactNode;
+}) {
   const controlledOpen = use(ControlledOpenContext);
   const isOpen = open && controlledOpen !== false;
+  useSpatialModalDepth(spatialDepth && isOpen);
   const [retained, setRetained] = useState(children);
   if (isOpen && retained !== children) {
     setRetained(children);
@@ -39,6 +49,16 @@ function renderRetainedPopup(props: ComponentProps<"div">, state: { open: boolea
   return (
     <div {...props}>
       <RetainedWhileClosed open={state.open}>{props.children}</RetainedWhileClosed>
+    </div>
+  );
+}
+
+function renderModalRetainedPopup(props: ComponentProps<"div">, state: { open: boolean }) {
+  return (
+    <div {...props}>
+      <RetainedWhileClosed open={state.open} spatialDepth>
+        {props.children}
+      </RetainedWhileClosed>
     </div>
   );
 }
@@ -136,7 +156,7 @@ function DialogPopup({
         )}
         data-slot="dialog-popup"
         initialFocus={initialFocus}
-        render={renderRetainedPopup}
+        render={renderModalRetainedPopup}
         {...props}
       >
         {children}
@@ -267,6 +287,7 @@ function DialogPanel({
 
 export {
   ControlledOpenContext,
+  renderModalRetainedPopup,
   renderRetainedPopup,
   Dialog,
   DialogTrigger,

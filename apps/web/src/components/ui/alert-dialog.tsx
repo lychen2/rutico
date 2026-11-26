@@ -10,7 +10,7 @@ import {
 import {
   ControlledOpenContext,
   DialogAction,
-  renderRetainedPopup,
+  renderModalRetainedPopup,
   useDialogActionInitialFocus,
 } from "~/components/ui/dialog";
 
@@ -75,7 +75,7 @@ function AlertDialogPopup({
         )}
         data-slot="alert-dialog-popup"
         initialFocus={initialFocus}
-        render={renderRetainedPopup}
+        render={renderModalRetainedPopup}
         {...props}
       />
     ),

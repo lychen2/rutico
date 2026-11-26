@@ -867,3 +867,47 @@ html[data-theme-background-crossfade="active"]::before {
     transition: none;
   }
 }
+
+/* ==========================================================================
+   D05 / C015: Spatial Depth Workbench Recess for Stacked Modals
+   Skips scaling while a live Electron BrowserSurfaceSlot is mounted so
+   hosted <webview> geometry never desyncs; returns cleanly to transform: none
+   when modals close so zero containing-block residue affects fixed layers.
+   ========================================================================== */
+
+[data-slot="sidebar-wrapper"][data-spatial-recess="true"] {
+  transform-origin: center top;
+  transition:
+    transform 320ms var(--spring-spatial),
+    border-radius 320ms var(--spring-spatial),
+    filter 220ms ease-out;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  html[data-spatial-modal-depth="1"]
+    [data-slot="sidebar-wrapper"][data-spatial-recess="true"]:not(
+      :has([data-browser-surface-slot])
+    ) {
+    transform: scale(0.986);
+    border-radius: 12px;
+    filter: brightness(0.96);
+  }
+
+  html[data-spatial-modal-depth="2"]
+    [data-slot="sidebar-wrapper"][data-spatial-recess="true"]:not(
+      :has([data-browser-surface-slot])
+    ) {
+    transform: scale(0.974);
+    border-radius: 14px;
+    filter: brightness(0.92);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-slot="sidebar-wrapper"][data-spatial-recess="true"] {
+    transition: none;
+    transform: none;
+    filter: none;
+    border-radius: 0;
+  }
+}

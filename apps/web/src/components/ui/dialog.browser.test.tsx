@@ -105,4 +105,36 @@ describe("dialog initial focus", () => {
 
     await expect.element(page.getByRole("dialog")).toHaveFocus();
   });
+
+  it("tracks stacked spatial modal depth on html and clears it cleanly when dialogs close", async () => {
+    delete document.documentElement.dataset.spatialModalDepth;
+    const renderDialogs = (outerOpen: boolean, nestedOpen: boolean) => (
+      <Dialog open={outerOpen}>
+        <DialogPopup>
+          <DialogTitle>Outer modal</DialogTitle>
+          <Dialog open={nestedOpen}>
+            <DialogPopup>
+              <DialogTitle>Nested modal</DialogTitle>
+            </DialogPopup>
+          </Dialog>
+        </DialogPopup>
+      </Dialog>
+    );
+
+    await using screen = await render(renderDialogs(true, false));
+    await expect.element(page.getByText("Outer modal")).toBeVisible();
+    expect(document.documentElement.dataset.spatialModalDepth).toBe("1");
+
+    await screen.rerender(renderDialogs(true, true));
+    await expect.element(page.getByText("Nested modal")).toBeVisible();
+    expect(document.documentElement.dataset.spatialModalDepth).toBe("2");
+
+    await screen.rerender(renderDialogs(true, false));
+    await expect.element(page.getByText("Nested modal")).not.toBeInTheDocument();
+    expect(document.documentElement.dataset.spatialModalDepth).toBe("1");
+
+    await screen.rerender(renderDialogs(false, false));
+    await expect.element(page.getByText("Outer modal")).not.toBeInTheDocument();
+    expect(document.documentElement.dataset.spatialModalDepth).toBeUndefined();
+  });
 });
