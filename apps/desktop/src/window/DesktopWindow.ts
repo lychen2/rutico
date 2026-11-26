@@ -90,7 +90,9 @@ function syncMacosWindowButtons(window: Electron.BrowserWindow): void {
 
 const TITLEBAR_COLOR = "#01000000"; // #00000000 does not work correctly on Linux
 const TITLEBAR_LIGHT_SYMBOL_COLOR = "#1f2937";
+const TITLEBAR_LIGHT_INACTIVE_SYMBOL_COLOR = "#9ca3af";
 const TITLEBAR_DARK_SYMBOL_COLOR = "#f8fafc";
+const TITLEBAR_DARK_INACTIVE_SYMBOL_COLOR = "#94a3b8";
 const SPLASH_FADE_STEP_MS = 30;
 const SPLASH_FADE_OPACITIES = [0.75, 0.5, 0.25, 0] as const;
 const MAIN_WINDOW_BOUNDS_PERSIST_DEBOUNCE_MS = 500;
@@ -388,9 +390,48 @@ function concealPendingQuitWindow(
   window.setOpacity(0);
 }
 
+// Low-specificity (:where) fallback aligned with apps/web/src/index.css so inactive
+// chrome dims out of the box without double-dimming when web styles are present.
+export const DESKTOP_INACTIVE_WINDOW_CSS = [
+  ':where(html[data-desktop-window-focused]) :where(.drag-region:not([data-app-sidebar] *) > *, [data-app-sidebar] :is([data-slot="sidebar-header"], [data-slot="sidebar-content"], [data-slot="sidebar-footer"])) {',
+  "  transition: opacity 180ms cubic-bezier(0, 0, 0.58, 1);",
+  "}",
+  ':where(html[data-desktop-window-focused="false"]) :where(.drag-region:not([data-app-sidebar] *) > *) {',
+  "  opacity: 0.72;",
+  "}",
+  ':where(html[data-desktop-window-focused="false"]) :where([data-app-sidebar] :is([data-slot="sidebar-header"], [data-slot="sidebar-content"], [data-slot="sidebar-footer"])) {',
+  "  opacity: 0.85;",
+  "}",
+  "@media (prefers-reduced-motion: reduce) {",
+  '  :where(html[data-desktop-window-focused]) :where(.drag-region:not([data-app-sidebar] *) > *, [data-app-sidebar] :is([data-slot="sidebar-header"], [data-slot="sidebar-content"], [data-slot="sidebar-footer"])) {',
+  "    transition: none;",
+  "  }",
+  "}",
+].join("\n");
+
+export function buildWindowFocusStateScript(focused: boolean): string {
+  const value = focused ? "true" : "false";
+  return `(() => {
+    const root = document.documentElement;
+    if (!root) return;
+    if (root.getAttribute("data-desktop-window-focused") === "${value}") return;
+    root.setAttribute("data-desktop-window-focused", "${value}");
+    window.dispatchEvent(new CustomEvent("rutico:desktop-window-focus-change", { detail: { focused: ${value} } }));
+  })();`;
+}
+
+function syncWindowFocusState(window: Electron.BrowserWindow, focused: boolean): void {
+  if (window.isDestroyed() || window.webContents.isDestroyed()) return;
+  if (typeof window.webContents.executeJavaScript !== "function") return;
+  void window.webContents
+    .executeJavaScript(buildWindowFocusStateScript(focused))
+    .catch(() => undefined);
+}
+
 function getWindowTitleBarOptions(
   shouldUseDarkColors: boolean,
   platform: NodeJS.Platform,
+  isFocused = true,
 ): WindowTitleBarOptions {
   if (platform === "darwin") {
     return {
@@ -407,7 +448,13 @@ function getWindowTitleBarOptions(
     titleBarOverlay: {
       color: TITLEBAR_COLOR,
       height: TITLEBAR_HEIGHT,
-      symbolColor: shouldUseDarkColors ? TITLEBAR_DARK_SYMBOL_COLOR : TITLEBAR_LIGHT_SYMBOL_COLOR,
+      symbolColor: shouldUseDarkColors
+        ? isFocused
+          ? TITLEBAR_DARK_SYMBOL_COLOR
+          : TITLEBAR_DARK_INACTIVE_SYMBOL_COLOR
+        : isFocused
+          ? TITLEBAR_LIGHT_SYMBOL_COLOR
+          : TITLEBAR_LIGHT_INACTIVE_SYMBOL_COLOR,
     },
   };
 }
@@ -456,7 +503,8 @@ function syncWindowAppearance(
     }
 
     window.setBackgroundColor(getInitialWindowBackgroundColor(shouldUseDarkColors, persistedTheme));
-    const { titleBarOverlay } = getWindowTitleBarOptions(shouldUseDarkColors, platform);
+    const isFocused = typeof window.isFocused === "function" ? window.isFocused() : true;
+    const { titleBarOverlay } = getWindowTitleBarOptions(shouldUseDarkColors, platform, isFocused);
     if (hasTitleBarOverlay && typeof titleBarOverlay === "object") {
       window.setTitleBarOverlay(titleBarOverlay);
     }
@@ -1034,6 +1082,31 @@ export const make = Effect.gen(function* () {
       event.preventDefault();
       window.setTitle(environment.displayName);
     });
+    const handleWindowFocusChange = (focused: boolean) => {
+      syncWindowFocusState(window, focused);
+      if (environment.platform === "darwin" || window.isDestroyed()) return;
+      runFork(
+        electronTheme.shouldUseDarkColors.pipe(
+          Effect.tap((dark) =>
+            Effect.sync(() => {
+              if (window.isDestroyed()) return;
+              const { titleBarOverlay } = getWindowTitleBarOptions(
+                dark,
+                environment.platform,
+                focused,
+              );
+              if (typeof titleBarOverlay === "object") {
+                try {
+                  window.setTitleBarOverlay(titleBarOverlay);
+                } catch {}
+              }
+            }),
+          ),
+        ),
+      );
+    };
+    window.on("focus", () => handleWindowFocusChange(true));
+    window.on("blur", () => handleWindowFocusChange(false));
     window.on("resize", scheduleBoundsPersist);
     window.on("move", scheduleBoundsPersist);
     window.on("maximize", scheduleBoundsPersist);
@@ -1114,6 +1187,13 @@ export const make = Effect.gen(function* () {
       clearDevelopmentLoadRetry();
       developmentLoadRetryIndex = 0;
       if (environment.platform === "darwin") syncMacosWindowButtons(window);
+      if (typeof window.webContents.insertCSS === "function") {
+        void window.webContents.insertCSS(DESKTOP_INACTIVE_WINDOW_CSS).catch(() => undefined);
+      }
+      syncWindowFocusState(
+        window,
+        typeof window.isFocused === "function" ? window.isFocused() : true,
+      );
     });
     window.webContents.on(
       "did-fail-load",

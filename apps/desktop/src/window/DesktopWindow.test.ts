@@ -86,7 +86,9 @@ function makeFakeBrowserWindow() {
       },
     },
     copyImageAt: vi.fn(),
+    executeJavaScript: vi.fn((_script: string) => Promise.resolve()),
     focus: vi.fn(),
+    insertCSS: vi.fn((_css: string) => Promise.resolve("")),
     isDestroyed: vi.fn(() => false),
     getURL: vi.fn(() => "t3code-dev://app/"),
     getZoomLevel: vi.fn(() => zoomLevel),
@@ -122,6 +124,7 @@ function makeFakeBrowserWindow() {
     getBounds: vi.fn(() => ({ x: 0, y: 0, width: 1100, height: 780 })),
     getNormalBounds: vi.fn(() => ({ x: 0, y: 0, width: 1100, height: 780 })),
     isDestroyed: vi.fn(() => false),
+    isFocused: vi.fn(() => true),
     isFullScreen: vi.fn(() => false),
     isMaximized: vi.fn(() => false),
     isMinimized: vi.fn(() => false),
@@ -152,7 +155,10 @@ function makeFakeBrowserWindow() {
     window: window as unknown as Electron.BrowserWindow,
     getBounds: window.getBounds,
     getNormalBounds: window.getNormalBounds,
+    executeJavaScript: webContents.executeJavaScript,
+    insertCSS: webContents.insertCSS,
     isDestroyed: window.isDestroyed,
+    isFocused: window.isFocused,
     isFullScreen: window.isFullScreen,
     isMaximized: window.isMaximized,
     isMinimized: window.isMinimized,
@@ -1532,6 +1538,62 @@ describe("DesktopWindow", () => {
       assert.isUndefined(opaqueOptions[0]?.backgroundMaterial);
       assert.deepEqual(opaqueWindow.setBackgroundMaterial.mock.calls, [["none"]]);
     }),
+  );
+
+  it.effect(
+    "broadcasts desktop window focus and blur state to the renderer and dims inactive titlebar symbols",
+    () =>
+      Effect.gen(function* () {
+        const fakeWindow = makeFakeBrowserWindow();
+        const layer = layerTest({
+          window: fakeWindow.window,
+          createCount: yield* Ref.make(0),
+          mainWindow: yield* Ref.make<Option.Option<Electron.BrowserWindow>>(Option.none()),
+          platform: "win32",
+        });
+
+        yield* Effect.gen(function* () {
+          const desktopWindow = yield* DesktopWindow.DesktopWindow;
+          yield* desktopWindow.ensureMain;
+
+          const didFinishLoad = fakeWindow.webContentsListeners.get("did-finish-load");
+          const onBlur = fakeWindow.windowListeners.get("blur");
+          const onFocus = fakeWindow.windowListeners.get("focus");
+          assert.isDefined(didFinishLoad);
+          assert.isDefined(onBlur);
+          assert.isDefined(onFocus);
+
+          didFinishLoad?.();
+          assert.deepEqual(fakeWindow.insertCSS.mock.calls, [
+            [DesktopWindow.DESKTOP_INACTIVE_WINDOW_CSS],
+          ]);
+          assert.deepEqual(fakeWindow.executeJavaScript.mock.calls, [
+            [DesktopWindow.buildWindowFocusStateScript(true)],
+          ]);
+
+          onBlur?.();
+          yield* Effect.promise(() => Promise.resolve());
+          assert.equal(
+            fakeWindow.executeJavaScript.mock.lastCall?.[0],
+            DesktopWindow.buildWindowFocusStateScript(false),
+          );
+          assert.equal(
+            vi.mocked(fakeWindow.window.setTitleBarOverlay).mock.lastCall?.[0]?.symbolColor,
+            "#9ca3af",
+          );
+
+          onFocus?.();
+          yield* Effect.promise(() => Promise.resolve());
+          assert.equal(
+            fakeWindow.executeJavaScript.mock.lastCall?.[0],
+            DesktopWindow.buildWindowFocusStateScript(true),
+          );
+          assert.equal(
+            vi.mocked(fakeWindow.window.setTitleBarOverlay).mock.lastCall?.[0]?.symbolColor,
+            "#1f2937",
+          );
+        }).pipe(Effect.provide(layer));
+      }),
   );
 
   it.effect.each([
