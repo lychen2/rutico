@@ -145,6 +145,25 @@ describe("terminalUiStateStore actions", () => {
     ]);
   });
 
+  it("persists custom split pane weights and resets on equal ratios or pane close", () => {
+    const store = useTerminalUiStateStore.getState();
+    store.splitTerminal(THREAD_REF, "terminal-2");
+    store.splitTerminal(THREAD_REF, "terminal-3");
+    const groupId = layout().activeTerminalGroupId;
+
+    store.setTerminalGroupWeights(THREAD_REF, groupId, [0.35, 0.65]);
+    expect(layout().terminalGroups[0]?.paneWeights).toEqual([0.35, 0.65]);
+
+    store.setTerminalGroupWeights(THREAD_REF, groupId, [0.5, 0.5]);
+    expect(layout().terminalGroups[0]?.paneWeights).toBeUndefined();
+
+    store.setTerminalGroupWeights(THREAD_REF, groupId, [0.7, 0.3]);
+    expect(layout().terminalGroups[0]?.paneWeights).toEqual([0.7, 0.3]);
+
+    store.closeTerminal(THREAD_REF, "terminal-3");
+    expect(layout().terminalGroups[0]?.paneWeights).toBeUndefined();
+  });
+
   it.each([
     ["terminal-3", "terminal-3", DEFAULT_THREAD_TERMINAL_ID],
     [DEFAULT_THREAD_TERMINAL_ID, DEFAULT_THREAD_TERMINAL_ID, "terminal-3"],

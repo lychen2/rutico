@@ -1261,6 +1261,7 @@ interface ThreadTerminalDrawerProps {
   onCloseTerminal: (terminalId: string, threadRef?: ScopedThreadRef) => void;
   onHeightChange: (height: number) => void;
   onCollapseDrawer?: () => void;
+  onPaneWeightsChange?: (groupId: string, weights: number[] | undefined) => void;
   onAddTerminalContext: (selection: TerminalContextSelection) => void;
   keybindings: ResolvedKeybindingsConfig;
   terminalLabelsById?: ReadonlyMap<string, string>;
@@ -1307,14 +1308,40 @@ function TerminalActionButton({
   );
 }
 
+const MIN_SPLIT_PANE_WEIGHT = 0.15;
+const SPLIT_EQUAL_SNAP_EPSILON = 0.025;
+
+function resolveSplitPaneWeights(
+  paneCount: number,
+  weights: readonly number[] | undefined,
+): number[] {
+  if (paneCount <= 0) return [];
+  if (weights && weights.length === paneCount) {
+    const sum = weights.reduce(
+      (total, value) => total + (Number.isFinite(value) && value > 0 ? value : 0),
+      0,
+    );
+    if (sum > 0) return weights.map((value) => value / sum);
+  }
+  const share = 1 / paneCount;
+  return Array.from({ length: paneCount }, () => share);
+}
+
+function buildSplitGridTemplate(weights: readonly number[]): string {
+  return weights.map((weight) => `minmax(0, ${weight.toFixed(4)}fr)`).join(" ");
+}
+
 function TerminalSplitPanes({
+  groupId,
   terminalIds,
   splitDirection,
+  paneWeights,
   activeTerminalId,
   terminalLabelById,
   resolveLaunchLocation,
   onActiveTerminalChange,
   onCloseTerminal,
+  onPaneWeightsChange,
   advancedTypography,
   threadRef,
   threadId,
@@ -1322,13 +1349,16 @@ function TerminalSplitPanes({
   visible,
   keybindings,
 }: {
+  groupId: string;
   terminalIds: readonly string[];
   splitDirection: "horizontal" | "vertical";
+  paneWeights?: readonly number[] | undefined;
   activeTerminalId: string;
   terminalLabelById: ReadonlyMap<string, string>;
   resolveLaunchLocation: (terminalId: string) => TerminalLaunchLocation;
   onActiveTerminalChange: (terminalId: string) => void;
   onCloseTerminal: (terminalId: string, threadRef?: ScopedThreadRef) => void;
+  onPaneWeightsChange?: ((groupId: string, weights: number[] | undefined) => void) | undefined;
   advancedTypography: boolean;
   threadRef: ScopedThreadRef;
   threadId: ThreadId;
@@ -1337,28 +1367,111 @@ function TerminalSplitPanes({
   keybindings: ResolvedKeybindingsConfig;
 }) {
   const gt = useGT();
+  const gridRef = useRef<HTMLDivElement>(null);
+  const splitDragRef = useRef<{
+    pointerId: number;
+    dividerIndex: number;
+    startPos: number;
+    axisSize: number;
+    startWeights: number[];
+    liveWeights: number[];
+    dividerEl: HTMLDivElement;
+  } | null>(null);
   const isSplit = terminalIds.length > 1;
+  const resolvedWeights = resolveSplitPaneWeights(terminalIds.length, paneWeights);
+  const gridTemplate = buildSplitGridTemplate(resolvedWeights);
+
+  const handleDividerPointerDown = (
+    dividerIndex: number,
+    event: ReactPointerEvent<HTMLDivElement>,
+  ) => {
+    if (event.button !== 0 || !isSplit) return;
+    const grid = gridRef.current;
+    if (!grid) return;
+    const axisSize = splitDirection === "vertical" ? grid.clientHeight : grid.clientWidth;
+    if (axisSize <= 0) return;
+    event.preventDefault();
+    event.stopPropagation();
+    event.currentTarget.setPointerCapture(event.pointerId);
+    grid.setAttribute("data-terminal-resizing", "true");
+    event.currentTarget.setAttribute("data-dragging", "true");
+    splitDragRef.current = {
+      pointerId: event.pointerId,
+      dividerIndex,
+      startPos: splitDirection === "vertical" ? event.clientY : event.clientX,
+      axisSize,
+      startWeights: [...resolvedWeights],
+      liveWeights: [...resolvedWeights],
+      dividerEl: event.currentTarget,
+    };
+  };
+
+  const handleDividerPointerMove = (event: ReactPointerEvent<HTMLDivElement>) => {
+    const drag = splitDragRef.current;
+    const grid = gridRef.current;
+    if (!drag || !grid || drag.pointerId !== event.pointerId) return;
+    event.preventDefault();
+    const pos = splitDirection === "vertical" ? event.clientY : event.clientX;
+    const deltaRatio = (pos - drag.startPos) / drag.axisSize;
+    const leftIdx = drag.dividerIndex - 1;
+    const rightIdx = drag.dividerIndex;
+    const pairSum = (drag.startWeights[leftIdx] ?? 0) + (drag.startWeights[rightIdx] ?? 0);
+    const minShare = Math.min(MIN_SPLIT_PANE_WEIGHT, pairSum / 2);
+    let nextLeft = Math.max(
+      minShare,
+      Math.min(pairSum - minShare, (drag.startWeights[leftIdx] ?? 0) + deltaRatio),
+    );
+    const midpoint = pairSum / 2;
+    const snapped = !event.altKey && Math.abs(nextLeft - midpoint) <= SPLIT_EQUAL_SNAP_EPSILON;
+    if (snapped) nextLeft = midpoint;
+    const nextRight = pairSum - nextLeft;
+    const nextWeights = [...drag.startWeights];
+    nextWeights[leftIdx] = nextLeft;
+    nextWeights[rightIdx] = nextRight;
+    drag.liveWeights = nextWeights;
+    const template = buildSplitGridTemplate(nextWeights);
+    if (splitDirection === "vertical") {
+      grid.style.gridTemplateRows = template;
+    } else {
+      grid.style.gridTemplateColumns = template;
+    }
+    if (snapped) drag.dividerEl.setAttribute("data-snapped", "true");
+    else drag.dividerEl.removeAttribute("data-snapped");
+  };
+
+  const handleDividerPointerEnd = (event: ReactPointerEvent<HTMLDivElement>) => {
+    const drag = splitDragRef.current;
+    if (!drag || drag.pointerId !== event.pointerId) return;
+    splitDragRef.current = null;
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+    drag.dividerEl.removeAttribute("data-dragging");
+    drag.dividerEl.removeAttribute("data-snapped");
+    const grid = gridRef.current;
+    grid?.removeAttribute("data-terminal-resizing");
+    window.dispatchEvent(new Event("t3-terminal-resize-settled"));
+    onPaneWeightsChange?.(groupId, drag.liveWeights);
+  };
+
   return (
     <div
+      ref={gridRef}
       className="grid h-full w-full min-w-0 gap-0 overflow-hidden"
       style={
         splitDirection === "vertical"
-          ? {
-              gridTemplateRows: `repeat(${terminalIds.length}, minmax(0, 1fr))`,
-            }
-          : {
-              gridTemplateColumns: `repeat(${terminalIds.length}, minmax(0, 1fr))`,
-            }
+          ? { gridTemplateRows: gridTemplate }
+          : { gridTemplateColumns: gridTemplate }
       }
     >
-      {terminalIds.map((terminalId) => {
+      {terminalIds.map((terminalId, index) => {
         const terminalLaunchLocation = resolveLaunchLocation(terminalId);
         const isActive = terminalId === activeTerminalId;
         return (
           <div
             key={terminalId}
             className={cn(
-              "relative min-h-0 min-w-0",
+              "terminal-split-pane relative min-h-0 min-w-0",
               splitDirection === "vertical"
                 ? "border-t first:border-t-0"
                 : "border-l first:border-l-0",
@@ -1370,16 +1483,54 @@ function TerminalSplitPanes({
               }
             }}
           >
+            {isSplit && index > 0 && (
+              <div
+                role="separator"
+                aria-orientation={splitDirection === "vertical" ? "horizontal" : "vertical"}
+                aria-label={gt("Resize terminal split")}
+                className={cn(
+                  "terminal-split-divider group/split-divider absolute z-20 touch-none",
+                  splitDirection === "vertical"
+                    ? "inset-x-0 -top-1 h-2 cursor-row-resize"
+                    : "inset-y-0 -left-1 w-2 cursor-col-resize",
+                )}
+                onPointerDown={(event) => handleDividerPointerDown(index, event)}
+                onPointerMove={handleDividerPointerMove}
+                onPointerUp={handleDividerPointerEnd}
+                onPointerCancel={handleDividerPointerEnd}
+                onLostPointerCapture={handleDividerPointerEnd}
+                onDoubleClick={(event) => {
+                  event.stopPropagation();
+                  onPaneWeightsChange?.(groupId, undefined);
+                  window.dispatchEvent(new Event("t3-terminal-resize-settled"));
+                }}
+              >
+                <span
+                  aria-hidden="true"
+                  className={cn(
+                    "terminal-split-divider-bar pointer-events-none absolute bg-transparent transition-colors duration-120 ease-out group-hover/split-divider:bg-primary/60 motion-reduce:transition-none",
+                    splitDirection === "vertical"
+                      ? "inset-x-0 top-1 h-0.5"
+                      : "inset-y-0 left-1 w-0.5",
+                  )}
+                />
+              </div>
+            )}
             {isSplit && (
               <span
                 aria-hidden="true"
                 className={cn(
                   "pointer-events-none absolute inset-x-0 top-0 z-10 h-0.5 transition-colors duration-150 ease-out motion-reduce:transition-none",
-                  isActive ? "bg-primary/80" : "bg-transparent",
+                  isActive ? "bg-primary/90" : "bg-transparent",
                 )}
               />
             )}
-            <div className="h-full">
+            <div
+              className={cn(
+                "h-full transition-opacity duration-150 ease-out motion-reduce:transition-none",
+                isSplit && !isActive && "opacity-85",
+              )}
+            >
               <TerminalViewport
                 advancedTypography={advancedTypography}
                 threadRef={threadRef}
@@ -1534,6 +1685,7 @@ export default function ThreadTerminalDrawer({
   onCloseTerminal,
   onHeightChange,
   onCollapseDrawer,
+  onPaneWeightsChange,
   onAddTerminalContext,
   keybindings,
   terminalLabelsById,
@@ -1645,6 +1797,9 @@ export default function ThreadTerminalDrawer({
         ...(terminalGroup.splitDirection === "vertical"
           ? { splitDirection: "vertical" as const }
           : {}),
+        ...(terminalGroup.paneWeights?.length === nextTerminalIds.length
+          ? { paneWeights: terminalGroup.paneWeights }
+          : {}),
       });
     }
 
@@ -1700,11 +1855,13 @@ export default function ThreadTerminalDrawer({
       ? groupIndexById
       : (groupIndexByTerminalId.get(resolvedActiveTerminalId) ?? 0);
 
+  const activeGroup = resolvedTerminalGroups[resolvedActiveGroupIndex];
   const visibleTerminalIds =
-    resolvedTerminalGroups[resolvedActiveGroupIndex]?.terminalIds ??
+    activeGroup?.terminalIds ??
     (normalizedTerminalIds.length > 0 ? [resolvedActiveTerminalId] : []);
-  const splitDirection =
-    resolvedTerminalGroups[resolvedActiveGroupIndex]?.splitDirection ?? "horizontal";
+  const splitDirection = activeGroup?.splitDirection ?? "horizontal";
+  const activeGroupId = activeGroup?.id ?? activeTerminalGroupId;
+  const activeGroupPaneWeights = activeGroup?.paneWeights;
   const hasTerminalSidebar = normalizedTerminalIds.length > 1;
   const showGroupHeaders =
     resolvedTerminalGroups.length > 1 ||
@@ -2089,13 +2246,16 @@ export default function ThreadTerminalDrawer({
         >
           <div className="min-w-0 flex-1">
             <TerminalSplitPanes
+              groupId={activeGroupId}
               terminalIds={visibleTerminalIds}
               splitDirection={splitDirection}
+              paneWeights={activeGroupPaneWeights}
               activeTerminalId={resolvedActiveTerminalId}
               terminalLabelById={terminalLabelById}
               resolveLaunchLocation={resolveTerminalLaunchLocation}
               onActiveTerminalChange={onActiveTerminalChange}
               onCloseTerminal={onCloseTerminal}
+              onPaneWeightsChange={onPaneWeightsChange}
               advancedTypography={advancedTypography}
               threadRef={threadRef}
               threadId={threadId}

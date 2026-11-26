@@ -707,3 +707,32 @@
     transition: none;
   }
 }
+
+/* --------------------------------------------------------------------------
+   D22 / C073: Draggable Terminal Split Dividers & Smooth Pane Reveal
+   -------------------------------------------------------------------------- */
+
+.terminal-split-pane {
+  transition: opacity 160ms ease-out;
+}
+
+@starting-style {
+  .terminal-split-pane {
+    opacity: 0;
+  }
+}
+
+.terminal-split-divider[data-dragging="true"] .terminal-split-divider-bar {
+  background-color: color-mix(in oklch, var(--primary) 85%, transparent);
+}
+
+.terminal-split-divider[data-snapped="true"] .terminal-split-divider-bar {
+  background-color: var(--primary);
+  box-shadow: 0 0 0 1px color-mix(in oklch, var(--primary) 35%, transparent);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .terminal-split-pane {
+    transition: none;
+  }
+}

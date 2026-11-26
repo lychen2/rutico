@@ -88,6 +88,36 @@ function normalizeTerminalGroupIds(terminalIds: string[]): string[] {
   return normalizeTerminalIds(terminalIds);
 }
 
+function normalizeTerminalPaneWeights(
+  weights: readonly number[] | undefined,
+  paneCount: number,
+): number[] | undefined {
+  if (paneCount <= 1 || !weights || weights.length !== paneCount) {
+    return undefined;
+  }
+  let sum = 0;
+  for (const weight of weights) {
+    if (!Number.isFinite(weight) || weight <= 0) return undefined;
+    sum += weight;
+  }
+  if (sum <= 0) return undefined;
+  const normalized = weights.map((weight) => Math.round((weight / sum) * 10_000) / 10_000);
+  const equalShare = 1 / paneCount;
+  if (normalized.every((weight) => Math.abs(weight - equalShare) <= 0.002)) {
+    return undefined;
+  }
+  return normalized;
+}
+
+function numberArraysEqual(left: number[] | undefined, right: number[] | undefined): boolean {
+  if (left === right) return true;
+  if (!left || !right || left.length !== right.length) return false;
+  for (let index = 0; index < left.length; index += 1) {
+    if (left[index] !== right[index]) return false;
+  }
+  return true;
+}
+
 function normalizeTerminalGroups(
   terminalGroups: ThreadTerminalGroup[],
   terminalIds: string[],
@@ -115,10 +145,12 @@ function normalizeTerminalGroups(
       group.id.trim().length > 0
         ? group.id.trim()
         : fallbackGroupId(groupTerminalIds[0] ?? terminalIds[0] ?? "");
+    const paneWeights = normalizeTerminalPaneWeights(group.paneWeights, groupTerminalIds.length);
     nextGroups.push({
       id: assignUniqueGroupId(baseGroupId, usedGroupIds),
       terminalIds: groupTerminalIds,
       ...(group.splitDirection === "vertical" ? { splitDirection: "vertical" as const } : {}),
+      ...(paneWeights ? { paneWeights } : {}),
     });
   }
 
@@ -154,6 +186,7 @@ function terminalGroupsEqual(left: ThreadTerminalGroup[], right: ThreadTerminalG
       return false;
     }
     if (!arraysEqual(leftGroup.terminalIds, rightGroup.terminalIds)) return false;
+    if (!numberArraysEqual(leftGroup.paneWeights, rightGroup.paneWeights)) return false;
   }
   return true;
 }
@@ -240,6 +273,7 @@ function copyTerminalGroups(groups: ThreadTerminalGroup[]): ThreadTerminalGroup[
     id: group.id,
     terminalIds: [...group.terminalIds],
     ...(group.splitDirection === "vertical" ? { splitDirection: "vertical" as const } : {}),
+    ...(group.paneWeights ? { paneWeights: [...group.paneWeights] } : {}),
   }));
 }
 
@@ -346,6 +380,28 @@ function setThreadTerminalOpen(state: ThreadTerminalUiState, open: boolean): Thr
   }
   if (normalized.terminalOpen === open) return normalized;
   return { ...normalized, terminalOpen: open };
+}
+
+function setThreadTerminalGroupWeights(
+  state: ThreadTerminalUiState,
+  groupId: string,
+  weights: number[] | undefined,
+): ThreadTerminalUiState {
+  const normalized = normalizeThreadTerminalUiState(state);
+  const targetIndex = normalized.terminalGroups.findIndex((group) => group.id === groupId);
+  if (targetIndex < 0) return normalized;
+  const targetGroup = normalized.terminalGroups[targetIndex]!;
+  const nextWeights = normalizeTerminalPaneWeights(weights, targetGroup.terminalIds.length);
+  if (numberArraysEqual(targetGroup.paneWeights, nextWeights)) {
+    return normalized;
+  }
+  const terminalGroups = copyTerminalGroups(normalized.terminalGroups);
+  if (nextWeights) {
+    terminalGroups[targetIndex]!.paneWeights = nextWeights;
+  } else {
+    delete terminalGroups[targetIndex]!.paneWeights;
+  }
+  return { ...normalized, terminalGroups };
 }
 
 function setThreadTerminalHeight(
@@ -590,6 +646,11 @@ interface TerminalUiStateStoreState {
   suppressedTerminalIdsByThreadKey: Record<string, string[]>;
   setTerminalOpen: (threadRef: ScopedThreadRef, open: boolean) => void;
   setTerminalHeight: (threadRef: ScopedThreadRef, height: number) => void;
+  setTerminalGroupWeights: (
+    threadRef: ScopedThreadRef,
+    groupId: string,
+    weights: number[] | undefined,
+  ) => void;
   splitTerminal: (threadRef: ScopedThreadRef, terminalId: string) => void;
   splitTerminalVertical: (threadRef: ScopedThreadRef, terminalId: string) => void;
   newTerminal: (threadRef: ScopedThreadRef, terminalId: string) => void;
@@ -707,6 +768,10 @@ export const useTerminalUiStateStore = create<TerminalUiStateStoreState>()(
         },
         setTerminalHeight: (threadRef, height) =>
           updateTerminal(threadRef, (state) => setThreadTerminalHeight(state, height)),
+        setTerminalGroupWeights: (threadRef, groupId, weights) =>
+          updateTerminal(threadRef, (state) =>
+            setThreadTerminalGroupWeights(state, groupId, weights),
+          ),
         splitTerminal: (threadRef, terminalId) =>
           updateTerminal(threadRef, (state) => splitThreadTerminal(state, terminalId), {
             terminalId,
