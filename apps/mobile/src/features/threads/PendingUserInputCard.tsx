@@ -305,7 +305,7 @@ export function PendingUserInputCard(props: PendingUserInputCardProps) {
           onPress={triggerExpandFromGesture}
           className="min-h-10 flex-1 flex-row items-center gap-2 active:opacity-70"
         >
-          <Text className="font-t3-bold text-2xs uppercase tracking-[1.1px] text-foreground-secondary">
+          <Text className="font-t3-semibold text-xs text-foreground-secondary">
             <T>User input needed</T>
           </Text>
           <Text className="font-sans text-xs text-foreground-muted">
@@ -359,7 +359,7 @@ export function PendingUserInputCard(props: PendingUserInputCardProps) {
               className="flex-1 flex-row items-start gap-2 active:opacity-70"
             >
               <View className="flex-1 gap-2">
-                <Text className="font-t3-bold text-2xs uppercase tracking-[1.1px] text-foreground-secondary">
+                <Text className="font-t3-semibold text-xs text-foreground-secondary">
                   <T>User input needed</T>
                 </Text>
                 <Text className="font-t3-bold text-lg text-foreground">

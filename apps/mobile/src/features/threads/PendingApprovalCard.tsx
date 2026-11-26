@@ -292,7 +292,7 @@ export function PendingApprovalCard(props: PendingApprovalCardProps) {
               tintColorClassName="accent-warning-foreground"
               type="monochrome"
             />
-            <Text className="font-t3-bold text-2xs uppercase tracking-[1.1px] text-warning-foreground">
+            <Text className="font-t3-semibold text-xs text-warning-foreground">
               <T>Approval needed</T>
             </Text>
             <Text
@@ -364,7 +364,7 @@ export function PendingApprovalCard(props: PendingApprovalCardProps) {
                 tintColorClassName="accent-warning-foreground"
                 type="monochrome"
               />
-              <Text className="font-t3-bold text-2xs uppercase tracking-[1.1px] text-warning-foreground">
+              <Text className="font-t3-semibold text-xs text-warning-foreground">
                 <T>Approval needed</T>
               </Text>
             </View>
