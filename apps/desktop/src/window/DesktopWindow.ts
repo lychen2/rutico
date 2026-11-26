@@ -12,10 +12,15 @@ import * as Semaphore from "effect/Semaphore";
 import * as Electron from "electron";
 import { msg } from "gt-i18n";
 
-import { type DesktopSnapShotEvent, DEFAULT_CLIENT_SETTINGS } from "@t3tools/contracts";
+import {
+  type DesktopSnapShotEvent,
+  type LinuxWindowState,
+  DEFAULT_CLIENT_SETTINGS,
+} from "@t3tools/contracts";
 
 import * as DesktopAssets from "../app/DesktopAssets.ts";
 import * as DesktopClerk from "../app/DesktopClerk.ts";
+import { resolveLinuxDesktopSessionInfo } from "../app/DesktopEarlyElectronStartup.ts";
 import * as DesktopEnvironment from "../app/DesktopEnvironment.ts";
 import * as DesktopPrimaryPaste from "../app/DesktopPrimaryPaste.ts";
 import { makeComponentLogger } from "../app/DesktopObservability.ts";
@@ -26,6 +31,7 @@ import * as ElectronShell from "../electron/ElectronShell.ts";
 import * as ElectronTheme from "../electron/ElectronTheme.ts";
 import * as ElectronWindow from "../electron/ElectronWindow.ts";
 import {
+  LINUX_WINDOW_STATE_CHANNEL,
   MENU_ACTION_CHANNEL,
   QUIT_SHORTCUT_CHANNEL,
   SNAP_SHOT_EVENT_CHANNEL,
@@ -49,6 +55,22 @@ import { copyContextMenuImage } from "./ContextMenuImage.ts";
 import { installMainWindowRemoteRequestHeaderPolicy } from "./RemoteRequestHeaders.ts";
 
 const TITLEBAR_HEIGHT = 40;
+
+export function buildLinuxWindowState(
+  window: Pick<Electron.BrowserWindow, "isMaximized" | "isFullScreen">,
+  env: NodeJS.ProcessEnv = process.env,
+  hasNativeWco = true,
+): LinuxWindowState {
+  const session = resolveLinuxDesktopSessionInfo(env);
+  return {
+    maximized: window.isMaximized(),
+    fullscreen: window.isFullScreen(),
+    linuxDesktop: session.linuxDesktop,
+    isTilingWm: session.isTilingWm,
+    hasNativeWco,
+    overlayHeight: TITLEBAR_HEIGHT,
+  };
+}
 
 class ContextMenuImageCopyError extends Schema.TaggedError<ContextMenuImageCopyError>()(
   "ContextMenuImageCopyError",
@@ -1173,15 +1195,44 @@ export const make = Effect.gen(function* () {
         ),
       );
     };
+    const emitLinuxWindowState = () => {
+      if (
+        environment.platform !== "linux" ||
+        window.isDestroyed() ||
+        window.webContents.isDestroyed()
+      ) {
+        return;
+      }
+      window.webContents.send(LINUX_WINDOW_STATE_CHANNEL, buildLinuxWindowState(window));
+    };
+    const handleMaximizeChange = () => {
+      scheduleBoundsPersist();
+      emitLinuxWindowState();
+    };
     window.on("focus", () => handleWindowFocusChange(true));
     window.on("blur", () => handleWindowFocusChange(false));
     window.on("resize", scheduleBoundsPersist);
     window.on("move", scheduleBoundsPersist);
-    window.on("maximize", scheduleBoundsPersist);
-    window.on("unmaximize", scheduleBoundsPersist);
+    window.on("maximize", handleMaximizeChange);
+    window.on("unmaximize", handleMaximizeChange);
     window.on("close", () => {
       runFork(flushBoundsPersist);
     });
+
+    if (environment.platform === "linux") {
+      window.on("enter-full-screen", () => {
+        if (!window.isDestroyed() && !window.webContents.isDestroyed()) {
+          window.webContents.send(WINDOW_FULLSCREEN_STATE_CHANNEL, true);
+        }
+        emitLinuxWindowState();
+      });
+      window.on("leave-full-screen", () => {
+        if (!window.isDestroyed() && !window.webContents.isDestroyed()) {
+          window.webContents.send(WINDOW_FULLSCREEN_STATE_CHANNEL, false);
+        }
+        emitLinuxWindowState();
+      });
+    }
 
     if (environment.platform === "darwin") {
       // Mouse drivers can deliver Back/Forward as macOS swipe gestures instead of buttons.
@@ -1262,6 +1313,7 @@ export const make = Effect.gen(function* () {
         window,
         typeof window.isFocused === "function" ? window.isFocused() : true,
       );
+      emitLinuxWindowState();
     });
     window.webContents.on(
       "did-fail-load",

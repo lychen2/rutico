@@ -91,6 +91,54 @@ const isHyprlandSession = (env: NodeJS.ProcessEnv): boolean =>
     .split(":")
     .some((name) => name.trim().toLowerCase() === "hyprland");
 
+const LINUX_TILING_WM_NAMES = new Set([
+  "hyprland",
+  "niri",
+  "sway",
+  "i3",
+  "bspwm",
+  "river",
+  "qtile",
+  "awesome",
+  "xmonad",
+  "dwm",
+  "herbstluftwm",
+  "leftwm",
+]);
+
+interface LinuxDesktopSessionInfo {
+  readonly linuxDesktop: string | null;
+  readonly isTilingWm: boolean;
+}
+
+/**
+ * Heuristic desktop/tiling-WM detection for Linux chrome adaptation.
+ * Prefers active XDG session names because HYPRLAND_INSTANCE_SIGNATURE can be stale across restarts.
+ */
+export function resolveLinuxDesktopSessionInfo(env: NodeJS.ProcessEnv): LinuxDesktopSessionInfo {
+  const desktopNames = [env.XDG_CURRENT_DESKTOP, env.XDG_SESSION_DESKTOP]
+    .flatMap((value) => (value ?? "").split(":"))
+    .map((entry) => entry.trim().toLowerCase())
+    .filter((entry) => entry.length > 0);
+
+  if (desktopNames.length > 0) {
+    const tilingMatch = desktopNames.find((name) => LINUX_TILING_WM_NAMES.has(name));
+    if (tilingMatch !== undefined) {
+      return { linuxDesktop: tilingMatch, isTilingWm: true };
+    }
+    return { linuxDesktop: desktopNames[0] ?? null, isTilingWm: false };
+  }
+
+  // Fallback socket hints only when XDG desktop identifiers are absent.
+  if (trimNonEmpty(env.NIRI_SOCKET) !== null) {
+    return { linuxDesktop: "niri", isTilingWm: true };
+  }
+  if (trimNonEmpty(env.SWAYSOCK) !== null) {
+    return { linuxDesktop: "sway", isTilingWm: true };
+  }
+  return { linuxDesktop: null, isTilingWm: false };
+}
+
 const HyprctlVersionJson = fromLenientJson(
   Schema.Struct({
     version: Schema.String,

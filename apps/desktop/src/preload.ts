@@ -7,6 +7,7 @@ import type {
   DesktopPreviewRecordingInputEvent,
   DesktopPreviewTabState,
   DesktopSnapShotEvent,
+  LinuxWindowState,
 } from "@t3tools/contracts";
 import { exposeClerkBridge } from "@clerk/electron/preload";
 import { contextBridge, ipcRenderer, webFrame, webUtils } from "electron";
@@ -28,6 +29,21 @@ function isSnapShotEvent(value: unknown): value is DesktopSnapShotEvent {
     typeof type === "string" &&
     SNAP_SHOT_EVENT_TYPES.has(type) &&
     (id === undefined || typeof id === "string")
+  );
+}
+
+function isLinuxWindowState(value: unknown): value is LinuxWindowState {
+  if (typeof value !== "object" || value === null) return false;
+  const candidate = value as Record<string, unknown>;
+  return (
+    typeof candidate.maximized === "boolean" &&
+    typeof candidate.fullscreen === "boolean" &&
+    (candidate.linuxDesktop === undefined ||
+      candidate.linuxDesktop === null ||
+      typeof candidate.linuxDesktop === "string") &&
+    (candidate.isTilingWm === undefined || typeof candidate.isTilingWm === "boolean") &&
+    (candidate.hasNativeWco === undefined || typeof candidate.hasNativeWco === "boolean") &&
+    (candidate.overlayHeight === undefined || typeof candidate.overlayHeight === "number")
   );
 }
 
@@ -315,6 +331,22 @@ contextBridge.exposeInMainWorld("desktopBridge", {
   },
   getWindowFullscreenState: () =>
     ipcRenderer.sendSync(IpcChannels.GET_WINDOW_FULLSCREEN_STATE_CHANNEL) === true,
+  getLinuxWindowState: () => {
+    const result: unknown = ipcRenderer.sendSync(IpcChannels.GET_LINUX_WINDOW_STATE_CHANNEL);
+    return isLinuxWindowState(result) ? result : null;
+  },
+  onLinuxWindowStateChange: (listener) => {
+    const wrappedListener = (_event: Electron.IpcRendererEvent, state: unknown) => {
+      if (!isLinuxWindowState(state)) return;
+      listener(state);
+    };
+    ipcRenderer.on(IpcChannels.LINUX_WINDOW_STATE_CHANNEL, wrappedListener);
+    return () => {
+      ipcRenderer.removeListener(IpcChannels.LINUX_WINDOW_STATE_CHANNEL, wrappedListener);
+    };
+  },
+  performLinuxWindowControlAction: (action) =>
+    ipcRenderer.invoke(IpcChannels.LINUX_WINDOW_CONTROL_ACTION_CHANNEL, action),
   getWindowZoomFactor: () => webFrame.getZoomFactor(),
   onWindowFullscreenStateChange: (listener) => {
     const wrappedListener = (_event: Electron.IpcRendererEvent, fullscreen: unknown) => {

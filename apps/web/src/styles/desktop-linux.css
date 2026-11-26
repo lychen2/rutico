@@ -39,3 +39,85 @@
     transition: none;
   }
 }
+
+/* ==========================================================================
+   D30 / C097: .electron-linux Real 40px titleBarOverlay Chrome, Tiling-WM
+   Adaptive Geometry, No-Drag Safety, and Maximized Corner Flattening
+   ========================================================================== */
+
+html.electron-linux {
+  --linux-overlay-height: 40px;
+}
+
+/* Align topbar to Electron's real 40px titleBarOverlay height on Linux WCO sessions. */
+html.electron-linux.wco {
+  --workspace-topbar-height: max(
+    var(--linux-overlay-height, 40px),
+    env(titlebar-area-height, 40px)
+  );
+}
+
+/* Tiling WMs without native WCO reclaim the full topbar width cleanly. */
+html.electron-linux[data-linux-tiling-wm="true"]:not(.wco) {
+  --workspace-native-controls-inset: 0px;
+}
+
+/* Every interactive control inside a Linux drag region must opt out of window dragging. */
+html.electron-linux
+  .drag-region
+  :is(button, a, input, textarea, select, [role="button"], [role="tab"], [data-no-drag]) {
+  -webkit-app-region: no-drag;
+}
+
+/* Flatten outer shell corners when maximized, fullscreen, or tiled edge-to-edge on Linux. */
+html.electron-linux:is(
+    [data-window-maximized="true"],
+    [data-window-fullscreen="true"],
+    [data-linux-tiling-wm="true"]
+  )
+  :is(#root, [data-slot="sidebar-wrapper"], [data-slot="sidebar-inset"]) {
+  border-radius: 0;
+}
+
+/* Fallback Linux CSD controls (rendered strictly when native titleBarOverlay is absent). */
+.linux-window-controls {
+  -webkit-app-region: no-drag;
+}
+
+.linux-window-control-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  color: var(--muted-foreground);
+  -webkit-app-region: no-drag;
+  transition:
+    background-color 140ms var(--spring-snappy, ease-out),
+    color 140ms var(--spring-snappy, ease-out),
+    transform 120ms var(--spring-micro, ease-out);
+}
+
+.linux-window-control-btn:hover {
+  background-color: color-mix(in oklch, var(--foreground) 8%, transparent);
+  color: var(--foreground);
+}
+
+.linux-window-control-btn[data-window-control="close"]:hover {
+  background-color: color-mix(in oklch, var(--destructive, #e5484d) 85%, transparent);
+  color: #ffffff;
+}
+
+.linux-window-control-btn:active {
+  transform: scale(0.94);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .linux-window-control-btn {
+    transition: none;
+  }
+  .linux-window-control-btn:active {
+    transform: none;
+  }
+}

@@ -51,7 +51,8 @@ import * as ElectronMenu from "../electron/ElectronMenu.ts";
 import * as ElectronShell from "../electron/ElectronShell.ts";
 import * as ElectronTheme from "../electron/ElectronTheme.ts";
 import * as ElectronWindow from "../electron/ElectronWindow.ts";
-import { SNAP_SHOT_EVENT_CHANNEL } from "../ipc/channels.ts";
+import { LINUX_WINDOW_STATE_CHANNEL, SNAP_SHOT_EVENT_CHANNEL } from "../ipc/channels.ts";
+import { resolveLinuxDesktopSessionInfo } from "../app/DesktopEarlyElectronStartup.ts";
 import * as DesktopServerExposure from "../backend/DesktopServerExposure.ts";
 import * as DesktopWindow from "./DesktopWindow.ts";
 import {
@@ -1474,6 +1475,81 @@ describe("DesktopWindow", () => {
           yield* Effect.promise(() => Promise.resolve());
           assert.equal(vi.mocked(reducedSplash.window.close).mock.calls.length, 1);
         }).pipe(Effect.provide(reducedScenario.layer));
+      }),
+  );
+
+  it("detects Linux tiling WMs heuristically without trusting stale Hyprland signatures", () => {
+    assert.deepEqual(
+      resolveLinuxDesktopSessionInfo({
+        XDG_CURRENT_DESKTOP: "GNOME",
+        HYPRLAND_INSTANCE_SIGNATURE: "stale-signature",
+      }),
+      { linuxDesktop: "gnome", isTilingWm: false },
+    );
+    assert.deepEqual(resolveLinuxDesktopSessionInfo({ XDG_CURRENT_DESKTOP: "Hyprland" }), {
+      linuxDesktop: "hyprland",
+      isTilingWm: true,
+    });
+    assert.deepEqual(resolveLinuxDesktopSessionInfo({ XDG_SESSION_DESKTOP: "niri" }), {
+      linuxDesktop: "niri",
+      isTilingWm: true,
+    });
+    assert.deepEqual(resolveLinuxDesktopSessionInfo({ SWAYSOCK: "/run/user/1000/sway.sock" }), {
+      linuxDesktop: "sway",
+      isTilingWm: true,
+    });
+    assert.deepEqual(resolveLinuxDesktopSessionInfo({ XDG_CURRENT_DESKTOP: "KDE" }), {
+      linuxDesktop: "kde",
+      isTilingWm: false,
+    });
+  });
+
+  it.effect(
+    "broadcasts real 40px titleBarOverlay Linux window state on maximize and fullscreen",
+    () =>
+      Effect.gen(function* () {
+        const fakeWindow = makeFakeBrowserWindow();
+        const createdOptions: Electron.BrowserWindowConstructorOptions[] = [];
+        const layer = layerTest({
+          window: fakeWindow.window,
+          createCount: yield* Ref.make(0),
+          mainWindow: yield* Ref.make<Option.Option<Electron.BrowserWindow>>(Option.none()),
+          createdWindowOptions: createdOptions,
+          platform: "linux",
+        });
+
+        yield* Effect.gen(function* () {
+          const desktopWindow = yield* DesktopWindow.DesktopWindow;
+          yield* desktopWindow.ensureMain;
+
+          assert.equal(createdOptions[0]?.titleBarStyle, "hidden");
+          assert.equal(
+            typeof createdOptions[0]?.titleBarOverlay === "object"
+              ? createdOptions[0].titleBarOverlay.height
+              : undefined,
+            40,
+          );
+
+          fakeWindow.isMaximized.mockReturnValue(true);
+          fakeWindow.windowListeners.get("maximize")?.();
+          const maximizeCall = fakeWindow.send.mock.calls.find(
+            ([channel]) => channel === LINUX_WINDOW_STATE_CHANNEL,
+          );
+          assert.isDefined(maximizeCall);
+          assert.deepEqual(maximizeCall?.[1], {
+            ...DesktopWindow.buildLinuxWindowState(fakeWindow.window),
+            maximized: true,
+            overlayHeight: 40,
+            hasNativeWco: true,
+          });
+
+          fakeWindow.isFullScreen.mockReturnValue(true);
+          fakeWindow.windowListeners.get("enter-full-screen")?.();
+          const fullscreenCalls = fakeWindow.send.mock.calls.filter(
+            ([channel]) => channel === LINUX_WINDOW_STATE_CHANNEL,
+          );
+          assert.equal(fullscreenCalls.at(-1)?.[1]?.fullscreen, true);
+        }).pipe(Effect.provide(layer));
       }),
   );
 

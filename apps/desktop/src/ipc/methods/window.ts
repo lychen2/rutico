@@ -7,6 +7,8 @@ import {
   DesktopThemeSchema,
   EDITORS,
   EditorId,
+  LinuxWindowControlActionSchema,
+  LinuxWindowStateSchema,
   PickedThemeFileSchema,
   PickFolderOptionsSchema,
   PRIMARY_LOCAL_ENVIRONMENT_ID,
@@ -40,6 +42,7 @@ import * as ElectronMenu from "../../electron/ElectronMenu.ts";
 import * as ElectronShell from "../../electron/ElectronShell.ts";
 import * as ElectronTheme from "../../electron/ElectronTheme.ts";
 import * as ElectronWindow from "../../electron/ElectronWindow.ts";
+import { buildLinuxWindowState } from "../../window/DesktopWindow.ts";
 import * as Electron from "electron";
 import { msg } from "gt-i18n";
 import * as MacPermissions from "../../permissions/MacPermissions.ts";
@@ -114,6 +117,58 @@ export const getWindowFullscreenState = DesktopIpc.makeSyncIpcMethod({
     const window = yield* electronWindow.currentMainOrFirst;
     return Option.isSome(window) && window.value.isFullScreen();
   }),
+});
+
+export const getLinuxWindowState = DesktopIpc.makeSyncIpcMethod({
+  channel: IpcChannels.GET_LINUX_WINDOW_STATE_CHANNEL,
+  result: Schema.NullOr(LinuxWindowStateSchema),
+  handler: Effect.fn("desktop.ipc.window.getLinuxWindowState")(function* () {
+    const environment = yield* DesktopEnvironment.DesktopEnvironment;
+    if (environment.platform !== "linux") {
+      return null;
+    }
+    const hostEnv = yield* HostProcess.Environment;
+    const electronWindow = yield* ElectronWindow.ElectronWindow;
+    const window = yield* electronWindow.currentMainOrFirst;
+    if (Option.isNone(window) || window.value.isDestroyed()) {
+      return null;
+    }
+    return buildLinuxWindowState(window.value, hostEnv);
+  }),
+});
+
+export const performLinuxWindowControlAction = DesktopIpc.makeIpcMethod({
+  channel: IpcChannels.LINUX_WINDOW_CONTROL_ACTION_CHANNEL,
+  payload: LinuxWindowControlActionSchema,
+  result: Schema.Void,
+  handler: Effect.fn("desktop.ipc.window.performLinuxWindowControlAction")(
+    function* (action, event) {
+      const environment = yield* DesktopEnvironment.DesktopEnvironment;
+      if (environment.platform !== "linux") return;
+      const electronWindow = yield* ElectronWindow.ElectronWindow;
+      const main = yield* electronWindow.main;
+      if (
+        event === undefined ||
+        Option.isNone(main) ||
+        main.value.isDestroyed() ||
+        main.value.webContents.id !== event.sender.id
+      ) {
+        return;
+      }
+      const window = main.value;
+      if (action === "minimize") {
+        window.minimize();
+      } else if (action === "maximize-toggle") {
+        if (window.isMaximized()) {
+          window.unmaximize();
+        } else {
+          window.maximize();
+        }
+      } else if (action === "close") {
+        window.close();
+      }
+    },
+  ),
 });
 
 export const getLocalEnvironmentBootstraps = DesktopIpc.makeSyncIpcMethod({

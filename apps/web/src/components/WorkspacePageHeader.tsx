@@ -1,12 +1,70 @@
+import { useGT } from "gt-react";
 import type { ComponentPropsWithoutRef } from "react";
 
+import { MorphingIcon } from "./ui/morphing-icon";
 import { cn } from "../lib/utils";
+import {
+  hasVisibleWindowControlsOverlay,
+  readLinuxCsdOverride,
+  shouldShowFallbackLinuxWindowControls,
+  useLinuxWindowState,
+} from "../lib/windowControlsOverlay";
 import { COLLAPSED_SIDEBAR_TITLEBAR_INSET_CLASS } from "../workspaceTitlebar";
+
+function LinuxWindowControls() {
+  const gt = useGT();
+  const state = useLinuxWindowState();
+  const showControls = shouldShowFallbackLinuxWindowControls(
+    state,
+    hasVisibleWindowControlsOverlay(),
+    readLinuxCsdOverride(),
+  );
+  if (!showControls || !state) return null;
+
+  const invoke = (action: "minimize" | "maximize-toggle" | "close") => {
+    void window.desktopBridge?.performLinuxWindowControlAction?.(action).catch(() => undefined);
+  };
+
+  return (
+    <div
+      data-slot="linux-window-controls"
+      data-no-drag=""
+      className="linux-window-controls ms-auto flex h-full shrink-0 items-center gap-1"
+    >
+      <button
+        type="button"
+        aria-label={gt("Minimize window")}
+        onClick={() => invoke("minimize")}
+        className="linux-window-control-btn"
+      >
+        <MorphingIcon variant="minus" className="size-3.5" />
+      </button>
+      <button
+        type="button"
+        aria-label={state.maximized ? gt("Restore window") : gt("Maximize window")}
+        onClick={() => invoke("maximize-toggle")}
+        className="linux-window-control-btn"
+      >
+        <MorphingIcon variant={state.maximized ? "restore" : "maximize"} className="size-3.5" />
+      </button>
+      <button
+        type="button"
+        aria-label={gt("Close window")}
+        onClick={() => invoke("close")}
+        data-window-control="close"
+        className="linux-window-control-btn"
+      >
+        <MorphingIcon variant="close" className="size-3.5" />
+      </button>
+    </div>
+  );
+}
 
 export function WorkspacePageHeader({
   electron = false,
   reserveNativeControls = electron,
   className,
+  children,
   ...props
 }: ComponentPropsWithoutRef<"header"> & {
   readonly electron?: boolean;
@@ -22,6 +80,9 @@ export function WorkspacePageHeader({
         className,
       )}
       {...props}
-    />
+    >
+      {children}
+      {electron && reserveNativeControls ? <LinuxWindowControls /> : null}
+    </header>
   );
 }

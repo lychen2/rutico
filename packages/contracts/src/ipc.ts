@@ -1108,6 +1108,23 @@ export const DesktopAppleSpeechTranscribeInputSchema = Schema.Struct({
 export const SystemSettingsPaneSchema = Schema.Literals(["full-disk-access"]);
 export type SystemSettingsPane = typeof SystemSettingsPaneSchema.Type;
 
+export const LinuxWindowStateSchema = Schema.Struct({
+  maximized: Schema.Boolean,
+  fullscreen: Schema.Boolean,
+  linuxDesktop: Schema.optionalKey(Schema.NullOr(Schema.String)),
+  isTilingWm: Schema.optionalKey(Schema.Boolean),
+  hasNativeWco: Schema.optionalKey(Schema.Boolean),
+  overlayHeight: Schema.optionalKey(Schema.Number),
+});
+export type LinuxWindowState = typeof LinuxWindowStateSchema.Type;
+
+export const LinuxWindowControlActionSchema = Schema.Literals([
+  "minimize",
+  "maximize-toggle",
+  "close",
+]);
+export type LinuxWindowControlAction = typeof LinuxWindowControlActionSchema.Type;
+
 export interface DesktopBridge {
   getAppBranding: () => DesktopAppBranding | null;
   getPathForFile: (file: File) => string;
@@ -1215,6 +1232,9 @@ export interface DesktopBridge {
   onQuitShortcut: (listener: (event: QuitShortcutHintEvent) => void) => () => void;
   getWindowFullscreenState: () => boolean;
   onWindowFullscreenStateChange: (listener: (fullscreen: boolean) => void) => () => void;
+  getLinuxWindowState?: () => LinuxWindowState | null;
+  onLinuxWindowStateChange?: (listener: (state: LinuxWindowState) => void) => () => void;
+  performLinuxWindowControlAction?: (action: LinuxWindowControlAction) => Promise<void>;
   getWindowZoomFactor: () => number;
   getUpdateState: () => Promise<DesktopUpdateState>;
   /** `minimumVersion` is a track switch's checked release; nothing older is offered after. */
