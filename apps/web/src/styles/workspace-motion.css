@@ -637,3 +637,34 @@
     transition: none;
   }
 }
+
+/* --------------------------------------------------------------------------
+   D21 / C071: Optical Media Stage Backdrops & Pan Interaction
+   -------------------------------------------------------------------------- */
+
+.media-stage-checkerboard {
+  background-color: var(--background);
+  background-image: conic-gradient(
+    color-mix(in oklch, var(--foreground) 5%, transparent) 90deg,
+    transparent 90deg 180deg,
+    color-mix(in oklch, var(--foreground) 5%, transparent) 180deg 270deg,
+    transparent 270deg
+  );
+  background-size: 16px 16px;
+}
+
+.media-stage-dark {
+  background-color: #111317;
+  color: #f2f4f8;
+}
+
+.media-stage-light {
+  background-color: #f6f7f9;
+  color: #111317;
+}
+
+.media-stage-pannable[data-panning="true"],
+.media-stage-pannable[data-panning="true"] * {
+  cursor: grabbing;
+  user-select: none;
+}

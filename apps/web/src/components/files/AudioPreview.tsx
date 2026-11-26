@@ -121,8 +121,10 @@ function AudioChip(props: AudioPreviewProps) {
     >
       <span
         aria-hidden
-        className="pointer-events-none absolute inset-y-0 left-0 -z-10 bg-(--context-chip-accent)/17"
-        style={{ width: `${duration > 0 ? Math.min(100, (elapsed / duration) * 100) : 0}%` }}
+        className="pointer-events-none absolute inset-0 -z-10 origin-left bg-(--context-chip-accent)/17 transition-transform duration-120 ease-linear motion-reduce:transition-none"
+        style={{
+          transform: `scaleX(${duration > 0 ? Math.min(1, Math.max(0, elapsed / duration)) : 0})`,
+        }}
       />
       <ContextChipAction
         className="ml-0 [&_svg]:size-[1em]"
