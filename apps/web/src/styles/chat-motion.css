@@ -1154,18 +1154,6 @@
   [data-lineage-group-list="true"] {
     animation: chat-work-cascade-in 180ms var(--spring-snappy) both;
   }
-
-  [data-chat-composer-form] [data-slot="context-chip"] {
-    transition:
-      opacity 180ms ease-out,
-      transform 220ms var(--spring-bouncy),
-      box-shadow 420ms ease-out;
-    @starting-style {
-      opacity: 0;
-      transform: scale(0.9);
-      box-shadow: 0 0 0 4px color-mix(in oklch, var(--primary) 34%, transparent);
-    }
-  }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -1175,10 +1163,6 @@
   [data-subagent-bar-dot="live"],
   [data-lineage-group-list="true"] {
     animation: none;
-  }
-
-  [data-chat-composer-form] [data-slot="context-chip"] {
-    transition: none;
   }
 }
 
@@ -1456,5 +1440,94 @@
 @media (prefers-reduced-motion: reduce) {
   [data-minimap-find-dot="true"] {
     transition: none;
+  }
+}
+
+/* ==========================================================================
+   D13 / C043: Tactile ContextChip Capsules & ComposerCodeBlockNodeView Studio
+   ========================================================================== */
+
+[data-slot="context-chip"][data-shape="inline"]:not([data-state="unresolved"]) {
+  padding-inline: 0.3em;
+  border-radius: 5px;
+  background-color: color-mix(in oklch, var(--context-chip-accent) 9%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--context-chip-accent) 18%, transparent);
+  transition:
+    background-color 140ms ease-out,
+    box-shadow 160ms ease-out;
+}
+
+:is(button:enabled, a, [data-popup-open])[data-slot="context-chip"][data-shape="inline"]:not(
+    [data-state="unresolved"]
+  ):hover {
+  background-color: color-mix(in oklch, var(--context-chip-accent) 14%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--context-chip-accent) 28%, transparent);
+}
+
+.composer-tiptap [data-composer-chip-selected] [data-slot="context-chip"] {
+  box-shadow:
+    inset 0 0 0 1px color-mix(in oklch, var(--primary) 52%, transparent),
+    0 0 0 1.5px color-mix(in oklch, var(--primary) 34%, transparent);
+}
+
+[data-composer-code-studio="true"] {
+  transition:
+    border-color 160ms ease-out,
+    box-shadow 180ms ease-out;
+}
+
+[data-composer-code-studio="true"]:focus-within {
+  border-color: color-mix(in oklch, var(--primary) 42%, var(--border));
+  box-shadow: 0 0 0 2px color-mix(in oklch, var(--primary) 12%, transparent);
+}
+
+[data-composer-code-studio="true"] [data-composer-code-studio-hint="true"] {
+  opacity: 0.45;
+  transition: opacity 150ms ease-out;
+}
+
+[data-composer-code-studio="true"]:focus-within [data-composer-code-studio-hint="true"] {
+  opacity: 0.9;
+}
+
+@keyframes chat-composer-code-studio-in {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 4px, 0) scale(0.992);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  /* Scope spring chip embed strictly inside the composer so message history never replays. */
+  .composer-tiptap [data-slot="context-chip"] {
+    transition:
+      opacity 180ms ease-out,
+      transform 220ms var(--spring-bouncy),
+      background-color 140ms ease-out,
+      box-shadow 360ms ease-out;
+    @starting-style {
+      opacity: 0;
+      transform: scale(0.88);
+      box-shadow: 0 0 0 3px
+        color-mix(in oklch, var(--context-chip-accent, var(--primary)) 28%, transparent);
+    }
+  }
+
+  [data-composer-code-studio="true"] {
+    animation: chat-composer-code-studio-in 200ms var(--spring-snappy) both;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-slot="context-chip"][data-shape="inline"],
+  .composer-tiptap [data-slot="context-chip"],
+  [data-composer-code-studio="true"],
+  [data-composer-code-studio="true"] [data-composer-code-studio-hint="true"] {
+    transition: none;
+    animation: none;
   }
 }

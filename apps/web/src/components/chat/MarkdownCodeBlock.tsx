@@ -52,6 +52,7 @@ export function MarkdownCodeBlockFrame({
   title,
   actions,
   headerProps,
+  frameProps,
   children,
 }: {
   as?: React.ElementType;
@@ -65,12 +66,17 @@ export function MarkdownCodeBlockFrame({
   title?: React.ReactNode;
   actions?: React.ReactNode;
   headerProps?: React.HTMLAttributes<HTMLDivElement>;
+  frameProps?: Record<string, unknown>;
   children: React.ReactNode;
 }) {
   return (
     <Wrapper
+      {...frameProps}
       dir="ltr"
-      className="chat-markdown-codeblock relative my-[0.65rem] text-start overflow-clip rounded-lg border border-border/70 bg-secondary leading-snug dark:border-white/[0.08] dark:bg-input/32"
+      className={cn(
+        "chat-markdown-codeblock relative my-[0.65rem] text-start overflow-clip rounded-lg border border-border/70 bg-secondary leading-snug dark:border-white/[0.08] dark:bg-input/32",
+        typeof frameProps?.className === "string" ? frameProps.className : undefined,
+      )}
       data-language={language}
       data-wrap={wrapped ? "true" : "false"}
       data-code-streaming={streaming ? "true" : undefined}
