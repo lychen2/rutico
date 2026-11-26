@@ -840,3 +840,196 @@ html[data-palette-dragging="true"] [data-slot="thread-context-drag-ghost"] .drag
     animation: none;
   }
 }
+
+/* ==========================================================================
+   D32 / C105: WelcomePage Editorial Hero, T3Wordmark Geometric Reveal,
+   Live Readiness Cards & Luminous Start CTA
+   ========================================================================== */
+
+@keyframes welcome-hero-rise {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 10px, 0);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+@keyframes wordmark-stem-reveal {
+  from {
+    opacity: 0;
+    transform: translate3d(-4px, 6px, 0) scale(0.92);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+}
+
+@keyframes wordmark-spark-reveal {
+  from {
+    opacity: 0;
+    transform: scale(0.3) rotate(-45deg);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) rotate(0deg);
+  }
+}
+
+@keyframes welcome-scanning-sweep {
+  0% {
+    transform: translate3d(-100%, 0, 0);
+  }
+  100% {
+    transform: translate3d(200%, 0, 0);
+  }
+}
+
+@keyframes welcome-scanning-breathe {
+  0%,
+  100% {
+    opacity: 0.55;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+@keyframes welcome-ready-pop {
+  from {
+    opacity: 0;
+    transform: scale(0.86);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes welcome-cta-bloom {
+  0% {
+    box-shadow: 0 0 0 0 color-mix(in oklch, var(--primary) 52%, transparent);
+  }
+  45% {
+    box-shadow:
+      0 0 0 5px color-mix(in oklch, var(--primary) 16%, transparent),
+      0 10px 24px -10px color-mix(in oklch, var(--primary) 48%, transparent);
+  }
+  100% {
+    box-shadow:
+      0 0 0 0 transparent,
+      0 6px 18px -10px color-mix(in oklch, var(--primary) 34%, transparent);
+  }
+}
+
+[data-welcome-hero="emblem"] {
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 22%);
+}
+
+.dark [data-welcome-hero="emblem"] {
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 9%);
+}
+
+[data-slot="welcome-section-card"] {
+  box-shadow:
+    0 12px 28px -22px rgb(0 0 0 / 28%),
+    inset 0 1px 0 rgb(255 255 255 / 20%);
+}
+
+.dark [data-slot="welcome-section-card"] {
+  box-shadow:
+    0 14px 32px -22px rgb(0 0 0 / 65%),
+    inset 0 1px 0 rgb(255 255 255 / 8%);
+}
+
+[data-welcome-scanning="true"]::after {
+  content: "";
+  position: absolute;
+  inset-inline-start: 0;
+  bottom: 2px;
+  height: 1.5px;
+  width: 45%;
+  border-radius: 9999px;
+  pointer-events: none;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    color-mix(in oklch, var(--primary) 65%, transparent) 50%,
+    transparent 100%
+  );
+  will-change: var(--visible-animation-will-change, auto);
+  animation: welcome-scanning-sweep 1.5s ease-in-out infinite;
+  animation-play-state: var(--visible-animation-state, paused);
+}
+
+[data-welcome-scanning-pill="true"] {
+  will-change: var(--visible-animation-will-change, auto);
+  animation: welcome-scanning-breathe 1.6s ease-in-out infinite;
+  animation-play-state: var(--visible-animation-state, paused);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  [data-wordmark-animated="true"] [data-wordmark-part="stem"] {
+    transform-box: fill-box;
+    transform-origin: center;
+    animation: wordmark-stem-reveal 360ms var(--spring-snappy) both;
+  }
+
+  [data-wordmark-animated="true"] [data-wordmark-part="leg"] {
+    transform-box: fill-box;
+    transform-origin: left top;
+    animation: wordmark-stem-reveal 360ms var(--spring-snappy) 85ms both;
+  }
+
+  [data-wordmark-animated="true"] [data-wordmark-part="spark"] {
+    transform-box: fill-box;
+    transform-origin: center;
+    animation: wordmark-spark-reveal 380ms var(--spring-snappy) 170ms both;
+  }
+
+  [data-welcome-hero="emblem"] {
+    animation: welcome-hero-rise 320ms var(--spring-snappy) both;
+  }
+
+  [data-welcome-hero="title"] {
+    animation: welcome-hero-rise 340ms var(--spring-snappy) 60ms both;
+  }
+
+  [data-welcome-hero="subtitle"] {
+    animation: welcome-hero-rise 340ms var(--spring-snappy) 110ms both;
+  }
+
+  [data-welcome-hero="cards"] {
+    animation: welcome-hero-rise 380ms var(--spring-spatial) 150ms both;
+  }
+
+  [data-welcome-hero="footer"] {
+    animation: welcome-hero-rise 340ms var(--spring-snappy) 200ms both;
+  }
+
+  [data-welcome-agent-ready="true"] {
+    animation: welcome-ready-pop 240ms var(--spring-snappy) both;
+  }
+
+  [data-slot="welcome-start-cta"][data-ready="true"] {
+    animation: welcome-cta-bloom 680ms var(--spring-snappy) 1 forwards;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-welcome-scanning="true"]::after,
+  [data-welcome-scanning-pill="true"],
+  [data-wordmark-animated="true"] [data-wordmark-part],
+  [data-welcome-hero],
+  [data-welcome-agent-ready="true"],
+  [data-slot="welcome-start-cta"][data-ready="true"] {
+    animation: none;
+  }
+
+  [data-welcome-scanning="true"]::after {
+    opacity: 0;
+  }
+}

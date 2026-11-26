@@ -104,7 +104,10 @@ import { CodexSetupSection } from "../settings/CodexSetupSection";
 import { readCodexSetupMode } from "../settings/CodexSetupSection.logic";
 import { TerminalViewport } from "../ThreadTerminalDrawer";
 import { ProviderInstanceIcon } from "../chat/ProviderInstanceIcon";
+import { AnimatedHeight } from "../AnimatedHeight";
 import { ACPRegistryIcon } from "../Icons";
+import { T3Wordmark } from "../T3Wordmark";
+import { observeVisibleAnimation } from "../../lib/visibleAnimation";
 import { Button } from "../ui/button";
 import { Checkbox } from "../ui/checkbox";
 import { Collapsible, CollapsiblePanel, CollapsibleTrigger } from "../ui/collapsible";
@@ -281,19 +284,30 @@ export function WelcomePage({
           {isElectron ? <WorkspacePageHeader electron /> : null}
           <div className="min-h-0 flex-1 overflow-y-auto scrollbar-gutter-both">
             <div className="mx-auto flex min-h-full w-full max-w-3xl flex-col px-6 pt-12 pb-8 sm:pt-20">
-              <h1 className="text-2xl font-semibold tracking-tight text-foreground">
-                <T>Welcome to Rutico</T>
-              </h1>
-              <p className="mt-1.5 text-sm text-muted-foreground">
-                <T>
-                  Setting up{" "}
-                  <span className="text-foreground">
-                    <Var>{label}</Var>
-                  </span>
-                  .
-                </T>
-              </p>
-              <div className="mt-10 border-t border-border/60">
+              <div className="flex flex-col items-start">
+                <div
+                  className="mb-4 inline-flex size-11 items-center justify-center rounded-xl border border-border/60 bg-card/85 dark:border-white/10 dark:bg-card/65"
+                  data-welcome-hero="emblem"
+                >
+                  <T3Wordmark animated aria-hidden className="h-6 w-auto text-foreground" />
+                </div>
+                <h1
+                  className="text-2xl font-semibold tracking-tight text-foreground sm:text-3xl"
+                  data-welcome-hero="title"
+                >
+                  <T>Welcome to Rutico</T>
+                </h1>
+                <p className="mt-1.5 text-sm text-muted-foreground" data-welcome-hero="subtitle">
+                  <T>
+                    Setting up{" "}
+                    <span className="font-medium text-foreground">
+                      <Var>{label}</Var>
+                    </span>
+                    .
+                  </T>
+                </p>
+              </div>
+              <div className="mt-8 flex flex-col gap-3" data-welcome-hero="cards">
                 <AgentsSection
                   environmentId={environmentId}
                   label={label}
@@ -307,7 +321,10 @@ export function WelcomePage({
                 />
                 {showPhone ? <PhoneSection environmentId={environmentId} /> : null}
               </div>
-              <div className="mt-6 flex flex-wrap items-center justify-between gap-3">
+              <div
+                className="mt-6 flex flex-wrap items-center justify-between gap-3"
+                data-welcome-hero="footer"
+              >
                 {agentReady ? (
                   <span />
                 ) : (
@@ -321,7 +338,12 @@ export function WelcomePage({
                       <T>Set up one agent to start.</T>
                     </span>
                   )}
-                  <Button disabled={!agentReady || isImporting} onClick={start}>
+                  <Button
+                    data-ready={agentReady && !isImporting ? "true" : "false"}
+                    data-slot="welcome-start-cta"
+                    disabled={!agentReady || isImporting}
+                    onClick={start}
+                  >
                     {isImporting
                       ? selected.length > 0
                         ? gt("Importing…")
@@ -345,7 +367,7 @@ export function WelcomePage({
   );
 }
 
-// Each part of the page is one band: its label on the left, its rows on the right.
+// Each part of the page is one optical specular readiness card: label on the left, live rows on the right.
 function WelcomeSection({
   title,
   children,
@@ -354,8 +376,11 @@ function WelcomeSection({
   readonly children: ReactNode;
 }) {
   return (
-    <section className="grid gap-x-10 border-b border-border/60 py-4 sm:grid-cols-[6rem_minmax(0,1fr)]">
-      <h2 className="text-sm leading-10 text-muted-foreground">{title}</h2>
+    <section
+      className="grid gap-x-8 rounded-2xl border border-border/65 bg-card/85 px-5 py-4 transition-[border-color,box-shadow] duration-200 ease-out dark:border-white/8 dark:bg-card/60 sm:grid-cols-[6rem_minmax(0,1fr)]"
+      data-slot="welcome-section-card"
+    >
+      <h2 className="text-sm leading-10 font-medium text-muted-foreground">{title}</h2>
       <div className="min-w-0">{children}</div>
     </section>
   );
@@ -628,7 +653,11 @@ function AgentsSection({
         />
       ))}
       {checking && found.length === 0 ? (
-        <p className="text-sm leading-10 text-muted-foreground">
+        <p
+          ref={observeVisibleAnimation}
+          className="relative overflow-hidden rounded-lg px-2 text-sm leading-10 text-muted-foreground"
+          data-welcome-scanning="true"
+        >
           <T>
             Checking <Var>{label}</Var>…
           </T>
@@ -785,7 +814,11 @@ function ProjectsSection({
   if (scan.isPending && candidates.length === 0) {
     return (
       <WelcomeSection title={gt("Projects")}>
-        <p className="text-sm leading-10 text-muted-foreground">
+        <p
+          ref={observeVisibleAnimation}
+          className="relative overflow-hidden rounded-lg px-2 text-sm leading-10 text-muted-foreground"
+          data-welcome-scanning="true"
+        >
           <T>
             Looking for projects in your <Var>{importSourcesLabel}</Var> history…
           </T>
@@ -877,49 +910,51 @@ function ProjectsSection({
           </Button>
         ) : null}
       </div>
-      {reviewing && canWrite ? (
-        // The negative margin lines the list's checkboxes up with the one above it.
-        <fieldset className="-mx-1.5 mt-1 min-w-0" disabled={isImporting}>
-          <div className="flex items-center justify-between gap-3 px-2 text-xs text-muted-foreground">
-            <span role="status">
-              {gt(
-                "{selected, plural, one {{selected} of {total} selected} other {{selected} of {total} selected}}",
-                {
-                  selected: selected.length,
-                  total: candidates.length,
-                },
-              )}
-            </span>
-            <div className="flex items-center gap-1">
-              <Button
-                variant="ghost"
-                size="xs"
-                disabled={selected.length === candidates.length}
-                onClick={() => setSelectedKeys(new Set(allKeys))}
-              >
-                <T>Select all</T>
-              </Button>
-              <Button
-                variant="ghost"
-                size="xs"
-                disabled={selected.length === 0}
-                onClick={() => setSelectedKeys(new Set())}
-              >
-                <T>Select none</T>
-              </Button>
+      <AnimatedHeight contentKey={reviewing && canWrite ? "reviewing" : "collapsed"}>
+        {reviewing && canWrite ? (
+          // The negative margin lines the list's checkboxes up with the one above it.
+          <fieldset className="-mx-1.5 mt-1 min-w-0" disabled={isImporting}>
+            <div className="flex items-center justify-between gap-3 px-2 text-xs text-muted-foreground">
+              <span role="status">
+                {gt(
+                  "{selected, plural, one {{selected} of {total} selected} other {{selected} of {total} selected}}",
+                  {
+                    selected: selected.length,
+                    total: candidates.length,
+                  },
+                )}
+              </span>
+              <div className="flex items-center gap-1">
+                <Button
+                  variant="ghost"
+                  size="xs"
+                  disabled={selected.length === candidates.length}
+                  onClick={() => setSelectedKeys(new Set(allKeys))}
+                >
+                  <T>Select all</T>
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="xs"
+                  disabled={selected.length === 0}
+                  onClick={() => setSelectedKeys(new Set())}
+                >
+                  <T>Select none</T>
+                </Button>
+              </div>
             </div>
-          </div>
-          <ScrollArea scrollFade className="mt-1 h-auto max-h-80">
-            <div className="space-y-0.5 pr-3">
-              <ImportCandidateList
-                candidates={candidates}
-                selectedKeys={selectedKeys}
-                onSelectionChange={setSelectedKeys}
-              />
-            </div>
-          </ScrollArea>
-        </fieldset>
-      ) : null}
+            <ScrollArea scrollFade className="mt-1 h-auto max-h-80">
+              <div className="space-y-0.5 pr-3">
+                <ImportCandidateList
+                  candidates={candidates}
+                  selectedKeys={selectedKeys}
+                  onSelectionChange={setSelectedKeys}
+                />
+              </div>
+            </ScrollArea>
+          </fieldset>
+        ) : null}
+      </AnimatedHeight>
       {scan.data?.truncated ? (
         <p className="pl-8 text-xs text-muted-foreground" role="status">
           {m(SCAN_LIMIT_MESSAGE)}
@@ -1233,12 +1268,19 @@ function AgentRow({
       </div>
       <div className="shrink-0">
         {state === "ready" ? (
-          <span className="inline-flex items-center gap-1.5 text-xs font-medium text-success-foreground">
+          <span
+            className="inline-flex items-center gap-1.5 rounded-full bg-success/10 px-2 py-0.5 text-xs font-medium text-success-foreground"
+            data-welcome-agent-ready="true"
+          >
             <CheckIcon className="size-3.5" />
             <T context="agent status">Ready</T>
           </span>
         ) : state === "checking" ? (
-          <span className="text-xs text-muted-foreground">
+          <span
+            ref={observeVisibleAnimation}
+            className="text-xs text-muted-foreground"
+            data-welcome-scanning-pill="true"
+          >
             <T>Checking…</T>
           </span>
         ) : (
