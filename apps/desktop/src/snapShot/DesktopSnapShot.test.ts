@@ -476,7 +476,11 @@ const decodePendingMetadata = Schema.decodeUnknownEffect(
   Schema.fromJsonString(DesktopPendingSnapShot),
 );
 
-import { SnapShotTransition, snapShotAnimationDisplayBounds } from "./SnapShotTransition.ts";
+import {
+  buildSnapShotTransitionHtml,
+  SnapShotTransition,
+  snapShotAnimationDisplayBounds,
+} from "./SnapShotTransition.ts";
 const layerTest = (
   platform: NodeJS.Platform,
   fileSystemOverrides: Parameters<typeof FileSystem.layerNoop>[0] = {},
@@ -1322,6 +1326,34 @@ it("does not let a failed transition fail landing or capture completion", async 
     transitionScriptState.rejectFlight = false;
     transition.dispose();
   }
+});
+
+it("uses Rutico title, dark-safe canvas backing, and 120ms reduced-motion fade in SnapShotTransition", async () => {
+  flashWindows.length = 0;
+  const transition = new SnapShotTransition();
+  try {
+    await transition.begin(
+      "capture-branding",
+      { x: 100, y: 50, width: 900, height: 600 },
+      "data:image/png;base64,",
+      false,
+    );
+    assert.equal(flashWindows[0]?.options.title, "Rutico Snapshot Animation");
+  } finally {
+    transition.dispose();
+  }
+
+  const darkHtml = buildSnapShotTransitionHtml(
+    { x: 10, y: 20, width: 400, height: 300 },
+    { x: 0, y: 0, width: 1200, height: 800 },
+    true,
+    true,
+  );
+  assert.include(darkHtml, "background:#1a1727");
+  assert.notInclude(darkHtml, "border-radius:12px;background:#fff");
+  assert.include(darkHtml, "@media (prefers-color-scheme: dark){#card{background:#1a1727");
+  assert.include(darkHtml, "(prefers-reduced-motion: reduce)");
+  assert.include(darkHtml, "duration:120");
 });
 
 it.each(["client", "frame"] as const)(
