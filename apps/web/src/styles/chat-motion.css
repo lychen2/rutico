@@ -1946,3 +1946,53 @@
   text-decoration-thickness: 1.5px;
   text-underline-offset: 2px;
 }
+
+/* ==========================================================================
+   D15 / C050: ModelPicker Sliding Provider Rail, Quota Gauges & EffortGlyph Sync
+   ========================================================================== */
+
+[data-model-picker-rail]:has(
+    > [data-shared-indicator="model-picker-provider"][data-indicator-ready="true"]
+  )
+  button[aria-pressed="true"] {
+  background-color: transparent !important;
+}
+
+[data-effort-radiogroup="true"]:has(
+    > [data-shared-indicator="effort-level"][data-indicator-ready="true"]
+  )
+  [role="radio"][aria-checked="true"] {
+  background-color: transparent !important;
+}
+
+[data-quota-gauge-fill="true"] {
+  background-color: color-mix(in oklch, var(--foreground) 56%, var(--primary));
+  transition:
+    transform 240ms var(--spring-snappy),
+    background-color 180ms ease-out;
+}
+
+[data-quota-gauge-fill="true"][data-quota-low="true"] {
+  background-color: var(--warning);
+}
+
+[data-composer-effort-glyph] [data-effort-bar="true"] {
+  opacity: 0.38;
+  transform: scaleY(0.86);
+  transition:
+    opacity 180ms ease-out calc(var(--effort-bar-index, 0) * 26ms),
+    transform 220ms var(--spring-snappy) calc(var(--effort-bar-index, 0) * 26ms);
+}
+
+[data-composer-effort-glyph] [data-effort-bar="true"][data-filled="true"] {
+  opacity: 1;
+  transform: scaleY(1);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-quota-gauge-fill="true"],
+  [data-composer-effort-glyph] [data-effort-bar="true"] {
+    transition: none;
+    transform: none;
+  }
+}
