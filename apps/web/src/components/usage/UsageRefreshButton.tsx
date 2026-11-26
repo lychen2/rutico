@@ -1,13 +1,17 @@
 import { uiText } from "../../i18n";
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ComponentProps } from "react";
 import { CheckIcon, RefreshCwIcon } from "lucide-react";
+import { cn } from "../../lib/utils";
+
 export function UsageRefreshButton({
   busy,
   disabled,
   onClick,
   label,
   iconOnly = false,
-}: {
+  className,
+  ...props
+}: Omit<ComponentProps<"button">, "children" | "onClick" | "disabled"> & {
   readonly iconOnly?: boolean;
   readonly busy: boolean;
   readonly disabled: boolean;
@@ -25,8 +29,9 @@ export function UsageRefreshButton({
   }, [updated]);
   return (
     <button
+      {...props}
       type="button"
-      className="usage-refresh-button"
+      className={cn("usage-refresh-button", className)}
       data-icon-only={iconOnly || undefined}
       data-state={busy ? "busy" : updated ? "updated" : "idle"}
       aria-label={label}
