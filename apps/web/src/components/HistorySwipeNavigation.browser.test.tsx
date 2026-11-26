@@ -146,4 +146,142 @@ describe("HistorySwipeNavigation", () => {
 
     expect(navigateHistory).toHaveBeenCalledTimes(navigates ? 1 : 0);
   });
+
+  it("handles Linux Alt+ArrowLeft/Right deterministically and ignores editable inputs", async () => {
+    navigateHistory.mockReset();
+    using _platform = vi.spyOn(navigator, "platform", "get").mockReturnValue("Linux x86_64");
+    await using screen = await render(
+      <div data-slot="sidebar-inset">
+        <input data-testid="editable" type="text" />
+        <HistorySwipeNavigation />
+      </div>,
+    );
+
+    const editable = screen.container.querySelector<HTMLInputElement>('[data-testid="editable"]')!;
+    editable.dispatchEvent(
+      new KeyboardEvent("keydown", {
+        key: "ArrowLeft",
+        altKey: true,
+        bubbles: true,
+        cancelable: true,
+      }),
+    );
+    expect(navigateHistory).not.toHaveBeenCalled();
+
+    window.dispatchEvent(
+      new KeyboardEvent("keydown", {
+        key: "ArrowLeft",
+        altKey: true,
+        bubbles: true,
+        cancelable: true,
+      }),
+    );
+    expect(navigateHistory).toHaveBeenCalledTimes(1);
+    expect(navigateHistory).toHaveBeenLastCalledWith("back");
+
+    window.dispatchEvent(
+      new KeyboardEvent("keydown", {
+        key: "ArrowRight",
+        altKey: true,
+        bubbles: true,
+        cancelable: true,
+      }),
+    );
+    expect(navigateHistory).toHaveBeenCalledTimes(2);
+    expect(navigateHistory).toHaveBeenLastCalledWith("forward");
+  });
+
+  it("enforces single navigation ownership across DOM mouse thumb buttons, Electron app-command, and ServerBrowserSurface", async () => {
+    navigateHistory.mockReset();
+    using _platform = vi.spyOn(navigator, "platform", "get").mockReturnValue("Linux x86_64");
+    const menuListeners = new Set<(action: string) => void>();
+    const originalBridge = window.desktopBridge;
+    window.desktopBridge = {
+      ...(originalBridge ?? ({} as NonNullable<typeof window.desktopBridge>)),
+      onMenuAction: (listener: (action: string) => void) => {
+        menuListeners.add(listener);
+        return () => {
+          menuListeners.delete(listener);
+        };
+      },
+    } as NonNullable<typeof window.desktopBridge>;
+
+    try {
+      await using screen = await render(
+        <div data-slot="sidebar-inset">
+          <div data-server-browser-surface="tab" data-testid="guest-preview" />
+          <div data-testid="workspace-content" />
+          <HistorySwipeNavigation />
+        </div>,
+      );
+
+      // 1. Hardware back click over workspace firing BOTH DOM mouseup(button=3) AND Electron app-command
+      // must produce strictly ONE navigation step (Astra P0-2 single navigation owner).
+      const workspace = screen.container.querySelector<HTMLElement>(
+        '[data-testid="workspace-content"]',
+      )!;
+      const nowSpy = vi.spyOn(performance, "now");
+      nowSpy.mockReturnValue(2_000);
+      workspace.dispatchEvent(
+        new MouseEvent("mouseup", { button: 3, bubbles: true, cancelable: true }),
+      );
+      nowSpy.mockReturnValue(2_015);
+      for (const listener of menuListeners) listener("history.app-command:back");
+      expect(navigateHistory).toHaveBeenCalledTimes(1);
+      expect(navigateHistory).toHaveBeenLastCalledWith("back");
+
+      // 2. Hardware forward click over ServerBrowserSurface must NOT navigate host app history
+      // even if Electron also delivers a companion app-command event.
+      const guestPreview = screen.container.querySelector<HTMLElement>(
+        '[data-testid="guest-preview"]',
+      )!;
+      nowSpy.mockReturnValue(2_500);
+      guestPreview.dispatchEvent(
+        new MouseEvent("mouseup", { button: 4, bubbles: true, cancelable: true }),
+      );
+      nowSpy.mockReturnValue(2_510);
+      for (const listener of menuListeners) listener("history.app-command:forward");
+      expect(navigateHistory).toHaveBeenCalledTimes(1);
+
+      // 3. Standalone forward click later (>100ms dedupe window) navigates forward once.
+      nowSpy.mockReturnValue(3_000);
+      workspace.dispatchEvent(
+        new MouseEvent("mouseup", { button: 4, bubbles: true, cancelable: true }),
+      );
+      expect(navigateHistory).toHaveBeenCalledTimes(2);
+      expect(navigateHistory).toHaveBeenLastCalledWith("forward");
+      nowSpy.mockRestore();
+    } finally {
+      if (originalBridge === undefined) {
+        delete window.desktopBridge;
+      } else {
+        window.desktopBridge = originalBridge;
+      }
+    }
+  });
+
+  it("supports opt-in Linux wheel swipe with direct-DOM parallax cleared on release", async () => {
+    navigateHistory.mockReset();
+    using _platform = vi.spyOn(navigator, "platform", "get").mockReturnValue("Linux x86_64");
+    await using screen = await render(
+      <div data-slot="sidebar-inset" style={{ width: "800px", height: "600px" }}>
+        <div data-testid="canvas" style={{ width: "100px", height: "100px" }} />
+        <HistorySwipeNavigation enableLinuxWheelSwipe />
+      </div>,
+    );
+
+    const inset = screen.container.querySelector<HTMLElement>('[data-slot="sidebar-inset"]')!;
+    const canvas = screen.container.querySelector<HTMLElement>('[data-testid="canvas"]')!;
+
+    for (const deltaX of [-45, -45, -45]) {
+      canvas.dispatchEvent(new WheelEvent("wheel", { deltaX, bubbles: true, composed: true }));
+    }
+    expect(inset.style.transform).toContain("translate3d(");
+
+    // Zero delta releases the gesture immediately and clears direct-DOM transform cleanly.
+    canvas.dispatchEvent(new WheelEvent("wheel", { deltaX: 0, bubbles: true, composed: true }));
+    expect(inset.style.transform).toBe("");
+    expect(navigateHistory).toHaveBeenCalledTimes(1);
+    expect(navigateHistory).toHaveBeenLastCalledWith("back");
+  });
 });

@@ -1377,6 +1377,18 @@ export const make = Effect.gen(function* () {
       });
     }
 
+    if (environment.platform !== "darwin") {
+      // Forward hardware mouse back/forward app commands to the renderer's single history navigation owner.
+      window.on("app-command", (_event, command) => {
+        if (window.isDestroyed() || window.webContents.isDestroyed()) return;
+        if (command === "browser-backward") {
+          window.webContents.send(MENU_ACTION_CHANNEL, "history.app-command:back");
+        } else if (command === "browser-forward") {
+          window.webContents.send(MENU_ACTION_CHANNEL, "history.app-command:forward");
+        }
+      });
+    }
+
     if (environment.platform === "darwin") {
       // Mouse drivers can deliver Back/Forward as macOS swipe gestures instead of buttons.
       window.on("swipe", (_event, direction) => {

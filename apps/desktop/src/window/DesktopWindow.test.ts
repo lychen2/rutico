@@ -59,6 +59,7 @@ import * as ElectronWindow from "../electron/ElectronWindow.ts";
 import {
   LINUX_PORTAL_APPEARANCE_CHANNEL,
   LINUX_WINDOW_STATE_CHANNEL,
+  MENU_ACTION_CHANNEL,
   SNAP_SHOT_EVENT_CHANNEL,
   WINDOW_ZOOM_STATE_CHANNEL,
 } from "../ipc/channels.ts";
@@ -2423,5 +2424,38 @@ describe("DesktopWindow", () => {
         assert.equal((resetPayload as { zoomFactor: number }).zoomFactor, 1);
       }).pipe(Effect.provide(layer));
     }),
+  );
+
+  it.effect(
+    "forwards Linux app-command browser-backward and browser-forward to the renderer history owner",
+    () =>
+      Effect.gen(function* () {
+        const fakeWindow = makeFakeBrowserWindow();
+        const createCount = yield* Ref.make(0);
+        const mainWindow = yield* Ref.make<Option.Option<Electron.BrowserWindow>>(Option.none());
+        const layer = layerTest({
+          window: fakeWindow.window,
+          createCount,
+          mainWindow,
+          platform: "linux",
+        });
+
+        yield* Effect.gen(function* () {
+          const desktopWindow = yield* DesktopWindow.DesktopWindow;
+          yield* desktopWindow.handleBackendReady(new URL("http://127.0.0.1:3773"));
+          fakeWindow.send.mockClear();
+
+          const onAppCommand = fakeWindow.windowListeners.get("app-command");
+          assert.isDefined(onAppCommand);
+          onAppCommand!({}, "browser-backward");
+          onAppCommand!({}, "browser-forward");
+          onAppCommand!({}, "media-play_pause");
+
+          assert.deepEqual(fakeWindow.send.mock.calls, [
+            [MENU_ACTION_CHANNEL, "history.app-command:back"],
+            [MENU_ACTION_CHANNEL, "history.app-command:forward"],
+          ]);
+        }).pipe(Effect.provide(layer));
+      }),
   );
 });

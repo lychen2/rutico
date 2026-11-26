@@ -678,6 +678,7 @@ export function ServerBrowserSurface(props: {
     const delta = historyDeltaOf(event.button);
     if (delta === null) return;
     event.preventDefault();
+    event.stopPropagation();
     send({ type: "history", delta });
   };
 

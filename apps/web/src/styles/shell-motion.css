@@ -761,3 +761,82 @@ html[data-palette-dragging="true"] [data-slot="thread-context-drag-ghost"] .drag
     transition: none;
   }
 }
+
+/* ==========================================================================
+   D29 / C095: Linux Elastic History Navigation Edge Pulse & SidebarChrome
+   Fluid Islands (UpdateCapsule, UndoNotice, WorkspaceBreadcrumb)
+   ========================================================================== */
+
+@keyframes history-edge-pulse-in {
+  0% {
+    opacity: 0;
+    scale: 0.88;
+  }
+  40% {
+    opacity: 1;
+    scale: 1;
+  }
+  100% {
+    opacity: 0.86;
+    scale: 0.98;
+  }
+}
+
+@keyframes sidebar-undo-countdown-drain {
+  from {
+    transform: scaleX(1);
+  }
+  to {
+    transform: scaleX(0);
+  }
+}
+
+@keyframes workspace-breadcrumb-arrive {
+  from {
+    opacity: 0;
+    transform: translate3d(4px, 0, 0);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+[data-slot="history-swipe-orb"] {
+  box-shadow:
+    0 12px 28px -10px rgb(0 0 0 / 34%),
+    inset 0 1px 0 rgb(255 255 255 / 26%);
+}
+
+[data-slot="sidebar-undo-countdown"] {
+  position: absolute;
+  inset-inline: 0;
+  bottom: 0;
+  height: 1.5px;
+  border-radius: 9999px;
+  background-color: color-mix(in oklch, var(--primary) 55%, transparent);
+  transform-origin: left center;
+  pointer-events: none;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  [data-slot="history-swipe-orb"][data-history-edge-pulse] {
+    animation: history-edge-pulse-in 210ms var(--spring-snappy) both;
+  }
+
+  [data-slot="sidebar-undo-countdown"] {
+    animation: sidebar-undo-countdown-drain 5000ms linear 1 forwards;
+  }
+
+  [data-slot="workspace-breadcrumb-text"] {
+    animation: workspace-breadcrumb-arrive 170ms var(--ease-out-expo) both;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-slot="history-swipe-orb"][data-history-edge-pulse],
+  [data-slot="sidebar-undo-countdown"],
+  [data-slot="workspace-breadcrumb-text"] {
+    animation: none;
+  }
+}

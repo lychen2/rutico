@@ -652,7 +652,7 @@ export function AppSidebarLayout({
         <BackgroundThreadAnnouncer />
         <SidebarControl showSidebar={showSidebar} />
         {isElectron ? <DesktopZoomHud /> : null}
-        {isElectron ? <HistorySwipeNavigation /> : null}
+        <HistorySwipeNavigation />
       </SidebarProvider>
     </PanelAnimationSuppressionProvider>
   );
