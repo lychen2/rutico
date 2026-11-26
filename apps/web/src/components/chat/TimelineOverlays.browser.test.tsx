@@ -20,6 +20,7 @@ it("keeps the jump button on the right of the composer lane at both widths", asy
   const button = screen.getByRole("button", { name: /Scroll to end.*2 tasks/ });
   for (const width of [360, 1280]) {
     await page.viewport(width, 800);
+    for (const animation of screen.container.getAnimations({ subtree: true })) animation.finish();
     const lane = screen.getByTestId("composer").element().getBoundingClientRect();
     const bounds = button.element().getBoundingClientRect();
     expect(Math.abs(bounds.right - lane.right)).toBeLessThan(1);
