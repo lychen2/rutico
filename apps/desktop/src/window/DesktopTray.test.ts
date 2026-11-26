@@ -201,4 +201,84 @@ describe("DesktopTray", () => {
       assert.equal(macos.createTray.mock.calls.length, 0);
     }),
   );
+
+  it.effect(
+    "removes a hidden approval thread from tooltip and menu without disturbing another visible thread",
+    () =>
+      Effect.gen(function* () {
+        const harness = makeTrayHarness({ platform: "linux" });
+
+        yield* Effect.scoped(
+          Effect.gen(function* () {
+            const tray = yield* DesktopTray.makeWith(harness.deps);
+            yield* tray.initialize;
+
+            yield* tray.updateState({
+              status: "approval",
+              runningCount: 0,
+              approvalCount: 2,
+              unreadCount: 2,
+              threads: [
+                {
+                  environmentId: "env-1",
+                  threadId: "thread-a",
+                  title: "Visible approval A",
+                  status: "approval",
+                },
+                {
+                  environmentId: "env-1",
+                  threadId: "thread-b",
+                  title: "Hidden approval B",
+                  status: "approval",
+                },
+              ],
+            });
+            assert.equal(
+              harness.setToolTip.mock.lastCall?.[0],
+              "Rutico: 2 awaiting approval, 2 unread",
+            );
+            assert.isTrue(
+              (harness.builtMenus.at(-1) ?? []).some((item) =>
+                item.label?.includes("Hidden approval B"),
+              ),
+            );
+
+            // After thread B is hidden, coordinator pushes only visible thread A.
+            yield* tray.updateState({
+              status: "approval",
+              runningCount: 0,
+              approvalCount: 1,
+              unreadCount: 1,
+              threads: [
+                {
+                  environmentId: "env-1",
+                  threadId: "thread-a",
+                  title: "Visible approval A",
+                  status: "approval",
+                },
+              ],
+            });
+            assert.equal(
+              harness.setToolTip.mock.lastCall?.[0],
+              "Rutico: 1 awaiting approval, 1 unread",
+            );
+            const visibleOnlyMenu = harness.builtMenus.at(-1) ?? [];
+            assert.isFalse(
+              visibleOnlyMenu.some((item) => item.label?.includes("Hidden approval B")),
+            );
+            const threadAItem = visibleOnlyMenu.find((item) =>
+              item.label?.includes("Visible approval A"),
+            );
+            assert.isDefined(threadAItem?.click);
+            threadAItem!.click!({} as Electron.MenuItem, undefined, {} as Electron.KeyboardEvent);
+            assert.deepEqual(harness.dispatchedMenuActions, [
+              {
+                action: "open-thread:env-1:thread-a",
+                options: { reveal: true },
+              },
+            ]);
+          }),
+        ).pipe(Effect.provide(harness.depsLayer));
+      }),
+  );
 });

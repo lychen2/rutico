@@ -32,6 +32,7 @@ export const SET_TRAY_STATE_CHANNEL = "desktop:set-tray-state";
 export const SET_TASKBAR_PROGRESS_CHANNEL = "desktop:set-taskbar-progress";
 export const REQUEST_WINDOW_ATTENTION_CHANNEL = "desktop:request-window-attention";
 export const SHOW_NATIVE_NOTIFICATION_CHANNEL = "desktop:show-native-notification";
+export const CLOSE_NATIVE_NOTIFICATION_CHANNEL = "desktop:close-native-notification";
 export const SYNC_HTML_FULLSCREEN_CHANNEL = "desktop:sync-html-fullscreen";
 export const DESKTOP_APP_ACTIVATION_READY_CHANNEL = "desktop:app-activation-ready";
 export const DESKTOP_APP_ACTIVATION_COMPLETE_CHANNEL = "desktop:app-activation-complete";

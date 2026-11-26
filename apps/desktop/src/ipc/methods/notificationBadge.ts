@@ -1,5 +1,6 @@
 import {
   DesktopNativeNotificationSchema,
+  DesktopNativeNotificationTagSchema,
   DesktopTaskbarProgressSchema,
   DesktopWindowAttentionSchema,
   type DesktopTaskbarProgress,
@@ -14,6 +15,7 @@ import * as DesktopAssets from "../../app/DesktopAssets.ts";
 import * as ElectronApp from "../../electron/ElectronApp.ts";
 import * as DesktopIpc from "../DesktopIpc.ts";
 import {
+  CLOSE_NATIVE_NOTIFICATION_CHANNEL,
   MENU_ACTION_CHANNEL,
   REQUEST_WINDOW_ATTENTION_CHANNEL,
   SET_NOTIFICATION_BADGE_CHANNEL,
@@ -101,6 +103,15 @@ export const installNotificationBadge = Effect.fn("desktop.ipc.installNotificati
     const platform = yield* HostProcess.Platform;
     const assetsOption = yield* Effect.serviceOption(DesktopAssets.DesktopAssets);
     const activeNativeNotifications = new Map<string, Electron.Notification>();
+
+    const closeNativeNotification = (tagKey: string) => {
+      const existing = activeNativeNotifications.get(tagKey);
+      if (!existing) return;
+      activeNativeNotifications.delete(tagKey);
+      try {
+        existing.close();
+      } catch {}
+    };
 
     const closeAllNativeNotifications = () => {
       for (const notification of activeNativeNotifications.values()) {
@@ -226,6 +237,19 @@ export const installNotificationBadge = Effect.fn("desktop.ipc.installNotificati
             } catch {
               return false;
             }
+          });
+        }),
+      }),
+    );
+
+    yield* ipc.handle(
+      DesktopIpc.makeIpcMethod({
+        channel: CLOSE_NATIVE_NOTIFICATION_CHANNEL,
+        payload: DesktopNativeNotificationTagSchema,
+        result: Schema.Void,
+        handler: Effect.fn("desktop.ipc.closeNativeNotification")(function* (tag) {
+          yield* Effect.sync(() => {
+            closeNativeNotification(tag);
           });
         }),
       }),

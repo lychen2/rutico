@@ -443,6 +443,8 @@ contextBridge.exposeInMainWorld("desktopBridge", {
     ipcRenderer.invoke(IpcChannels.REQUEST_WINDOW_ATTENTION_CHANNEL, input),
   showNativeNotification: (input) =>
     ipcRenderer.invoke(IpcChannels.SHOW_NATIVE_NOTIFICATION_CHANNEL, input),
+  closeNativeNotification: (tag) =>
+    ipcRenderer.invoke(IpcChannels.CLOSE_NATIVE_NOTIFICATION_CHANNEL, tag),
   onWindowFullscreenStateChange: (listener) => {
     const wrappedListener = (_event: Electron.IpcRendererEvent, fullscreen: unknown) => {
       if (typeof fullscreen !== "boolean") return;

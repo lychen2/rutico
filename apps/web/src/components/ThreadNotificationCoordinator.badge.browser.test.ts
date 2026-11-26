@@ -1,11 +1,18 @@
 import type { AnyRouter } from "@tanstack/react-router";
-import { EnvironmentId } from "@t3tools/contracts";
+import {
+  type DesktopTrayState,
+  EnvironmentId,
+  type ScopedThreadRef,
+  ThreadId,
+} from "@t3tools/contracts";
+import { threadKey } from "@t3tools/client-runtime/state/entities";
 import * as DateTime from "effect/DateTime";
 import * as Option from "effect/Option";
 import { Atom, AtomRegistry } from "effect/reactivity";
 import { expect, it, vi } from "vite-plus/test";
 
 import { fakeTimers, stubGlobal } from "../../test/render";
+import { threadNotificationTag } from "../threadNotifications";
 import { RELEASED_COMPLETION_GRACE_MS } from "./ThreadNotificationCoordinator.logic";
 
 const state = vi.hoisted(() => ({
@@ -64,6 +71,15 @@ vi.mock(import("../state/threads"), async (original) => {
       get delegatedUnderParentAtom() {
         return noDelegatedAtom as never;
       },
+      get hiddenThreadKeysAtom() {
+        return hiddenThreadKeysAtom as never;
+      },
+      get anyEnvironmentHidingAtom() {
+        return anyEnvironmentHidingAtom as never;
+      },
+      get threadRefsAtom() {
+        return threadRefsAtom as never;
+      },
     },
   };
 });
@@ -92,6 +108,9 @@ const shellAtom = Atom.family((_id: string) => Atom.make<unknown>(null));
 const environmentIdsAtom = Atom.make<ReadonlyArray<string>>([]);
 const noRequestsAtom = Atom.make(new Map());
 const noDelegatedAtom = Atom.make<ReadonlySet<string>>(new Set<string>());
+const hiddenThreadKeysAtom = Atom.make<ReadonlySet<string>>(new Set<string>());
+const anyEnvironmentHidingAtom = Atom.make<boolean>(false);
+const threadRefsAtom = Atom.make<ReadonlyArray<ScopedThreadRef>>([]);
 state.shells = { set: (id, value) => registry.set(shellAtom(id), value) };
 
 class TestNotification extends EventTarget {
@@ -201,6 +220,9 @@ function setup() {
   state.inApp = false;
   state.settingsListeners.clear();
   registry.set(environmentIdsAtom, ["one", "two"]);
+  registry.set(hiddenThreadKeysAtom, new Set<string>());
+  registry.set(anyEnvironmentHidingAtom, false);
+  registry.set(threadRefsAtom, []);
   state.shells.set("one", shell());
   state.shells.set("two", shell());
   focused = false;
@@ -230,6 +252,15 @@ function setup() {
       stack.defer(startThreadNotifications(testRegistry, router));
     },
     setEnvironmentIds: (ids: ReadonlyArray<string>) => testRegistry.set(environmentIdsAtom, ids),
+    setHiddenFilter: (input: {
+      readonly hiddenKeys: ReadonlySet<string>;
+      readonly anyHiding?: boolean;
+      readonly liveRefs?: ReadonlyArray<ScopedThreadRef>;
+    }) => {
+      if (input.liveRefs !== undefined) testRegistry.set(threadRefsAtom, input.liveRefs);
+      testRegistry.set(hiddenThreadKeysAtom, input.hiddenKeys);
+      testRegistry.set(anyEnvironmentHidingAtom, input.anyHiding ?? input.hiddenKeys.size > 0);
+    },
     openThread: (environmentId: string, threadId: string) => {
       route.params = { environmentId, threadId };
       for (const listener of routeListeners) listener();
@@ -466,4 +497,234 @@ it("opening a thread or removing its environment closes only its in-app toasts, 
   state.inApp = false;
   app.changeSettings();
   expect(state.closeToast.mock.calls.slice(3)).toEqual([["one-other"]]);
+});
+
+it("excludes hidden approval threads from Linux tray and dismisses only their active native notifications", async () => {
+  await using app = setup();
+  const trayUpdates: DesktopTrayState[] = [];
+  const showNativeNotification = vi.fn(async () => true);
+  const closeNativeNotification = vi.fn(async () => undefined);
+  using _bridge = stubGlobal("desktopBridge", {
+    getClientPlatform: () => "linux",
+    setTrayState: vi.fn(async (payload: DesktopTrayState) => {
+      trayUpdates.push(payload);
+    }),
+    setTaskbarProgress: vi.fn(async () => undefined),
+    requestWindowAttention: vi.fn(async () => undefined),
+    showNativeNotification,
+    closeNativeNotification,
+    onNotificationBadgeClear: () => () => undefined,
+  });
+
+  const envId = EnvironmentId.make("one");
+  const threadAId = ThreadId.make("thread-a");
+  const threadBId = ThreadId.make("thread-b");
+  const liveRefs: ReadonlyArray<ScopedThreadRef> = [
+    { environmentId: envId, threadId: threadAId },
+    { environmentId: envId, threadId: threadBId },
+  ];
+  const hiddenBKey = threadKey({ environmentId: envId, threadId: threadBId });
+
+  app.setEnvironmentIds(["one"]);
+  state.shells.set(
+    "one",
+    shell(
+      { id: "thread-a", title: "Visible approval A" },
+      { id: "thread-b", title: "Secret approval B" },
+    ),
+  );
+  app.start();
+
+  // Both threads transition to pending approval while visible.
+  state.shells.set(
+    "one",
+    shell(
+      {
+        id: "thread-a",
+        title: "Visible approval A",
+        hasPendingApprovals: true,
+        pendingRequestId: "req-a",
+      },
+      {
+        id: "thread-b",
+        title: "Secret approval B",
+        hasPendingApprovals: true,
+        pendingRequestId: "req-b",
+      },
+    ),
+  );
+  await Promise.resolve();
+  await Promise.resolve();
+
+  expect(showNativeNotification).toHaveBeenCalledTimes(2);
+  expect(state.badge).toHaveBeenLastCalledWith(2);
+  expect(trayUpdates.at(-1)).toMatchObject({
+    status: "approval",
+    approvalCount: 2,
+    unreadCount: 2,
+  });
+  expect(trayUpdates.at(-1)?.threads?.map((item) => item.title)).toEqual([
+    "Visible approval A",
+    "Secret approval B",
+  ]);
+
+  // Hiding thread B immediately removes B from tray, drops badge to 1, and closes ONLY B's native notification.
+  app.setHiddenFilter({ hiddenKeys: new Set([hiddenBKey]), anyHiding: true, liveRefs });
+  const tagA = threadNotificationTag(envId, threadAId);
+  const tagB = threadNotificationTag(envId, threadBId);
+  expect(closeNativeNotification.mock.calls).toEqual([[tagB]]);
+  expect(closeNativeNotification).not.toHaveBeenCalledWith(tagA);
+  expect(state.badge).toHaveBeenLastCalledWith(1);
+  expect(trayUpdates.at(-1)).toMatchObject({
+    status: "approval",
+    approvalCount: 1,
+    unreadCount: 1,
+    threads: [
+      {
+        environmentId: "one",
+        threadId: "thread-a",
+        title: "Visible approval A",
+        status: "approval",
+      },
+    ],
+  });
+  expect(JSON.stringify(trayUpdates.at(-1))).not.toContain("Secret approval B");
+});
+
+it("never leaks a thread that starts hidden or becomes hidden while showNativeNotification is in flight, and closes legacy notifications", async () => {
+  await using app = setup();
+  const trayUpdates: DesktopTrayState[] = [];
+  const pendingNativeResolution = Promise.withResolvers<boolean>();
+  let callIndex = 0;
+  const showNativeNotification = vi.fn(() => {
+    callIndex += 1;
+    // First call (thread A): falls back to legacy Web Notification.
+    // Second call (thread B): resolves asynchronously after B is hidden.
+    return callIndex === 1 ? Promise.resolve(false) : pendingNativeResolution.promise;
+  });
+  const closeNativeNotification = vi.fn(async () => undefined);
+  using _bridge = stubGlobal("desktopBridge", {
+    getClientPlatform: () => "linux",
+    setTrayState: vi.fn(async (payload: DesktopTrayState) => {
+      trayUpdates.push(payload);
+    }),
+    setTaskbarProgress: vi.fn(async () => undefined),
+    requestWindowAttention: vi.fn(async () => undefined),
+    showNativeNotification,
+    closeNativeNotification,
+    onNotificationBadgeClear: () => () => undefined,
+  });
+
+  const envId = EnvironmentId.make("one");
+  const threadAId = ThreadId.make("thread-a");
+  const threadBId = ThreadId.make("thread-b");
+  const threadCId = ThreadId.make("thread-c");
+  const liveRefs: ReadonlyArray<ScopedThreadRef> = [
+    { environmentId: envId, threadId: threadAId },
+    { environmentId: envId, threadId: threadBId },
+    { environmentId: envId, threadId: threadCId },
+  ];
+  const hiddenBKey = threadKey({ environmentId: envId, threadId: threadBId });
+  const hiddenCKey = threadKey({ environmentId: envId, threadId: threadCId });
+
+  app.setEnvironmentIds(["one"]);
+  // Thread C starts hidden before notifications or tray sync run.
+  app.setHiddenFilter({ hiddenKeys: new Set([hiddenCKey]), anyHiding: true, liveRefs });
+  state.shells.set(
+    "one",
+    shell(
+      { id: "thread-a", title: "Visible approval A" },
+      { id: "thread-b", title: "Raced approval B" },
+      {
+        id: "thread-c",
+        title: "Already hidden C",
+        hasPendingApprovals: true,
+        pendingRequestId: "req-c",
+      },
+    ),
+  );
+  app.start();
+
+  // Tray must already exclude C.
+  expect(trayUpdates.at(-1)).toMatchObject({
+    status: "running",
+    approvalCount: 0,
+    runningCount: 2,
+  });
+  expect(JSON.stringify(trayUpdates.at(-1))).not.toContain("Already hidden C");
+
+  // Both A and B transition to pending approval; C stays hidden.
+  state.shells.set(
+    "one",
+    shell(
+      {
+        id: "thread-a",
+        title: "Visible approval A",
+        hasPendingApprovals: true,
+        pendingRequestId: "req-a",
+      },
+      {
+        id: "thread-b",
+        title: "Raced approval B",
+        hasPendingApprovals: true,
+        pendingRequestId: "req-b",
+      },
+      {
+        id: "thread-c",
+        title: "Already hidden C",
+        hasPendingApprovals: true,
+        pendingRequestId: "req-c",
+      },
+    ),
+  );
+  await Promise.resolve();
+  await Promise.resolve();
+  expect(TestNotification.sent.map((item) => item.options.body)).toEqual(["Visible approval A"]);
+
+  // Hide B BEFORE its showNativeNotification IPC promise resolves.
+  app.setHiddenFilter({
+    hiddenKeys: new Set([hiddenBKey, hiddenCKey]),
+    anyHiding: true,
+    liveRefs,
+  });
+  pendingNativeResolution.resolve(true);
+  await Promise.resolve();
+  await Promise.resolve();
+
+  expect(closeNativeNotification).toHaveBeenCalledWith(threadNotificationTag(envId, threadBId));
+  expect(TestNotification.sent[0]!.close).not.toHaveBeenCalled();
+  expect(state.badge).toHaveBeenLastCalledWith(1);
+  expect(trayUpdates.at(-1)).toMatchObject({
+    status: "approval",
+    approvalCount: 1,
+    unreadCount: 1,
+    threads: [
+      {
+        environmentId: "one",
+        threadId: "thread-a",
+        title: "Visible approval A",
+        status: "approval",
+      },
+    ],
+  });
+
+  // Now hide A too -> A's legacy Web Notification closes and tray clears to idle.
+  app.setHiddenFilter({
+    hiddenKeys: new Set([
+      threadKey({ environmentId: envId, threadId: threadAId }),
+      hiddenBKey,
+      hiddenCKey,
+    ]),
+    anyHiding: true,
+    liveRefs,
+  });
+  expect(TestNotification.sent[0]!.close).toHaveBeenCalledOnce();
+  expect(state.badge).toHaveBeenLastCalledWith(0);
+  expect(trayUpdates.at(-1)).toMatchObject({
+    status: "idle",
+    approvalCount: 0,
+    runningCount: 0,
+    unreadCount: 0,
+    threads: [],
+  });
 });

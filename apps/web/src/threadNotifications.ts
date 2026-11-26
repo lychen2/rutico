@@ -98,6 +98,12 @@ export function requestWindowAttention(urgency: "normal" | "critical" = "normal"
   void bridge.requestWindowAttention({ urgency }).catch(() => undefined);
 }
 
+export function closeNativeNotification(tag: string) {
+  const bridge = window.desktopBridge;
+  if (typeof bridge?.closeNativeNotification !== "function") return;
+  void bridge.closeNativeNotification(tag).catch(() => undefined);
+}
+
 let audioContext: AudioContext | undefined;
 const buffers = new Map<string, Promise<AudioBuffer>>();
 /** When each sound's current playback ends, on the audio context's clock. */

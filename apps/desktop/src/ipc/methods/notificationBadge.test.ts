@@ -143,6 +143,7 @@ it.effect(
           const setProgress = handlers.get("desktop:set-taskbar-progress")!;
           const requestAttention = handlers.get("desktop:request-window-attention")!;
           const showNotification = handlers.get("desktop:show-native-notification")!;
+          const closeNotification = handlers.get("desktop:close-native-notification")!;
           const event = { sender: { id: 1 } };
 
           // Validation rejects out-of-range progress values.
@@ -211,6 +212,39 @@ it.effect(
             "desktop:menu-action",
             "open-thread:env-1:thread-9",
           );
+
+          // Closing one notification by tag dismisses only that thread without disturbing another visible thread.
+          const shownA = yield* Effect.promise(() =>
+            Promise.resolve(
+              showNotification(event, {
+                title: "Approval needed",
+                body: "Visible approval A",
+                tag: "tag-visible-a",
+                urgency: "critical",
+                environmentId: "env-1",
+                threadId: "thread-a",
+              }),
+            ),
+          );
+          const shownB = yield* Effect.promise(() =>
+            Promise.resolve(
+              showNotification(event, {
+                title: "Approval needed",
+                body: "Hidden approval B",
+                tag: "tag-hidden-b",
+                urgency: "critical",
+                environmentId: "env-1",
+                threadId: "thread-b",
+              }),
+            ),
+          );
+          expect(shownA).toBe(true);
+          expect(shownB).toBe(true);
+          const notificationA = native.notifications.at(-2)!;
+          const notificationB = native.notifications.at(-1)!;
+          yield* Effect.promise(() => Promise.resolve(closeNotification(event, "tag-hidden-b")));
+          expect(notificationB.close).toHaveBeenCalledOnce();
+          expect(notificationA.close).not.toHaveBeenCalled();
 
           // Graceful false when Notification.isSupported() is false.
           native.notificationSupported = false;

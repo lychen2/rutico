@@ -1258,6 +1258,12 @@ export const DesktopNativeNotificationSchema = Schema.Struct({
 });
 type DesktopNativeNotification = typeof DesktopNativeNotificationSchema.Type;
 
+export const DesktopNativeNotificationTagSchema = Schema.String.check(
+  Schema.isTrimmed(),
+  Schema.isNonEmpty(),
+  Schema.isMaxLength(128),
+);
+
 export interface DesktopBridge {
   getAppBranding: () => DesktopAppBranding | null;
   getDatabaseMigrationProgress?: () => Promise<DatabaseMigrationProgress | null>;
@@ -1381,6 +1387,7 @@ export interface DesktopBridge {
   setTaskbarProgress?: (input: DesktopTaskbarProgress) => Promise<void>;
   requestWindowAttention?: (input?: DesktopWindowAttention) => Promise<void>;
   showNativeNotification?: (input: DesktopNativeNotification) => Promise<boolean>;
+  closeNativeNotification?: (tag: string) => Promise<void>;
   getUpdateState: () => Promise<DesktopUpdateState>;
   /** `minimumVersion` is a track switch's checked release; nothing older is offered after. */
   setUpdateChannel: (
