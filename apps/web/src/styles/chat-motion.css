@@ -1096,3 +1096,88 @@
     animation: none;
   }
 }
+
+/* ==========================================================================
+   D11 / C037: SideThreadPane Drawer Entry, Add-to-Chat Arrival Halo & Subagent Bar
+   ========================================================================== */
+
+@keyframes chat-side-drawer-in {
+  from {
+    opacity: 0.01;
+    transform: translate3d(12px, 0, 0);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+@keyframes chat-side-drawer-in-rtl {
+  from {
+    opacity: 0.01;
+    transform: translate3d(-12px, 0, 0);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+[data-subagent-bar-badge="true"] {
+  box-shadow: inset 0 1px 0 color-mix(in oklch, var(--contrast-foreground) 8%, transparent);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  [data-side-thread-drawer="true"] {
+    animation: chat-side-drawer-in 200ms var(--spring-snappy) both;
+  }
+
+  [dir="rtl"] [data-side-thread-drawer="true"] {
+    animation-name: chat-side-drawer-in-rtl;
+  }
+
+  [data-side-chat-added-pill="true"] {
+    animation: chat-approval-stamp-pop 200ms var(--spring-bouncy) both;
+  }
+
+  [data-side-chat-added-check="true"] {
+    stroke-dasharray: 100;
+    animation: chat-exit-check-draw 180ms var(--spring-snappy) both;
+  }
+
+  [data-subagent-bar-dot="live"] {
+    animation: chat-exit-dot-pulse 1.5s ease-in-out infinite;
+    animation-play-state: var(--visible-animation-state, paused);
+    will-change: var(--visible-animation-will-change, auto);
+  }
+
+  [data-lineage-group-list="true"] {
+    animation: chat-work-cascade-in 180ms var(--spring-snappy) both;
+  }
+
+  [data-chat-composer-form] [data-slot="context-chip"] {
+    transition:
+      opacity 180ms ease-out,
+      transform 220ms var(--spring-bouncy),
+      box-shadow 420ms ease-out;
+    @starting-style {
+      opacity: 0;
+      transform: scale(0.9);
+      box-shadow: 0 0 0 4px color-mix(in oklch, var(--primary) 34%, transparent);
+    }
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-side-thread-drawer="true"],
+  [data-side-chat-added-pill="true"],
+  [data-side-chat-added-check="true"],
+  [data-subagent-bar-dot="live"],
+  [data-lineage-group-list="true"] {
+    animation: none;
+  }
+
+  [data-chat-composer-form] [data-slot="context-chip"] {
+    transition: none;
+  }
+}
