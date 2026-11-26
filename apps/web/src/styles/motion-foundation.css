@@ -712,3 +712,34 @@ html[data-theme-background-crossfade="active"]::before {
     display: none;
   }
 }
+
+/* ==========================================================================
+   D04 / C012: Sliding FloatingHighlight Item Stacking & Transparent Pass-Through
+   ========================================================================== */
+
+:has(> [data-slot="floating-highlight"][data-active="true"])
+  :is(
+    [data-slot="menu-item"],
+    [data-slot="menu-checkbox-item"],
+    [data-slot="menu-radio-item"],
+    [data-slot="menu-sub-trigger"],
+    [data-slot="select-item"],
+    [data-slot="combobox-item"],
+    [data-slot="autocomplete-item"]
+  ) {
+  position: relative;
+  z-index: 1;
+}
+
+:has(> [data-slot="floating-highlight"][data-active="true"])
+  :is(
+    [data-slot="menu-item"][data-highlighted],
+    [data-slot="menu-checkbox-item"][data-highlighted],
+    [data-slot="menu-radio-item"][data-highlighted],
+    [data-slot="menu-sub-trigger"][data-highlighted],
+    [data-slot="select-item"][data-highlighted],
+    [data-slot="combobox-item"][data-highlighted],
+    [data-slot="autocomplete-item"][data-highlighted]
+  ) {
+  background-color: transparent;
+}
