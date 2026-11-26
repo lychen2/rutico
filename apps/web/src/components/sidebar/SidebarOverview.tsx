@@ -338,7 +338,7 @@ function OverviewRowQuickActions({
     <span
       data-overview-quick-actions={mode}
       className={cn(
-        "pointer-events-none absolute top-1 end-1 flex items-center gap-px rounded-md bg-sidebar/92 p-0.5 opacity-0 shadow-xs ring-1 ring-inset ring-sidebar-border/70 backdrop-blur-sm transition-[opacity,transform] duration-150 ease-(--ease-drawer) ltr:translate-x-1 rtl:-translate-x-1 motion-reduce:translate-x-0 motion-reduce:transition-none dark:ring-white/8",
+        "pointer-events-none absolute top-1 end-1 flex items-center gap-px rounded-md bg-sidebar/96 p-0.5 opacity-0 shadow-xs ring-1 ring-inset ring-sidebar-border/70 transition-[opacity,transform] duration-150 ease-(--ease-drawer) ltr:translate-x-1 rtl:-translate-x-1 motion-reduce:translate-x-0 motion-reduce:transition-none dark:ring-white/8",
         "group-hover/overview-row:pointer-events-auto group-hover/overview-row:translate-x-0 group-hover/overview-row:opacity-100 group-focus-within/overview-row:pointer-events-auto group-focus-within/overview-row:translate-x-0 group-focus-within/overview-row:opacity-100",
         menuOpen && "pointer-events-auto translate-x-0 opacity-100",
       )}
@@ -616,7 +616,7 @@ function OverviewThreadButton({
                   : undefined
               }
               className={cn(
-                "block min-w-0 flex-1 cursor-pointer rounded-md px-2 py-1.5 text-start text-sidebar-foreground outline-none transition-[background-color,color,opacity,box-shadow] duration-150 ease-out hover:bg-sidebar-row-hover focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring aria-[current=page]:bg-sidebar-row-active aria-[current=page]:light:ring-1 aria-[current=page]:light:ring-inset aria-[current=page]:light:ring-sidebar-border/70 aria-[current=page]:dark:ring-1 aria-[current=page]:dark:ring-inset aria-[current=page]:dark:ring-white/8 motion-reduce:transition-none",
+                "block min-w-0 flex-1 cursor-pointer rounded-md px-2 py-1.5 text-start text-sidebar-foreground outline-none transition-[background-color,color,opacity,box-shadow,scale] duration-150 ease-(--ease-spring-snappy) active:duration-75 active:ease-out hover:bg-sidebar-row-hover active:bg-sidebar-row-active motion-safe:active:scale-[0.985] focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring aria-[current=page]:bg-sidebar-row-active aria-[current=page]:light:ring-1 aria-[current=page]:light:ring-inset aria-[current=page]:light:ring-sidebar-border/70 aria-[current=page]:dark:ring-1 aria-[current=page]:dark:ring-inset aria-[current=page]:dark:ring-white/8 motion-reduce:transition-none motion-reduce:active:scale-100",
                 mode === "today" &&
                   row.status === "done" &&
                   "opacity-75 hover:opacity-100 aria-[current=page]:opacity-100",

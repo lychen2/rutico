@@ -15,9 +15,10 @@
   width: fit-content;
   max-width: 100%;
   border: 1px solid var(--border);
-  background: color-mix(in srgb, var(--todo-surface) var(--glass-opacity, 82%), transparent);
-  -webkit-backdrop-filter: blur(var(--glass-blur, 12px)) saturate(var(--glass-saturation, 140%));
-  backdrop-filter: blur(var(--glass-blur, 12px)) saturate(var(--glass-saturation, 140%));
+  background: color-mix(in srgb, var(--todo-surface) var(--glass-opacity, 86%), transparent);
+  -webkit-backdrop-filter: blur(min(var(--glass-blur, 10px), 10px))
+    saturate(var(--glass-saturation, 1.1));
+  backdrop-filter: blur(min(var(--glass-blur, 10px), 10px)) saturate(var(--glass-saturation, 1.1));
   box-shadow:
     inset 0 1px 0 rgb(255 255 255 / 45%),
     0 1px 2px rgb(0 0 0 / 5%);
@@ -32,7 +33,7 @@
     border-color 160ms ease-out,
     background-color 160ms ease-out,
     box-shadow 160ms ease-out,
-    scale 150ms var(--ease-spring-snappy);
+    scale 180ms var(--ease-spring-snappy);
 
   @variant dark {
     box-shadow:
@@ -52,7 +53,9 @@
   }
 
   &:active {
-    scale: 0.985;
+    scale: 0.975;
+    transition-duration: 65ms;
+    transition-timing-function: ease-out;
   }
 }
 [data-omp-todo][data-mode="run"] [data-omp-todo-bar] {
@@ -183,13 +186,11 @@
   bottom: calc(100% + 6px);
   width: min(100%, 36rem);
   border-radius: 16px;
-  background: color-mix(in srgb, var(--todo-surface) var(--glass-opacity, 86%), transparent);
-  -webkit-backdrop-filter: blur(var(--glass-blur, 12px)) saturate(var(--glass-saturation, 140%));
-  backdrop-filter: blur(var(--glass-blur, 12px)) saturate(var(--glass-saturation, 140%));
+  background: color-mix(in srgb, var(--todo-surface) 92%, transparent);
   box-shadow:
     inset 0 1px 0 rgb(255 255 255 / 55%),
     0 0 0 1px var(--border),
-    0 6px 24px rgb(0 0 0 / 16%);
+    0 6px 20px rgb(0 0 0 / 16%);
   display: grid;
   grid-template-rows: 0fr;
   opacity: 0;
@@ -205,10 +206,13 @@
     box-shadow:
       inset 0 1px 0 rgb(255 255 255 / 8%),
       0 0 0 1px var(--border),
-      0 8px 28px rgb(0 0 0 / 42%);
+      0 8px 24px rgb(0 0 0 / 40%);
   }
 }
 [data-omp-todo-body][data-expanded="true"] {
+  -webkit-backdrop-filter: blur(min(var(--glass-blur, 10px), 10px))
+    saturate(var(--glass-saturation, 1.1));
+  backdrop-filter: blur(min(var(--glass-blur, 10px), 10px)) saturate(var(--glass-saturation, 1.1));
   grid-template-rows: 1fr;
   opacity: 1;
   transform: translateY(0);

@@ -95,14 +95,21 @@
   position: relative;
   overflow: hidden;
   border-radius: 20px;
-  background: color-mix(in srgb, var(--card) 88%, transparent);
-  -webkit-backdrop-filter: blur(24px) saturate(1.6);
-  backdrop-filter: blur(24px) saturate(1.6);
+  background: color-mix(in srgb, var(--card) 92%, transparent);
+  -webkit-backdrop-filter: blur(min(var(--glass-blur, 10px), 10px))
+    saturate(var(--glass-saturation, 1.08));
+  backdrop-filter: blur(min(var(--glass-blur, 10px), 10px)) saturate(var(--glass-saturation, 1.08));
   box-shadow:
     0 0 0 1px var(--border),
-    inset 0 0 0 1px color-mix(in srgb, var(--background) 50%, transparent),
-    0 1px 2px rgb(0 0 0 / 0.05),
-    0 8px 24px -12px rgb(0 0 0 / 0.14);
+    inset 0 1px 0 color-mix(in srgb, var(--background) 40%, transparent),
+    0 6px 18px -10px rgb(0 0 0 / 0.16);
+}
+@media (prefers-reduced-transparency: reduce) {
+  .plan-card {
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+    background: var(--card);
+  }
 }
 /* The deeper shadow fades in on a separate layer; box-shadow itself is never animated. */
 .plan-shadow {
@@ -219,9 +226,26 @@
   border-radius: 20px;
   text-align: left;
   cursor: pointer;
+  transition:
+    background-color 140ms ease-out,
+    transform 180ms var(--ease-spring-snappy, cubic-bezier(0.22, 1.24, 0.36, 1));
 }
 .plan-bar:hover {
-  background: color-mix(in srgb, var(--foreground) 4%, transparent);
+  background: color-mix(in srgb, var(--foreground) 5%, transparent);
+}
+.plan-bar:active {
+  background: color-mix(in srgb, var(--foreground) 9%, transparent);
+  transform: scale(0.985);
+  transition-duration: 65ms;
+  transition-timing-function: ease-out;
+}
+@media (prefers-reduced-motion: reduce) {
+  .plan-bar {
+    transition: none;
+  }
+  .plan-bar:active {
+    transform: none;
+  }
 }
 .plan-capsule :focus-visible {
   outline: 2px solid var(--ring);
@@ -420,9 +444,26 @@
 }
 button.plan-stage-row {
   cursor: pointer;
+  transition:
+    background-color 140ms ease-out,
+    transform 160ms var(--ease-spring-snappy, cubic-bezier(0.22, 1.24, 0.36, 1));
 }
 button.plan-stage-row:hover {
-  background: color-mix(in srgb, var(--foreground) 4%, transparent);
+  background: color-mix(in srgb, var(--foreground) 5%, transparent);
+}
+button.plan-stage-row:active {
+  background: color-mix(in srgb, var(--foreground) 9%, transparent);
+  transform: scale(0.99);
+  transition-duration: 65ms;
+  transition-timing-function: ease-out;
+}
+@media (prefers-reduced-motion: reduce) {
+  button.plan-stage-row {
+    transition: none;
+  }
+  button.plan-stage-row:active {
+    transform: none;
+  }
 }
 .plan-stage-mark {
   position: relative;

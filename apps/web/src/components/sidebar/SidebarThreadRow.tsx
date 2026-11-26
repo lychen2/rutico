@@ -1033,7 +1033,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
             ? "done"
             : null;
   const rowSurfaceClassName = cn(
-    "group/sidebar-row relative w-full cursor-pointer overflow-hidden rounded-md text-left outline-none select-none transition-[background-color,color,opacity,box-shadow,scale] duration-150 ease-out motion-reduce:transition-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
+    "group/sidebar-row relative w-full cursor-pointer overflow-hidden rounded-md text-left outline-none select-none transition-[background-color,color,opacity,box-shadow,scale] duration-160 ease-(--ease-spring-snappy) active:duration-75 active:ease-out motion-safe:active:scale-[0.985] active:bg-sidebar-row-active motion-reduce:transition-none motion-reduce:active:scale-100 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
     takeoverCue !== null &&
       "before:pointer-events-none before:absolute before:inset-y-1.5 before:start-0 before:w-0.5 before:rounded-full",
     takeoverCue === "attention" && "before:bg-warning-foreground/80",
