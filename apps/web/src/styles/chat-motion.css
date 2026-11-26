@@ -1996,3 +1996,26 @@
     transform: none;
   }
 }
+
+/* ==========================================================================
+   D15 / C051: Morphing Send/Steer/Queue/Stop Action & Modifier Intent Pill
+   ========================================================================== */
+
+@media (prefers-reduced-motion: no-preference) {
+  [data-composer-intent-pill="true"] {
+    transition:
+      opacity 140ms ease-out,
+      transform 180ms var(--spring-snappy);
+    @starting-style {
+      opacity: 0;
+      transform: translate3d(4px, 0, 0) scale(0.92);
+    }
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-composer-intent-pill="true"] {
+    transition: none;
+    transform: none;
+  }
+}

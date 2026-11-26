@@ -17,6 +17,8 @@ export type MorphingIconVariant =
   | "play"
   | "pause"
   | "send"
+  | "steer"
+  | "queue"
   | "stop"
   | "maximize"
   | "restore"
@@ -104,6 +106,22 @@ export const MORPHING_ICON_SHAPES: Readonly<Record<MorphingIconVariant, Morphing
       { cx: 12, cy: 12.2, rotate: 90, scale: 0.76, opacity: 1 },
       { cx: 8.8, cy: 8.8, rotate: -45, scale: 0.56, opacity: 1 },
       { cx: 15.2, cy: 8.8, rotate: 45, scale: 0.56, opacity: 1 },
+    ],
+  },
+  steer: {
+    groupRotate: 45,
+    lines: [
+      { cx: 12, cy: 12.4, rotate: 90, scale: 0.74, opacity: 1 },
+      { cx: 8.8, cy: 9, rotate: -45, scale: 0.52, opacity: 1 },
+      { cx: 15.2, cy: 9, rotate: 45, scale: 0.52, opacity: 1 },
+    ],
+  },
+  queue: {
+    groupRotate: 0,
+    lines: [
+      { cx: 11.2, cy: 7.5, rotate: 0, scale: 0.76, opacity: 1 },
+      { cx: 10.4, cy: 12, rotate: 0, scale: 0.62, opacity: 1 },
+      { cx: 9.6, cy: 16.5, rotate: 0, scale: 0.48, opacity: 1 },
     ],
   },
   stop: {

@@ -3,6 +3,7 @@ import { BookmarkIcon } from "lucide-react";
 import { memo } from "react";
 
 import { cn } from "~/lib/utils";
+import { AnimatedNumber } from "../ui/animated-number";
 import { ComposerBanner } from "./ComposerBanner";
 
 export const ComposerStashBadge = memo(function ComposerStashBadge(props: {
@@ -17,15 +18,13 @@ export const ComposerStashBadge = memo(function ComposerStashBadge(props: {
   const pulsed = props.pulseKey > 0;
   const count = (
     <ComposerBanner.Count
-      // Remounting the count per stash restarts its CSS pulse; no timer has to end it.
-      key={props.pulseKey}
       className={cn(
         "text-muted-foreground",
         pulsed &&
-          "animate-stash-pulse-count transition-[opacity,translate] duration-180 ease-out starting:translate-y-0.5 starting:opacity-0 motion-reduce:transition-none",
+          "transition-[opacity,translate] duration-180 ease-out motion-reduce:transition-none",
       )}
     >
-      {props.count}
+      <AnimatedNumber value={props.count} />
     </ComposerBanner.Count>
   );
 

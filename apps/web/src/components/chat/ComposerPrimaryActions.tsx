@@ -7,14 +7,7 @@ import {
   type ReactNode,
 } from "react";
 import { msg, useGT, useMessages } from "gt-react";
-import {
-  CheckIcon,
-  ChevronLeftIcon,
-  Minimize2Icon,
-  PlayIcon,
-  CornerUpRightIcon,
-  ListPlusIcon,
-} from "lucide-react";
+import { ChevronLeftIcon, Minimize2Icon } from "lucide-react";
 import { useEnvironmentIdentificationMode } from "~/hooks/useSettings";
 import type { MessageResolver } from "~/i18n/messages";
 import { formatContextWindowTokens } from "~/lib/contextWindow";
@@ -23,6 +16,8 @@ import { observeVisibleAnimation } from "~/lib/visibleAnimation";
 import { useShortcutModifierState } from "../../shortcutModifierState";
 import { StageBackdropButtonArt, useSidebarStageBackdropVariant } from "../SidebarStageBackdrop";
 import { Button } from "../ui/button";
+import { Kbd } from "../ui/kbd";
+import { MorphingIcon, type MorphingIconVariant } from "../ui/morphing-icon";
 import { Spinner } from "../ui/spinner";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { SharedTooltipTrigger } from "../ui/shared-tooltip";
@@ -195,17 +190,7 @@ function StopGenerationButton({
           <Spinner size="xs" aria-hidden="true" />
         </span>
       ) : (
-        <svg
-          key="stop"
-          width="12"
-          height="12"
-          viewBox="0 0 12 12"
-          fill="currentColor"
-          aria-hidden="true"
-          className="t3-icon-pop"
-        >
-          <rect x="2" y="2" width="8" height="8" rx="1.5" />
-        </svg>
+        <MorphingIcon variant="stop" strokeWidth={2.4} className="size-3.5" />
       )}
     </SharedTooltipTrigger>
   );
@@ -459,9 +444,27 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
         : submitLabel);
 
   const isBusyOrHeld = isSendBusy || isSendHeld;
+  const primaryIconVariant: MorphingIconVariant = showResume
+    ? "play"
+    : isEditingQueuedMessage
+      ? "check"
+      : isRunning && isQueuing
+        ? "queue"
+        : isRunning
+          ? "steer"
+          : "send";
+  const showModifierIntentPill =
+    !compact &&
+    isRunning &&
+    !isEditingQueuedMessage &&
+    canSteer &&
+    hasSendableContent &&
+    !isBusyOrHeld &&
+    (shortcutModifiers.metaKey || shortcutModifiers.ctrlKey);
   const sendButton = (
     <button
       type={showResume ? "button" : "submit"}
+      data-composer-primary-variant={primaryIconVariant}
       className={cn(
         "group/send relative isolate flex h-9 w-9 items-center justify-center overflow-hidden rounded-full shadow-xs transition-[scale,background-color,color,box-shadow,filter] duration-180 ease-(--ease-spring-snappy) active:duration-75 active:ease-out enabled:cursor-pointer enabled:inset-shadow-control-highlight any-hover:scale-106 active:scale-93 active:inset-shadow-control-pressed active:shadow-none disabled:pointer-events-none disabled:shadow-none disabled:any-hover:scale-100 motion-reduce:transition-none motion-reduce:any-hover:scale-100 motion-reduce:active:scale-100 sm:h-8 sm:w-8 [&_svg]:pointer-events-none",
         stageBackdropVariant
@@ -495,35 +498,30 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
         <span key="busy" className="t3-icon-pop inline-flex">
           <Spinner size="sm" aria-hidden="true" />
         </span>
-      ) : showResume ? (
-        <PlayIcon key="resume" className="t3-icon-pop size-4 fill-current" aria-hidden="true" />
-      ) : isEditingQueuedMessage ? (
-        <CheckIcon key="edit" className="t3-icon-pop size-4" aria-hidden="true" />
-      ) : isRunning && isQueuing ? (
-        <ListPlusIcon key="queue" className="t3-icon-pop size-4" aria-hidden="true" />
-      ) : isRunning ? (
-        <CornerUpRightIcon key="steer" className="t3-icon-pop size-4" aria-hidden="true" />
       ) : (
-        <svg
-          key="submit"
-          width="14"
-          height="14"
-          viewBox="0 0 14 14"
-          fill="none"
-          aria-hidden="true"
-          className="t3-icon-pop transition-transform duration-180 ease-(--ease-spring-snappy) group-enabled/send:group-any-hover/send:-translate-y-0.5 motion-reduce:transition-none"
+        <span
+          className={cn(
+            "inline-flex transition-transform duration-180 ease-(--ease-spring-snappy) motion-reduce:transition-none",
+            primaryIconVariant === "send" &&
+              "group-enabled/send:group-any-hover/send:-translate-y-0.5",
+          )}
         >
-          <path
-            d="M7 11.5V2.5M7 2.5L3 6.5M7 2.5L11 6.5"
-            stroke="currentColor"
-            strokeWidth="1.8"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          />
-        </svg>
+          <MorphingIcon variant={primaryIconVariant} strokeWidth={2.05} className="size-4" />
+        </span>
       )}
     </button>
   );
+
+  const modifierIntentPill = showModifierIntentPill ? (
+    <span
+      aria-hidden="true"
+      data-composer-intent-pill="true"
+      className="pointer-events-none inline-flex shrink-0 items-center gap-1 rounded-full border border-border/70 bg-muted/85 px-2 py-0.5 font-medium text-2xs text-foreground shadow-xs"
+    >
+      <Kbd>{modifier}</Kbd>
+      <span>{isQueuing ? gt("Queue") : gt("Steer")}</span>
+    </span>
+  ) : null;
 
   const submit = (
     <Tooltip key="submit">
@@ -535,6 +533,7 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
     return withStopButton(
       <>
         {children}
+        {modifierIntentPill}
         {submit}
       </>,
     );
@@ -578,6 +577,7 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
         <span className="text-muted-foreground">{compactTokens}</span>
       </SharedTooltipTrigger>
       {children}
+      {modifierIntentPill}
       {submit}
     </div>,
   );

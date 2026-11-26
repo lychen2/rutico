@@ -33,7 +33,18 @@ import {
 import * as DateTime from "effect/DateTime";
 import { msg, T, useGT, useMessages } from "gt-react";
 import { thrownErrorMessage } from "@t3tools/client-runtime/errors";
-import { useId, useImperativeHandle, useRef, useState, type ReactNode, type Ref } from "react";
+import {
+  useId,
+  useImperativeHandle,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type ReactNode,
+  type Ref,
+} from "react";
+
+import { captureFlipSnapshot, playFlipBatch, type FlipRect } from "~/lib/motion/flip";
+import { getSpringWaapiTiming, prefersReducedMotion } from "~/lib/motion/springs";
 
 import { useAssetUrls } from "../../assets/assetUrls";
 import { threadEnvironment } from "../../state/threads";
@@ -112,6 +123,8 @@ export function QueuedRunsControl({
   const cancel = useAtomCommand(threadEnvironment.cancelQueuedRun);
   const [showAll, setShowAll] = useState(false);
   const queueListId = useId();
+  const queueListRef = useRef<HTMLOListElement>(null);
+  const prevRowRectsRef = useRef<Map<string, FlipRect>>(new Map());
   const [busyRunId, setBusyRunId] = useState<RunId | null>(null);
   const steerInFlightRef = useRef(false);
   // Run-only acknowledgements can resurrect pending rows after cancellation or startup.
@@ -182,6 +195,24 @@ export function QueuedRunsControl({
     if (!canSendRun(freshContext) || steerInFlightRef.current) return;
     steerInFlightRef.current = true;
     setBusyRunId(queuedRunId);
+    let promoteFlight: Animation | null = null;
+    const rowElement = queueListRef.current?.querySelector<HTMLElement>(
+      `[data-queued-run-key="${CSS.escape(queuedRunId)}"]`,
+    );
+    if (rowElement && !prefersReducedMotion() && typeof rowElement.animate === "function") {
+      const timing = getSpringWaapiTiming("snappy");
+      promoteFlight = rowElement.animate(
+        [
+          { transform: "translate3d(0, 0, 0) scale(1)", opacity: 1 },
+          { transform: "translate3d(0, -10px, 0) scale(0.98)", opacity: 0.78 },
+        ],
+        {
+          duration: Math.min(200, timing.duration),
+          easing: timing.easing,
+          fill: "forwards",
+        },
+      );
+    }
     const result = workflow?.canSendNow
       ? await resume({
           environmentId: props.environmentId,
@@ -196,6 +227,7 @@ export function QueuedRunsControl({
     steerInFlightRef.current = false;
     setBusyRunId(null);
     if (result?._tag === "Failure" && !isAtomCommandInterrupted(result)) {
+      promoteFlight?.cancel();
       const error = squashAtomCommandFailure(result);
       toastManager.add({
         type: "error",
@@ -240,6 +272,40 @@ export function QueuedRunsControl({
     },
   }));
 
+  const collapsible = items.length > QUEUE_VISIBLE_ROWS;
+  const visibleItems = collapsible && !showAll ? items.slice(0, QUEUE_VISIBLE_ROWS - 1) : items;
+  const visibleSignature = visibleItems.map((item) => item.key).join("|");
+
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- batches FLIP spring reflow on surviving queued rows when items reorder, cancel, or expand
+  useLayoutEffect(() => {
+    const list = queueListRef.current;
+    if (!list || visibleSignature.length === 0) {
+      prevRowRectsRef.current = new Map();
+      return;
+    }
+    const rows = Array.from(list.querySelectorAll<HTMLElement>("[data-queued-run-key]"));
+    const nextRects = new Map<string, FlipRect>();
+    const entries: Array<{
+      readonly element: HTMLElement;
+      readonly first: FlipRect;
+      readonly options: { readonly preset: "spatial" };
+    }> = [];
+    for (const row of rows) {
+      const key = row.dataset.queuedRunKey;
+      if (!key) continue;
+      const rect = captureFlipSnapshot(row);
+      nextRects.set(key, rect);
+      const previous = prevRowRectsRef.current.get(key);
+      if (previous && Math.abs(previous.top - rect.top) >= 1) {
+        entries.push({ element: row, first: previous, options: { preset: "spatial" } });
+      }
+    }
+    prevRowRectsRef.current = nextRects;
+    if (entries.length > 0) {
+      playFlipBatch(entries);
+    }
+  }, [queueListRef, visibleSignature]);
+
   if (items.length === 0) return null;
 
   const remove = async (runId: RunId) => {
@@ -250,9 +316,6 @@ export function QueuedRunsControl({
     });
     setBusyRunId(null);
   };
-
-  const collapsible = items.length > QUEUE_VISIBLE_ROWS;
-  const visibleItems = collapsible && !showAll ? items.slice(0, QUEUE_VISIBLE_ROWS - 1) : items;
 
   return (
     <section
@@ -269,7 +332,7 @@ export function QueuedRunsControl({
           count: items.length,
         })}
       </span>
-      <ol className="flex flex-col items-end gap-3" id={queueListId}>
+      <ol ref={queueListRef} className="flex flex-col items-end gap-3" id={queueListId}>
         {visibleItems.map((item, position) => {
           const previewText = isAttachmentOnlyBootstrapPrompt(item.text)
             ? ""
@@ -285,6 +348,7 @@ export function QueuedRunsControl({
           return (
             <li
               key={item.key}
+              data-queued-run-key={item.key}
               aria-label={gt("Queued message {position} of {total}, not sent", {
                 position: position + 1,
                 total: items.length,
