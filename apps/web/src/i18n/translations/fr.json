@@ -2414,7 +2414,6 @@
   "404941d325a2755b": "Appuyez à nouveau sur {shortcut} pour quitter",
   "48ef9d3971c97e7d": "Impossible de rouvrir la vue",
   "158a785cabe10dda": "Panneau de l’espace de travail",
-  "9371d8cc390a8a1b": "Les aperçus du navigateur ne sont disponibles que dans l’app desktop T3 Code.",
   "05037ca1666fd421": "Les terminaux ne sont disponibles que depuis un fil de projet.",
   "a3aa1e49af278d41": "Les fichiers ne sont disponibles que lorsqu’un projet est ouvert.",
   "87ea6995ea1e7aa4": "Le diff n’est disponible que pour les fils de serveur dans des dépôts Git.",
@@ -3754,7 +3753,6 @@
     "…"
   ],
   "c3e8cd9bf44e2f43": "Affichage de ce qui a été lu auparavant.",
-  "eb6e0584cf4a2a1d": "Langage : {language}",
   "d76c606a3c519b78": "Désactiver le retour à la ligne",
   "2b683498cee8c8a7": "Retour à la ligne",
   "7c1923203049d602": "Copier le code",
@@ -12027,7 +12025,6 @@
   "effe26aaf2941c69": "Le serveur de cet ordinateur n’est pas encore connecté",
   "27e0c22322e66145": "Réessayez quand il sera connecté.",
   "a46244a71021244a": "Impossible d’ajouter « {name} »",
-  "cc07974b25287234": "T3 Code n’a pas pu lire le chemin du dossier.",
   "27727bda79d97ffa": "Seuls des dossiers peuvent être ajoutés comme projets",
   "eb9f51eb8bd8a43c": "Déposez des fichiers sur un fil pour les joindre.",
   "671a8b8ab44e83e2": "Déposez des dossiers pour ajouter des projets",
@@ -12637,7 +12634,6 @@
   "c512071143a5ba32": "Ce fil n’existe plus.",
   "ed169d23683fb6ac": "Chargement du fil…",
   "290e0ab40b87dc17": "Fil d’Ariane des workflows",
-  "683dd9831e54edc0": "Environnement",
   "34ad53646f06ed80": "Les workflows sont désactivés",
   "8f6589c9e0ac5d4e": "Aucun environnement connecté",
   "744127f8dfad7d22": "Connectez un environnement pour voir ses exécutions de workflow.",
@@ -12962,5 +12958,10 @@
   "d54cd153f6e13f09": "Plus d’actions",
   "b8736743b1ab48f3": "Marquer comme lu",
   "da49b8271b9dffa0": "Supprimer",
-  "01ee3b13eba94b09": "Tâches du jour"
+  "01ee3b13eba94b09": "Tâches du jour",
+  "47f955009afbb793": "Les aperçus du navigateur ne sont disponibles que dans l’app desktop Rutico.",
+  "17f70beed8a184f6": "Envoyé par Rutico",
+  "bf59b7e005e2104c": "Rutico n’a pas pu lire le chemin du dossier.",
+  "3dc150ba37e2c907": "Faites glisser pour redimensionner · Double-cliquez pour réinitialiser",
+  "5dc214fdd64c13f6": "Environnement"
 }

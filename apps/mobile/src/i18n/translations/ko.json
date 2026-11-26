@@ -4475,7 +4475,6 @@
     " 복제 중"
   ],
   "d201af23193100b9": "작업 영역 경로를 입력하세요",
-  "042c9c88de8cd95c": "계획을 작업 영역에 저장함",
   "979cece449deec58": "계획을 저장할 수 없습니다",
   "ff9b542ab2e00cc3": "계획 복사",
   "3414b088dde8621b": "저장하는 중...",
@@ -5596,5 +5595,15 @@
   "8d545d54c0a9e950": "에이전트가 실행하는 명령, 편집, 검색을 숨깁니다. 성공한 항목 숨기기는 실패를 남겨 둡니다. Zen은 최종 답변만 표시합니다. 승인, 질문, 오류는 항상 표시됩니다.",
   "99d51127f573296b": "다른 계정",
   "8ec2c57414669b79": "두 번째 {tracker} 워크스페이스 또는 사용자를 연결합니다.",
-  "892f08d21b8e48a9": "요구 사항이 충족되면 {layers}을(를) {kind, select, squash {스쿼시} merge {병합} rebase {리베이스} fastForward {빨리 감기} other {{method}}} 방식으로 {base}에 병합합니다. 바로 병합될 수도 있습니다."
+  "892f08d21b8e48a9": "요구 사항이 충족되면 {layers}을(를) {kind, select, squash {스쿼시} merge {병합} rebase {리베이스} fastForward {빨리 감기} other {{method}}} 방식으로 {base}에 병합합니다. 바로 병합될 수도 있습니다.",
+  "6f7d97c066011a2f": "QR 코드를 스캔했습니다. 연결할 준비가 되었습니다.",
+  "ffaaca09d46973a8": "스캔됨",
+  "c6fa2905d56a750c": "저장됨",
+  "64b304394646c690": "Escape",
+  "fd63fffe51680c58": "Tab",
+  "1bad92ef235cfdfc": "Control 보조 키",
+  "d51dc8c3400d83d7": "위쪽 화살표",
+  "ef47ee341965574e": "아래쪽 화살표",
+  "44de850d36d1bccd": "{minutes, plural, other {{minutes}분}} {seconds, plural, other {{seconds}초}} 경과",
+  "055f73f1ec23d268": "{seconds, plural, other {{seconds}초}} 경과"
 }

@@ -27,8 +27,9 @@ import {
 import { StackActions, useFocusEffect, useNavigation } from "@react-navigation/native";
 import { msg, T, useGT, useMessages } from "gt-react-native";
 import type { ReactNode } from "react";
-import { useEffect, useEffectEvent, useRef, useState, type RefObject } from "react";
-import { Keyboard, Platform, View } from "react-native";
+import { useEffect, useEffectEvent, useId, useRef, useState, type RefObject } from "react";
+import { Keyboard, Platform, StyleSheet, View } from "react-native";
+import Svg, { Defs, LinearGradient, Rect, Stop } from "react-native-svg";
 import { composerImageGallery } from "../../lib/composerImageGallery";
 import { filePreviewGallery } from "../../lib/filePreviewGallery";
 import { FilePreviewModal, type FilePreviewSource } from "../../components/ui/FilePreviewModal";
@@ -39,7 +40,7 @@ import {
 } from "../../state/composer-attachment-uploads";
 import Animated, { FadeIn, FadeOut, ReduceMotion } from "react-native-reanimated";
 import { useUniwindTheme } from "../../lib/useUniwindTheme";
-import { themeColorWithAlpha } from "../../lib/mobileTheme";
+import { flattenThemeColor, themeColorWithAlpha } from "../../lib/mobileTheme";
 import { armAgentAwarenessLiveActivityForLocalWork } from "../agent-awareness/remoteRegistration";
 import { scopedThreadKey } from "../../lib/scopedEntities";
 import {
@@ -196,7 +197,7 @@ export interface ThreadComposerProps {
 
 const COMPOSER_ATTACHMENT_ENTERING =
   Platform.OS === "android"
-    ? FadeIn.duration(160)
+    ? FadeIn.duration(160).reduceMotion(ReduceMotion.System)
     : FadeIn.delay(COMPOSER_TRANSITION_DURATION_MS).duration(160).reduceMotion(ReduceMotion.System);
 
 const FOLLOW_UP_ACTION_LABEL = {
@@ -262,6 +263,11 @@ export const ThreadComposer = function ThreadComposer(props: ThreadComposerProps
   const project = useProject(scopeProjectRef(props.environmentId, props.selectedThread.projectId));
   const { themeVariables: materialTheme } = useAppearancePreferences();
   const composerPanel = materialTheme["--color-composer-panel"];
+  const scrimGradientId = `composer-scrim-${useId().replace(/[^a-zA-Z0-9_-]/g, "")}`;
+  const androidScrimColor = flattenThemeColor(
+    themeColorWithAlpha(composerPanel, 1),
+    materialTheme["--color-screen"],
+  );
   const navigation = useNavigation();
   const foregroundColor = useUniwindTheme()["--color-foreground"];
   const bodyText = useComposerTextRole();
@@ -586,7 +592,8 @@ export const ThreadComposer = function ThreadComposer(props: ThreadComposerProps
     armAgentAwarenessLiveActivityForLocalWork({
       environmentId: props.environmentId,
       threadTitle: props.selectedThread.title,
-      projectTitle: props.environmentLabel ?? "T3 Code",
+      // oxlint-disable-next-line t3code/no-untranslated-copy -- product name fallback for Live Activity
+      projectTitle: props.environmentLabel ?? "Rutico",
     });
   };
 
@@ -644,7 +651,7 @@ export const ThreadComposer = function ThreadComposer(props: ThreadComposerProps
         <Animated.View
           className="px-[14px] pb-2.5 pt-2"
           entering={COMPOSER_ATTACHMENT_ENTERING}
-          exiting={FadeOut.duration(120)}
+          exiting={FadeOut.duration(120).reduceMotion(ReduceMotion.System)}
         >
           <ComposerQueuedEditAttachments
             environmentId={props.environmentId}
@@ -658,7 +665,7 @@ export const ThreadComposer = function ThreadComposer(props: ThreadComposerProps
         <Animated.View
           className="px-[14px] pb-2.5 pt-2"
           entering={COMPOSER_ATTACHMENT_ENTERING}
-          exiting={FadeOut.duration(120)}
+          exiting={FadeOut.duration(120).reduceMotion(ReduceMotion.System)}
         >
           <ComposerAttachmentStrip
             environmentId={props.environmentId}
@@ -734,19 +741,28 @@ export const ThreadComposer = function ThreadComposer(props: ThreadComposerProps
       style={{
         paddingTop: 6,
         paddingBottom: (props.bottomInset ?? 0) + THREAD_COMPOSER_BOTTOM_GUTTER,
-        backgroundColor:
-          Platform.OS === "android" ? themeColorWithAlpha(composerPanel, 1) : undefined,
       }}
     >
-      {/* Use a plain View: Reanimated Animated.View drops experimental_backgroundImage on Android. */}
-      <View
-        className={
-          Platform.OS === "android"
-            ? "hidden"
-            : "absolute inset-0 bg-linear-to-b from-screen/0 via-screen/60 to-screen/90"
-        }
-        pointerEvents="none"
-      />
+      {/* Use plain View / SVG: Reanimated Animated.View drops experimental_backgroundImage on Android. */}
+      {Platform.OS === "android" ? (
+        <View pointerEvents="none" style={StyleSheet.absoluteFill}>
+          <Svg width="100%" height="100%" viewBox="0 0 100 100" preserveAspectRatio="none">
+            <Defs>
+              <LinearGradient id={scrimGradientId} x1="0%" y1="0%" x2="0%" y2="100%">
+                <Stop offset="0%" stopColor={androidScrimColor} stopOpacity={0} />
+                <Stop offset="42%" stopColor={androidScrimColor} stopOpacity={0.52} />
+                <Stop offset="100%" stopColor={androidScrimColor} stopOpacity={0.85} />
+              </LinearGradient>
+            </Defs>
+            <Rect x="0" y="0" width="100" height="100" fill={`url(#${scrimGradientId})`} />
+          </Svg>
+        </View>
+      ) : (
+        <View
+          className="absolute inset-0 bg-linear-to-b from-screen/0 via-screen/60 to-screen/90"
+          pointerEvents="none"
+        />
+      )}
       <Animated.View
         className="relative w-full self-center"
         style={{ maxWidth: props.contentMaxWidth }}

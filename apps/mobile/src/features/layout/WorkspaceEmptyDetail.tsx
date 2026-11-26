@@ -1,9 +1,10 @@
-import { T, useGT } from "gt-react-native";
+import { useGT } from "gt-react-native";
 import { SymbolView } from "../../components/ui/AppSymbol";
-import { Platform, Pressable, View } from "react-native";
+import { Platform, View } from "react-native";
 
 import { AppText as Text } from "../../components/ui/AppText";
 import { NewThreadButton } from "../../components/NewThreadButton";
+import { Button } from "../../components/ui/Button";
 import { FloatingActionButton } from "../../components/ui/FloatingActionButton";
 import { EmptyState } from "../../components/ui/EmptyState";
 import { ScreenContent } from "../../components/ui/ScreenContent";
@@ -21,14 +22,8 @@ export function WorkspaceEmptyDetail(props: {
   if (props.tab !== undefined && props.tab !== "settings" && !workspaceUsesColumns(props.tab))
     return <View className="flex-1 bg-screen" />;
   return (
-    <ScreenContent surface="screen">
-      <View
-        className={
-          Platform.OS === "android"
-            ? "flex-1 items-center justify-center px-10"
-            : "flex-1 items-center justify-center bg-screen px-10"
-        }
-      >
+    <ScreenContent surface="screen" backdrop="hero">
+      <View className="flex-1 items-center justify-center px-10">
         {props.onAddConnection ? (
           <View className="w-full max-w-[430px]">
             <EmptyState
@@ -78,15 +73,14 @@ export function WorkspaceEmptyDetail(props: {
               Platform.OS === "android" ? (
                 <NewThreadButton extended className="mt-2" onPress={props.onStartNewTask} />
               ) : (
-                <Pressable
-                  accessibilityRole="button"
-                  className="mt-2 flex-row items-center gap-2 rounded-full bg-primary px-5 py-3 active:opacity-70"
-                  onPress={props.onStartNewTask}
-                >
-                  <Text className="text-base font-t3-bold text-primary-foreground">
-                    <T>New thread</T>
-                  </Text>
-                </Pressable>
+                <View className="mt-2">
+                  <Button
+                    label={gt("New thread")}
+                    icon="square.and.pencil"
+                    tone="primary"
+                    onPress={props.onStartNewTask}
+                  />
+                </View>
               )
             ) : null}
           </View>

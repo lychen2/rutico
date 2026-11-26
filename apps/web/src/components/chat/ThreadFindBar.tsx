@@ -3,6 +3,8 @@ import { T, useGT } from "gt-react";
 import { ChevronDownIcon, ChevronUpIcon, XIcon } from "lucide-react";
 import { Button } from "../ui/button";
 import { InputGroup, InputGroupAddon, InputGroupInput } from "../ui/input-group";
+import { Kbd, KbdGroup } from "../ui/kbd";
+import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { cn } from "~/lib/utils";
 import {
   formatThreadFindCount,
@@ -10,6 +12,7 @@ import {
   type ThreadFindAnnouncement,
 } from "./threadFind";
 import { THREAD_DETAILS_CARD_GAP } from "./threadDetailsCardLayout";
+import { isTimelineRowVisibleInViewport, scheduleTimelineTargetHighlight } from "./TimelineMinimap";
 
 interface ThreadFindBarProps {
   readonly open: boolean;
@@ -34,6 +37,10 @@ export const THREAD_FIND_BAR_RESERVED_HEIGHT = 36 + THREAD_DETAILS_CARD_GAP;
 
 export function ThreadFindBar(props: ThreadFindBarProps) {
   const inputRef = useRef<HTMLInputElement | null>(null);
+  const lastHighlightedRef = useRef<{ navigationId: number; rowId: string | null }>({
+    navigationId: -1,
+    rowId: null,
+  });
   const gt = useGT();
 
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- focuses and selects the input DOM node when the bar opens or a find shortcut fires
@@ -48,7 +55,53 @@ export function ThreadFindBar(props: ThreadFindBarProps) {
   ]);
 
   const hasQuery = props.query.trim().length > 0;
-  const noResults = hasQuery && !props.status && props.matchCount === 0;
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- triggers a brief DOM arrival wash on the target timeline row when find navigation settles
+  useEffect(() => {
+    if (!props.open || !hasQuery) {
+      lastHighlightedRef.current = { navigationId: -1, rowId: null };
+      return;
+    }
+    if (
+      !props.settled ||
+      props.status !== null ||
+      props.counting === true ||
+      props.matchCount === 0
+    ) {
+      return;
+    }
+    if (lastHighlightedRef.current.navigationId === props.navigationId) return;
+    lastHighlightedRef.current.navigationId = props.navigationId;
+
+    return scheduleTimelineTargetHighlight(() => {
+      if (typeof CSS === "undefined" || !CSS.highlights) return "skip";
+      const highlight = CSS.highlights.get("t3-thread-find-active");
+      if (!highlight) return null;
+      for (const range of highlight) {
+        const node = range.startContainer;
+        const element = node instanceof Element ? node : node.parentElement;
+        const row = element?.closest<HTMLElement>("[data-timeline-row-id]") ?? null;
+        if (!row) continue;
+        const rowId = row.dataset.timelineRowId ?? null;
+        if (rowId !== null && rowId === lastHighlightedRef.current.rowId) {
+          return "skip";
+        }
+        const viewport = row.closest<HTMLElement>("[data-assistant-citation-viewport]");
+        if (!isTimelineRowVisibleInViewport(row, viewport)) return null;
+        lastHighlightedRef.current.rowId = rowId;
+        return row;
+      }
+      return null;
+    });
+  }, [
+    hasQuery,
+    props.counting,
+    props.matchCount,
+    props.navigationId,
+    props.open,
+    props.settled,
+    props.status,
+  ]);
+  const noResults = hasQuery && !props.status && !props.counting && props.matchCount === 0;
   let label = "";
   if (hasQuery) {
     label = props.counting ? "1/…" : formatThreadFindCount(props.activeIndex, props.matchCount);
@@ -81,7 +134,11 @@ export function ThreadFindBar(props: ThreadFindBarProps) {
   return (
     <div
       data-thread-find-bar
-      className="absolute top-3 right-3 z-40 w-[min(var(--thread-details-panel-width),calc(100%-1.5rem))] transition-opacity duration-150 ease-out starting:opacity-0 motion-reduce:transition-none"
+      data-thread-find-no-results={noResults ? "true" : undefined}
+      className={cn(
+        "absolute top-3 right-3 z-40 w-[min(var(--thread-details-panel-width),calc(100%-1.5rem))] origin-top rounded-2xl transition-[opacity,transform,box-shadow] duration-200 ease-(--ease-spring-snappy) starting:-translate-y-2 starting:scale-[0.98] starting:opacity-0 motion-reduce:transition-none",
+        noResults && "ring-2 ring-destructive/25",
+      )}
     >
       <InputGroup
         variant="popover"
@@ -123,32 +180,71 @@ export function ThreadFindBar(props: ThreadFindBarProps) {
               <T>Retry</T>
             </Button>
           ) : null}
-          <Button
-            size="icon-xs"
-            variant="ghost"
-            aria-label={gt("Previous match")}
-            disabled={navigationDisabled}
-            onClick={props.onPrevious}
-          >
-            <ChevronUpIcon />
-          </Button>
-          <Button
-            size="icon-xs"
-            variant="ghost"
-            aria-label={gt("Next match")}
-            disabled={navigationDisabled}
-            onClick={props.onNext}
-          >
-            <ChevronDownIcon />
-          </Button>
-          <Button
-            size="icon-xs"
-            variant="ghost"
-            aria-label={gt("Close find")}
-            onClick={props.onClose}
-          >
-            <XIcon />
-          </Button>
+          <Tooltip>
+            <TooltipTrigger
+              render={
+                <Button
+                  size="icon-xs"
+                  variant="ghost"
+                  aria-label={gt("Previous match")}
+                  disabled={navigationDisabled}
+                  onClick={props.onPrevious}
+                />
+              }
+            >
+              <ChevronUpIcon />
+            </TooltipTrigger>
+            <TooltipPopup side="bottom">
+              <span className="inline-flex items-center gap-1.5">
+                <span>{gt("Previous match")}</span>
+                <KbdGroup>
+                  <Kbd>Shift</Kbd>
+                  <Kbd>Enter</Kbd>
+                </KbdGroup>
+              </span>
+            </TooltipPopup>
+          </Tooltip>
+          <Tooltip>
+            <TooltipTrigger
+              render={
+                <Button
+                  size="icon-xs"
+                  variant="ghost"
+                  aria-label={gt("Next match")}
+                  disabled={navigationDisabled}
+                  onClick={props.onNext}
+                />
+              }
+            >
+              <ChevronDownIcon />
+            </TooltipTrigger>
+            <TooltipPopup side="bottom">
+              <span className="inline-flex items-center gap-1.5">
+                <span>{gt("Next match")}</span>
+                <Kbd>Enter</Kbd>
+              </span>
+            </TooltipPopup>
+          </Tooltip>
+          <Tooltip>
+            <TooltipTrigger
+              render={
+                <Button
+                  size="icon-xs"
+                  variant="ghost"
+                  aria-label={gt("Close find")}
+                  onClick={props.onClose}
+                />
+              }
+            >
+              <XIcon />
+            </TooltipTrigger>
+            <TooltipPopup side="bottom">
+              <span className="inline-flex items-center gap-1.5">
+                <span>{gt("Close find")}</span>
+                <Kbd>Esc</Kbd>
+              </span>
+            </TooltipPopup>
+          </Tooltip>
         </InputGroupAddon>
       </InputGroup>
     </div>

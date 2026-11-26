@@ -211,7 +211,8 @@ function DialogFooter({
     <div
       className={cn(
         "flex flex-col-reverse gap-2 px-6 sm:flex-row sm:justify-end sm:rounded-b-[calc(var(--radius-2xl)-1px)]",
-        variant === "default" && "border-t bg-muted/72 py-4",
+        variant === "default" &&
+          "border-t border-border/60 bg-muted/40 py-4 dark:border-foreground/[0.07] dark:bg-foreground/[0.03]",
         variant === "bare" && "py-4",
         className,
       )}
@@ -224,7 +225,10 @@ function DialogFooter({
 function DialogTitle({ className, ...props }: DialogPrimitive.Title.Props) {
   return (
     <DialogPrimitive.Title
-      className={cn("wrap-anywhere font-semibold text-xl leading-snug", className)}
+      className={cn(
+        "wrap-anywhere text-balance font-semibold text-xl leading-snug tracking-[-0.015em]",
+        className,
+      )}
       data-slot="dialog-title"
       {...props}
     />
@@ -234,7 +238,7 @@ function DialogTitle({ className, ...props }: DialogPrimitive.Title.Props) {
 function DialogDescription({ className, ...props }: DialogPrimitive.Description.Props) {
   return (
     <DialogPrimitive.Description
-      className={cn("text-muted-foreground text-sm", className)}
+      className={cn("text-pretty text-muted-foreground text-sm leading-relaxed", className)}
       data-slot="dialog-description"
       {...props}
     />

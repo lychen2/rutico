@@ -349,6 +349,16 @@ function ExpandedWorkGroupEntries({
 
 const workEntryKey = (entry: TimelineWorkEntry) => entry.id;
 
+function observeVisiblePulse(element: HTMLSpanElement | null) {
+  if (element === null) return;
+  element.style.animationPlayState = "var(--visible-animation-state, paused)";
+  const stop = observeVisibleAnimation(element);
+  return () => {
+    stop?.();
+    element.style.removeProperty("animation-play-state");
+  };
+}
+
 export function WorkingTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "working" }> }) {
   const {
     isCompacting,
@@ -393,7 +403,10 @@ export function WorkingTimelineRow({ row }: { row: Extract<TimelineRow, { kind: 
           data-working-indicator="true"
           className="relative flex size-2 shrink-0 items-center justify-center"
         >
-          <span className="size-1.5 rounded-full bg-info motion-safe:animate-pulse" />
+          <span
+            ref={observeVisiblePulse}
+            className="size-1.5 rounded-full bg-info motion-safe:animate-pulse"
+          />
         </span>
         <span
           ref={shimmer ? observeVisibleAnimation : undefined}
@@ -425,7 +438,7 @@ export function WorkingTimelineRow({ row }: { row: Extract<TimelineRow, { kind: 
               >
                 <span className="h-1 w-5 shrink-0 overflow-hidden rounded-full bg-border">
                   <span
-                    className="block h-full origin-left rounded-full bg-info transition-transform duration-200 motion-reduce:transition-none"
+                    className="block h-full origin-left rounded-full bg-info transition-transform duration-200 ease-(--ease-drawer) motion-reduce:transition-none"
                     style={{ transform: `scaleX(${taskRatio})` }}
                   />
                 </span>

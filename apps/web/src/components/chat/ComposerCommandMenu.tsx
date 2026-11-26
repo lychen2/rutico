@@ -31,6 +31,8 @@ import { type ComposerSlashCommand, type ComposerTriggerKind } from "../../compo
 import { cn } from "~/lib/utils";
 import { Badge } from "../ui/badge";
 import { Command, CommandGroup, CommandItem, CommandList } from "../ui/command";
+import { Kbd } from "../ui/kbd";
+import { Spinner } from "../ui/spinner";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { EnvironmentMachineIcon } from "../EnvironmentMachineIcon";
 import { PierreEntryIcon } from "./PierreEntryIcon";
@@ -146,43 +148,67 @@ export const ComposerCommandMenu = memo(function ComposerCommandMenu(props: {
         data-composer-command-drawer="true"
       >
         {props.items.length > 0 ? (
-          <CommandList
-            id={props.listId}
-            aria-label={
-              props.triggerKind ? m(LISTBOX_LABEL_BY_TRIGGER[props.triggerKind]) : undefined
-            }
-            className="max-h-72 min-h-0 scroll-pb-6"
-          >
-            <CommandGroup>
-              {props.items.map((item) => (
-                <ComposerCommandMenuItem
-                  key={item.id}
-                  optionId={composerSuggestionOptionId(props.listId, item.id)}
-                  item={item}
-                  triggerKind={props.triggerKind}
-                  resolvedTheme={props.resolvedTheme}
-                  isActive={props.activeItemId === item.id}
-                  onHighlight={props.onHighlightedItemChange}
-                  onSelect={props.onSelect}
-                />
-              ))}
-            </CommandGroup>
-          </CommandList>
+          <>
+            <CommandList
+              id={props.listId}
+              aria-label={
+                props.triggerKind ? m(LISTBOX_LABEL_BY_TRIGGER[props.triggerKind]) : undefined
+              }
+              className="max-h-72 min-h-0 scroll-pb-2 pointer-coarse:scroll-pb-6"
+            >
+              <CommandGroup>
+                {props.items.map((item) => (
+                  <ComposerCommandMenuItem
+                    key={item.id}
+                    optionId={composerSuggestionOptionId(props.listId, item.id)}
+                    item={item}
+                    triggerKind={props.triggerKind}
+                    resolvedTheme={props.resolvedTheme}
+                    isActive={props.activeItemId === item.id}
+                    onHighlight={props.onHighlightedItemChange}
+                    onSelect={props.onSelect}
+                  />
+                ))}
+              </CommandGroup>
+            </CommandList>
+            <div
+              aria-hidden="true"
+              className="flex items-center justify-between gap-2 border-t border-foreground/[0.06] px-3 py-1.5 text-muted-foreground/70 text-xs pointer-coarse:hidden"
+            >
+              <div className="flex items-center gap-1.5">
+                <Kbd>↑↓</Kbd>
+                <span className="text-muted-foreground/40">·</span>
+                <Kbd>↵</Kbd>
+                <span className="text-muted-foreground/40">·</span>
+                <Kbd>Esc</Kbd>
+              </div>
+              {props.isLoading ? (
+                <Spinner size="xs" tone="muted" aria-hidden="true" className="shrink-0" />
+              ) : null}
+            </div>
+          </>
         ) : (
           <div className="px-5 pt-3.5 pb-7">
-            <p className="text-secondary-label text-xs">
-              {props.isLoading
-                ? props.triggerKind === "skill" || props.triggerKind === "slash-command"
-                  ? gt("Searching workspace skills...")
-                  : props.triggerKind === "pull-request"
-                    ? gt("Finding pull request...")
-                    : gt("Searching workspace files...")
-                : (props.emptyStateText ??
-                  (props.triggerKind === "skill"
-                    ? gt("No skills found. Try / to browse provider commands.")
-                    : props.triggerKind === "path"
-                      ? gt("No matching files or folders.")
-                      : gt("No matching command.")))}
+            <p className="flex items-center gap-2 text-secondary-label text-xs">
+              {props.isLoading ? (
+                <>
+                  <Spinner size="xs" tone="muted" aria-hidden="true" className="shrink-0" />
+                  <span>
+                    {props.triggerKind === "skill" || props.triggerKind === "slash-command"
+                      ? gt("Searching workspace skills...")
+                      : props.triggerKind === "pull-request"
+                        ? gt("Finding pull request...")
+                        : gt("Searching workspace files...")}
+                  </span>
+                </>
+              ) : (
+                (props.emptyStateText ??
+                (props.triggerKind === "skill"
+                  ? gt("No skills found. Try / to browse provider commands.")
+                  : props.triggerKind === "path"
+                    ? gt("No matching files or folders.")
+                    : gt("No matching command.")))
+              )}
             </p>
           </div>
         )}

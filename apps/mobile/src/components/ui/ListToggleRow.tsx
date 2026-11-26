@@ -1,9 +1,12 @@
+import * as Haptics from "expo-haptics";
 import { T, useGT } from "gt-react-native";
 import { useState } from "react";
-import { Pressable } from "react-native";
+import { Platform, View } from "react-native";
+import { useResolveClassNames } from "uniwind";
 
 import { AppText } from "./AppText";
 import { ListRowLayout, type ListRowContentProps } from "./ListRowLayout";
+import { RowPressable } from "./RowPressable";
 import { ThemedSwitch } from "./ThemedSwitch";
 
 /**
@@ -18,46 +21,60 @@ export function ListToggleRow(
 ) {
   const gt = useGT();
   const [picked, setPicked] = useState(false);
+  const rippleStyle = useResolveClassNames("bg-subtle-strong");
+  const disabled = Boolean(props.disabled);
   const pick = (value: boolean) => {
     setPicked(value);
     props.onValueChange(value);
   };
+  const isMixed = props.value === null;
+  const mixedAccessibilityLabel = picked
+    ? gt("Set {label} off for selected environments", { label: props.label })
+    : gt("Set {label} on for selected environments", { label: props.label });
+  const handleRowPress = () => {
+    if (disabled) return;
+    void Haptics.selectionAsync().catch(() => undefined);
+    pick(isMixed ? !picked : !props.value);
+  };
+
   return (
-    <ListRowLayout
-      icon={props.icon}
-      label={props.label}
-      description={props.description}
-      disabled={props.disabled}
-      accessory={
-        props.value === null ? (
-          <Pressable
-            accessibilityLabel={
-              picked
-                ? gt("Set {label} off for selected environments", { label: props.label })
-                : gt("Set {label} on for selected environments", { label: props.label })
-            }
-            accessibilityRole="button"
-            accessibilityHint={props.description}
-            accessibilityState={{ disabled: Boolean(props.disabled) }}
-            disabled={props.disabled}
-            className="rounded-full bg-subtle px-3 py-2 active:opacity-70"
-            onPress={() => pick(!picked)}
-          >
-            <AppText className="text-sm font-t3-medium text-foreground">
-              {picked ? <T>Mixed · Set off</T> : <T>Mixed · Set on</T>}
-            </AppText>
-          </Pressable>
-        ) : (
-          <ThemedSwitch
-            accessibilityLabel={props.label}
-            accessibilityHint={props.description}
-            disabled={props.disabled}
-            style={{ alignSelf: "center" }}
-            onValueChange={pick}
-            value={props.value}
-          />
-        )
-      }
-    />
+    <RowPressable
+      accessibilityRole={isMixed ? "button" : "switch"}
+      accessibilityLabel={isMixed ? mixedAccessibilityLabel : props.label}
+      accessibilityHint={props.description}
+      accessibilityState={isMixed ? { disabled } : { checked: props.value, disabled }}
+      disabled={disabled}
+      onPress={handleRowPress}
+      android_ripple={{ color: rippleStyle.backgroundColor }}
+      unstable_pressDelay={Platform.OS === "android" ? 50 : undefined}
+      className="bg-grouped-card"
+    >
+      <ListRowLayout
+        icon={props.icon}
+        label={props.label}
+        description={props.description}
+        disabled={disabled}
+        accessory={
+          isMixed ? (
+            <View className="min-h-[44px] items-center justify-center rounded-full bg-subtle px-3.5 py-2 android:min-h-[48px]">
+              <AppText className="text-sm font-t3-medium text-foreground">
+                {picked ? <T>Mixed · Set off</T> : <T>Mixed · Set on</T>}
+              </AppText>
+            </View>
+          ) : (
+            <View accessibilityElementsHidden importantForAccessibility="no-hide-descendants">
+              <ThemedSwitch
+                accessibilityLabel={props.label}
+                accessibilityHint={props.description}
+                disabled={disabled}
+                style={{ alignSelf: "center" }}
+                onValueChange={pick}
+                value={props.value}
+              />
+            </View>
+          )
+        }
+      />
+    </RowPressable>
   );
 }

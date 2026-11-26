@@ -64,14 +64,14 @@ export function MarkdownCodeBlockFrame({
   return (
     <Wrapper
       dir="ltr"
-      className="chat-markdown-codeblock my-[0.65rem] text-start overflow-hidden rounded-lg border border-border/70 bg-secondary leading-snug dark:border-transparent dark:bg-input/32"
+      className="chat-markdown-codeblock my-[0.65rem] text-start overflow-clip rounded-lg border border-border/70 bg-secondary leading-snug dark:border-white/[0.08] dark:bg-input/32"
       data-language={language}
       data-wrap={wrapped ? "true" : "false"}
     >
       <div
         {...headerProps}
         className={cn(
-          "chat-markdown-codeblock-header flex items-center justify-between gap-2 pt-1.5 pr-1.5 pb-0 pl-3 select-none",
+          "chat-markdown-codeblock-header sticky top-0 z-10 flex items-center justify-between gap-2 rounded-t-lg bg-inherit pt-1.5 pr-1.5 pb-1 pl-3 backdrop-blur-md select-none",
           headerProps?.className,
         )}
       >
@@ -100,7 +100,6 @@ function MarkdownCodeBlockTitleContent({
   language: string;
   theme: "light" | "dark";
 }) {
-  const gt = useGT();
   if (fenceTitle) {
     return (
       <>
@@ -115,17 +114,15 @@ function MarkdownCodeBlockTitleContent({
     return <span className="truncate">{language}</span>;
   }
   return (
-    <SharedTooltipTrigger
-      label={language}
-      render={
-        <span
-          className="inline-flex shrink-0 rounded-sm"
-          aria-label={gt("Language: {language}", { language })}
-        />
-      }
-    >
-      <PierreEntryIcon pathValue={fileName} kind="file" theme={theme} className="size-3.5" />
-    </SharedTooltipTrigger>
+    <>
+      <PierreEntryIcon
+        pathValue={fileName}
+        kind="file"
+        theme={theme}
+        className="size-3.5 shrink-0"
+      />
+      <span className="truncate">{language}</span>
+    </>
   );
 }
 
@@ -182,7 +179,9 @@ export function MarkdownCodeBlock({
     // make the rendered command differ from what the terminal would receive.
     !/[\p{Cc}\p{Cf}]/u.test(code.slice(0, -1));
 
-  const handleCopy = () => copyToClipboard(code.endsWith("\n") ? code.slice(0, -1) : code);
+  const handleCopy = () => {
+    if (!copied) copyToClipboard(code.endsWith("\n") ? code.slice(0, -1) : code);
+  };
 
   const copyButton = (
     <SharedTooltipTrigger
@@ -197,7 +196,11 @@ export function MarkdownCodeBlock({
         />
       }
     >
-      {copied ? <CheckIcon className="size-3" /> : <CopyIcon className="size-3" />}
+      {copied ? (
+        <CheckIcon key="copied" className="t3-icon-pop size-3 text-success" />
+      ) : (
+        <CopyIcon key="copy" className="size-3" />
+      )}
     </SharedTooltipTrigger>
   );
 

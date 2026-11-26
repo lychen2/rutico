@@ -1,7 +1,7 @@
 export const SIDEBAR_REDUCED_MOTION = "(prefers-reduced-motion: reduce)";
 export const sidebarWorkbenchEase = "cubic-bezier(.2,.8,.2,1)";
 
-const motionTiming = { duration: 150, easing: "ease-out" };
+const motionTiming = { duration: 150, easing: sidebarWorkbenchEase };
 const attentionExitTiming = { duration: 350, easing: sidebarWorkbenchEase };
 const EXIT_ROW = "data-sidebar-motion-exit";
 const ROW_KEY = "data-sidebar-motion-key";
@@ -88,12 +88,15 @@ export function createSidebarListMotion(parent: HTMLElement, attentionExit = fal
     const entryProgress = entry ? progress(entry.animation) : 1;
     const animation = clone.animate(
       [
-        { opacity: entryProgress, transform: "translate(0, 0)" },
+        {
+          opacity: entryProgress,
+          transform: attentionExit ? "translate(0, 0)" : "translate(0, 0) scale(1)",
+        },
         {
           opacity: 0,
           transform: attentionExit
             ? `translateX(${parent.matches(":dir(rtl)") ? 16 : -16}px)`
-            : `translateY(${travel}px)`,
+            : `translateY(${travel}px) scale(0.985)`,
         },
       ],
       attentionExit ? attentionExitTiming : motionTiming,

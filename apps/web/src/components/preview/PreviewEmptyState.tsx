@@ -57,12 +57,15 @@ export function PreviewEmptyState({
     <div className="scrollbar-gutter-both flex h-full min-h-0 overflow-y-auto px-5 py-8">
       <div className="mx-auto flex w-full max-w-xl flex-col gap-6">
         {recents.length > 0 ? (
-          <div className="flex flex-col gap-3">
+          <div className="flex flex-col gap-3 transition-[opacity,translate] duration-220 ease-(--ease-spring-gentle) starting:translate-y-1.5 starting:opacity-0 motion-reduce:transition-none motion-reduce:starting:translate-y-0">
             <div className="flex items-center gap-2 text-sm text-muted-foreground">
               <History className="size-4 shrink-0" />
               <h2 className="font-medium">
                 <T>Recently used</T>
               </h2>
+              <span className="rounded-full bg-muted/60 px-1.5 py-0.5 text-2xs tabular-nums text-muted-foreground">
+                {recents.length}
+              </span>
             </div>
             <DiscoveryList>
               {recents.map((entry) => (
@@ -78,12 +81,15 @@ export function PreviewEmptyState({
           </div>
         ) : null}
         {servers.length > 0 ? (
-          <div className="flex flex-col gap-3">
+          <div className="flex flex-col gap-3 transition-[opacity,translate] duration-220 ease-(--ease-spring-gentle) starting:translate-y-1.5 starting:opacity-0 motion-reduce:transition-none motion-reduce:starting:translate-y-0">
             <div className="flex items-center gap-2 text-sm text-muted-foreground">
               <RadioTower className="size-4 shrink-0" />
               <h2 className="font-medium">
                 <T>Local servers</T>
               </h2>
+              <span className="rounded-full bg-muted/60 px-1.5 py-0.5 text-2xs tabular-nums text-muted-foreground">
+                {servers.length}
+              </span>
             </div>
             <DiscoveryList>
               {servers.map((server) => (

@@ -14,8 +14,20 @@ import { useNativeTitlebarHeight } from "~/lib/windowControlsOverlay";
 
 // Base UI's default, restated because a padding object zeroes the sides it omits.
 const COLLISION_PADDING = 5;
+const DEFAULT_TOOLTIP_DELAY_MS = 400;
 
-const TooltipProvider = TooltipPrimitive.Provider;
+const HasTooltipProviderContext = createContext(false);
+
+function TooltipProvider({
+  delay = DEFAULT_TOOLTIP_DELAY_MS,
+  ...props
+}: TooltipPrimitive.Provider.Props) {
+  return (
+    <HasTooltipProviderContext value={true}>
+      <TooltipPrimitive.Provider delay={delay} {...props} />
+    </HasTooltipProviderContext>
+  );
+}
 
 type TooltipActionsRef = RefObject<TooltipPrimitive.Root.Actions | null>;
 
@@ -84,15 +96,18 @@ function Tooltip<Payload>(props: TooltipPrimitive.Root.Props<Payload>) {
 }
 
 function TooltipTrigger(props: TooltipPrimitive.Trigger.Props) {
+  const hasProvider = use(HasTooltipProviderContext);
   const tracker = use(TooltipScrollContext);
   const actionsRef = use(TooltipHoverContext);
+  const delay = hasProvider ? props.delay : (props.delay ?? DEFAULT_TOOLTIP_DELAY_MS);
   if (!tracker || !actionsRef) {
-    return <TooltipPrimitive.Trigger data-slot="tooltip-trigger" {...props} />;
+    return <TooltipPrimitive.Trigger data-slot="tooltip-trigger" {...props} delay={delay} />;
   }
   return (
     <TooltipPrimitive.Trigger
       data-slot="tooltip-trigger"
       {...props}
+      delay={delay}
       onMouseEnter={(event) => {
         props.onMouseEnter?.(event);
         // Base UI also cancels delayed hover opens through this action.
@@ -106,7 +121,7 @@ function TooltipPositioner(props: TooltipPrimitive.Positioner.Props) {
   const titlebarHeight = useNativeTitlebarHeight();
   return (
     <TooltipPrimitive.Positioner
-      className="pointer-events-none z-[140] max-w-(--available-width) transition-[top,left,right,bottom,transform] data-instant:transition-none"
+      className="pointer-events-none z-[140] max-w-(--available-width) transition-[top,left,right,bottom,transform] data-instant:transition-none motion-reduce:transition-none"
       collisionPadding={{
         top: COLLISION_PADDING + titlebarHeight,
         right: COLLISION_PADDING,
@@ -140,7 +155,7 @@ function TooltipPopup({
       <TooltipPositioner align={align} anchor={anchor} side={side} sideOffset={sideOffset}>
         <TooltipPrimitive.Popup
           className={cn(
-            "relative flex origin-(--transform-origin) rounded-md text-popover-foreground text-xs transition-[scale,opacity] duration-150 ease-(--ease-spring-snappy) before:pointer-events-none before:absolute before:inset-0 before:rounded-[calc(var(--radius-md)-1px)] before:shadow-[0_1px_--theme(--color-black/4%)] data-ending-style:scale-[0.96] data-starting-style:scale-[0.94] data-ending-style:opacity-0 data-starting-style:opacity-0 data-instant:duration-0 motion-reduce:transition-none dark:before:shadow-[0_-1px_--theme(--color-white/6%)]",
+            "relative flex origin-(--transform-origin) rounded-md text-popover-foreground text-xs transition-[scale,opacity,translate] duration-150 ease-(--ease-spring-snappy) before:pointer-events-none before:absolute before:inset-0 before:rounded-[calc(var(--radius-md)-1px)] before:shadow-[0_1px_--theme(--color-black/4%)] data-starting-style:scale-[0.94] data-starting-style:opacity-0 data-[side=top]:data-starting-style:translate-y-1 data-[side=bottom]:data-starting-style:-translate-y-1 data-[side=left]:data-starting-style:translate-x-1 data-[side=right]:data-starting-style:-translate-x-1 data-ending-style:duration-100 data-ending-style:ease-(--ease-exit) data-ending-style:scale-[0.96] data-ending-style:opacity-0 data-instant:duration-0 motion-reduce:transition-none dark:before:shadow-[0_-1px_--theme(--color-white/6%)]",
             variant === "glass"
               ? "dropdown-glass shadow-xl shadow-black/25 before:hidden"
               : "border bg-popover not-dark:bg-clip-padding shadow-md/5",

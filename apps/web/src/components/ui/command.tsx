@@ -109,7 +109,7 @@ function CommandInput({
   ...props
 }: React.ComponentProps<typeof AutocompleteInput>) {
   return (
-    <div className="px-[var(--command-shell-inset)] py-1.5 [&_[data-slot=autocomplete-start-addon]]:ps-[calc(var(--command-shell-inset)+0.0625rem)]">
+    <div className="group/command-input border-b border-foreground/[0.07] px-[var(--command-shell-inset)] py-1.5 [&_[data-slot=autocomplete-start-addon]]:ps-[calc(var(--command-shell-inset)+0.0625rem)]">
       <AutocompleteInput
         autoFocus
         className={cn(
@@ -118,7 +118,9 @@ function CommandInput({
         )}
         placeholder={placeholder}
         size="lg"
-        startAddon={<SearchIcon className="translate-x-0.5 text-icon-muted" />}
+        startAddon={
+          <SearchIcon className="translate-x-0.5 text-icon-muted transition-colors duration-150 group-focus-within/command-input:text-foreground/80 motion-reduce:transition-none" />
+        }
         {...props}
       />
     </div>
@@ -195,10 +197,11 @@ function CommandItem({
   return (
     <AutocompleteItem
       className={cn(
-        "py-1.5 transition-[background-color,color] duration-120 ease-out motion-reduce:transition-none data-selected:bg-foreground/[0.06] data-highlighted:bg-foreground/[0.09] data-highlighted:text-foreground [&[data-highlighted][data-selected]]:bg-foreground/[0.09] [&[data-highlighted][data-selected]]:text-foreground",
+        "py-1.5 transition-[background-color,color,scale] duration-120 ease-out active:not-data-disabled:scale-[0.99] motion-reduce:transition-none motion-reduce:active:scale-100 data-selected:bg-foreground/[0.06] data-highlighted:bg-foreground/[0.09] data-highlighted:text-foreground data-highlighted:[&_svg:not([class*='text-'])]:text-foreground [&[data-highlighted][data-selected]]:bg-foreground/[0.09] [&[data-highlighted][data-selected]]:text-foreground",
         active !== undefined &&
-          "cursor-pointer hover:bg-transparent hover:text-inherit data-highlighted:bg-transparent data-highlighted:text-inherit data-selected:bg-transparent data-selected:text-inherit [&[data-highlighted][data-selected]]:bg-transparent [&[data-highlighted][data-selected]]:text-inherit",
-        active && "bg-accent! text-accent-foreground!",
+          "cursor-pointer hover:bg-transparent hover:text-inherit data-highlighted:bg-transparent data-highlighted:text-inherit data-highlighted:[&_svg:not([class*='text-'])]:text-muted-foreground data-selected:bg-transparent data-selected:text-inherit [&[data-highlighted][data-selected]]:bg-transparent [&[data-highlighted][data-selected]]:text-inherit",
+        active &&
+          "bg-accent! text-accent-foreground! [&_svg:not([class*='text-'])]:text-accent-foreground",
         className,
       )}
       data-active={active || undefined}

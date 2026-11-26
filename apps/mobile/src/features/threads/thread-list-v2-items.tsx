@@ -35,16 +35,29 @@ import type { SnoozePresetSetting } from "@t3tools/contracts/settings";
 import { canSnooze } from "@t3tools/client-runtime/state/thread-settled";
 import { threadChipCopyTarget } from "@t3tools/client-runtime/thread-reference";
 import type { MenuAction } from "@react-native-menu/menu";
-import { useNavigation } from "@react-navigation/native";
+import { useIsFocused, useNavigation } from "@react-navigation/native";
+import * as Haptics from "expo-haptics";
 import { msg, T, useGT, useMessages } from "gt-react-native";
-import { memo, useCallback, useMemo, useState, type ComponentProps } from "react";
-import { Platform, Pressable, Text as RNText, useWindowDimensions, View } from "react-native";
+import { memo, useCallback, useEffect, useMemo, useState, type ComponentProps } from "react";
+import {
+  Animated as RNAnimated,
+  Easing as RNEasing,
+  Platform,
+  Pressable,
+  Text as RNText,
+  useAnimatedValue,
+  useWindowDimensions,
+  View,
+} from "react-native";
 import type { SwipeableMethods } from "react-native-gesture-handler/ReanimatedSwipeable";
+import { useReducedMotion } from "react-native-reanimated";
 
 import type { ThreadListProvider } from "../../state/thread-list-environments";
+import { AppActivityIndicator } from "../../components/ui/AppActivityIndicator";
 import { SymbolView, type AppSymbolName } from "../../components/ui/AppSymbol";
 import { AppText as Text } from "../../components/ui/AppText";
 import { Menu } from "../../components/ui/Menu";
+import { ThreadDisclosureChevron } from "../../components/ui/ThreadDisclosureChevron";
 import { EnvironmentMachineSymbol } from "../../components/EnvironmentMachineSymbol";
 import { ProjectFavicon } from "../../components/ProjectFavicon";
 import {
@@ -52,6 +65,7 @@ import {
   ProviderInstanceIcon,
   providerInstanceNameLabel,
 } from "../../components/ProviderIcon";
+import { useAppActive } from "../../lib/appState";
 import { useNowAfter } from "../../lib/clock";
 import { cn } from "../../lib/cn";
 import { copyTextWithHaptic } from "../../lib/copyTextWithHaptic";
@@ -162,6 +176,97 @@ const TABULAR_DURATION_STYLE = {
   fontVariant: ["tabular-nums"],
 } as const;
 
+function WorkingStatusGlyph(props: {
+  readonly icon: AppSymbolName;
+  readonly tintColorClassName: string;
+}) {
+  const appActive = useAppActive();
+  const isFocused = useIsFocused();
+  const reducedMotion = useReducedMotion();
+  const animate = appActive && isFocused && !reducedMotion;
+  const progress = useAnimatedValue(0, { useNativeDriver: true });
+
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- drives a subtle native rotation on the active working glyph while visible and foregrounded
+  useEffect(() => {
+    progress.setValue(0);
+    if (!animate) return;
+    const loop = RNAnimated.loop(
+      RNAnimated.timing(progress, {
+        toValue: 1,
+        duration: 3200,
+        easing: RNEasing.linear,
+        useNativeDriver: true,
+      }),
+    );
+    loop.start();
+    return () => {
+      loop.stop();
+      progress.setValue(0);
+    };
+  }, [animate, progress]);
+
+  const rotate = progress.interpolate({
+    inputRange: [0, 1],
+    outputRange: ["0deg", "360deg"],
+  });
+
+  return (
+    <RNAnimated.View style={{ transform: [{ rotate }] }}>
+      <SymbolView
+        name={props.icon}
+        size={13}
+        tintColorClassName={props.tintColorClassName}
+        type="monochrome"
+        weight="semibold"
+      />
+    </RNAnimated.View>
+  );
+}
+
+function RegeneratingTitlePulse(props: { readonly children: React.ReactNode }) {
+  const appActive = useAppActive();
+  const isFocused = useIsFocused();
+  const reducedMotion = useReducedMotion();
+  const animate = appActive && isFocused && !reducedMotion;
+  const opacity = useAnimatedValue(0.55, { useNativeDriver: true });
+
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- drives a gentle native opacity pulse while a thread title is regenerating
+  useEffect(() => {
+    if (!animate) {
+      opacity.setValue(0.55);
+      return;
+    }
+    opacity.setValue(0.42);
+    const loop = RNAnimated.loop(
+      RNAnimated.sequence([
+        RNAnimated.timing(opacity, {
+          toValue: 0.82,
+          duration: 950,
+          easing: RNEasing.inOut(RNEasing.sin),
+          useNativeDriver: true,
+        }),
+        RNAnimated.timing(opacity, {
+          toValue: 0.42,
+          duration: 950,
+          easing: RNEasing.inOut(RNEasing.sin),
+          useNativeDriver: true,
+        }),
+      ]),
+    );
+    loop.start();
+    return () => {
+      loop.stop();
+      opacity.setValue(0.55);
+    };
+  }, [animate, opacity]);
+
+  return (
+    <RNAnimated.View className="min-w-0 flex-1" style={{ opacity }}>
+      {props.children}
+    </RNAnimated.View>
+  );
+}
+
 function ThreadListV2Duration(props: {
   readonly environmentId: EnvironmentId;
   readonly startedAt: string | null;
@@ -247,7 +352,9 @@ function ThreadListV2Section(props: {
   const snoozed = props.tone === "snoozed";
   const sidebarPane = props.pane === "sidebar";
   const className = cn(
-    "mb-1.5 mt-4 flex-row items-center gap-2.5",
+    props.disclosure
+      ? "mt-1.5 min-h-[44px] flex-row items-center gap-2.5 py-2.5"
+      : "mb-1.5 mt-4 flex-row items-center gap-2.5",
     props.pane === "sidebar" ? "px-3" : "px-5",
   );
   const content = (
@@ -271,8 +378,9 @@ function ThreadListV2Section(props: {
         )}
       />
       {props.disclosure ? (
-        <SymbolView
-          name="chevron.down"
+        <ThreadDisclosureChevron
+          expanded={props.disclosure.expanded}
+          collapsedDirection="down"
           size={10}
           tintColorClassName={
             sidebarPane
@@ -281,8 +389,6 @@ function ThreadListV2Section(props: {
                 ? "accent-icon-muted"
                 : "accent-foreground-muted"
           }
-          type="monochrome"
-          style={{ transform: [{ rotate: props.disclosure.expanded ? "180deg" : "0deg" }] }}
         />
       ) : null}
     </>
@@ -299,7 +405,10 @@ function ThreadListV2Section(props: {
       }}
       className={className}
       disabled={props.disclosure.disabled}
-      onPress={props.disclosure.onToggle}
+      onPress={() => {
+        void Haptics.selectionAsync().catch(() => undefined);
+        props.disclosure?.onToggle();
+      }}
       style={({ pressed }) => ({ opacity: pressed ? 0.6 : 1 })}
     >
       {content}
@@ -416,17 +525,35 @@ export const ThreadListV2ShowMoreRow = memo(function ThreadListV2ShowMoreRow(pro
             )
           : label
       }
+      accessibilityState={{
+        busy: props.state === "loading",
+        disabled: props.state === "loading",
+      }}
       disabled={props.state === "loading"}
       onPress={props.onPress}
-      className="mx-4 mt-2 items-center rounded-lg border border-dashed border-border py-2.5"
+      className={cn(
+        "mx-4 mt-2 min-h-[44px] flex-row items-center justify-center gap-2 rounded-lg border border-dashed px-4 py-2.5 android:min-h-[48px]",
+        props.state === "failed" ? "border-danger-border" : "border-border",
+      )}
       style={({ pressed }) => ({ opacity: pressed ? 0.6 : 1 })}
     >
+      {props.state === "loading" ? (
+        <AppActivityIndicator
+          size="small"
+          colorClassName={
+            props.pane === "sidebar" ? "accent-drawer-foreground-muted" : "accent-foreground-muted"
+          }
+        />
+      ) : null}
       <Text
-        className={
-          props.pane === "sidebar"
-            ? "text-xs font-t3-medium text-drawer-foreground-muted"
-            : "text-xs font-t3-medium text-foreground-muted"
-        }
+        className={cn(
+          "text-xs font-t3-medium",
+          props.state === "failed"
+            ? "text-danger-foreground"
+            : props.pane === "sidebar"
+              ? "text-drawer-foreground-muted"
+              : "text-foreground-muted",
+        )}
       >
         {label}
       </Text>
@@ -1386,29 +1513,55 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
             />
           </View>
         ) : null}
-        <Text
-          className={cn(
-            "flex-1 text-base",
-            !recede && "font-t3-medium",
-            selected
-              ? selectedThreadRowColors.foregroundClassName
-              : rowAppearance.foregroundClassName,
-            isRegeneratingTitle && "opacity-55",
-          )}
-          numberOfLines={2}
-          onTextLayout={
-            Platform.OS === "android"
-              ? ({ nativeEvent }) => {
-                  const firstLine = nativeEvent.lines[0];
-                  if (firstLine && Math.abs(firstLine.height - titleLineHeight) > 0.5) {
-                    setTitleLineHeight(firstLine.height);
+        {isRegeneratingTitle ? (
+          <RegeneratingTitlePulse>
+            <Text
+              className={cn(
+                "text-base",
+                !recede && "font-t3-medium",
+                selected
+                  ? selectedThreadRowColors.foregroundClassName
+                  : rowAppearance.foregroundClassName,
+              )}
+              numberOfLines={2}
+              onTextLayout={
+                Platform.OS === "android"
+                  ? ({ nativeEvent }) => {
+                      const firstLine = nativeEvent.lines[0];
+                      if (firstLine && Math.abs(firstLine.height - titleLineHeight) > 0.5) {
+                        setTitleLineHeight(firstLine.height);
+                      }
+                    }
+                  : undefined
+              }
+            >
+              {thread.title}
+            </Text>
+          </RegeneratingTitlePulse>
+        ) : (
+          <Text
+            className={cn(
+              "flex-1 text-base",
+              !recede && "font-t3-medium",
+              selected
+                ? selectedThreadRowColors.foregroundClassName
+                : rowAppearance.foregroundClassName,
+            )}
+            numberOfLines={2}
+            onTextLayout={
+              Platform.OS === "android"
+                ? ({ nativeEvent }) => {
+                    const firstLine = nativeEvent.lines[0];
+                    if (firstLine && Math.abs(firstLine.height - titleLineHeight) > 0.5) {
+                      setTitleLineHeight(firstLine.height);
+                    }
                   }
-                }
-              : undefined
-          }
-        >
-          {thread.title}
-        </Text>
+                : undefined
+            }
+          >
+            {thread.title}
+          </Text>
+        )}
         <View className="flex-row items-center gap-1.5" style={{ minHeight: titleLineHeight }}>
           {props.hasQueuedMessages ? <QueuedMessageIcon selected={selected} /> : null}
           {pinnedRow ? (
@@ -1450,17 +1603,28 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
             </Pressable>
           ) : statusLabel ? (
             <View className="flex-row items-center gap-1">
-              <SymbolView
-                name={statusLabel.icon}
-                size={13}
-                tintColorClassName={
-                  selected
-                    ? selectedThreadRowColors.iconTintClassName
-                    : statusLabel.iconTintClassName
-                }
-                type="monochrome"
-                weight="semibold"
-              />
+              {status === "working" ? (
+                <WorkingStatusGlyph
+                  icon={statusLabel.icon}
+                  tintColorClassName={
+                    selected
+                      ? selectedThreadRowColors.iconTintClassName
+                      : statusLabel.iconTintClassName
+                  }
+                />
+              ) : (
+                <SymbolView
+                  name={statusLabel.icon}
+                  size={13}
+                  tintColorClassName={
+                    selected
+                      ? selectedThreadRowColors.iconTintClassName
+                      : statusLabel.iconTintClassName
+                  }
+                  type="monochrome"
+                  weight="semibold"
+                />
+              )}
               <Text
                 className={cn(
                   "text-xs font-t3-bold",

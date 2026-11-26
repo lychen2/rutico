@@ -3,6 +3,7 @@ import type { OrchestrationV2ProjectedTurnItem } from "@t3tools/contracts";
 import { useGT } from "gt-react";
 import { CheckIcon, ChevronDownIcon } from "lucide-react";
 import { useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode } from "react";
+import { Button } from "../ui/button";
 import { observeVisibleAnimation } from "~/lib/visibleAnimation";
 import "./threadOmpTodo.css";
 
@@ -81,11 +82,19 @@ function rememberExpanded(storageKey: string, expanded: boolean) {
   }
 }
 
-function TodoMark({ mode, spinning }: { mode: string; spinning: boolean }) {
+function TodoMark({
+  mode,
+  spinning,
+  draw = false,
+}: {
+  mode: string;
+  spinning: boolean;
+  draw?: boolean;
+}) {
   return (
     <span data-omp-todo-mark data-mode={mode} aria-hidden>
       {mode === "done" ? (
-        <CheckIcon size={10} strokeWidth={2.5} />
+        <CheckIcon size={10} strokeWidth={2.5} data-check-draw={draw || undefined} />
       ) : spinning ? (
         <svg
           ref={observeVisibleAnimation}
@@ -119,31 +128,19 @@ function TodoStepRow({
   visible: boolean;
   children: ReactNode;
 }) {
-  const ref = useRef<HTMLLIElement>(null);
-  const previous = useRef(completed);
-  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Draw newly completed checks, not historical ones.
-  useLayoutEffect(() => {
-    const changed = previous.current !== completed;
-    previous.current = completed;
-    if (
-      !changed ||
-      !completed ||
-      !visible ||
-      window.matchMedia("(prefers-reduced-motion: reduce)").matches
-    )
-      return;
-    const mark = ref.current?.querySelector("[data-omp-todo-mark] svg");
-    const animation = mark?.animate(
-      [
-        { strokeDasharray: "24", strokeDashoffset: "24" },
-        { strokeDasharray: "24", strokeDashoffset: "0" },
-      ],
-      { duration: 350, easing: "ease" },
-    );
-    return () => animation?.cancel();
-  }, [completed, visible]);
+  // Draw newly completed checks, not historical ones.
+  const [previousCompleted, setPreviousCompleted] = useState(completed);
+  const [justCompleted, setJustCompleted] = useState(false);
+  if (previousCompleted !== completed) {
+    setPreviousCompleted(completed);
+    setJustCompleted(completed && visible);
+  }
   return (
-    <li ref={ref} aria-current={active ? "step" : undefined}>
+    <li
+      aria-current={active ? "step" : undefined}
+      data-completed={completed || undefined}
+      data-just-completed={justCompleted || undefined}
+    >
       {children}
     </li>
   );
@@ -159,6 +156,12 @@ export function ThreadOmpTodo({
   const gt = useGT();
   const { steps, completed, current } = progress;
   const done = completed === steps.length;
+  const [previousDone, setPreviousDone] = useState(done);
+  const [justFinished, setJustFinished] = useState(false);
+  if (previousDone !== done) {
+    setPreviousDone(done);
+    setJustFinished(done);
+  }
   const live = current?.status === "running";
   const mode = done ? "done" : live ? "run" : current?.status === "blocked" ? "need" : "idle";
   const storageKey = `t3code:task-trail-expanded:v1:${threadKey}`;
@@ -198,7 +201,7 @@ export function ThreadOmpTodo({
         { opacity: 0, transform: "translateY(9px)" },
         { opacity: 1, transform: "translateY(0)" },
       ],
-      { duration: 350, easing: "ease-out" },
+      { duration: 240, easing: "cubic-bezier(0.32, 0.72, 0, 1)" },
     );
     return () => animation.cancel();
   }, [title]);
@@ -227,7 +230,7 @@ export function ThreadOmpTodo({
             rememberExpanded(storageKey, !expanded);
           }}
         >
-          <TodoMark mode={mode} spinning={live && !expanded} />
+          <TodoMark mode={mode} spinning={live && !expanded} draw={justFinished} />
           <span data-omp-todo-title>
             <span ref={titleRef} dir="auto">
               {title}
@@ -261,16 +264,17 @@ export function ThreadOmpTodo({
               <span data-omp-todo-count>
                 {completed}/{steps.length}
               </span>
-              <button
-                type="button"
-                className="ms-auto rounded-full bg-secondary px-2 py-1"
+              <Button
+                size="xs"
+                variant="ghost-muted"
+                className="ms-auto"
                 onClick={() => {
                   triggerRef.current?.click();
                   triggerRef.current?.focus();
                 }}
               >
                 {gt("Collapse")}
-              </button>
+              </Button>
             </div>
             <ol data-omp-todo-list>
               {steps.map((step) => (

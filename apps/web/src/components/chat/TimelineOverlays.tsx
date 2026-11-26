@@ -2,6 +2,7 @@ import { T } from "gt-react";
 import { ChevronDownIcon, PaperclipIcon } from "lucide-react";
 
 import { Button } from "../ui/button";
+import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 
 export function WorkspaceFileDropOverlay() {
   return (
@@ -25,22 +26,39 @@ export function ScrollToEndButton(props: {
   readonly summary: string | null;
   readonly onScrollToEnd: () => void;
 }) {
+  const label = (
+    <>
+      <T>Scroll to end</T>
+      {props.summary === null ? null : ` · ${props.summary}`}
+    </>
+  );
   const button = (
     <span className="t3-scroll-end-enter inline-flex">
-      <Button
-        data-scroll-to-end="true"
-        onPointerDown={(event) => event.preventDefault()}
-        onClick={props.onScrollToEnd}
-        className="pointer-events-auto"
-        size="icon-sm-pill"
-        variant="glass"
-      >
-        <ChevronDownIcon aria-hidden className="size-4" />
-        <span className="sr-only">
-          <T>Scroll to end</T>
-          {props.summary === null ? null : ` · ${props.summary}`}
-        </span>
-      </Button>
+      <Tooltip>
+        <TooltipTrigger
+          render={
+            <Button
+              data-scroll-to-end="true"
+              onPointerDown={(event) => event.preventDefault()}
+              onClick={props.onScrollToEnd}
+              className="pointer-events-auto"
+              size="icon-sm-pill"
+              variant="glass"
+            />
+          }
+        >
+          <ChevronDownIcon aria-hidden className="size-4" />
+          {props.summary !== null ? (
+            <span
+              aria-hidden="true"
+              data-scroll-to-end-indicator="true"
+              className="pointer-events-none absolute -top-0.5 -right-0.5 size-2 rounded-full bg-primary ring-2 ring-background transition-transform duration-150 ease-(--ease-spring-snappy) starting:scale-0 motion-reduce:transition-none"
+            />
+          ) : null}
+          <span className="sr-only">{label}</span>
+        </TooltipTrigger>
+        <TooltipPopup side="top">{label}</TooltipPopup>
+      </Tooltip>
     </span>
   );
   return (

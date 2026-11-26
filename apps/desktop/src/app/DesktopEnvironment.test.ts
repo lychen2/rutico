@@ -72,4 +72,24 @@ describe("DesktopEnvironment", () => {
       assert.equal(production.stateDir, "/Users/alice/.t3/userdata");
     }),
   );
+
+  it.effect(
+    "aligns default Windows appUserModelId with Rutico while honoring explicit overrides",
+    () =>
+      Effect.gen(function* () {
+        const production = yield* makeEnvironment({ platform: "win32" });
+        const development = yield* makeEnvironment(
+          { platform: "win32" },
+          { VITE_DEV_SERVER_URL: "http://localhost:5173" },
+        );
+        const overridden = yield* makeEnvironment(
+          { platform: "win32" },
+          { T3CODE_DESKTOP_APP_USER_MODEL_ID: "com.t3tools.t3code" },
+        );
+
+        assert.equal(production.appUserModelId, "io.github.lychen2.rutico");
+        assert.equal(development.appUserModelId, "io.github.lychen2.rutico.dev");
+        assert.equal(overridden.appUserModelId, "com.t3tools.t3code");
+      }),
+  );
 });

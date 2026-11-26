@@ -4,6 +4,8 @@ import { memo, useState, type ReactNode } from "react";
 import { Linking, Pressable, Text as SystemText, View, type LayoutChangeEvent } from "react-native";
 import Animated, {
   Easing,
+  FadeIn,
+  FadeOut,
   ReduceMotion,
   useAnimatedStyle,
   useDerivedValue,
@@ -235,18 +237,38 @@ const VoiceWaveform = memo(function VoiceWaveform(props: {
   );
 });
 
+const DICTATION_ERROR_ENTERING = FadeIn.duration(160).reduceMotion(ReduceMotion.System);
+const DICTATION_ERROR_EXITING = FadeOut.duration(120).reduceMotion(ReduceMotion.System);
+
 /** Use system tabular figures; DM Sans lacks them and would jitter. */
 export function DictationElapsedTime(props: {
   readonly seconds: number;
   readonly className?: string;
 }) {
+  const gt = useGT();
+  const safeSeconds = Math.max(0, Math.floor(props.seconds));
+  const minutes = Math.floor(safeSeconds / 60);
+  const remainingSeconds = safeSeconds % 60;
+  const accessibilityLabel =
+    minutes > 0
+      ? gt(
+          "{minutes, plural, one {{minutes} minute} other {{minutes} minutes}} {seconds, plural, one {{seconds} second} other {{seconds} seconds}} elapsed",
+          {
+            minutes,
+            seconds: remainingSeconds,
+          },
+        )
+      : gt("{seconds, plural, one {{seconds} second} other {{seconds} seconds}} elapsed", {
+          seconds: remainingSeconds,
+        });
   return (
     <SystemText
+      accessibilityLabel={accessibilityLabel}
       className={cn("text-xs", props.className)}
       numberOfLines={1}
       style={{ fontVariant: ["tabular-nums"] }}
     >
-      {Math.floor(props.seconds / 60)}:{String(props.seconds % 60).padStart(2, "0")}
+      {minutes}:{String(remainingSeconds).padStart(2, "0")}
     </SystemText>
   );
 }
@@ -327,7 +349,11 @@ export function ComposerDictationError(props: {
   const gt = useGT();
   if (!props.error) return null;
   return (
-    <View className="min-w-0 flex-row items-center gap-2 px-4 py-3">
+    <Animated.View
+      entering={DICTATION_ERROR_ENTERING}
+      exiting={DICTATION_ERROR_EXITING}
+      className="min-w-0 flex-row items-center gap-2 px-4 py-3"
+    >
       <Text accessibilityRole="alert" className="min-w-0 flex-1 text-sm text-danger-foreground">
         {props.error}
       </Text>
@@ -335,7 +361,7 @@ export function ComposerDictationError(props: {
         accessibilityLabel={gt("Dismiss voice input error")}
         accessibilityRole="button"
         className="size-7 items-center justify-center active:opacity-70"
-        hitSlop={8}
+        hitSlop={10}
         onPress={props.onDismiss}
       >
         <SymbolView
@@ -345,7 +371,7 @@ export function ComposerDictationError(props: {
           type="monochrome"
         />
       </Pressable>
-    </View>
+    </Animated.View>
   );
 }
 

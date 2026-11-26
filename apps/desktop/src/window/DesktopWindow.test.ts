@@ -1,7 +1,11 @@
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, describe, it } from "@effect/vitest";
 import * as Deferred from "effect/Deferred";
-import { DesktopSnapShotId } from "@t3tools/contracts";
+import {
+  DEFAULT_CLIENT_SETTINGS,
+  DesktopSnapShotId,
+  type ClientSettings,
+} from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import * as Fiber from "effect/Fiber";
@@ -82,7 +86,9 @@ function makeFakeBrowserWindow() {
       },
     },
     copyImageAt: vi.fn(),
+    executeJavaScript: vi.fn((_script: string) => Promise.resolve()),
     focus: vi.fn(),
+    insertCSS: vi.fn((_css: string) => Promise.resolve("")),
     isDestroyed: vi.fn(() => false),
     getURL: vi.fn(() => "t3code-dev://app/"),
     getZoomLevel: vi.fn(() => zoomLevel),
@@ -118,6 +124,7 @@ function makeFakeBrowserWindow() {
     getBounds: vi.fn(() => ({ x: 0, y: 0, width: 1100, height: 780 })),
     getNormalBounds: vi.fn(() => ({ x: 0, y: 0, width: 1100, height: 780 })),
     isDestroyed: vi.fn(() => false),
+    isFocused: vi.fn(() => true),
     isFullScreen: vi.fn(() => false),
     isMaximized: vi.fn(() => false),
     isMinimized: vi.fn(() => false),
@@ -132,11 +139,13 @@ function makeFakeBrowserWindow() {
     }),
     restore: vi.fn(),
     setBackgroundColor: vi.fn(),
+    setBackgroundMaterial: vi.fn(),
     setAutoHideCursor: vi.fn(),
     setFullScreen: vi.fn(),
     setOpacity: vi.fn(),
     setTitle: vi.fn(),
     setTitleBarOverlay: vi.fn(),
+    setVibrancy: vi.fn(),
     setWindowButtonPosition: vi.fn(),
     show: vi.fn(),
     webContents,
@@ -146,7 +155,10 @@ function makeFakeBrowserWindow() {
     window: window as unknown as Electron.BrowserWindow,
     getBounds: window.getBounds,
     getNormalBounds: window.getNormalBounds,
+    executeJavaScript: webContents.executeJavaScript,
+    insertCSS: webContents.insertCSS,
     isDestroyed: window.isDestroyed,
+    isFocused: window.isFocused,
     isFullScreen: window.isFullScreen,
     isMaximized: window.isMaximized,
     isMinimized: window.isMinimized,
@@ -162,9 +174,11 @@ function makeFakeBrowserWindow() {
     setZoomLevel: webContents.setZoomLevel,
     setWindowButtonPosition: window.setWindowButtonPosition,
     setBackgroundThrottling: webContents.setBackgroundThrottling,
+    setBackgroundMaterial: window.setBackgroundMaterial,
     setAutoHideCursor: window.setAutoHideCursor,
     setFullScreen: window.setFullScreen,
     setOpacity: window.setOpacity,
+    setVibrancy: window.setVibrancy,
     webContentsListeners,
     webContentsOnce: webContents.once,
     windowListeners,
@@ -240,6 +254,7 @@ function layerTest(input: {
   readonly createCount: Ref.Ref<number>;
   readonly mainWindow: Ref.Ref<Option.Option<Electron.BrowserWindow>>;
   readonly createdWindowOptions?: Electron.BrowserWindowConstructorOptions[];
+  readonly clientSettings?: Option.Option<ClientSettings>;
   readonly desktopSettings?: DesktopAppSettings.DesktopSettings;
   readonly mainWindowBoundsUpdates?: DesktopAppSettings.DesktopWindowBounds[];
   readonly mainWindowMaximizedUpdates?: boolean[];
@@ -345,7 +360,11 @@ function layerTest(input: {
           ? layerDesktopEnvironment
           : layerDesktopEnvironmentFor(input.platform),
         layerDesktopAppSettings,
-        layerDesktopClientSettings,
+        input.clientSettings === undefined
+          ? layerDesktopClientSettings
+          : Layer.mock(DesktopClientSettings.DesktopClientSettings)({
+              get: Effect.succeed(input.clientSettings),
+            }),
         layerDesktopServerExposure,
         DesktopState.layer,
         layerElectronApp,
@@ -1366,11 +1385,215 @@ describe("DesktopWindow", () => {
         yield* desktopWindow.syncAppearance;
       }).pipe(Effect.provide(layer));
 
-      assert.deepEqual(vi.mocked(framed.window.setBackgroundColor).mock.calls, [["#ffffff"]]);
+      assert.deepEqual(vi.mocked(framed.window.setBackgroundColor).mock.calls, [
+        [DesktopWindow.DEFAULT_WINDOW_BACKGROUND_COLORS.light],
+      ]);
       assert.lengthOf(vi.mocked(framed.window.setTitleBarOverlay).mock.calls, 0);
-      assert.deepEqual(vi.mocked(overlay.window.setBackgroundColor).mock.calls, [["#ffffff"]]);
+      assert.deepEqual(vi.mocked(overlay.window.setBackgroundColor).mock.calls, [
+        [DesktopWindow.DEFAULT_WINDOW_BACKGROUND_COLORS.light],
+      ]);
       assert.lengthOf(vi.mocked(overlay.window.setTitleBarOverlay).mock.calls, 1);
     }),
+  );
+
+  it("matches initial BrowserWindow backgroundColor to Rutico and persisted themes", () => {
+    assert.equal(DesktopWindow.getInitialWindowBackgroundColor(false), "#faf8fd");
+    assert.equal(DesktopWindow.getInitialWindowBackgroundColor(true), "#1a1727");
+    assert.equal(DesktopWindow.getInitialWindowBackgroundColor(false, "grove"), "#f3f7f4");
+    assert.equal(DesktopWindow.getInitialWindowBackgroundColor(true, "grove"), "#1b2821");
+    assert.equal(DesktopWindow.getInitialWindowBackgroundColor(true, "#123456"), "#123456");
+    assert.equal(DesktopWindow.getInitialWindowBackgroundColor(true, "unknown-theme"), "#1a1727");
+  });
+
+  it("renders a branded Rutico connecting splash with reduced-motion fallback", () => {
+    const darkHtml = decodeURIComponent(
+      DesktopWindow.buildConnectingSplashDataUrl(true).replace("data:text/html;charset=utf-8,", ""),
+    );
+    assert.include(darkHtml, 'viewBox="32 20 76 86"');
+    assert.include(darkHtml, "background:#1a1727");
+    assert.include(darkHtml, "@media (prefers-reduced-motion: reduce){.spinner{animation:none;");
+    assert.include(darkHtml, "Connecting to WSL…");
+
+    const lightGroveHtml = decodeURIComponent(
+      DesktopWindow.buildConnectingSplashDataUrl(false, "grove").replace(
+        "data:text/html;charset=utf-8,",
+        "",
+      ),
+    );
+    assert.include(lightGroveHtml, "background:#f3f7f4");
+  });
+
+  it.effect("fades the connecting splash out smoothly before closing on main reveal", () =>
+    Effect.gen(function* () {
+      const splash = makeFakeBrowserWindow();
+      const main = makeFakeBrowserWindow();
+      const scenario = yield* makeSplashScenario([splash.window, main.window]);
+
+      yield* Effect.gen(function* () {
+        const desktopWindow = yield* DesktopWindow.DesktopWindow;
+        yield* desktopWindow.showConnectingSplash;
+        yield* desktopWindow.handleBackendReady(new URL("http://127.0.0.1:3773"));
+
+        main.windowListeners.get("ready-to-show")?.();
+        yield* Effect.promise(() => Promise.resolve());
+        assert.equal(vi.mocked(splash.window.close).mock.calls.length, 0);
+
+        yield* TestClock.adjust(120);
+        yield* Effect.promise(() => Promise.resolve());
+
+        assert.deepEqual(
+          splash.setOpacity.mock.calls.map(([opacity]) => opacity),
+          [0.75, 0.5, 0.25, 0],
+        );
+        assert.equal(vi.mocked(splash.window.close).mock.calls.length, 1);
+      }).pipe(Effect.provide(scenario.layer));
+    }),
+  );
+
+  it("enables native platform vibrancy only when glass transparency is active", () => {
+    assert.deepEqual(
+      DesktopWindow.resolveWindowVibrancyOptions({
+        platform: "darwin",
+        glassOpacity: 80,
+        prefersReducedTransparency: false,
+      }),
+      { vibrancy: "under-window", visualEffectState: "followWindow" },
+    );
+    assert.deepEqual(
+      DesktopWindow.resolveWindowVibrancyOptions({
+        platform: "win32",
+        glassOpacity: 80,
+        prefersReducedTransparency: false,
+      }),
+      { backgroundMaterial: "mica" },
+    );
+    assert.deepEqual(
+      DesktopWindow.resolveWindowVibrancyOptions({
+        platform: "linux",
+        glassOpacity: 80,
+        prefersReducedTransparency: false,
+      }),
+      {},
+    );
+    assert.deepEqual(
+      DesktopWindow.resolveWindowVibrancyOptions({
+        platform: "darwin",
+        glassOpacity: 100,
+        prefersReducedTransparency: false,
+      }),
+      {},
+    );
+    assert.deepEqual(
+      DesktopWindow.resolveWindowVibrancyOptions({
+        platform: "win32",
+        glassOpacity: 80,
+        prefersReducedTransparency: true,
+      }),
+      {},
+    );
+  });
+
+  it.effect("applies platform vibrancy on window creation and respects opaque glass fallback", () =>
+    Effect.gen(function* () {
+      const darwinOptions: Electron.BrowserWindowConstructorOptions[] = [];
+      const darwinWindow = makeFakeBrowserWindow();
+      yield* Effect.gen(function* () {
+        const desktopWindow = yield* DesktopWindow.DesktopWindow;
+        yield* desktopWindow.ensureMain;
+        yield* desktopWindow.syncAppearance;
+      }).pipe(
+        Effect.provide(
+          layerTest({
+            window: darwinWindow.window,
+            createCount: yield* Ref.make(0),
+            mainWindow: yield* Ref.make<Option.Option<Electron.BrowserWindow>>(Option.none()),
+            createdWindowOptions: darwinOptions,
+            platform: "darwin",
+            clientSettings: Option.some({ ...DEFAULT_CLIENT_SETTINGS, glassOpacity: 80 }),
+          }),
+        ),
+      );
+      assert.equal(darwinOptions[0]?.vibrancy, "under-window");
+      assert.equal(darwinOptions[0]?.visualEffectState, "followWindow");
+      assert.deepEqual(darwinWindow.setVibrancy.mock.calls, [["under-window"]]);
+
+      const opaqueOptions: Electron.BrowserWindowConstructorOptions[] = [];
+      const opaqueWindow = makeFakeBrowserWindow();
+      yield* Effect.gen(function* () {
+        const desktopWindow = yield* DesktopWindow.DesktopWindow;
+        yield* desktopWindow.ensureMain;
+        yield* desktopWindow.syncAppearance;
+      }).pipe(
+        Effect.provide(
+          layerTest({
+            window: opaqueWindow.window,
+            createCount: yield* Ref.make(0),
+            mainWindow: yield* Ref.make<Option.Option<Electron.BrowserWindow>>(Option.none()),
+            createdWindowOptions: opaqueOptions,
+            platform: "win32",
+            clientSettings: Option.some({ ...DEFAULT_CLIENT_SETTINGS, glassOpacity: 100 }),
+          }),
+        ),
+      );
+      assert.isUndefined(opaqueOptions[0]?.backgroundMaterial);
+      assert.deepEqual(opaqueWindow.setBackgroundMaterial.mock.calls, [["none"]]);
+    }),
+  );
+
+  it.effect(
+    "broadcasts desktop window focus and blur state to the renderer and dims inactive titlebar symbols",
+    () =>
+      Effect.gen(function* () {
+        const fakeWindow = makeFakeBrowserWindow();
+        const layer = layerTest({
+          window: fakeWindow.window,
+          createCount: yield* Ref.make(0),
+          mainWindow: yield* Ref.make<Option.Option<Electron.BrowserWindow>>(Option.none()),
+          platform: "win32",
+        });
+
+        yield* Effect.gen(function* () {
+          const desktopWindow = yield* DesktopWindow.DesktopWindow;
+          yield* desktopWindow.ensureMain;
+
+          const didFinishLoad = fakeWindow.webContentsListeners.get("did-finish-load");
+          const onBlur = fakeWindow.windowListeners.get("blur");
+          const onFocus = fakeWindow.windowListeners.get("focus");
+          assert.isDefined(didFinishLoad);
+          assert.isDefined(onBlur);
+          assert.isDefined(onFocus);
+
+          didFinishLoad?.();
+          assert.deepEqual(fakeWindow.insertCSS.mock.calls, [
+            [DesktopWindow.DESKTOP_INACTIVE_WINDOW_CSS],
+          ]);
+          assert.deepEqual(fakeWindow.executeJavaScript.mock.calls, [
+            [DesktopWindow.buildWindowFocusStateScript(true)],
+          ]);
+
+          onBlur?.();
+          yield* Effect.promise(() => Promise.resolve());
+          assert.equal(
+            fakeWindow.executeJavaScript.mock.lastCall?.[0],
+            DesktopWindow.buildWindowFocusStateScript(false),
+          );
+          assert.equal(
+            vi.mocked(fakeWindow.window.setTitleBarOverlay).mock.lastCall?.[0]?.symbolColor,
+            "#9ca3af",
+          );
+
+          onFocus?.();
+          yield* Effect.promise(() => Promise.resolve());
+          assert.equal(
+            fakeWindow.executeJavaScript.mock.lastCall?.[0],
+            DesktopWindow.buildWindowFocusStateScript(true),
+          );
+          assert.equal(
+            vi.mocked(fakeWindow.window.setTitleBarOverlay).mock.lastCall?.[0]?.symbolColor,
+            "#1f2937",
+          );
+        }).pipe(Effect.provide(layer));
+      }),
   );
 
   it.effect.each([

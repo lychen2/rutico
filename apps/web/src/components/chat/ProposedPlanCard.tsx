@@ -18,10 +18,11 @@ import {
   normalizePlanMarkdownForExport,
 } from "../../proposedPlan";
 import ChatMarkdown from "../ChatMarkdown";
-import { EllipsisIcon } from "lucide-react";
+import { CheckIcon, ChevronDownIcon, CopyIcon, EllipsisIcon } from "lucide-react";
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
 import { Menu, MenuItem, MenuPopup, MenuTrigger } from "../ui/menu";
+import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { cn } from "~/lib/utils";
 import { Badge } from "../ui/badge";
 import {
@@ -166,8 +167,10 @@ export const ProposedPlanCard = memo(function ProposedPlanCard({
     })();
   };
 
+  const copyLabel = isCopied ? gt("Copied") : gt("Copy to clipboard");
+
   return (
-    <div className="rounded-2xl border border-border/80 bg-card/70 p-4 shadow-xs transition-[border-color,box-shadow] duration-200 hover:border-border sm:p-5">
+    <div className="rounded-2xl border border-border/80 bg-card/70 p-4 shadow-xs inset-shadow-2xs inset-shadow-white/65 backdrop-blur-md transition-[border-color,box-shadow] duration-200 ease-out hover:border-border motion-reduce:transition-none dark:border-white/[0.08] dark:inset-shadow-white/10 dark:hover:border-white/[0.14] sm:p-5">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex min-w-0 items-center gap-2">
           <Badge variant="secondary">{gt("Plan", { $context: "badge, noun" })}</Badge>
@@ -176,27 +179,51 @@ export const ProposedPlanCard = memo(function ProposedPlanCard({
             {title}
           </h3>
         </div>
-        <Menu>
-          <MenuTrigger
-            render={<Button aria-label={gt("Plan actions")} size="icon-xs" variant="outline" />}
-          >
-            <EllipsisIcon aria-hidden="true" className="size-4" />
-          </MenuTrigger>
-          <MenuPopup align="end">
-            <MenuItem onClick={handleCopyPlan}>
-              {isCopied ? gt("Copied!") : gt("Copy to clipboard")}
-            </MenuItem>
-            <MenuItem onClick={handleDownload}>
-              <T>Download as markdown</T>
-            </MenuItem>
-            <MenuItem
-              onClick={openSaveDialog}
-              disabled={!canWriteFiles || !workspaceRoot || isSavingToWorkspace}
+        <div className="flex shrink-0 items-center gap-1">
+          <Tooltip>
+            <TooltipTrigger
+              render={
+                <Button
+                  type="button"
+                  size="icon-xs"
+                  variant="ghost-muted"
+                  onClick={() => {
+                    if (!isCopied) handleCopyPlan();
+                  }}
+                  aria-label={copyLabel}
+                />
+              }
             >
-              <T>Save to workspace</T>
-            </MenuItem>
-          </MenuPopup>
-        </Menu>
+              {isCopied ? (
+                <CheckIcon key="copied" className="t3-icon-pop size-3.5 text-success" />
+              ) : (
+                <CopyIcon key="copy" className="size-3.5" />
+              )}
+            </TooltipTrigger>
+            <TooltipPopup side="top">{copyLabel}</TooltipPopup>
+          </Tooltip>
+          <Menu>
+            <MenuTrigger
+              render={<Button aria-label={gt("Plan actions")} size="icon-xs" variant="outline" />}
+            >
+              <EllipsisIcon aria-hidden="true" className="size-4" />
+            </MenuTrigger>
+            <MenuPopup align="end">
+              <MenuItem onClick={handleCopyPlan}>
+                {isCopied ? gt("Copied!") : gt("Copy to clipboard")}
+              </MenuItem>
+              <MenuItem onClick={handleDownload}>
+                <T>Download as markdown</T>
+              </MenuItem>
+              <MenuItem
+                onClick={openSaveDialog}
+                disabled={!canWriteFiles || !workspaceRoot || isSavingToWorkspace}
+              >
+                <T>Save to workspace</T>
+              </MenuItem>
+            </MenuPopup>
+          </Menu>
+        </div>
       </div>
       <div className="mt-4">
         <div
@@ -233,9 +260,17 @@ export const ProposedPlanCard = memo(function ProposedPlanCard({
             <Button
               size="sm"
               variant="outline"
+              aria-expanded={expanded}
               data-scroll-anchor-ignore
               onClick={() => setExpanded((value) => !value)}
             >
+              <ChevronDownIcon
+                aria-hidden="true"
+                className={cn(
+                  "size-3.5 transition-transform duration-200 ease-(--ease-drawer) motion-reduce:transition-none",
+                  expanded && "rotate-180",
+                )}
+              />
               {expanded ? gt("Collapse plan") : gt("Expand plan")}
             </Button>
           </div>

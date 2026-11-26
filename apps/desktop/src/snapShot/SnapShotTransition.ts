@@ -5,9 +5,21 @@ import * as Electron from "electron";
 
 const MIN_DURATION_MS = 280;
 const MAX_DURATION_MS = 680;
+const REDUCED_MOTION_DURATION_MS = 120;
 const DURATION_DISTANCE_SCALE = 2_000;
 const EASING = "cubic-bezier(.2,.8,.2,1)";
+const REDUCED_MOTION_EASING = "cubic-bezier(0,0,.58,1)";
+const DEFAULT_LIGHT_CARD_BACKGROUND = "#faf8fd";
+const DEFAULT_DARK_CARD_BACKGROUND = "#1a1727";
 const TIMEOUT_MS = 6_000;
+
+function readShouldUseDarkColors(): boolean {
+  try {
+    return Electron.nativeTheme?.shouldUseDarkColors === true;
+  } catch {
+    return false;
+  }
+}
 
 type SnapShotAnimationDetails = {
   readonly appName: string;
@@ -114,7 +126,7 @@ function createWindow(
     resizable: false,
     show: false,
     skipTaskbar: true,
-    title: "T3 Code Snapshot Animation",
+    title: "Rutico Snapshot Animation",
     transparent: true,
     webPreferences: {
       backgroundThrottling: false,
@@ -128,10 +140,11 @@ function createWindow(
   return window;
 }
 
-function transitionHtml(
+export function buildSnapShotTransitionHtml(
   sourceBounds: Electron.Rectangle,
   overlayBounds: Electron.Rectangle,
   flash: boolean,
+  shouldUseDarkColors = false,
 ): string {
   const source = {
     x: sourceBounds.x - overlayBounds.x,
@@ -139,9 +152,13 @@ function transitionHtml(
     width: sourceBounds.width,
     height: sourceBounds.height,
   };
+  const initialCardBackground = shouldUseDarkColors
+    ? DEFAULT_DARK_CARD_BACKGROUND
+    : DEFAULT_LIGHT_CARD_BACKGROUND;
   return `<!doctype html><style>
 html,body{margin:0;width:100%;height:100%;overflow:hidden;background:transparent}
-#card{position:absolute;left:${source.x}px;top:${source.y}px;width:${source.width}px;height:${source.height}px;contain:strict;overflow:hidden;border-radius:12px;background:#fff;box-shadow:0 24px 70px rgba(0,0,0,.24);transform-origin:center;will-change:transform}
+#card{position:absolute;left:${source.x}px;top:${source.y}px;width:${source.width}px;height:${source.height}px;contain:strict;overflow:hidden;border-radius:12px;background:${initialCardBackground};box-shadow:0 24px 70px rgba(0,0,0,.24);transform-origin:center;will-change:transform}
+@media (prefers-color-scheme: dark){#card{background:${DEFAULT_DARK_CARD_BACKGROUND};box-shadow:0 24px 70px rgba(0,0,0,.48)}}
 #content{position:absolute;inset:0;overflow:hidden;border-radius:inherit;transform-origin:center;will-change:transform}
 #snapshot{position:absolute;inset:0;width:100%;height:100%;object-fit:fill;transform-origin:center;will-change:transform}
 #flash{position:absolute;inset:0;background:#fff;opacity:0;${flash ? "" : "display:none"}}
@@ -155,10 +172,12 @@ html,body{margin:0;width:100%;height:100%;overflow:hidden;background:transparent
 #border{position:absolute;z-index:2;inset:0;box-sizing:border-box;border:0 solid transparent;border-radius:inherit;opacity:0}
 </style><div id="card"><div id="content"><img id="snapshot"><div id="details"><img id="icon"><div id="fallback"></div><div id="copy"><div id="app"></div><div id="title"></div></div></div></div><div id="border"></div><div id="flash"></div></div><script>
 const source=${JSON.stringify(source)},card=document.getElementById("card"),content=document.getElementById("content"),snapshot=document.getElementById("snapshot"),details=document.getElementById("details"),border=document.getElementById("border");
+const prefersReducedMotion=()=>typeof window.matchMedia==="function"&&window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+const fallbackCardBackground=()=>typeof window.matchMedia==="function"&&window.matchMedia("(prefers-color-scheme: dark)").matches?"${DEFAULT_DARK_CARD_BACKGROUND}":"${DEFAULT_LIGHT_CARD_BACKGROUND}";
 const afterPaint=()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));
 window.setCaptureSnapshot=async src=>{snapshot.src=src;await snapshot.decode();await afterPaint()};
 window.rebaseCaptureSource=next=>{Object.assign(source,next);Object.assign(card.style,{left:source.x+"px",top:source.y+"px",width:source.width+"px",height:source.height+"px"})};
-window.startCaptureFlash=()=>document.getElementById("flash").animate([{opacity:.08},{offset:.38,opacity:.08},{offset:.68,opacity:.02},{opacity:0}],{duration:300,fill:"forwards",easing:"${EASING}"});
+window.startCaptureFlash=()=>{if(prefersReducedMotion())return;return document.getElementById("flash").animate([{opacity:.08},{offset:.38,opacity:.08},{offset:.68,opacity:.02},{opacity:0}],{duration:300,fill:"forwards",easing:"${EASING}"})};
 const applyDetails=value=>{
   if(!value)return;
   details.dataset.ready="";
@@ -176,19 +195,30 @@ window.prepareCaptureTransition=async destination=>{
   const sourceCenter={x:source.x+source.width/2,y:source.y+source.height/2},targetCenter={x:target.x+target.width/2,y:target.y+target.height/2};
   const initial="translate3d("+(sourceCenter.x-targetCenter.x)+"px,"+(sourceCenter.y-targetCenter.y)+"px,0) scale("+(source.width/target.width)+","+(source.height/target.height)+")";
   const imageWidth=Math.max(1,snapshot.naturalWidth||source.width),imageHeight=Math.max(1,snapshot.naturalHeight||source.height),cover=Math.max(inner.width/imageWidth,inner.height/imageHeight);
-  Object.assign(card.style,{left:target.x+"px",top:target.y+"px",width:target.width+"px",height:target.height+"px",borderRadius:destination.cornerRadius+"px",backgroundColor:destination.backgroundColor,boxShadow:"none"});
+  const coverTransform="scale("+((imageWidth*cover)/inner.width)+","+((imageHeight*cover)/inner.height)+")";
+  Object.assign(card.style,{left:target.x+"px",top:target.y+"px",width:target.width+"px",height:target.height+"px",borderRadius:destination.cornerRadius+"px",backgroundColor:destination.backgroundColor||fallbackCardBackground(),boxShadow:"none"});
   Object.assign(content.style,{inset:borderWidth+"px",borderRadius:Math.max(0,destination.cornerRadius-borderWidth)+"px"});
   Object.assign(border.style,{borderWidth:borderWidth+"px",borderColor:destination.borderColor});
   details.style.setProperty("--scale",String(destination.scaleFactor));
   applyDetails(destination.details);
-  const options={duration:destination.durationMs,fill:"forwards",easing:"${EASING}"};
-  const animations=[
-    card.animate([{transform:initial},{transform:"translate3d(0,0,0) scale(1)"}],options),
-    content.animate([{transform:"scale("+(target.width/inner.width)+","+(target.height/inner.height)+")"},{transform:"scale(1)"}],options),
-    snapshot.animate([{transform:"scale(1)"},{transform:"scale("+((imageWidth*cover)/inner.width)+","+((imageHeight*cover)/inner.height)+")"}],options),
-    border.animate([{opacity:0},{opacity:1}],options),
-    details.animate([{opacity:0},{opacity:1}],{delay:Math.max(0,destination.durationMs-125),duration:125,fill:"both",easing:"ease-in"})
-  ];
+  let animations;
+  if(prefersReducedMotion()){
+    card.style.transform="none";
+    content.style.transform="none";
+    snapshot.style.transform=coverTransform;
+    border.style.opacity="1";
+    details.style.opacity="1";
+    animations=[card.animate([{opacity:0},{opacity:1}],{duration:${REDUCED_MOTION_DURATION_MS},fill:"forwards",easing:"${REDUCED_MOTION_EASING}"})];
+  }else{
+    const options={duration:destination.durationMs,fill:"forwards",easing:"${EASING}"};
+    animations=[
+      card.animate([{transform:initial},{transform:"translate3d(0,0,0) scale(1)"}],options),
+      content.animate([{transform:"scale("+(target.width/inner.width)+","+(target.height/inner.height)+")"},{transform:"scale(1)"}],options),
+      snapshot.animate([{transform:"scale(1)"},{transform:coverTransform}],options),
+      border.animate([{opacity:0},{opacity:1}],options),
+      details.animate([{opacity:0},{opacity:1}],{delay:Math.max(0,destination.durationMs-125),duration:125,fill:"both",easing:"ease-in"})
+    ];
+  }
   for(const animation of animations){animation.pause();animation.currentTime=0}
   window.playCaptureTransition=async()=>{
     for(const animation of animations)animation.play();
@@ -274,11 +304,19 @@ export class SnapShotTransition {
         active.overlays.push(overlay);
         overlays.push(overlay);
       }
+      const shouldUseDarkColors = readShouldUseDarkColors();
       await Promise.all(
         overlays.map(async (overlay) => {
           await overlay.window.loadURL(
             "data:text/html;charset=utf-8," +
-              encodeURIComponent(transitionHtml(active.source, overlay.bounds, flash)),
+              encodeURIComponent(
+                buildSnapShotTransitionHtml(
+                  active.source,
+                  overlay.bounds,
+                  flash,
+                  shouldUseDarkColors,
+                ),
+              ),
           );
           if (this.active === active && !overlay.window.isDestroyed()) {
             await overlay.window.webContents.executeJavaScript(

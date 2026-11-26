@@ -1,3 +1,4 @@
+import * as Haptics from "expo-haptics";
 import { useGT } from "gt-react-native";
 import { cn } from "../../lib/cn";
 import { MOBILE_MOTION, MOBILE_SHAPE } from "../../lib/designTokens";
@@ -12,6 +13,7 @@ import Animated, {
   runOnJS,
   useAnimatedStyle,
   useSharedValue,
+  withSpring,
   withTiming,
   type EntryAnimationsValues,
 } from "react-native-reanimated";
@@ -62,10 +64,20 @@ function ToastContent(props: ToastProps & { readonly glassReady?: boolean }) {
       size={Platform.OS === "ios" ? "compact" : "default"}
     />
   ) : null;
-  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- announces the toast message to VoiceOver through AccessibilityInfo
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- announces the toast message to VoiceOver and triggers arrival haptic feedback
   useEffect(() => {
     if (Platform.OS === "ios") AccessibilityInfo.announceForAccessibility(props.message);
-  }, [props.message]);
+    if (props.busy) return;
+    if (props.tone === "danger") {
+      void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error).catch(() => undefined);
+    } else if (props.tone === "success") {
+      void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(
+        () => undefined,
+      );
+    } else {
+      void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => undefined);
+    }
+  }, [props.busy, props.message, props.tone]);
   const surface = (
     <GlassSurface
       key={props.glassReady === false ? "entering" : "settled"}
@@ -85,10 +97,20 @@ function ToastContent(props: ToastProps & { readonly glassReady?: boolean }) {
           <AppActivityIndicator />
         ) : (
           <SymbolView
-            name={props.tone === "danger" ? "exclamationmark.triangle" : "checkmark.circle"}
+            name={
+              props.tone === "danger"
+                ? "exclamationmark.triangle"
+                : props.tone === "success"
+                  ? "checkmark.circle"
+                  : "info.circle"
+            }
             size={20}
             tintColorClassName={
-              props.tone === "danger" ? "accent-danger-foreground" : "accent-icon"
+              props.tone === "danger"
+                ? "accent-danger-foreground"
+                : props.tone === "success"
+                  ? "accent-adaptive-emerald-600-400"
+                  : "accent-icon"
             }
           />
         )}
@@ -136,17 +158,26 @@ function ToastContent(props: ToastProps & { readonly glassReady?: boolean }) {
       {surface}
     </View>
   ) : (
-    surface
+    <View style={{ borderRadius, elevation: 6 }}>{surface}</View>
   );
 }
 
 const SWIPE_TIMING = { duration: 160, reduceMotion: ReduceMotion.System };
+const SNAP_BACK_SPRING = {
+  damping: 22,
+  stiffness: 360,
+  mass: 0.7,
+  reduceMotion: ReduceMotion.System,
+} as const;
 const ENTER_TIMING = {
   duration: MOBILE_MOTION.enter,
   easing: Easing.out(Easing.cubic),
   reduceMotion: ReduceMotion.System,
 };
 const TOAST_EXITING = FadeOut.duration(MOBILE_MOTION.exit).reduceMotion(ReduceMotion.System);
+function triggerToastDismissHaptic() {
+  void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => undefined);
+}
 function SwipeableToast(props: ToastProps & { readonly onDismiss: () => void }) {
   const gt = useGT();
   const [glassReady, setGlassReady] = useState(Platform.OS !== "ios");
@@ -179,28 +210,35 @@ function SwipeableToast(props: ToastProps & { readonly onDismiss: () => void }) 
       translation.set(event.translationX);
     },
     onDeactivate: (event) => {
+      const currentWidth = width.get();
       if (
         !event.canceled &&
-        (Math.abs(event.translationX) > width.value * 0.25 ||
+        (Math.abs(event.translationX) > currentWidth * 0.25 ||
           (Math.abs(event.velocityX) > 800 && event.translationX * event.velocityX > 0))
       ) {
         const direction = Math.sign(event.translationX || event.velocityX);
+        runOnJS(triggerToastDismissHaptic)();
         translation.set(
-          withTiming(direction * (width.value + 24), SWIPE_TIMING, (finished) => {
+          withTiming(direction * (currentWidth + 24), SWIPE_TIMING, (finished) => {
             if (finished) runOnJS(onDismiss)();
           }),
         );
       } else {
-        translation.set(withTiming(0, SWIPE_TIMING));
+        translation.set(withSpring(0, SNAP_BACK_SPRING));
       }
     },
   });
-  const animatedStyle = useAnimatedStyle(() => ({
-    transform: [{ translateX: translation.value }],
-  }));
+  const animatedStyle = useAnimatedStyle(() => {
+    const currentTranslation = translation.get();
+    const currentWidth = Math.max(width.get(), 1);
+    const dragRatio = Math.min(1, Math.abs(currentTranslation) / currentWidth);
+    return {
+      opacity: 1 - dragRatio * 0.45,
+      transform: [{ translateX: currentTranslation }, { scale: 1 - dragRatio * 0.03 }],
+    };
+  });
   return (
     <Animated.View
-      className={Platform.OS === "android" ? "overflow-hidden" : undefined}
       pointerEvents="box-none"
       exiting={TOAST_EXITING}
       onAccessibilityEscape={onDismiss}

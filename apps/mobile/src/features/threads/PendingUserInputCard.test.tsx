@@ -62,6 +62,9 @@ vi.mock("../../native/useOpenPullRequest", () => ({
     return true;
   },
 }));
+vi.mock("expo-haptics", () => ({
+  selectionAsync: vi.fn(async () => {}),
+}));
 vi.mock("@react-navigation/native", () => ({
   useNavigation: () => ({
     navigate: (name: string, params?: object) => harness.navigate.push([name, params]),

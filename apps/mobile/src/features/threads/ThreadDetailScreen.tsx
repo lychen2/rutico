@@ -1716,8 +1716,8 @@ function ThreadDetailBody(
                     {props.queuedRunEdit !== null ? (
                       <Animated.View
                         className="shrink-0"
-                        entering={FadeInDown.duration(180)}
-                        exiting={FadeOut.duration(120)}
+                        entering={FadeInDown.duration(180).reduceMotion(ReduceMotion.System)}
+                        exiting={FadeOut.duration(120).reduceMotion(ReduceMotion.System)}
                       >
                         <ComposerQueuedEditBanner
                           saving={props.isSavingQueuedEdit}
@@ -1774,8 +1774,8 @@ function ThreadDetailBody(
                     {composerError !== null ? (
                       <Animated.View
                         className="shrink-0"
-                        entering={FadeInDown.duration(180)}
-                        exiting={FadeOut.duration(120)}
+                        entering={FadeInDown.duration(180).reduceMotion(ReduceMotion.System)}
+                        exiting={FadeOut.duration(120).reduceMotion(ReduceMotion.System)}
                       >
                         <ComposerErrorNotice
                           message={composerError}
@@ -1788,8 +1788,8 @@ function ThreadDetailBody(
                         className="shrink-0 px-4"
                         style={{ paddingBottom: USAGE_LIMITS_PANEL_GAP }}
                         onLayout={handleUsageLimitsLayout}
-                        entering={FadeInDown.duration(220)}
-                        exiting={FadeOut.duration(140)}
+                        entering={FadeInDown.duration(220).reduceMotion(ReduceMotion.System)}
+                        exiting={FadeOut.duration(140).reduceMotion(ReduceMotion.System)}
                       >
                         <ComposerUsageLimits
                           report={usageLimitsReport}
@@ -1803,8 +1803,8 @@ function ThreadDetailBody(
                       <Animated.View
                         className="shrink-0 px-4"
                         style={{ paddingBottom: composerBottomInset }}
-                        entering={FadeInDown.duration(220)}
-                        exiting={FadeOut.duration(140)}
+                        entering={FadeInDown.duration(220).reduceMotion(ReduceMotion.System)}
+                        exiting={FadeOut.duration(140).reduceMotion(ReduceMotion.System)}
                       >
                         <ThreadCreationFailedCard
                           reason={props.creationState.reason}
@@ -1825,8 +1825,8 @@ function ThreadDetailBody(
                             ? (event) => userInputPanelsTop.set(event.nativeEvent.layout.y)
                             : undefined
                         }
-                        entering={FadeInDown.duration(220)}
-                        exiting={FadeOut.duration(140)}
+                        entering={FadeInDown.duration(220).reduceMotion(ReduceMotion.System)}
+                        exiting={FadeOut.duration(140).reduceMotion(ReduceMotion.System)}
                       >
                         {props.activePendingApproval ? (
                           <Animated.ScrollView

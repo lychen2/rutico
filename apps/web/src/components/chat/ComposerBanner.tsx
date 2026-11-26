@@ -29,8 +29,9 @@ const errorColors =
 const variantColors: Record<ComposerBannerVariant, string> = {
   default: neutralOutline,
   error: errorColors,
-  info: neutralOutline,
-  success: neutralOutline,
+  info: "[--chat-composer-attached-outline:color-mix(in_srgb,var(--info)_22%,transparent)] [--chat-composer-attached-tint:color-mix(in_srgb,var(--info)_6%,transparent)]",
+  success:
+    "[--chat-composer-attached-outline:color-mix(in_srgb,var(--success)_24%,transparent)] [--chat-composer-attached-tint:color-mix(in_srgb,var(--success)_6%,transparent)]",
   warning:
     "[--chat-composer-attached-outline:color-mix(in_srgb,var(--warning)_28%,transparent)] [--chat-composer-attached-tint:color-mix(in_srgb,var(--warning)_8%,transparent)]",
 };
@@ -62,7 +63,7 @@ function Surface({
             "[--chat-composer-attachment-overlap:calc(1rem+1px)] before:rounded-t-2xl before:mask-t-from-transparent before:mask-t-from-4 before:mask-t-to-black before:mask-t-to-4",
         "before:pointer-events-none before:absolute before:inset-0 before:-z-1 before:border before:border-(--chat-composer-attached-outline)",
         "before:bg-(--chat-composer-attached-surface)/(--glass-opacity) before:bg-linear-to-b before:from-(--chat-composer-attached-tint) before:to-(--chat-composer-attached-tint) before:backdrop-blur-(--glass-blur) before:backdrop-saturate-(--glass-saturation)",
-        "before:shadow-composer dark:before:shadow-composer-dark",
+        "before:shadow-composer dark:before:shadow-composer-dark dark:before:inset-shadow-2xs dark:before:inset-shadow-white/6",
         !detached &&
           "dark:supports-[(backdrop-filter:blur(1px))_or_(-webkit-backdrop-filter:blur(1px))]:before:bg-composer-seam-above",
         "not-supports-[((backdrop-filter:blur(1px))_or_(-webkit-backdrop-filter:blur(1px)))]:before:bg-(--chat-composer-attached-surface)",
@@ -81,7 +82,7 @@ function Attachment({ className, ...props }: ComponentProps<"div">) {
         "mx-auto -mb-[calc(1rem+1px)] w-[calc(100%-2*var(--chat-composer-drawer-inset))]",
         // Only the banner touching the composer gets the dark seam shade; stacked ones would band.
         "[&:has(+[data-slot=composer-banner-attachment])]:[--chat-composer-attached-seam:transparent]",
-        "[&+[data-slot=composer-banner-attachment]_[data-composer-banner-surface=attached]]:before:rounded-none [&+[data-slot=composer-banner-attachment]_[data-composer-banner-surface=attached]]:before:border-t-0 [&+[data-slot=composer-banner-attachment]_[data-composer-banner-surface=attached]]:[--composer-banner-corner-top:var(--control-radius)]",
+        "[&+[data-slot=composer-banner-attachment]_[data-composer-banner-surface=attached]]:before:rounded-none [&+[data-slot=composer-banner-attachment]_[data-composer-banner-surface=attached]]:before:border-t-0 [&+[data-slot=composer-banner-attachment]_[data-composer-banner-surface=attached]]:before:inset-shadow-none [&+[data-slot=composer-banner-attachment]_[data-composer-banner-surface=attached]]:[--composer-banner-corner-top:var(--control-radius)]",
         className,
       )}
       {...props}
@@ -163,7 +164,7 @@ function Row({
     className: cn(
       "group/banner-row grid min-h-(--composer-banner-icon-column) w-full min-w-0 grid-cols-[var(--composer-banner-icon-column)_minmax(0,1fr)_auto] items-center gap-x-1 text-start",
       "not-has-[>[data-slot=composer-banner-actions]]:grid-cols-[var(--composer-banner-icon-column)_minmax(0,1fr)]",
-      "[&:is(button)]:cursor-pointer [&:is(button)]:rounded-xl [&:is(button)]:hover:bg-foreground/5 [&:is(button)]:focus-visible:outline-2 [&:is(button)]:focus-visible:-outline-offset-2 [&:is(button)]:focus-visible:outline-ring",
+      "[&:is(button)]:cursor-pointer [&:is(button)]:rounded-xl [&:is(button)]:transition-[background-color,color,scale] [&:is(button)]:duration-150 [&:is(button)]:ease-out [&:is(button)]:any-hover:bg-foreground/5 [&:is(button)]:motion-safe:active:scale-[0.995] [&:is(button)]:motion-reduce:transition-none [&:is(button)]:focus-visible:outline-2 [&:is(button)]:focus-visible:-outline-offset-2 [&:is(button)]:focus-visible:outline-ring",
       layout === "wrap-actions" &&
         "flex flex-wrap *:data-[slot=composer-banner-content]:max-w-[calc(100%-var(--composer-banner-icon-column)-var(--spacing))] *:data-[slot=composer-banner-content]:grow",
       layout === "approval" && "items-start gap-x-2 gap-y-3",

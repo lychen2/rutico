@@ -19,6 +19,7 @@ import { useEnvironmentIdentificationMode } from "~/hooks/useSettings";
 import type { MessageResolver } from "~/i18n/messages";
 import { formatContextWindowTokens } from "~/lib/contextWindow";
 import { cn, isMacPlatform } from "~/lib/utils";
+import { observeVisibleAnimation } from "~/lib/visibleAnimation";
 import { useShortcutModifierState } from "../../shortcutModifierState";
 import { StageBackdropButtonArt, useSidebarStageBackdropVariant } from "../SidebarStageBackdrop";
 import { Button } from "../ui/button";
@@ -99,7 +100,7 @@ const STOP_PENDING_MAX_MS = 10_000;
 const STOP_LANDED_CLICK_GUARD_MS = 500;
 
 const messageActionPillClassName =
-  "inline-flex shrink-0 cursor-pointer items-center justify-center gap-1.5 whitespace-nowrap rounded-full bg-message-action font-medium text-base text-message-action-foreground shadow-xs shadow-message-action/24 outline-none hover:bg-message-action-hover focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background disabled:pointer-events-none disabled:opacity-64 disabled:shadow-none sm:text-sm";
+  "inline-flex shrink-0 cursor-pointer items-center justify-center gap-1.5 whitespace-nowrap rounded-full bg-message-action font-medium text-base text-message-action-foreground shadow-xs shadow-message-action/24 outline-none transition-[background-color,scale,box-shadow] duration-150 ease-(--ease-spring-snappy) any-hover:bg-message-action-hover motion-safe:enabled:active:scale-95 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background disabled:pointer-events-none disabled:opacity-64 disabled:shadow-none motion-reduce:transition-none sm:text-sm";
 
 const preventPointerFocus: PointerEventHandler<HTMLElement> = (event) => {
   event.preventDefault();
@@ -162,7 +163,7 @@ function StopGenerationButton({
           <button
             type="button"
             className={cn(
-              "relative flex shrink-0 cursor-pointer items-center justify-center rounded-full bg-destructive/90 text-white shadow-xs shadow-destructive/24 inset-shadow-control-highlight transition-[background-color,scale,box-shadow] duration-150 ease-(--ease-spring-snappy) hover:scale-105 hover:bg-destructive active:scale-95 active:inset-shadow-control-pressed active:shadow-none disabled:cursor-default disabled:opacity-64 disabled:hover:scale-100 disabled:hover:bg-destructive/90 motion-reduce:transition-none motion-reduce:hover:scale-100 [&_svg]:pointer-events-none",
+              "relative flex shrink-0 cursor-pointer items-center justify-center rounded-full bg-destructive/90 text-white shadow-xs shadow-destructive/24 inset-shadow-control-highlight transition-[background-color,scale,box-shadow] duration-150 ease-(--ease-spring-snappy) any-hover:scale-105 any-hover:bg-destructive active:scale-95 active:inset-shadow-control-pressed active:shadow-none disabled:cursor-default disabled:opacity-64 disabled:any-hover:scale-100 disabled:any-hover:bg-destructive/90 motion-reduce:transition-none motion-reduce:any-hover:scale-100 motion-reduce:active:scale-100 [&_svg]:pointer-events-none",
               insidePendingAction ? "size-8 sm:size-7" : "size-8 sm:h-8 sm:w-8",
             )}
             onPointerDown={preserveComposerFocusOnPointerDown ? preventPointerFocus : undefined}
@@ -173,25 +174,34 @@ function StopGenerationButton({
               onInterrupt();
             }}
             aria-label={stopPhase === "pending" ? gt("Stopping") : gt("Stop generation")}
+            aria-busy={isStopDisabled || undefined}
           />
         }
       >
         {stopPhase !== "pending" ? (
           <span
+            ref={observeVisibleAnimation}
             aria-hidden="true"
-            className="t3-stop-pulse-ring pointer-events-none absolute inset-0 rounded-full ring-2 ring-destructive/55"
+            className="t3-stop-pulse-ring pointer-events-none absolute inset-0 rounded-full ring-2 ring-destructive/45"
           />
         ) : null}
-        <svg
-          width="12"
-          height="12"
-          viewBox="0 0 12 12"
-          fill="currentColor"
-          aria-hidden="true"
-          className="t3-icon-pop"
-        >
-          <rect x="2" y="2" width="8" height="8" rx="1.5" />
-        </svg>
+        {stopPhase === "pending" ? (
+          <span key="stopping" className="t3-icon-pop inline-flex">
+            <Spinner size="xs" aria-hidden="true" />
+          </span>
+        ) : (
+          <svg
+            key="stop"
+            width="12"
+            height="12"
+            viewBox="0 0 12 12"
+            fill="currentColor"
+            aria-hidden="true"
+            className="t3-icon-pop"
+          >
+            <rect x="2" y="2" width="8" height="8" rx="1.5" />
+          </svg>
+        )}
       </TooltipTrigger>
       <TooltipPopup>
         {stopPhase === "pending"
@@ -454,10 +464,10 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
     <button
       type={showResume ? "button" : "submit"}
       className={cn(
-        "group/send relative isolate flex h-9 w-9 items-center justify-center overflow-hidden rounded-full shadow-xs transition-[scale,background-color,color,box-shadow,filter] duration-180 ease-(--ease-spring-snappy) enabled:cursor-pointer enabled:inset-shadow-control-highlight hover:scale-106 active:scale-94 active:inset-shadow-control-pressed active:shadow-none disabled:pointer-events-none disabled:shadow-none disabled:hover:scale-100 motion-reduce:transition-none motion-reduce:hover:scale-100 motion-reduce:active:scale-100 sm:h-8 sm:w-8 [&_svg]:pointer-events-none",
+        "group/send relative isolate flex h-9 w-9 items-center justify-center overflow-hidden rounded-full shadow-xs transition-[scale,background-color,color,box-shadow,filter] duration-180 ease-(--ease-spring-snappy) enabled:cursor-pointer enabled:inset-shadow-control-highlight any-hover:scale-106 active:scale-94 active:inset-shadow-control-pressed active:shadow-none disabled:pointer-events-none disabled:shadow-none disabled:any-hover:scale-100 motion-reduce:transition-none motion-reduce:any-hover:scale-100 motion-reduce:active:scale-100 sm:h-8 sm:w-8 [&_svg]:pointer-events-none",
         stageBackdropVariant
-          ? "bg-transparent text-white enabled:shadow-black/24 enabled:hover:brightness-110 disabled:opacity-64"
-          : "bg-message-action text-message-action-foreground enabled:shadow-message-action/24 hover:bg-message-action-hover disabled:bg-foreground/12 disabled:text-muted-foreground",
+          ? "bg-transparent text-white enabled:shadow-black/24 enabled:any-hover:brightness-110 disabled:opacity-64"
+          : "bg-message-action text-message-action-foreground enabled:shadow-message-action/24 any-hover:bg-message-action-hover disabled:bg-foreground/12 disabled:text-muted-foreground",
       )}
       {...pointerFocusProps}
       onClick={(event) => {
@@ -502,7 +512,7 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
           viewBox="0 0 14 14"
           fill="none"
           aria-hidden="true"
-          className="t3-icon-pop transition-transform duration-180 ease-(--ease-spring-snappy) group-enabled/send:group-hover/send:-translate-y-0.5 motion-reduce:transition-none"
+          className="t3-icon-pop transition-transform duration-180 ease-(--ease-spring-snappy) group-enabled/send:group-any-hover/send:-translate-y-0.5 motion-reduce:transition-none"
         >
           <path
             d="M7 11.5V2.5M7 2.5L3 6.5M7 2.5L11 6.5"
@@ -538,7 +548,7 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
           render={
             <button
               type="button"
-              className="flex h-7 shrink-0 cursor-pointer items-center gap-1.5 rounded-(--control-radius) px-2 font-medium text-base text-foreground/80 tabular-nums outline-none hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-64 sm:text-sm aria-pressed:bg-accent/60 aria-pressed:text-foreground [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:text-muted-foreground"
+              className="flex h-7 shrink-0 cursor-pointer items-center gap-1.5 rounded-(--control-radius) px-2 font-medium text-base text-foreground/80 tabular-nums outline-none transition-[background-color,color,scale] duration-150 ease-(--ease-spring-snappy) any-hover:bg-accent any-hover:text-foreground motion-safe:enabled:active:scale-[0.97] focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-64 motion-reduce:transition-none sm:text-sm aria-pressed:bg-accent/60 aria-pressed:text-foreground [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:text-muted-foreground"
               {...pointerFocusProps}
               aria-pressed={!keepFullHistory}
               aria-label={gt("Compact {tokens} tokens of history before sending", {

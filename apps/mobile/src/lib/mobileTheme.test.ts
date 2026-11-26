@@ -20,6 +20,9 @@ import {
   DEFAULT_MOBILE_THEME_ID,
   flattenThemeColor,
   getMobileThemeVariables,
+  GLASS_BLUR_VEIL_ALPHA,
+  GLASS_FALLBACK_VEIL_ALPHA,
+  resolveGlassBackdropTintColor,
   resolveMobileThemeIds,
   themeColorWithAlpha,
   themeColorToNativeColor,
@@ -321,5 +324,21 @@ describe("mobile themes", () => {
         contrastRatio(variables["--color-md-user-code-text"], codeSurface),
       ).toBeGreaterThanOrEqual(4.5);
     }
+  });
+
+  it("lowers the glass backdrop veil alpha over native blur compared to opaque fallback", () => {
+    const sample = "rgba(38, 33, 56, 0.9)";
+    expect(resolveGlassBackdropTintColor(sample, "dark", true)).toBe(
+      `rgba(38, 33, 56, ${GLASS_BLUR_VEIL_ALPHA.dark})`,
+    );
+    expect(resolveGlassBackdropTintColor(sample, "light", true)).toBe(
+      `rgba(38, 33, 56, ${GLASS_BLUR_VEIL_ALPHA.light})`,
+    );
+    expect(resolveGlassBackdropTintColor(sample, "dark", false)).toBe(
+      `rgba(38, 33, 56, ${GLASS_FALLBACK_VEIL_ALPHA.dark})`,
+    );
+    expect(resolveGlassBackdropTintColor(sample, "light", false)).toBe(
+      `rgba(38, 33, 56, ${GLASS_FALLBACK_VEIL_ALPHA.light})`,
+    );
   });
 });

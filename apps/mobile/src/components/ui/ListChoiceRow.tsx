@@ -1,5 +1,7 @@
+import * as Haptics from "expo-haptics";
 import type { ReactNode } from "react";
 import { Platform, View } from "react-native";
+import Animated, { ReduceMotion, ZoomIn } from "react-native-reanimated";
 import { useResolveClassNames } from "uniwind";
 
 import { cn } from "../../lib/cn";
@@ -7,6 +9,8 @@ import { SymbolView } from "./AppSymbol";
 import { ListRowLayout } from "./ListRowLayout";
 import { RadioIndicator } from "./RadioIndicator";
 import { RowPressable } from "./RowPressable";
+
+const CHECKMARK_ENTERING = ZoomIn.duration(140).reduceMotion(ReduceMotion.System);
 
 export function ListChoiceRow(props: {
   readonly label: string;
@@ -26,7 +30,10 @@ export function ListChoiceRow(props: {
       accessibilityHint={props.description}
       accessibilityState={{ checked: props.selected, disabled: Boolean(props.disabled) }}
       disabled={props.disabled}
-      onPress={props.onPress}
+      onPress={() => {
+        void Haptics.selectionAsync().catch(() => undefined);
+        props.onPress();
+      }}
       android_ripple={{ color: rippleStyle.backgroundColor }}
       unstable_pressDelay={Platform.OS === "android" ? 50 : undefined}
       // Like UIKit and Material lists, only the checkmark or radio marks the selected row.
@@ -47,13 +54,15 @@ export function ListChoiceRow(props: {
             {Platform.OS === "android" ? (
               <RadioIndicator selected={props.selected} />
             ) : props.selected ? (
-              <SymbolView
-                name="checkmark"
-                size={18}
-                tintColorClassName="accent-primary-text"
-                type="monochrome"
-                weight="semibold"
-              />
+              <Animated.View entering={CHECKMARK_ENTERING}>
+                <SymbolView
+                  name="checkmark"
+                  size={18}
+                  tintColorClassName="accent-primary-text"
+                  type="monochrome"
+                  weight="semibold"
+                />
+              </Animated.View>
             ) : null}
           </View>
         }

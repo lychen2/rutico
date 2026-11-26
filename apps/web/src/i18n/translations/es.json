@@ -2414,7 +2414,6 @@
   "404941d325a2755b": "Pulsa {shortcut} otra vez para salir",
   "48ef9d3971c97e7d": "No se pudo volver a abrir la vista",
   "158a785cabe10dda": "Panel de trabajo",
-  "9371d8cc390a8a1b": "Las vistas previas del navegador solo están disponibles en la app de escritorio de T3 Code.",
   "05037ca1666fd421": "Las terminales solo están disponibles desde un hilo de proyecto.",
   "a3aa1e49af278d41": "Los archivos solo están disponibles cuando hay un proyecto abierto.",
   "87ea6995ea1e7aa4": "El diff solo está disponible para hilos del servidor en repositorios Git.",
@@ -3754,7 +3753,6 @@
     "…"
   ],
   "c3e8cd9bf44e2f43": "Se muestra lo que se leyó antes.",
-  "eb6e0584cf4a2a1d": "Lenguaje: {language}",
   "d76c606a3c519b78": "Desactivar ajuste de línea",
   "2b683498cee8c8a7": "Ajustar líneas",
   "7c1923203049d602": "Copiar código",
@@ -12022,7 +12020,6 @@
   "effe26aaf2941c69": "El servidor de este equipo aún no está conectado",
   "27e0c22322e66145": "Inténtalo de nuevo cuando se conecte.",
   "a46244a71021244a": "No se pudo añadir \"{name}\"",
-  "cc07974b25287234": "T3 Code no pudo leer la ruta de la carpeta.",
   "27727bda79d97ffa": "Solo se pueden añadir carpetas como proyectos",
   "eb9f51eb8bd8a43c": "Suelta archivos en un hilo para adjuntarlos.",
   "671a8b8ab44e83e2": "Suelta carpetas para añadir proyectos",
@@ -12632,7 +12629,6 @@
   "c512071143a5ba32": "Este hilo ya no existe.",
   "ed169d23683fb6ac": "Cargando el hilo…",
   "290e0ab40b87dc17": "Ruta de navegación de flujos de trabajo",
-  "683dd9831e54edc0": "Entorno",
   "34ad53646f06ed80": "Los flujos de trabajo están desactivados",
   "8f6589c9e0ac5d4e": "Ningún entorno conectado",
   "744127f8dfad7d22": "Conecta un entorno para ver sus ejecuciones de flujos de trabajo.",
@@ -12957,5 +12953,10 @@
   "d54cd153f6e13f09": "Más acciones",
   "b8736743b1ab48f3": "Marcar como leído",
   "da49b8271b9dffa0": "Eliminar",
-  "01ee3b13eba94b09": "Tareas de hoy"
+  "01ee3b13eba94b09": "Tareas de hoy",
+  "47f955009afbb793": "Las vistas previas del navegador solo están disponibles en la app de escritorio de Rutico.",
+  "17f70beed8a184f6": "Enviado por Rutico",
+  "bf59b7e005e2104c": "Rutico no pudo leer la ruta de la carpeta.",
+  "3dc150ba37e2c907": "Arrastra para cambiar el tamaño · Doble clic para restablecer",
+  "5dc214fdd64c13f6": "Entorno"
 }

@@ -55,7 +55,7 @@ function MenuPopup({
       >
         <MenuPrimitive.Popup
           className={cn(
-            "dropdown-glass relative flex origin-(--transform-origin) rounded-lg shadow-[0_16px_40px_-18px_rgb(0_0_0/55%)] outline-none transition-[scale,opacity] duration-180 ease-(--ease-spring-snappy) will-change-[scale,opacity] data-ending-style:scale-[0.97] data-starting-style:scale-[0.95] data-ending-style:opacity-0 data-starting-style:opacity-0 motion-reduce:transition-none focus:outline-none dark:shadow-[0_18px_44px_-18px_rgb(0_0_0/80%)]",
+            "dropdown-glass relative flex origin-(--transform-origin) rounded-lg shadow-[0_16px_40px_-18px_rgb(0_0_0/55%)] outline-none transition-[scale,opacity,translate] duration-180 ease-(--ease-spring-snappy) data-starting-style:scale-[0.95] data-starting-style:opacity-0 data-[side=bottom]:data-starting-style:-translate-y-1 data-[side=top]:data-starting-style:translate-y-1 data-[side=left]:data-starting-style:translate-x-1 data-[side=right]:data-starting-style:-translate-x-1 data-[side=inline-start]:data-starting-style:translate-x-1 data-[side=inline-end]:data-starting-style:-translate-x-1 data-ending-style:duration-120 data-ending-style:ease-(--ease-exit) data-ending-style:scale-[0.97] data-ending-style:opacity-0 data-instant:duration-0 motion-reduce:transition-none focus:outline-none dark:shadow-[0_18px_44px_-18px_rgb(0_0_0/80%)]",
             // Electron drag hit-testing ignores z-index; opt portaled menus out to keep overlapping rows
             // hoverable.
             "[-webkit-app-region:no-drag]",
@@ -129,7 +129,7 @@ function MenuItem({
   return (
     <MenuPrimitive.Item
       className={cn(
-        "[&>svg]:-mx-0.5 flex min-h-8 cursor-pointer select-none items-center gap-2 rounded-sm px-2 py-1 text-base text-foreground outline-none transition-[background-color,color,scale] duration-120 ease-out active:scale-[0.99] motion-reduce:transition-none motion-reduce:active:scale-100 data-disabled:pointer-events-none data-disabled:cursor-not-allowed data-highlighted:bg-accent data-inset:ps-8 data-[variant=destructive]:text-destructive-foreground data-highlighted:text-accent-foreground data-disabled:opacity-64 sm:min-h-7 sm:text-sm [&>svg:not([class*='opacity-'])]:opacity-80 [&>svg:not([class*='size-'])]:size-4.5 sm:[&>svg:not([class*='size-'])]:size-4 [&>svg:not([class*='text-'])]:text-muted-foreground data-[variant=destructive]:[&>svg:not([class*='text-'])]:text-current [&>svg]:pointer-events-none [&>svg]:shrink-0",
+        "[&>svg]:-mx-0.5 flex min-h-8 cursor-pointer select-none items-center gap-2 rounded-sm px-2 py-1 text-base text-foreground outline-none transition-[background-color,color,scale] duration-120 ease-out active:not-data-disabled:scale-[0.99] motion-reduce:transition-none motion-reduce:active:scale-100 data-disabled:pointer-events-none data-disabled:cursor-not-allowed data-highlighted:bg-accent data-inset:ps-8 data-[variant=destructive]:text-destructive-foreground data-highlighted:text-accent-foreground data-disabled:opacity-64 sm:min-h-7 sm:text-sm [&>svg:not([class*='opacity-'])]:opacity-80 [&>svg:not([class*='size-'])]:size-4.5 sm:[&>svg:not([class*='size-'])]:size-4 [&>svg:not([class*='text-'])]:text-muted-foreground data-[variant=destructive]:[&>svg:not([class*='text-'])]:text-current [&>svg]:pointer-events-none [&>svg]:shrink-0",
         variant === "ghost" &&
           buttonVariants({
             variant: "ghost",
@@ -174,7 +174,7 @@ function MenuCheckboxItem({
     <MenuPrimitive.CheckboxItem
       checked={checked}
       className={cn(
-        "grid min-h-8 in-data-[side=none]:min-w-[calc(var(--anchor-width)+1.25rem)] cursor-pointer items-center gap-2 rounded-sm py-1 ps-2 text-base text-foreground outline-none data-disabled:pointer-events-none data-disabled:cursor-not-allowed data-highlighted:bg-accent data-highlighted:text-accent-foreground data-disabled:opacity-64 sm:min-h-7 sm:text-sm [&_svg:not([class*='size-'])]:size-4.5 sm:[&_svg:not([class*='size-'])]:size-4 [&_svg]:pointer-events-none [&_svg]:shrink-0",
+        "grid min-h-8 in-data-[side=none]:min-w-[calc(var(--anchor-width)+1.25rem)] cursor-pointer select-none items-center gap-2 rounded-sm py-1 ps-2 text-base text-foreground outline-none transition-[background-color,color,scale] duration-120 ease-out active:not-data-disabled:scale-[0.99] motion-reduce:transition-none motion-reduce:active:scale-100 data-disabled:pointer-events-none data-disabled:cursor-not-allowed data-highlighted:bg-accent data-highlighted:text-accent-foreground data-disabled:opacity-64 sm:min-h-7 sm:text-sm [&_svg:not([class*='size-'])]:size-4.5 sm:[&_svg:not([class*='size-'])]:size-4 [&_svg]:pointer-events-none [&_svg]:shrink-0",
         variant === "switch"
           ? "grid-cols-[1fr_auto] gap-4 pe-1.5"
           : "grid-cols-[1rem_minmax(0,1fr)] pe-4",
@@ -188,10 +188,10 @@ function MenuCheckboxItem({
         <>
           <span className="col-start-1">{children}</span>
           <MenuPrimitive.CheckboxItemIndicator
-            className="inset-shadow-[0_1px_--theme(--color-black/4%)] inline-flex h-[calc(var(--thumb-size)+2px)] w-[calc(var(--thumb-size)*2-2px)] shrink-0 items-center rounded-full p-px outline-none transition-[background-color,box-shadow] duration-200 [--thumb-size:--spacing(4)] focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background data-checked:bg-primary data-unchecked:bg-input data-disabled:opacity-64 sm:[--thumb-size:--spacing(3)]"
+            className="inset-shadow-[0_1px_--theme(--color-black/4%)] inline-flex h-[calc(var(--thumb-size)+2px)] w-[calc(var(--thumb-size)*2-2px)] shrink-0 items-center rounded-full p-px outline-none transition-[background-color,box-shadow] duration-200 motion-reduce:transition-none [--thumb-size:--spacing(4)] focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background data-checked:bg-primary data-unchecked:bg-input data-disabled:opacity-64 sm:[--thumb-size:--spacing(3)]"
             keepMounted
           >
-            <span className="pointer-events-none block aspect-square h-full in-[[data-slot=menu-checkbox-item][data-checked]]:origin-[var(--thumb-size)_50%] origin-left in-[[data-slot=menu-checkbox-item][data-checked]]:translate-x-[calc(var(--thumb-size)-4px)] in-[[data-slot=menu-checkbox-item]:active]:not-data-disabled:scale-x-110 in-[[data-slot=menu-checkbox-item]:active]:rounded-[var(--thumb-size)/calc(var(--thumb-size)*1.10)] rounded-(--thumb-size) bg-background shadow-sm/5 [transition:translate_.15s,border-radius_.15s,scale_.1s_.1s,transform-origin_.15s]" />
+            <span className="pointer-events-none block aspect-square h-full in-[[data-slot=menu-checkbox-item][data-checked]]:origin-[var(--thumb-size)_50%] origin-left in-[[data-slot=menu-checkbox-item][data-checked]]:translate-x-[calc(var(--thumb-size)-4px)] in-[[data-slot=menu-checkbox-item]:active]:not-data-disabled:scale-x-110 in-[[data-slot=menu-checkbox-item]:active]:rounded-[var(--thumb-size)/calc(var(--thumb-size)*1.10)] rounded-(--thumb-size) bg-background shadow-sm/5 [transition:translate_.15s,border-radius_.15s,scale_.1s_.1s,transform-origin_.15s] motion-reduce:transition-none motion-reduce:in-[[data-slot=menu-checkbox-item]:active]:scale-x-100" />
           </MenuPrimitive.CheckboxItemIndicator>
         </>
       ) : (
@@ -236,7 +236,7 @@ function MenuRadioItem({
   return (
     <MenuPrimitive.RadioItem
       className={cn(
-        "[&_svg]:-mx-0.5 flex min-h-8 in-data-[side=none]:min-w-[calc(var(--anchor-width)+1.25rem)] cursor-pointer items-center rounded-sm px-2 py-1 text-base text-foreground outline-none data-checked:bg-foreground/[0.08] data-disabled:pointer-events-none data-disabled:cursor-not-allowed data-highlighted:bg-accent data-highlighted:text-accent-foreground data-disabled:opacity-64 sm:min-h-7 sm:text-sm [&_svg:not([class*='size-'])]:size-4.5 sm:[&_svg:not([class*='size-'])]:size-4 [&_svg]:pointer-events-none [&_svg]:shrink-0",
+        "[&_svg]:-mx-0.5 flex min-h-8 in-data-[side=none]:min-w-[calc(var(--anchor-width)+1.25rem)] cursor-pointer select-none items-center rounded-sm px-2 py-1 text-base text-foreground outline-none transition-[background-color,color,scale] duration-120 ease-out active:not-data-disabled:scale-[0.99] motion-reduce:transition-none motion-reduce:active:scale-100 data-checked:bg-foreground/[0.08] data-disabled:pointer-events-none data-disabled:cursor-not-allowed data-highlighted:bg-accent data-highlighted:text-accent-foreground data-disabled:opacity-64 sm:min-h-7 sm:text-sm [&_svg:not([class*='size-'])]:size-4.5 sm:[&_svg:not([class*='size-'])]:size-4 [&_svg]:pointer-events-none [&_svg]:shrink-0",
         className,
       )}
       data-slot="menu-radio-item"
@@ -337,7 +337,7 @@ function MenuSubTrigger({
     <MenuPrimitive.SubmenuTrigger
       className={cn(
         // Exclude the last SVG so leading-icon margin rules cannot remove the chevron's ms-auto alignment.
-        "[&>svg:not(:last-child)]:-mx-0.5 flex min-h-8 cursor-pointer items-center gap-2 rounded-sm px-2 py-1 text-base text-foreground outline-none data-disabled:cursor-not-allowed data-disabled:pointer-events-none data-highlighted:bg-accent data-popup-open:bg-accent data-inset:ps-8 data-highlighted:text-accent-foreground data-popup-open:text-accent-foreground data-disabled:opacity-64 sm:min-h-7 sm:text-sm [&_svg:not([class*='size-'])]:size-4.5 sm:[&_svg:not([class*='size-'])]:size-4 [&_svg:not([class*='text-'])]:text-muted-foreground [&>svg:not(:last-child):not([class*='opacity-'])]:opacity-80 [&_svg]:pointer-events-none [&>svg]:shrink-0",
+        "group/sub [&>svg:not(:last-child)]:-mx-0.5 flex min-h-8 cursor-pointer select-none items-center gap-2 rounded-sm px-2 py-1 text-base text-foreground outline-none transition-[background-color,color,scale] duration-120 ease-out active:not-data-disabled:scale-[0.99] motion-reduce:transition-none motion-reduce:active:scale-100 data-disabled:cursor-not-allowed data-disabled:pointer-events-none data-highlighted:bg-accent data-popup-open:bg-accent data-inset:ps-8 data-highlighted:text-accent-foreground data-popup-open:text-accent-foreground data-disabled:opacity-64 sm:min-h-7 sm:text-sm [&_svg:not([class*='size-'])]:size-4.5 sm:[&_svg:not([class*='size-'])]:size-4 [&_svg:not([class*='text-'])]:text-muted-foreground [&>svg:not(:last-child):not([class*='opacity-'])]:opacity-80 [&_svg]:pointer-events-none [&>svg]:shrink-0",
         density === "touch" && "min-h-10 sm:min-h-10",
         className,
       )}
@@ -347,7 +347,7 @@ function MenuSubTrigger({
       {...props}
     >
       {children}
-      <ChevronRightIcon className="-me-0.5 ms-auto opacity-80" />
+      <ChevronRightIcon className="-me-0.5 ms-auto opacity-80 transition-transform duration-150 ease-(--ease-drawer) group-data-highlighted/sub:translate-x-0.5 group-data-popup-open/sub:translate-x-0.5 motion-reduce:transition-none motion-reduce:translate-x-0" />
     </MenuPrimitive.SubmenuTrigger>
   );
 }

@@ -1,11 +1,17 @@
 [data-composer-model-picker-popup] {
   width: min(380px, calc(100vw - 24px), var(--available-width));
-  transition-duration: 140ms;
-  transition-timing-function: ease-out;
+  transition-duration: 180ms;
+  transition-timing-function: var(--ease-spring-snappy);
 }
 
-[data-composer-model-picker-popup]:is([data-starting-style], [data-ending-style]) {
-  scale: 0.94;
+[data-composer-model-picker-popup][data-starting-style] {
+  scale: 0.95;
+}
+
+[data-composer-model-picker-popup][data-ending-style] {
+  scale: 0.97;
+  transition-duration: 120ms;
+  transition-timing-function: var(--ease-exit);
 }
 
 [data-composer-model-picker-popup]
@@ -14,14 +20,35 @@
   padding: 12px 12px 2px;
   & > div {
     padding: 3px 8px;
-    border: 1px solid var(--border);
+    border: 1px solid color-mix(in srgb, var(--contrast-foreground) 10%, transparent);
     border-radius: 12px;
-    background: var(--popover);
+    background: color-mix(in srgb, var(--popover) 68%, transparent);
+    transition:
+      border-color 150ms ease-out,
+      background-color 150ms ease-out,
+      box-shadow 150ms ease-out;
+    @media (any-hover: hover) {
+      &:hover:not(:focus-within) {
+        border-color: color-mix(in srgb, var(--contrast-foreground) 18%, transparent);
+      }
+    }
     &:focus-within {
       border-color: var(--ring);
+      background: color-mix(in srgb, var(--popover) 88%, transparent);
+      box-shadow: 0 0 0 2px color-mix(in srgb, var(--ring) 16%, transparent);
+    }
+    @media (prefers-reduced-transparency: reduce) {
+      background: var(--popover);
+      &:focus-within {
+        background: var(--popover);
+      }
     }
     & > svg {
       inset: 8px auto auto 9px;
+      color: var(--muted-foreground);
+      transition: color 150ms ease-out;
+    }
+    &:focus-within > svg {
       color: var(--primary);
     }
   }
@@ -59,15 +86,17 @@
 }
 
 [data-cosmic-story] {
-  animation: cosmic-story-fade 200ms ease-out;
+  animation: cosmic-story-fade 200ms var(--ease-spring-gentle);
 }
 
 @keyframes cosmic-story-fade {
   from {
     opacity: 0.35;
+    transform: translateY(2px);
   }
   to {
     opacity: 1;
+    transform: translateY(0);
   }
 }
 

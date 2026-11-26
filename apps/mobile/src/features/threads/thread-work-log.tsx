@@ -108,19 +108,26 @@ import Animated, {
   useAnimatedScrollHandler,
   useAnimatedStyle,
   useSharedValue,
-  withTiming,
 } from "react-native-reanimated";
 import { useAssetUrl } from "../../state/assets";
 import { PullRequestGlyph } from "../pull-requests/pullRequestGlyphs";
 import { useOpenLinkedThread } from "./useOpenLinkedThread";
 import { startShimmerSteps } from "./work-shimmer-steps";
 
+import {
+  THREAD_DISCLOSURE_TRANSITION_MS,
+  ThreadDisclosureChevron,
+} from "../../components/ui/ThreadDisclosureChevron";
+export { THREAD_DISCLOSURE_TRANSITION_MS, ThreadDisclosureChevron };
+
 const SHIMMER_WIDTH = 72;
 const SHIMMER_ICON_AND_GAP_WIDTH = 30;
-export const THREAD_DISCLOSURE_TRANSITION_MS = 180;
-const WORK_LOG_LAYOUT_TRANSITION = LinearTransition.duration(THREAD_DISCLOSURE_TRANSITION_MS);
-const WORK_LOG_DETAIL_ENTER_TRANSITION = FadeIn.duration(140);
-const WORK_LOG_DETAIL_EXIT_TRANSITION = FadeOut.duration(120);
+const WORK_LOG_LAYOUT_TRANSITION = LinearTransition.duration(
+  THREAD_DISCLOSURE_TRANSITION_MS,
+).reduceMotion(ReduceMotion.System);
+const WORK_LOG_DETAIL_ENTER_TRANSITION = FadeIn.duration(140).reduceMotion(ReduceMotion.System);
+const WORK_LOG_DETAIL_EXIT_TRANSITION = FadeOut.duration(120).reduceMotion(ReduceMotion.System);
+const WORK_LOG_FRESH_ROW_ENTERING = FadeIn.duration(200).reduceMotion(ReduceMotion.System);
 type WorkContentIcon =
   | AppSymbolName
   | "browser"
@@ -165,47 +172,6 @@ function WorkLogIcon(props: {
       {...(colorClassName ? { tintColorClassName: colorClassName } : { tintColor: props.color })}
       type="monochrome"
     />
-  );
-}
-
-export function ThreadDisclosureChevron(props: {
-  readonly expanded: boolean;
-  readonly collapsedDirection: "right" | "down";
-  readonly size: number;
-  readonly tintColor: ColorValue;
-}) {
-  const expandedAngle = props.collapsedDirection === "right" ? 90 : 180;
-  const rotation = useSharedValue(props.expanded ? expandedAngle : 0);
-
-  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- drives the chevron's Reanimated rotation value when the expanded state changes
-  useLayoutEffect(() => {
-    rotation.set(
-      withTiming(props.expanded ? expandedAngle : 0, {
-        duration: THREAD_DISCLOSURE_TRANSITION_MS,
-        reduceMotion: ReduceMotion.System,
-      }),
-    );
-  }, [expandedAngle, props.expanded, rotation]);
-
-  const rotationStyle = useAnimatedStyle(() => ({
-    transform: [{ rotate: `${rotation.value}deg` }],
-  }));
-
-  return (
-    <Animated.View
-      accessible={false}
-      accessibilityElementsHidden
-      importantForAccessibility="no-hide-descendants"
-      pointerEvents="none"
-      style={[{ width: props.size, height: props.size }, rotationStyle]}
-    >
-      <SymbolView
-        name={props.collapsedDirection === "right" ? "chevron.right" : "chevron.down"}
-        size={props.size}
-        tintColor={props.tintColor}
-        type="monochrome"
-      />
-    </Animated.View>
   );
 }
 
@@ -1095,7 +1061,7 @@ const ThreadWorkLogRow = function ThreadWorkLogRow(
     <Animated.View
       layout={WORK_LOG_LAYOUT_TRANSITION}
       className="overflow-hidden"
-      {...(isFreshRow(row.createdAt) ? { entering: FadeIn.duration(200) } : {})}
+      {...(isFreshRow(row.createdAt) ? { entering: WORK_LOG_FRESH_ROW_ENTERING } : {})}
     >
       <WorkLogPressable
         accessibilityRole={

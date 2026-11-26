@@ -524,9 +524,11 @@ function WorkEntryLogRow(props: WorkEntryRowProps) {
     ? "font-medium text-warning"
     : showDestructiveRowStyle
       ? "font-medium text-destructive"
-      : workLogEntryIsToolLike(workEntry)
-        ? "text-secondary-label"
-        : "text-foreground/80";
+      : cn(
+          workLogEntryIsToolLike(workEntry) ? "text-secondary-label" : "text-foreground/80",
+          canExpandProjectedItem &&
+            "transition-colors duration-150 ease-out group-hover/work-line:text-foreground motion-reduce:transition-none",
+        );
   const threadLabel = isReasoning ? null : threadReadLabel(previewText, workEntry, threadTarget, m);
   const accessiblePreview = [threadLabel?.text ?? previewText, answerPreview]
     .filter(Boolean)
@@ -673,8 +675,8 @@ function WorkEntryLogRow(props: WorkEntryRowProps) {
             <span className="flex size-4 shrink-0 items-center justify-center" aria-hidden>
               <ChevronRightIcon
                 className={cn(
-                  "size-3 shrink-0 text-icon-muted opacity-70 transition-transform duration-200",
-                  expanded && "rotate-90",
+                  "size-3 shrink-0 text-icon-muted opacity-70 transition-[transform,opacity,color] duration-200 ease-(--ease-spring-snappy) group-hover/work-line:text-foreground group-hover/work-line:opacity-100 motion-reduce:transition-none rtl:-scale-x-100",
+                  expanded && "rotate-90 rtl:-rotate-90",
                 )}
               />
             </span>

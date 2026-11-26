@@ -1,8 +1,14 @@
-import type { RefObject } from "react";
+import * as Haptics from "expo-haptics";
+import { useState, type RefObject } from "react";
 import { Pressable, TextInput, type TextInputInstance, View } from "react-native";
+import Animated, { FadeIn, FadeOut, ReduceMotion } from "react-native-reanimated";
 
+import { cn } from "../../lib/cn";
 import { SymbolView } from "./AppSymbol";
 import { useAndroidControlSizing } from "./useAndroidControlSizing";
+
+const CLEAR_BUTTON_ENTERING = FadeIn.duration(120).reduceMotion(ReduceMotion.System);
+const CLEAR_BUTTON_EXITING = FadeOut.duration(100).reduceMotion(ReduceMotion.System);
 
 export interface SearchFieldProps {
   readonly autoFocus?: boolean;
@@ -24,9 +30,14 @@ export function SearchField({
   onChangeText,
 }: SearchFieldProps) {
   const { scale, mediumIconSize } = useAndroidControlSizing();
+  const [focused, setFocused] = useState(false);
+
   return (
     <View
-      className="min-w-0 flex-1 flex-row items-center rounded-full border border-input-border bg-input"
+      className={cn(
+        "min-w-0 flex-1 flex-row items-center rounded-full border bg-input",
+        focused ? "border-focus" : "border-input-border",
+      )}
       style={{
         minHeight: Math.max(48, 42 * scale),
         gap: 7 * scale,
@@ -54,23 +65,29 @@ export function SearchField({
         style={{ minHeight: Math.max(48, 42 * scale), paddingVertical: 7 * scale }}
         value={value}
         onChangeText={onChangeText}
+        onFocus={() => setFocused(true)}
+        onBlur={() => setFocused(false)}
       />
       {value.length > 0 ? (
-        <Pressable
-          accessibilityLabel={clearAccessibilityLabel}
-          accessibilityRole="button"
-          hitSlop={10}
-          onPress={() => {
-            onChangeText("");
-            inputRef.current?.focus();
-          }}
-        >
-          <SymbolView
-            name="xmark.circle.fill"
-            size={mediumIconSize}
-            tintColorClassName="accent-foreground-muted"
-          />
-        </Pressable>
+        <Animated.View entering={CLEAR_BUTTON_ENTERING} exiting={CLEAR_BUTTON_EXITING}>
+          <Pressable
+            accessibilityLabel={clearAccessibilityLabel}
+            accessibilityRole="button"
+            hitSlop={10}
+            className="active:opacity-60"
+            onPress={() => {
+              void Haptics.selectionAsync().catch(() => undefined);
+              onChangeText("");
+              inputRef.current?.focus();
+            }}
+          >
+            <SymbolView
+              name="xmark.circle.fill"
+              size={mediumIconSize}
+              tintColorClassName="accent-foreground-muted"
+            />
+          </Pressable>
+        </Animated.View>
       ) : null}
     </View>
   );

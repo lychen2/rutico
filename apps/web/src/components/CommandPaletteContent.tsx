@@ -108,13 +108,13 @@ export function CommandPaletteContent({
             </KbdGroup>
             {footerActionLabel !== undefined ? (
               <KbdGroup>
-                <Kbd>Enter</Kbd>
+                <Kbd>↵</Kbd>
                 <span>{footerActionLabel}</span>
               </KbdGroup>
             ) : null}
             {showBackHint ? (
               <KbdGroup>
-                <Kbd>Backspace</Kbd>
+                <Kbd>⌫</Kbd>
                 <span>
                   <T>Back</T>
                 </span>

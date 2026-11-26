@@ -11,10 +11,13 @@ import type {
   ServerProviderSlashCommand,
 } from "@t3tools/contracts";
 import type { ComposerTriggerKind } from "@t3tools/shared/composerTrigger";
+import * as Haptics from "expo-haptics";
 import { msg, useMessages } from "gt-react-native";
 import { memo } from "react";
 import { Pressable, ScrollView, StyleSheet, View, type ViewStyle } from "react-native";
+import Animated, { FadeInDown, FadeOutDown, ReduceMotion } from "react-native-reanimated";
 
+import { AppActivityIndicator } from "../../components/ui/AppActivityIndicator";
 import { SymbolView, type AppSymbolName } from "../../components/ui/AppSymbol";
 import { AppText as Text } from "../../components/ui/AppText";
 import { ENVIRONMENT_MACHINE_SYMBOLS } from "../../components/EnvironmentMachineSymbol";
@@ -93,21 +96,25 @@ interface ComposerCommandPopoverProps {
   readonly onSelect: (item: ComposerCommandItem) => void;
 }
 
+const POPOVER_ENTERING = FadeInDown.duration(150).reduceMotion(ReduceMotion.System);
+const POPOVER_EXITING = FadeOutDown.duration(120).reduceMotion(ReduceMotion.System);
+
 function PopoverSurface(props: { readonly children: React.ReactNode; readonly style?: ViewStyle }) {
   const baseStyle: ViewStyle = {
     borderRadius: 16,
-    overflow: "hidden",
     ...props.style,
   };
 
   return (
-    <GlassSurface
-      glassEffectStyle="clear"
-      tintColorClassName="accent-glass-surface"
-      style={baseStyle}
-    >
-      {props.children}
-    </GlassSurface>
+    <Animated.View entering={POPOVER_ENTERING} exiting={POPOVER_EXITING}>
+      <GlassSurface
+        glassEffectStyle="clear"
+        tintColorClassName="accent-glass-surface"
+        style={baseStyle}
+      >
+        {props.children}
+      </GlassSurface>
+    </Animated.View>
   );
 }
 
@@ -193,8 +200,11 @@ const CommandRow = memo(function CommandRow(props: {
   return (
     <Pressable
       accessibilityRole="button"
-      onPress={props.onPress}
-      className="flex-row items-center gap-2.5 border-border px-3.5 py-2.5 active:opacity-60"
+      onPress={() => {
+        void Haptics.selectionAsync().catch(() => undefined);
+        props.onPress();
+      }}
+      className="min-h-[44px] flex-row items-center gap-2.5 border-border px-3.5 py-2.5 active:opacity-60 android:min-h-[48px]"
       style={{ borderBottomWidth: props.isLast ? 0 : StyleSheet.hairlineWidth }}
     >
       {props.item.type === "path" ? (
@@ -273,10 +283,23 @@ export const ComposerCommandPopover = memo(function ComposerCommandPopover(
             />
           ))}
         </ScrollView>
+      ) : props.error ? (
+        <View className="px-3.5 py-2.5">
+          <Text accessibilityRole="alert" className="text-xs text-danger-foreground">
+            {props.error}
+          </Text>
+        </View>
+      ) : props.isLoading ? (
+        <View className="flex-row items-center gap-2 px-3.5 py-2.5">
+          <AppActivityIndicator size="small" colorClassName="accent-foreground-muted" />
+          <Text className="text-xs text-foreground-tertiary">
+            {emptyText(props.triggerKind, true, m)}
+          </Text>
+        </View>
       ) : (
         <View className="px-3.5 py-2.5">
           <Text className="text-xs text-foreground-tertiary">
-            {props.error ?? emptyText(props.triggerKind, props.isLoading, m)}
+            {emptyText(props.triggerKind, false, m)}
           </Text>
         </View>
       )}

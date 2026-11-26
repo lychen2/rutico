@@ -2,6 +2,7 @@ import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
+import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Ref from "effect/Ref";
@@ -89,7 +90,11 @@ function syncMacosWindowButtons(window: Electron.BrowserWindow): void {
 
 const TITLEBAR_COLOR = "#01000000"; // #00000000 does not work correctly on Linux
 const TITLEBAR_LIGHT_SYMBOL_COLOR = "#1f2937";
+const TITLEBAR_LIGHT_INACTIVE_SYMBOL_COLOR = "#9ca3af";
 const TITLEBAR_DARK_SYMBOL_COLOR = "#f8fafc";
+const TITLEBAR_DARK_INACTIVE_SYMBOL_COLOR = "#94a3b8";
+const SPLASH_FADE_STEP_MS = 30;
+const SPLASH_FADE_OPACITIES = [0.75, 0.5, 0.25, 0] as const;
 const MAIN_WINDOW_BOUNDS_PERSIST_DEBOUNCE_MS = 500;
 const DEVELOPMENT_LOAD_RETRY_DELAYS_MS = [100, 250, 500, 1_000, 2_000] as const;
 const RENDERER_RECOVERY_RELOAD_DELAY_MS = 500;
@@ -101,6 +106,13 @@ type WindowTitleBarOptions = Pick<
   Electron.BrowserWindowConstructorOptions,
   "titleBarOverlay" | "titleBarStyle" | "trafficLightPosition"
 >;
+
+type WindowVibrancyOptions = Pick<
+  Electron.BrowserWindowConstructorOptions,
+  "visualEffectState" | "backgroundMaterial"
+> & {
+  readonly vibrancy?: NonNullable<Parameters<Electron.BrowserWindow["setVibrancy"]>[0]>;
+};
 
 type DesktopWindowRuntimeServices =
   | DesktopEnvironment.DesktopEnvironment
@@ -165,8 +177,57 @@ function getIconOption(
   });
 }
 
-function getInitialWindowBackgroundColor(shouldUseDarkColors: boolean): string {
-  return shouldUseDarkColors ? "#000000" : "#ffffff";
+// Canvas surface hexes matching packages/shared/src/themePalettes.ts so cold-start
+// windows match the Rutico palette instead of flashing stark #000000/#ffffff.
+export const DEFAULT_WINDOW_BACKGROUND_COLORS = {
+  dark: "#1a1727",
+  light: "#faf8fd",
+} as const;
+
+const THEME_WINDOW_BACKGROUND_COLORS: Readonly<
+  Record<string, { readonly dark: string; readonly light: string }>
+> = {
+  rutico: DEFAULT_WINDOW_BACKGROUND_COLORS,
+  "t3-chat": { dark: "#1f1a24", light: "#fdf7fd" },
+  "t3-chat-dark": { dark: "#1f1a24", light: "#1f1a24" },
+  grove: { dark: "#1b2821", light: "#f3f7f4" },
+  "t3-grove": { dark: "#1b2821", light: "#f3f7f4" },
+  ocean: { dark: "#17212b", light: "#f5f7f8" },
+  "t3-ocean": { dark: "#17212b", light: "#f5f7f8" },
+  ember: { dark: "#291e1a", light: "#f9f7f5" },
+  "t3-ember": { dark: "#291e1a", light: "#f9f7f5" },
+  iris: { dark: "#1d1929", light: "#f8f7f9" },
+  "t3-iris": { dark: "#1d1929", light: "#f8f7f9" },
+  dark: { dark: "#0a0a0a", light: "#0a0a0a" },
+  light: { dark: "#fcfcfc", light: "#fcfcfc" },
+};
+
+const HEX_BACKGROUND_COLOR_PATTERN = /^#[0-9a-f]{6}$/i;
+
+const PersistedThemeSettingsSchema = Schema.Struct({
+  defaultTheme: Schema.optionalKey(Schema.String),
+});
+const decodePersistedThemeSettings = Schema.decodeUnknownOption(
+  Schema.fromJsonString(PersistedThemeSettingsSchema),
+);
+
+export function getInitialWindowBackgroundColor(
+  shouldUseDarkColors: boolean,
+  persistedTheme?: string | null,
+): string {
+  const trimmed = persistedTheme?.trim();
+  if (trimmed) {
+    if (HEX_BACKGROUND_COLOR_PATTERN.test(trimmed)) {
+      return trimmed.toLowerCase();
+    }
+    const palette = THEME_WINDOW_BACKGROUND_COLORS[trimmed.toLowerCase()];
+    if (palette !== undefined) {
+      return shouldUseDarkColors ? palette.dark : palette.light;
+    }
+  }
+  return shouldUseDarkColors
+    ? DEFAULT_WINDOW_BACKGROUND_COLORS.dark
+    : DEFAULT_WINDOW_BACKGROUND_COLORS.light;
 }
 
 type DisplayBounds = Pick<Electron.Rectangle, "x" | "y" | "width" | "height">;
@@ -264,12 +325,20 @@ export function resolveInitialMainWindowBounds(
   return DesktopAppSettings.DEFAULT_MAIN_WINDOW_SIZE;
 }
 
-function buildConnectingSplashDataUrl(shouldUseDarkColors: boolean): string {
-  const background = getInitialWindowBackgroundColor(shouldUseDarkColors);
-  const label = shouldUseDarkColors ? "#9ca3af" : "#6b7280";
-  const accent = shouldUseDarkColors ? "#f8fafc" : "#1f2937";
-  const track = shouldUseDarkColors ? "rgba(248,250,252,0.18)" : "rgba(31,41,55,0.18)";
-  const html = `<!doctype html><html><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'"><style>html,body{margin:0;height:100%}body{background:${background};color:${label};font-family:system-ui,-apple-system,'Segoe UI',sans-serif;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:18px;-webkit-user-select:none;user-select:none;-webkit-app-region:drag}.spinner{width:26px;height:26px;border:3px solid ${track};border-top-color:${accent};border-radius:50%;animation:spin .8s linear infinite}.label{font-size:13px}@keyframes spin{to{transform:rotate(360deg)}}</style></head><body><div class="spinner"></div><div class="label">Connecting to WSL…</div></body></html>`;
+const RUTICO_SPLASH_EMBLEM_SVG =
+  '<svg class="emblem" viewBox="32 20 76 86" width="28" height="32" aria-hidden="true" xmlns="http://www.w3.org/2000/svg"><path d="M35 34C35 29.5817 38.5817 26 43 26H66.5C80.5833 26 90 34.4 90 46.5C90 57.6 82.05 65.4 69.8 66.8H51V54.2H65.2C71.7 54.2 75.6 51.3 75.6 46.5C75.6 41.7 71.7 38.8 65.2 38.8H50.2V94C50.2 98.4183 46.6183 102 42.2 102H40.5C37.4624 102 35 99.5376 35 96.5V34Z" fill="currentColor"/><path d="M56.5 70.5H72.2C74.9 70.5 77.4 71.9 78.8 74.2L94.4 99.2C95.3 100.6 94.1 102.4 92.5 102L84.8 99.8L79.6 102.5C78.4 103.1 76.9 102.6 76.2 101.5L56.5 70.5Z" fill="currentColor" fill-opacity="0.78"/><path d="M97 23L99.5 29.5L106 32L99.5 34.5L97 41L94.5 34.5L88 32L94.5 29.5L97 23Z" fill="currentColor" fill-opacity="0.9"/></svg>';
+
+export function buildConnectingSplashDataUrl(
+  shouldUseDarkColors: boolean,
+  persistedTheme?: string | null,
+): string {
+  const background = getInitialWindowBackgroundColor(shouldUseDarkColors, persistedTheme);
+  const foreground = shouldUseDarkColors ? "#f6f4fc" : "#1c1729";
+  const label = shouldUseDarkColors ? "#b0adbe" : "#5d576b";
+  const accent = shouldUseDarkColors ? "#b4a3fd" : "#684dc6";
+  const track = shouldUseDarkColors ? "rgba(180,163,253,0.22)" : "rgba(104,77,198,0.18)";
+  const hairline = shouldUseDarkColors ? "rgba(255,255,255,0.08)" : "rgba(28,23,41,0.08)";
+  const html = `<!doctype html><html><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'"><style>html,body{margin:0;height:100%}body{box-sizing:border-box;background:${background};color:${foreground};border:1px solid ${hairline};border-radius:12px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif;-webkit-font-smoothing:antialiased;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;-webkit-user-select:none;user-select:none;-webkit-app-region:drag}.emblem{display:block;color:${foreground}}.status{display:flex;align-items:center;gap:9px;color:${label};font-size:12.5px;line-height:1.2;letter-spacing:-0.005em}.spinner{width:14px;height:14px;box-sizing:border-box;border:2px solid ${track};border-top-color:${accent};border-radius:50%;animation:spin .8s linear infinite}@keyframes spin{to{transform:rotate(360deg)}}@media (prefers-reduced-motion: reduce){.spinner{animation:none;border-color:${accent};opacity:0.55}}</style></head><body>${RUTICO_SPLASH_EMBLEM_SVG}<div class="status"><div class="spinner" aria-hidden="true"></div><span>Connecting to WSL…</span></div></body></html>`;
   return `data:text/html;charset=utf-8,${encodeURIComponent(html)}`;
 }
 
@@ -321,9 +390,48 @@ function concealPendingQuitWindow(
   window.setOpacity(0);
 }
 
+// Low-specificity (:where) fallback aligned with apps/web/src/index.css so inactive
+// chrome dims out of the box without double-dimming when web styles are present.
+export const DESKTOP_INACTIVE_WINDOW_CSS = [
+  ':where(html[data-desktop-window-focused]) :where(.drag-region:not([data-app-sidebar] *) > *, [data-app-sidebar] :is([data-slot="sidebar-header"], [data-slot="sidebar-content"], [data-slot="sidebar-footer"])) {',
+  "  transition: opacity 180ms cubic-bezier(0, 0, 0.58, 1);",
+  "}",
+  ':where(html[data-desktop-window-focused="false"]) :where(.drag-region:not([data-app-sidebar] *) > *) {',
+  "  opacity: 0.72;",
+  "}",
+  ':where(html[data-desktop-window-focused="false"]) :where([data-app-sidebar] :is([data-slot="sidebar-header"], [data-slot="sidebar-content"], [data-slot="sidebar-footer"])) {',
+  "  opacity: 0.85;",
+  "}",
+  "@media (prefers-reduced-motion: reduce) {",
+  '  :where(html[data-desktop-window-focused]) :where(.drag-region:not([data-app-sidebar] *) > *, [data-app-sidebar] :is([data-slot="sidebar-header"], [data-slot="sidebar-content"], [data-slot="sidebar-footer"])) {',
+  "    transition: none;",
+  "  }",
+  "}",
+].join("\n");
+
+export function buildWindowFocusStateScript(focused: boolean): string {
+  const value = focused ? "true" : "false";
+  return `(() => {
+    const root = document.documentElement;
+    if (!root) return;
+    if (root.getAttribute("data-desktop-window-focused") === "${value}") return;
+    root.setAttribute("data-desktop-window-focused", "${value}");
+    window.dispatchEvent(new CustomEvent("rutico:desktop-window-focus-change", { detail: { focused: ${value} } }));
+  })();`;
+}
+
+function syncWindowFocusState(window: Electron.BrowserWindow, focused: boolean): void {
+  if (window.isDestroyed() || window.webContents.isDestroyed()) return;
+  if (typeof window.webContents.executeJavaScript !== "function") return;
+  void window.webContents
+    .executeJavaScript(buildWindowFocusStateScript(focused))
+    .catch(() => undefined);
+}
+
 function getWindowTitleBarOptions(
   shouldUseDarkColors: boolean,
   platform: NodeJS.Platform,
+  isFocused = true,
 ): WindowTitleBarOptions {
   if (platform === "darwin") {
     return {
@@ -340,9 +448,45 @@ function getWindowTitleBarOptions(
     titleBarOverlay: {
       color: TITLEBAR_COLOR,
       height: TITLEBAR_HEIGHT,
-      symbolColor: shouldUseDarkColors ? TITLEBAR_DARK_SYMBOL_COLOR : TITLEBAR_LIGHT_SYMBOL_COLOR,
+      symbolColor: shouldUseDarkColors
+        ? isFocused
+          ? TITLEBAR_DARK_SYMBOL_COLOR
+          : TITLEBAR_DARK_INACTIVE_SYMBOL_COLOR
+        : isFocused
+          ? TITLEBAR_LIGHT_SYMBOL_COLOR
+          : TITLEBAR_LIGHT_INACTIVE_SYMBOL_COLOR,
     },
   };
+}
+
+export function resolveWindowVibrancyOptions(input: {
+  readonly platform: NodeJS.Platform;
+  readonly glassOpacity: number;
+  readonly prefersReducedTransparency: boolean;
+}): WindowVibrancyOptions {
+  if (input.glassOpacity >= 100 || input.prefersReducedTransparency) {
+    return {};
+  }
+  if (input.platform === "darwin") {
+    return {
+      vibrancy: "under-window",
+      visualEffectState: "followWindow",
+    };
+  }
+  if (input.platform === "win32") {
+    return {
+      backgroundMaterial: "mica",
+    };
+  }
+  return {};
+}
+
+function readPrefersReducedTransparency(): boolean {
+  try {
+    return Electron.nativeTheme?.prefersReducedTransparency === true;
+  } catch {
+    return false;
+  }
 }
 
 function syncWindowAppearance(
@@ -350,16 +494,28 @@ function syncWindowAppearance(
   hasTitleBarOverlay: boolean,
   shouldUseDarkColors: boolean,
   platform: NodeJS.Platform,
+  persistedTheme?: string | null,
+  vibrancyOptions?: WindowVibrancyOptions,
 ): Effect.Effect<void> {
   return Effect.sync(() => {
     if (window.isDestroyed()) {
       return;
     }
 
-    window.setBackgroundColor(getInitialWindowBackgroundColor(shouldUseDarkColors));
-    const { titleBarOverlay } = getWindowTitleBarOptions(shouldUseDarkColors, platform);
+    window.setBackgroundColor(getInitialWindowBackgroundColor(shouldUseDarkColors, persistedTheme));
+    const isFocused = typeof window.isFocused === "function" ? window.isFocused() : true;
+    const { titleBarOverlay } = getWindowTitleBarOptions(shouldUseDarkColors, platform, isFocused);
     if (hasTitleBarOverlay && typeof titleBarOverlay === "object") {
       window.setTitleBarOverlay(titleBarOverlay);
+    }
+    if (platform === "darwin" && typeof window.setVibrancy === "function") {
+      try {
+        window.setVibrancy(vibrancyOptions?.vibrancy ?? null);
+      } catch {}
+    } else if (platform === "win32" && typeof window.setBackgroundMaterial === "function") {
+      try {
+        window.setBackgroundMaterial(vibrancyOptions?.backgroundMaterial ?? "none");
+      } catch {}
     }
   });
 }
@@ -397,10 +553,35 @@ export const make = Effect.gen(function* () {
   const clientSettings = yield* DesktopClientSettings.DesktopClientSettings;
   const electronApp = yield* ElectronApp.ElectronApp;
   const rendererHistory = yield* DesktopRendererHistory.DesktopRendererHistory;
+  const fileSystem = yield* Effect.serviceOption(FileSystem.FileSystem);
   const backendReadyRef = yield* Ref.make(false);
   let backendHasStarted = false;
   let mainClosedDuringStartup = false;
+  let activeThemePreference: string | null = null;
   const splashWindowRef = yield* Ref.make<Option.Option<Electron.BrowserWindow>>(Option.none());
+
+  const readPersistedTheme = Effect.gen(function* () {
+    if (Option.isNone(fileSystem)) return activeThemePreference;
+    const raw = yield* fileSystem.value
+      .readFileString(environment.serverSettingsPath)
+      .pipe(Effect.option);
+    if (Option.isNone(raw)) return activeThemePreference;
+    const parsed = decodePersistedThemeSettings(raw.value);
+    if (Option.isSome(parsed) && parsed.value.defaultTheme !== undefined) {
+      activeThemePreference = parsed.value.defaultTheme;
+    }
+    return activeThemePreference;
+  });
+
+  const readGlassOpacity = clientSettings.get.pipe(
+    Effect.map(
+      Option.match({
+        onNone: () => DEFAULT_CLIENT_SETTINGS.glassOpacity,
+        onSome: (settings) => settings.glassOpacity,
+      }),
+    ),
+    Effect.orElseSucceed(() => DEFAULT_CLIENT_SETTINGS.glassOpacity),
+  );
   const context = yield* Effect.context<DesktopWindowRuntimeServices>();
   const runFork = Effect.runForkWith(context);
   const runPromise = Effect.runPromiseWith(context);
@@ -414,9 +595,39 @@ export const make = Effect.gen(function* () {
 
   const dismissConnectingSplash = Effect.gen(function* () {
     const splash = yield* Ref.getAndSet(splashWindowRef, Option.none());
-    if (Option.isSome(splash) && !splash.value.isDestroyed()) {
-      splash.value.close();
+    if (Option.isNone(splash) || splash.value.isDestroyed()) {
+      return;
     }
+    const target = splash.value;
+    // Linux lacks Electron window opacity; close immediately there.
+    if (environment.platform === "linux") {
+      target.close();
+      return;
+    }
+    runFork(
+      Effect.forEach(
+        SPLASH_FADE_OPACITIES,
+        (opacity) =>
+          Effect.sleep(SPLASH_FADE_STEP_MS).pipe(
+            Effect.andThen(
+              Effect.sync(() => {
+                if (!target.isDestroyed()) {
+                  target.setOpacity(opacity);
+                }
+              }),
+            ),
+          ),
+        { discard: true },
+      ).pipe(
+        Effect.ensuring(
+          Effect.sync(() => {
+            if (!target.isDestroyed()) {
+              target.close();
+            }
+          }),
+        ),
+      ),
+    );
   });
 
   // Electron's first-window fallback can select the unregistered connecting splash; exclude it so main creation retries.
@@ -454,6 +665,13 @@ export const make = Effect.gen(function* () {
     const iconPaths = yield* assets.iconPaths;
     const iconOption = getIconOption(iconPaths, environment.platform);
     const shouldUseDarkColors = yield* electronTheme.shouldUseDarkColors;
+    const persistedTheme = yield* readPersistedTheme;
+    const glassOpacity = yield* readGlassOpacity;
+    const vibrancyOptions = resolveWindowVibrancyOptions({
+      platform: environment.platform,
+      glassOpacity,
+      prefersReducedTransparency: readPrefersReducedTransparency(),
+    });
     const persistedSettings = yield* desktopSettings.get;
     const persistedBounds = persistedSettings.mainWindowBounds;
     const displayBoundsResult = yield* Effect.sync(() => {
@@ -485,7 +703,8 @@ export const make = Effect.gen(function* () {
       show: false,
       autoHideMenuBar: true,
       ...(environment.platform === "darwin" ? { disableAutoHideCursor: true } : {}),
-      backgroundColor: getInitialWindowBackgroundColor(shouldUseDarkColors),
+      backgroundColor: getInitialWindowBackgroundColor(shouldUseDarkColors, persistedTheme),
+      ...vibrancyOptions,
       ...iconOption,
       title: environment.displayName,
       ...getWindowTitleBarOptions(shouldUseDarkColors, environment.platform),
@@ -863,6 +1082,31 @@ export const make = Effect.gen(function* () {
       event.preventDefault();
       window.setTitle(environment.displayName);
     });
+    const handleWindowFocusChange = (focused: boolean) => {
+      syncWindowFocusState(window, focused);
+      if (environment.platform === "darwin" || window.isDestroyed()) return;
+      runFork(
+        electronTheme.shouldUseDarkColors.pipe(
+          Effect.tap((dark) =>
+            Effect.sync(() => {
+              if (window.isDestroyed()) return;
+              const { titleBarOverlay } = getWindowTitleBarOptions(
+                dark,
+                environment.platform,
+                focused,
+              );
+              if (typeof titleBarOverlay === "object") {
+                try {
+                  window.setTitleBarOverlay(titleBarOverlay);
+                } catch {}
+              }
+            }),
+          ),
+        ),
+      );
+    };
+    window.on("focus", () => handleWindowFocusChange(true));
+    window.on("blur", () => handleWindowFocusChange(false));
     window.on("resize", scheduleBoundsPersist);
     window.on("move", scheduleBoundsPersist);
     window.on("maximize", scheduleBoundsPersist);
@@ -943,6 +1187,13 @@ export const make = Effect.gen(function* () {
       clearDevelopmentLoadRetry();
       developmentLoadRetryIndex = 0;
       if (environment.platform === "darwin") syncMacosWindowButtons(window);
+      if (typeof window.webContents.insertCSS === "function") {
+        void window.webContents.insertCSS(DESKTOP_INACTIVE_WINDOW_CSS).catch(() => undefined);
+      }
+      syncWindowFocusState(
+        window,
+        typeof window.isFocused === "function" ? window.isFocused() : true,
+      );
     });
     window.webContents.on(
       "did-fail-load",
@@ -1127,6 +1378,7 @@ export const make = Effect.gen(function* () {
     if (Option.isSome(existingWindow)) return;
 
     const shouldUseDarkColors = yield* electronTheme.shouldUseDarkColors;
+    const persistedTheme = yield* readPersistedTheme;
     if (yield* Ref.get(desktopState.quitting)) return;
     const splash = yield* electronWindow.create({
       width: 360,
@@ -1136,10 +1388,12 @@ export const make = Effect.gen(function* () {
       maximizable: false,
       fullscreenable: false,
       frame: false,
+      roundedCorners: true,
+      hasShadow: true,
       center: true,
       show: false,
       skipTaskbar: false,
-      backgroundColor: getInitialWindowBackgroundColor(shouldUseDarkColors),
+      backgroundColor: getInitialWindowBackgroundColor(shouldUseDarkColors, persistedTheme),
       title: environment.displayName,
       webPreferences: {
         contextIsolation: true,
@@ -1161,7 +1415,7 @@ export const make = Effect.gen(function* () {
         splash.show();
       }
     });
-    void splash.loadURL(buildConnectingSplashDataUrl(shouldUseDarkColors));
+    void splash.loadURL(buildConnectingSplashDataUrl(shouldUseDarkColors, persistedTheme));
     yield* logWindowInfo("connecting splash shown");
   }).pipe(
     Effect.catch((error) =>
@@ -1274,8 +1528,22 @@ export const make = Effect.gen(function* () {
     }),
     syncAppearance: Effect.gen(function* () {
       const shouldUseDarkColors = yield* electronTheme.shouldUseDarkColors;
+      const persistedTheme = yield* readPersistedTheme;
+      const glassOpacity = yield* readGlassOpacity;
+      const vibrancyOptions = resolveWindowVibrancyOptions({
+        platform: environment.platform,
+        glassOpacity,
+        prefersReducedTransparency: readPrefersReducedTransparency(),
+      });
       yield* electronWindow.syncAllAppearance((window, { titleBarOverlay }) =>
-        syncWindowAppearance(window, titleBarOverlay, shouldUseDarkColors, environment.platform),
+        syncWindowAppearance(
+          window,
+          titleBarOverlay,
+          shouldUseDarkColors,
+          environment.platform,
+          persistedTheme,
+          vibrancyOptions,
+        ),
       );
     }).pipe(Effect.withSpan("desktop.window.syncAppearance")),
   });

@@ -291,7 +291,7 @@ export function QueuedRunsControl({
               aria-posinset={position + 1}
               aria-setsize={items.length}
               aria-current={isEditing ? "true" : undefined}
-              className="group/queued flex w-full flex-col items-end gap-1"
+              className="group/queued flex w-full origin-bottom-right flex-col items-end gap-1 transition-[opacity,transform] duration-200 ease-(--ease-spring-gentle) starting:translate-y-1.5 starting:opacity-0 motion-reduce:transition-none motion-reduce:starting:translate-y-0 motion-reduce:starting:opacity-100"
             >
               <QueuedMessage
                 environmentId={props.environmentId}
@@ -518,7 +518,7 @@ function QueuedMessage(props: {
     <>
       {attribution === "t3code" ? (
         <p className="me-1 text-2xs text-muted-foreground/70">
-          <T>Sent by T3 Code</T>
+          <T>Sent by Rutico</T>
         </p>
       ) : null}
       {presentation?.guestName === undefined ? null : (
@@ -527,9 +527,9 @@ function QueuedMessage(props: {
       {/* Dashed and unfilled: a turn that has not been sent yet. */}
       <div
         className={cn(
-          "flex min-w-0 max-w-[80%] flex-col rounded-2xl border border-dashed text-sm",
+          "flex min-w-0 max-w-[80%] flex-col rounded-2xl border border-dashed bg-background/55 backdrop-blur-xs text-sm transition-colors duration-150 motion-reduce:transition-none [@media(prefers-reduced-transparency:reduce)]:bg-background/95 [@media(prefers-reduced-transparency:reduce)]:backdrop-blur-none",
           props.isEditing
-            ? "border-primary/60 text-foreground"
+            ? "border-primary/60 bg-background/70 text-foreground"
             : attribution === "guest"
               ? "border-guest/50 text-muted-foreground"
               : "border-muted-foreground/40 text-muted-foreground",

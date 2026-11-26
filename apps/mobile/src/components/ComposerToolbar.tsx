@@ -1,5 +1,6 @@
+import * as Haptics from "expo-haptics";
 import type { ComponentProps, ReactNode } from "react";
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   Platform,
   Pressable,
@@ -13,7 +14,15 @@ import {
   type ViewStyle,
 } from "react-native";
 
-import Animated, { FadeIn, useReducedMotion } from "react-native-reanimated";
+import Animated, {
+  FadeIn,
+  ReduceMotion,
+  useAnimatedStyle,
+  useReducedMotion,
+  useSharedValue,
+  withSequence,
+  withSpring,
+} from "react-native-reanimated";
 
 import { cn } from "../lib/cn";
 import { AppText as Text } from "./ui/AppText";
@@ -283,6 +292,20 @@ export function ComposerToolbarScroller(props: {
   );
 }
 
+const ACTION_PRESS_SPRING = {
+  damping: 20,
+  stiffness: 420,
+  mass: 0.6,
+  reduceMotion: ReduceMotion.System,
+} as const;
+
+const ACTION_READY_SPRING = {
+  damping: 16,
+  stiffness: 360,
+  mass: 0.55,
+  reduceMotion: ReduceMotion.System,
+} as const;
+
 export function ComposerActionButton(props: {
   readonly size?: "regular" | "large";
   readonly accessibilityLabel: string;
@@ -299,20 +322,55 @@ export function ComposerActionButton(props: {
     (props.size === "large" ? 44 : Platform.OS === "android" ? 36 : 30) * scale,
   );
   const fadeIcon = props.disabled === true && props.variant !== "danger";
+  const isReady = !props.disabled;
+  const buttonScale = useSharedValue(1);
+  const wasReadyRef = useRef(isReady);
+
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- triggers a one-shot spring pop when the primary composer action transitions from disabled to ready
+  useEffect(() => {
+    if (!wasReadyRef.current && isReady) {
+      buttonScale.set(
+        withSequence(withSpring(1.07, ACTION_READY_SPRING), withSpring(1, ACTION_PRESS_SPRING)),
+      );
+    }
+    wasReadyRef.current = isReady;
+  }, [buttonScale, isReady]);
+
+  const animatedCircleStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: buttonScale.get() }],
+  }));
+
+  const handlePress = () => {
+    void Haptics.impactAsync(
+      props.variant === "danger"
+        ? Haptics.ImpactFeedbackStyle.Medium
+        : Haptics.ImpactFeedbackStyle.Light,
+    ).catch(() => undefined);
+    props.onPress();
+  };
+
   return (
     <Pressable
       accessibilityLabel={props.accessibilityLabel}
       accessibilityRole="button"
-      accessibilityState={{ disabled: props.disabled }}
-      className="size-[44px] shrink-0 items-center justify-center active:opacity-70"
+      accessibilityState={{ disabled: Boolean(props.disabled) }}
+      className="size-[44px] shrink-0 items-center justify-center active:opacity-70 android:size-[48px]"
       style={props.size === "large" ? { width: 62 } : undefined}
       disabled={props.disabled}
-      onPress={props.onPress}
+      onPress={handlePress}
+      onPressIn={() => {
+        if (!props.disabled) {
+          buttonScale.set(withSpring(0.9, ACTION_PRESS_SPRING));
+        }
+      }}
+      onPressOut={() => {
+        buttonScale.set(withSpring(1, ACTION_PRESS_SPRING));
+      }}
       onLongPress={props.onLongPress}
       onTouchStart={props.onTouchStart}
     >
-      <View
-        style={{ width: circleSize, height: circleSize }}
+      <Animated.View
+        style={[{ width: circleSize, height: circleSize }, animatedCircleStyle]}
         className={cn(
           "items-center justify-center rounded-full",
           props.variant === "danger"
@@ -342,7 +400,7 @@ export function ComposerActionButton(props: {
             type="monochrome"
           />
         </View>
-      </View>
+      </Animated.View>
     </Pressable>
   );
 }
@@ -378,7 +436,10 @@ export function ComposerToolbarButton(props: {
     <Pressable
       accessibilityLabel={props.accessibilityLabel ?? props.label}
       accessibilityRole="button"
-      accessibilityState={props.active === undefined ? undefined : { selected: props.active }}
+      accessibilityState={{
+        disabled: Boolean(props.disabled),
+        ...(props.active === undefined ? {} : { selected: props.active }),
+      }}
       disabled={props.disabled}
       onPress={props.onPress}
       className={cn(

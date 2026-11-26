@@ -20,6 +20,7 @@ it("keeps the jump button on the right of the composer lane at both widths", asy
   const button = screen.getByRole("button", { name: /Scroll to end.*2 tasks/ });
   for (const width of [360, 1280]) {
     await page.viewport(width, 800);
+    for (const animation of screen.container.getAnimations({ subtree: true })) animation.finish();
     const lane = screen.getByTestId("composer").element().getBoundingClientRect();
     const bounds = button.element().getBoundingClientRect();
     expect(Math.abs(bounds.right - lane.right)).toBeLessThan(1);
@@ -27,4 +28,18 @@ it("keeps the jump button on the right of the composer lane at both widths", asy
   }
   await button.click();
   expect(jump).toHaveBeenCalledOnce();
+  expect(screen.container.querySelector('[data-scroll-to-end-indicator="true"]')).not.toBeNull();
+
+  await screen.rerender(
+    <div className="fixed inset-0">
+      <div className="chat-composer-lane">
+        <div
+          data-testid="composer"
+          className="mx-auto h-10 w-full max-w-(--chat-content-max-width)"
+        />
+      </div>
+      <ScrollToEndButton bottom={16} summary={null} onScrollToEnd={jump} />
+    </div>,
+  );
+  expect(screen.container.querySelector('[data-scroll-to-end-indicator="true"]')).toBeNull();
 });

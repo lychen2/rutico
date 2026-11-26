@@ -1,3 +1,4 @@
+import * as Haptics from "expo-haptics";
 import { useGT } from "gt-react-native";
 import { FilePreviewGallery, useFilePreviewGallery } from "./ui/FilePreviewGallery";
 import { composerImageGallery } from "../lib/composerImageGallery";
@@ -8,6 +9,7 @@ import { useAtomValue } from "@effect/atom-react";
 import { AsyncResult, Atom } from "effect/reactivity";
 import { Paths } from "expo-file-system";
 import { Image, Pressable, ScrollView, View } from "react-native";
+import Animated, { LinearTransition, ReduceMotion, ZoomIn, ZoomOut } from "react-native-reanimated";
 
 import { AppText as Text } from "./ui/AppText";
 import { AppActivityIndicator } from "./ui/AppActivityIndicator";
@@ -89,11 +91,17 @@ export function ComposerAttachmentThumbnail(props: ComposerAttachmentThumbnailPr
           }
           accessibilityHint={upload.status === "failed" ? upload.reason : undefined}
           disabled={upload.status !== "failed"}
-          onPress={() =>
-            props.environmentId &&
-            retryComposerAttachmentUpload(props.environmentId, props.attachment.id)
+          hitSlop={upload.status === "failed" ? 10 : undefined}
+          onPress={() => {
+            if (!props.environmentId) return;
+            void Haptics.selectionAsync().catch(() => undefined);
+            retryComposerAttachmentUpload(props.environmentId, props.attachment.id);
+          }}
+          className={
+            upload.status === "failed"
+              ? "absolute bottom-0.5 left-0.5 flex-row items-center gap-0.5 rounded-full bg-danger-foreground px-1.5 py-0.5 active:opacity-75"
+              : "absolute bottom-0.5 left-0.5 flex-row items-center gap-0.5 rounded-full bg-black/70 px-1 py-0.5"
           }
-          className="absolute bottom-0.5 left-0.5 flex-row items-center gap-0.5 rounded-full bg-black/70 px-1 py-0.5"
         >
           <SymbolView
             name={upload.status === "failed" ? "arrow.clockwise" : "arrow.up"}
@@ -102,7 +110,7 @@ export function ComposerAttachmentThumbnail(props: ComposerAttachmentThumbnailPr
             type="monochrome"
           />
           {!props.compact ? (
-            <Text className="text-2xs text-white">
+            <Text className="text-2xs font-t3-medium text-white">
               {upload.status === "failed" ? gt("Retry") : `${Math.floor(upload.progress * 100)}%`}
             </Text>
           ) : null}
@@ -296,6 +304,10 @@ function ComposerVideoAttachment(props: {
   );
 }
 
+const ATTACHMENT_TILE_ENTERING = ZoomIn.duration(180).reduceMotion(ReduceMotion.System);
+const ATTACHMENT_TILE_EXITING = ZoomOut.duration(140).reduceMotion(ReduceMotion.System);
+const ATTACHMENT_TILE_LAYOUT = LinearTransition.duration(180).reduceMotion(ReduceMotion.System);
+
 export function ComposerAttachmentStrip(props: ComposerAttachmentStripProps) {
   const gt = useGT();
   const gallery = composerImageGallery(props.attachments);
@@ -319,8 +331,11 @@ export function ComposerAttachmentStrip(props: ComposerAttachmentStripProps) {
       >
         <View className="flex-row gap-2.5">
           {props.attachments.map((attachment) => (
-            <View
+            <Animated.View
               key={attachment.id}
+              entering={ATTACHMENT_TILE_ENTERING}
+              exiting={ATTACHMENT_TILE_EXITING}
+              layout={ATTACHMENT_TILE_LAYOUT}
               className="relative"
               style={{
                 paddingTop: removeButtonGutter,
@@ -339,13 +354,18 @@ export function ComposerAttachmentStrip(props: ComposerAttachmentStripProps) {
               <Pressable
                 accessibilityRole="button"
                 accessibilityLabel={gt("Remove {name}", { name: attachment.name })}
-                className="absolute h-[22px] w-[22px] items-center justify-center rounded-[11px] bg-black/55"
+                className="absolute h-[22px] w-[22px] items-center justify-center rounded-[11px] bg-black/55 active:scale-90 active:opacity-80"
                 style={{
                   top: removeButtonPlacement === "gutter" ? 0 : 4,
                   right: removeButtonPlacement === "gutter" ? 0 : 4,
                 }}
-                hitSlop={6}
-                onPress={() => props.onRemove(attachment.id)}
+                hitSlop={12}
+                onPress={() => {
+                  void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(
+                    () => undefined,
+                  );
+                  props.onRemove(attachment.id);
+                }}
               >
                 <SymbolView
                   name="xmark"
@@ -355,11 +375,14 @@ export function ComposerAttachmentStrip(props: ComposerAttachmentStripProps) {
                   weight="bold"
                 />
               </Pressable>
-            </View>
+            </Animated.View>
           ))}
           {Array.from({ length: pendingImageCount }, (_, index) => (
-            <View
+            <Animated.View
               key={`pending-${index}`}
+              entering={ATTACHMENT_TILE_ENTERING}
+              exiting={ATTACHMENT_TILE_EXITING}
+              layout={ATTACHMENT_TILE_LAYOUT}
               accessibilityLabel={gt("Preparing pasted image")}
               className="items-center justify-center bg-subtle"
               style={{
@@ -370,7 +393,7 @@ export function ComposerAttachmentStrip(props: ComposerAttachmentStripProps) {
               }}
             >
               <AppActivityIndicator />
-            </View>
+            </Animated.View>
           ))}
         </View>
       </ScrollView>

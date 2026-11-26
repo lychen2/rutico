@@ -395,8 +395,27 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
   background: color-mix(in srgb, var(--background) var(--glass-opacity), transparent);
   -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturation));
   backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturation));
+  --tw-inset-shadow: inset 0 1px 0 rgb(255 255 255 / 70%);
+  box-shadow:
+    var(--tw-inset-shadow),
+    0 1px 2px rgb(0 0 0 / 5%),
+    0 4px 12px -4px rgb(0 0 0 / 6%);
+
+  @variant dark {
+    --tw-inset-shadow: inset 0 1px 0 rgb(255 255 255 / 8%);
+    box-shadow:
+      var(--tw-inset-shadow),
+      0 1px 2px rgb(0 0 0 / 32%),
+      0 8px 20px -8px rgb(0 0 0 / 50%);
+  }
 
   @supports not ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
+    background: var(--background) !important;
+  }
+
+  @media (prefers-reduced-transparency: reduce) {
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
     background: var(--background) !important;
   }
 }
@@ -411,6 +430,19 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
     color-mix(in srgb, var(--background) var(--glass-opacity), transparent) !important;
   -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturation));
   backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturation));
+  --tw-inset-shadow: inset 0 1px 0 rgb(255 255 255 / 70%);
+  box-shadow:
+    var(--tw-inset-shadow),
+    0 1px 2px rgb(0 0 0 / 6%),
+    0 8px 20px -8px rgb(0 0 0 / 10%);
+
+  @variant dark {
+    --tw-inset-shadow: inset 0 1px 0 rgb(255 255 255 / 8%);
+    box-shadow:
+      var(--tw-inset-shadow),
+      0 1px 2px rgb(0 0 0 / 40%),
+      0 10px 24px -8px rgb(0 0 0 / 65%);
+  }
 
   &[data-variant="error"] {
     --alert-glass-tint: var(--destructive);
@@ -430,6 +462,12 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
 
   @supports not ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
     background: var(--background) !important;
+  }
+
+  @media (prefers-reduced-transparency: reduce) {
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+    background: color-mix(in srgb, var(--alert-glass-tint) 6%, var(--background)) !important;
   }
 }
 
@@ -457,16 +495,30 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
   -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturation));
   backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturation));
   border-color: color-mix(in srgb, var(--contrast-foreground) 10%, transparent);
-  box-shadow: 0 24px 64px -24px rgb(0 0 0 / 65%);
+  --tw-inset-shadow: inset 0 1px 0 rgb(255 255 255 / 70%);
+  box-shadow:
+    var(--tw-inset-shadow),
+    0 2px 6px rgb(0 0 0 / 6%),
+    0 12px 28px -8px rgb(0 0 0 / 14%),
+    0 24px 64px -24px rgb(0 0 0 / 42%);
 
   @variant dark {
     border-color: color-mix(in srgb, var(--color-white) 8%, transparent);
+    --tw-inset-shadow: inset 0 1px 0 rgb(255 255 255 / 8%);
     box-shadow:
-      inset 0 1px rgb(255 255 255 / 4%),
-      0 24px 72px -20px rgb(0 0 0 / 90%);
+      var(--tw-inset-shadow),
+      0 2px 8px rgb(0 0 0 / 45%),
+      0 16px 40px -12px rgb(0 0 0 / 65%),
+      0 24px 72px -20px rgb(0 0 0 / 88%);
   }
 
   @supports not ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
+    background: var(--popover) !important;
+  }
+
+  @media (prefers-reduced-transparency: reduce) {
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
     background: var(--popover) !important;
   }
 }
@@ -490,8 +542,30 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
   -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturation));
   backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturation));
   border: 1px solid color-mix(in srgb, var(--contrast-foreground) 10%, transparent);
+  --tw-inset-shadow: inset 0 1px 0 rgb(255 255 255 / 70%);
+  box-shadow:
+    var(--tw-inset-shadow),
+    0 1px 2px rgb(0 0 0 / 6%),
+    0 8px 24px -8px rgb(0 0 0 / 16%),
+    0 16px 40px -18px rgb(0 0 0 / 28%);
+
+  @variant dark {
+    border-color: color-mix(in srgb, var(--color-white) 9%, transparent);
+    --tw-inset-shadow: inset 0 1px 0 rgb(255 255 255 / 8%);
+    box-shadow:
+      var(--tw-inset-shadow),
+      0 2px 6px rgb(0 0 0 / 40%),
+      0 12px 32px -12px rgb(0 0 0 / 60%),
+      0 18px 44px -18px rgb(0 0 0 / 78%);
+  }
 
   @supports not ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
+    background: var(--popover) !important;
+  }
+
+  @media (prefers-reduced-transparency: reduce) {
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
     background: var(--popover) !important;
   }
 }
@@ -729,12 +803,25 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
   ):focus-visible {
     @apply outline-none ring-0;
   }
+  html {
+    -webkit-tap-highlight-color: transparent;
+  }
   html,
   body {
     background-color: var(--app-chrome-background);
   }
   body {
     @apply text-foreground relative;
+    text-autospace: normal;
+  }
+  pre,
+  code,
+  kbd,
+  samp,
+  input,
+  textarea,
+  [contenteditable="true"] {
+    text-autospace: no-autospace;
   }
 }
 
@@ -1014,8 +1101,8 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
     background: var(--background);
     box-shadow: 0 1px 2px color-mix(in srgb, var(--contrast-foreground) 12%, transparent);
     transition:
-      transform 120ms ease,
-      box-shadow 120ms ease;
+      transform 160ms var(--ease-spring-snappy),
+      box-shadow 160ms ease-out;
   }
 
   .settings-slider::-moz-range-thumb {
@@ -1026,26 +1113,34 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
     background: var(--background);
     box-shadow: 0 1px 2px color-mix(in srgb, var(--contrast-foreground) 12%, transparent);
     transition:
-      transform 120ms ease,
-      box-shadow 120ms ease;
+      transform 160ms var(--ease-spring-snappy),
+      box-shadow 160ms ease-out;
   }
 
-  .settings-slider:hover::-webkit-slider-thumb {
-    transform: scale(1.08);
-    box-shadow: 0 1px 3px color-mix(in srgb, var(--contrast-foreground) 20%, transparent);
-  }
+  @media (hover: hover) {
+    .settings-slider:hover::-webkit-slider-thumb {
+      transform: scale(1.08);
+      box-shadow: 0 1px 3px color-mix(in srgb, var(--contrast-foreground) 20%, transparent);
+    }
 
-  .settings-slider:hover::-moz-range-thumb {
-    transform: scale(1.08);
-    box-shadow: 0 1px 3px color-mix(in srgb, var(--contrast-foreground) 20%, transparent);
+    .settings-slider:hover::-moz-range-thumb {
+      transform: scale(1.08);
+      box-shadow: 0 1px 3px color-mix(in srgb, var(--contrast-foreground) 20%, transparent);
+    }
   }
 
   .settings-slider:active::-webkit-slider-thumb {
     transform: scale(0.94);
+    box-shadow:
+      0 0 0 4px color-mix(in srgb, var(--primary) 18%, transparent),
+      0 1px 2px color-mix(in srgb, var(--contrast-foreground) 14%, transparent);
   }
 
   .settings-slider:active::-moz-range-thumb {
     transform: scale(0.94);
+    box-shadow:
+      0 0 0 4px color-mix(in srgb, var(--primary) 18%, transparent),
+      0 1px 2px color-mix(in srgb, var(--contrast-foreground) 14%, transparent);
   }
 
   .settings-slider:focus-visible {
@@ -1062,6 +1157,26 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
     box-shadow:
       inset 0 0 0 1px var(--background),
       inset 0 0 0 3px var(--ring);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .settings-slider::-webkit-slider-thumb {
+      transition: none;
+    }
+
+    .settings-slider::-moz-range-thumb {
+      transition: none;
+    }
+
+    .settings-slider:hover::-webkit-slider-thumb,
+    .settings-slider:active::-webkit-slider-thumb {
+      transform: none;
+    }
+
+    .settings-slider:hover::-moz-range-thumb,
+    .settings-slider:active::-moz-range-thumb {
+      transform: none;
+    }
   }
 
   @media (forced-colors: active) {
@@ -1848,9 +1963,11 @@ code {
 /* Keep parent scrollbar styles off iframe owners to avoid WebKit resize loops: https://webkit.org/b/324485 */
 :where(:not(iframe))::-webkit-scrollbar {
   width: var(--app-scrollbar-width);
+  height: var(--app-scrollbar-width);
 }
 
-:where(:not(iframe))::-webkit-scrollbar-track {
+:where(:not(iframe))::-webkit-scrollbar-track,
+:where(:not(iframe))::-webkit-scrollbar-corner {
   background: transparent;
 }
 
@@ -1898,14 +2015,25 @@ code {
 
 :is(.chat-markdown, .composer-tiptap) h1 {
   font-size: 1.25rem;
+  letter-spacing: -0.02em;
 }
 
 :is(.chat-markdown, .composer-tiptap) h2 {
   font-size: 1.125rem;
+  letter-spacing: -0.015em;
 }
 
 :is(.chat-markdown, .composer-tiptap) h3 {
   font-size: 1rem;
+  letter-spacing: -0.01em;
+}
+
+.chat-markdown :is(h1, h2, h3, h4, h5, h6) {
+  text-wrap: balance;
+}
+
+.chat-markdown :is(p, li, blockquote) {
+  text-wrap: pretty;
 }
 
 :is(.chat-markdown, .composer-tiptap) h4,
@@ -2082,24 +2210,80 @@ code {
   a:not(
     .chat-markdown-file-link,
     :has([data-slot="context-chip-label"]),
-    [data-markdown-image-link]
-  ):hover,
+    [data-markdown-image-link],
+    [data-footnote-ref],
+    [data-footnote-backref]
+  ) {
+  text-decoration-line: underline;
+  text-decoration-thickness: 1px;
+  text-decoration-color: color-mix(in srgb, currentcolor 35%, transparent);
+  text-underline-offset: 3px;
+  text-decoration-skip-ink: auto;
+  transition: text-decoration-color 150ms ease-out;
+}
+
+@media (hover: hover) {
+  .chat-markdown
+    a:not(
+      .chat-markdown-file-link,
+      :has([data-slot="context-chip-label"]),
+      [data-markdown-image-link],
+      [data-footnote-ref],
+      [data-footnote-backref]
+    ):hover {
+    text-decoration-color: currentcolor;
+  }
+}
+
 .chat-markdown
   a:not(
     .chat-markdown-file-link,
     :has([data-slot="context-chip-label"]),
-    [data-markdown-image-link]
+    [data-markdown-image-link],
+    [data-footnote-ref],
+    [data-footnote-backref]
   ):focus-visible {
-  background-image: radial-gradient(circle, currentcolor 0.75px, transparent 1px);
-  background-position: left bottom;
-  background-repeat: repeat-x;
-  background-size: 4px 2px;
+  text-decoration-color: currentcolor;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .chat-markdown
+    a:not(
+      .chat-markdown-file-link,
+      :has([data-slot="context-chip-label"]),
+      [data-markdown-image-link],
+      [data-footnote-ref],
+      [data-footnote-backref]
+    ) {
+    transition: none;
+  }
 }
 
 :is(.chat-markdown, .composer-tiptap) blockquote {
-  border-inline-start: 2px solid color-mix(in srgb, currentcolor 35%, transparent);
-  padding-inline-start: 0.8rem;
-  color: inherit;
+  border-inline-start: 2px solid color-mix(in srgb, var(--contrast-foreground) 30%, transparent);
+  border-start-end-radius: 0.5rem;
+  border-end-end-radius: 0.5rem;
+  background: color-mix(in srgb, var(--contrast-foreground) 3.5%, transparent);
+  padding: 0.4rem 0.85rem;
+  color: color-mix(in srgb, var(--contrast-foreground) 84%, transparent);
+}
+
+:is(.chat-markdown, .composer-tiptap) blockquote > :first-child {
+  margin-top: 0;
+}
+
+:is(.chat-markdown, .composer-tiptap) blockquote > :last-child {
+  margin-bottom: 0;
+}
+
+.chat-markdown.user-message-markdown blockquote {
+  border-inline-start-color: color-mix(
+    in srgb,
+    var(--contrast-message-foreground) 32%,
+    transparent
+  );
+  background: color-mix(in srgb, var(--contrast-message-foreground) 4.5%, transparent);
+  color: color-mix(in srgb, var(--contrast-message-foreground) 86%, transparent);
 }
 
 .composer-tiptap blockquote {
@@ -2162,18 +2346,19 @@ code {
 }
 
 .chat-markdown :not(pre) > code {
-  border: 1px solid transparent;
-  border-radius: 0.25rem;
+  border: 1px solid color-mix(in srgb, var(--contrast-foreground) 10%, transparent);
+  border-radius: 0.3125rem;
   box-decoration-break: clone;
   -webkit-box-decoration-break: clone;
-  background: color-mix(in srgb, var(--contrast-foreground) 10%, transparent);
+  background: color-mix(in srgb, var(--contrast-foreground) 8%, transparent);
   padding: 0.1em 0.35em;
   color: var(--contrast-foreground);
   font-size: 0.85em;
 }
 
 .chat-markdown.user-message-markdown :not(pre) > code {
-  background: color-mix(in srgb, var(--contrast-message-foreground) 10%, transparent);
+  border-color: color-mix(in srgb, var(--contrast-message-foreground) 10%, transparent);
+  background: color-mix(in srgb, var(--contrast-message-foreground) 8%, transparent);
   color: var(--contrast-message-foreground);
 }
 
@@ -2254,18 +2439,22 @@ code {
 }
 
 /* Paragraphs and code blocks arrive in chunks while a response streams. Fade
-   each new block in so the chunk does not pop. @starting-style only applies
-   when an element is first inserted, and the rule is gated on data-streaming,
-   so opening a finished thread never replays the fade. Opacity only, one
-   shot, no layout change. */
+   and settle each new block in with a crisp 2px rise so chunks stay responsive
+   on fast streams without popping. @starting-style only applies when an element
+   is first inserted, and the rule is gated on data-streaming, so opening a
+   finished thread never replays the transition. Composited only, one shot, no
+   layout change. */
 @media (prefers-reduced-motion: no-preference) {
   .chat-markdown[data-streaming] > *,
   .chat-markdown[data-streaming] .chat-markdown-shiki,
   .chat-markdown[data-streaming] .chat-markdown-mermaid {
-    transition: opacity 600ms ease-out;
+    transition:
+      opacity 220ms var(--ease-spring-gentle),
+      transform 220ms var(--ease-spring-gentle);
 
     @starting-style {
       opacity: 0;
+      transform: translateY(2px);
     }
   }
 }
@@ -2720,12 +2909,10 @@ code {
 @keyframes t3-dropzone-breathe {
   0%,
   100% {
-    border-color: color-mix(in srgb, var(--primary) 50%, transparent);
-    background-color: color-mix(in srgb, var(--primary) 3.5%, transparent);
+    opacity: 0.2;
   }
   50% {
-    border-color: color-mix(in srgb, var(--primary) 85%, transparent);
-    background-color: color-mix(in srgb, var(--primary) 6.5%, transparent);
+    opacity: 1;
   }
 }
 
@@ -2762,6 +2949,15 @@ code {
   }
 }
 
+@keyframes t3-quit-hold-fill {
+  from {
+    transform: scaleX(0);
+  }
+  to {
+    transform: scaleX(1);
+  }
+}
+
 @media (prefers-reduced-motion: no-preference) {
   .t3-icon-pop {
     animation: t3-icon-pop 240ms var(--ease-spring-snappy) both;
@@ -2769,10 +2965,11 @@ code {
 
   .t3-stop-pulse-ring {
     animation: t3-stop-pulse 1.9s cubic-bezier(0.22, 1, 0.36, 1) infinite;
+    animation-play-state: var(--visible-animation-state, running);
+    will-change: var(--visible-animation-will-change, auto);
   }
 
   .t3-dropzone-overlay {
-    animation: t3-dropzone-breathe 2s ease-in-out infinite;
     transition:
       opacity 180ms ease-out,
       transform 220ms var(--ease-spring-gentle);
@@ -2781,6 +2978,21 @@ code {
       opacity: 0;
       transform: scale(0.985);
     }
+  }
+
+  /* Pulse a composited pseudo-element layer instead of repainting border/background colors. */
+  .t3-dropzone-overlay::before {
+    content: "";
+    position: absolute;
+    z-index: -1;
+    inset: -2px;
+    border: 2px dashed color-mix(in srgb, var(--primary) 85%, transparent);
+    border-radius: inherit;
+    background-color: color-mix(in srgb, var(--primary) 3.5%, transparent);
+    pointer-events: none;
+    animation: t3-dropzone-breathe 2s ease-in-out infinite;
+    animation-play-state: var(--visible-animation-state, running);
+    will-change: var(--visible-animation-will-change, auto);
   }
 
   .t3-dropzone-pill {
@@ -2850,6 +3062,10 @@ code {
     animation: t3-draft-hero-enter 380ms var(--ease-spring-gentle) 55ms both;
   }
 
+  .t3-draft-hero-actions {
+    animation: t3-draft-hero-enter 400ms var(--ease-spring-gentle) 95ms both;
+  }
+
   .t3-command-view-enter {
     animation: t3-command-view-enter 180ms var(--ease-spring-gentle) both;
   }
@@ -2880,6 +3096,79 @@ code {
 
   .t3-sidebar-status-pop {
     animation: t3-icon-pop 280ms var(--ease-spring-snappy) both;
+  }
+
+  .t3-quit-hold-hud {
+    transition:
+      opacity 160ms ease-out,
+      transform 200ms var(--ease-spring-snappy);
+
+    @starting-style {
+      opacity: 0;
+      transform: translateY(-8px) scale(0.96);
+    }
+  }
+}
+
+/* Quit-hold progress bar matches QUIT_HOLD_DURATION_MS (1200ms) while held and retracts on release. */
+.t3-quit-hold-progress {
+  opacity: 0;
+  transform: scaleX(0);
+  transition:
+    transform 180ms ease-out,
+    opacity 180ms ease-out;
+}
+
+.t3-quit-hold-progress[data-holding="true"] {
+  opacity: 1;
+  animation: t3-quit-hold-fill 1200ms linear forwards;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .t3-quit-hold-progress {
+    transition: none;
+  }
+
+  .t3-quit-hold-progress[data-holding="true"] {
+    animation: none;
+    transform: scaleX(1);
+    opacity: 0.7;
+  }
+}
+
+/* Native inactive-window dimming when Electron marks the desktop window unfocused. */
+html[data-desktop-window-focused]
+  :is(
+    [data-chat-header] > *,
+    [data-workspace-titlebar-controls],
+    [data-app-sidebar] [data-slot="sidebar-header"],
+    [data-app-sidebar] [data-slot="sidebar-content"],
+    [data-app-sidebar] [data-slot="sidebar-footer"]
+  ) {
+  transition: opacity 180ms ease-out;
+}
+
+html[data-desktop-window-focused="false"]
+  :is([data-chat-header] > *, [data-workspace-titlebar-controls]) {
+  opacity: 0.72;
+}
+
+html[data-desktop-window-focused="false"]
+  [data-app-sidebar]
+  :is([data-slot="sidebar-header"], [data-slot="sidebar-content"], [data-slot="sidebar-footer"]) {
+  opacity: 0.85;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html[data-desktop-window-focused]
+    :is(
+      [data-chat-header] > *,
+      [data-workspace-titlebar-controls],
+      [data-app-sidebar] [data-slot="sidebar-header"],
+      [data-app-sidebar] [data-slot="sidebar-content"],
+      [data-app-sidebar] [data-slot="sidebar-footer"]
+    ) {
+    transition: none;
   }
 }
 

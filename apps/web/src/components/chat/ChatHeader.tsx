@@ -273,7 +273,7 @@ export const ChatHeader = memo(function ChatHeader({
                       type="button"
                       aria-label={gt("New thread in {project}", { project: activeProjectName })}
                       onClick={onNewThreadInProject}
-                      className="inline-flex min-w-0 max-w-full cursor-pointer items-center gap-1.5 rounded-sm text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+                      className="inline-flex min-w-0 max-w-full cursor-pointer items-center gap-1.5 rounded-md px-1.5 py-0.5 -my-0.5 text-muted-foreground transition-[background-color,color] duration-150 ease-out any-hover:bg-accent/70 any-hover:text-foreground focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring motion-reduce:transition-none"
                     />
                   }
                 >
@@ -309,7 +309,7 @@ export const ChatHeader = memo(function ChatHeader({
                         title: parentThreadLink.title,
                       })}
                       onClick={() => onOpenThread(parentThreadLink.threadId)}
-                      className="inline-flex min-w-0 max-w-full cursor-pointer items-center rounded-sm text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+                      className="inline-flex min-w-0 max-w-full cursor-pointer items-center rounded-md px-1.5 py-0.5 -my-0.5 text-muted-foreground transition-[background-color,color] duration-150 ease-out any-hover:bg-accent/70 any-hover:text-foreground focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring motion-reduce:transition-none"
                     />
                   }
                 >
@@ -339,7 +339,7 @@ export const ChatHeader = memo(function ChatHeader({
               autoFocus
               dir="auto"
               aria-label={gt("Thread title")}
-              className="min-w-0 flex-1 rounded-sm bg-transparent text-sm font-medium text-foreground outline-none ring-1 ring-inset ring-ring/50 focus:ring-ring"
+              className="min-w-0 flex-1 rounded-md bg-transparent px-1.5 text-sm font-medium text-foreground outline-none ring-1 ring-inset ring-ring/50 transition-[box-shadow] duration-150 focus:ring-ring motion-reduce:transition-none"
               defaultValue={renamingTitle}
               onBlur={(event) => {
                 if (renameCommittedRef.current) return;
@@ -365,7 +365,7 @@ export const ChatHeader = memo(function ChatHeader({
                     aria-haspopup="menu"
                     onClick={openMenuFromTitle}
                     onDoubleClick={canOperateThread ? handleTitleDoubleClick : undefined}
-                    className="group/thread-title inline-flex min-w-0 max-w-full cursor-pointer items-center gap-1 rounded-sm text-left focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+                    className="group/thread-title inline-flex min-w-0 max-w-full cursor-pointer items-center gap-1 rounded-md px-1.5 py-0.5 -my-0.5 text-left transition-colors duration-150 ease-out any-hover:bg-accent/70 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring motion-reduce:transition-none"
                   />
                 }
               >
@@ -375,7 +375,7 @@ export const ChatHeader = memo(function ChatHeader({
                 <ChevronDownIcon
                   aria-hidden
                   data-thread-title-chevron
-                  className="size-3.5 shrink-0 text-muted-foreground opacity-0 transition-opacity group-hover/thread-title:opacity-100 group-focus-visible/thread-title:opacity-100"
+                  className="size-3.5 shrink-0 text-muted-foreground opacity-0 transition-opacity duration-150 ease-out pointer-coarse:opacity-70 group-any-hover/thread-title:opacity-100 group-focus-visible/thread-title:opacity-100 motion-reduce:transition-none"
                 />
               </TooltipTrigger>
               <TooltipPopup side="top">{activeThreadTitle}</TooltipPopup>

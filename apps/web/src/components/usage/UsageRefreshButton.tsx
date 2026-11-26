@@ -1,13 +1,18 @@
 import { uiText } from "../../i18n";
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ComponentProps } from "react";
 import { CheckIcon, RefreshCwIcon } from "lucide-react";
+import { cn } from "../../lib/utils";
+import { observeVisibleAnimation } from "../../lib/visibleAnimation";
+
 export function UsageRefreshButton({
   busy,
   disabled,
   onClick,
   label,
   iconOnly = false,
-}: {
+  className,
+  ...props
+}: Omit<ComponentProps<"button">, "children" | "onClick" | "disabled"> & {
   readonly iconOnly?: boolean;
   readonly busy: boolean;
   readonly disabled: boolean;
@@ -25,8 +30,9 @@ export function UsageRefreshButton({
   }, [updated]);
   return (
     <button
+      {...props}
       type="button"
-      className="usage-refresh-button"
+      className={cn("usage-refresh-button", className)}
       data-icon-only={iconOnly || undefined}
       data-state={busy ? "busy" : updated ? "updated" : "idle"}
       aria-label={label}
@@ -35,9 +41,13 @@ export function UsageRefreshButton({
       onClick={onClick}
     >
       {updated ? (
-        <CheckIcon size={16} />
+        <CheckIcon size={16} className="t3-icon-pop text-success" />
       ) : (
-        <RefreshCwIcon size={16} data-usage-refresh={busy || undefined} />
+        <RefreshCwIcon
+          size={16}
+          ref={busy ? observeVisibleAnimation : undefined}
+          data-usage-refresh={busy || undefined}
+        />
       )}
       <span className={iconOnly ? "sr-only" : undefined}>
         {busy ? uiText("Reading") : updated ? uiText("Updated") : label}

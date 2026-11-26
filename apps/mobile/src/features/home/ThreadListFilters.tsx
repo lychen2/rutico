@@ -1,5 +1,7 @@
+import * as Haptics from "expo-haptics";
 import { useGT } from "gt-react-native";
 import { Pressable, ScrollView } from "react-native";
+import Animated, { FadeIn, FadeOut, ReduceMotion } from "react-native-reanimated";
 import { SymbolView } from "../../components/ui/AppSymbol";
 import { ListFilterMenu } from "../layout/workspace/ListFilterMenu";
 import type { EnvironmentId } from "@t3tools/contracts";
@@ -7,6 +9,9 @@ import type {
   HomeListFilterMenuEnvironment,
   HomeListFilterMenuProject,
 } from "./home-list-filter-menu";
+
+const RESET_BUTTON_ENTERING = FadeIn.duration(150).reduceMotion(ReduceMotion.System);
+const RESET_BUTTON_EXITING = FadeOut.duration(120).reduceMotion(ReduceMotion.System);
 
 export function ThreadListFilters(props: {
   readonly environments: ReadonlyArray<HomeListFilterMenuEnvironment>;
@@ -88,17 +93,21 @@ export function ThreadListFilters(props: {
         }}
       />
       {props.selectedEnvironmentId !== null || props.selectedProjectKey !== null ? (
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel={gt("Reset thread filters")}
-          className="h-8 w-8 items-center justify-center"
-          onPress={() => {
-            props.onEnvironmentChange(null);
-            props.onProjectChange(null);
-          }}
-        >
-          <SymbolView name="xmark.circle.fill" size={18} tintColorClassName="accent-icon-muted" />
-        </Pressable>
+        <Animated.View entering={RESET_BUTTON_ENTERING} exiting={RESET_BUTTON_EXITING}>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={gt("Reset thread filters")}
+            className="h-8 w-8 items-center justify-center active:opacity-70"
+            hitSlop={8}
+            onPress={() => {
+              void Haptics.selectionAsync().catch(() => undefined);
+              props.onEnvironmentChange(null);
+              props.onProjectChange(null);
+            }}
+          >
+            <SymbolView name="xmark.circle.fill" size={18} tintColorClassName="accent-icon-muted" />
+          </Pressable>
+        </Animated.View>
       ) : null}
     </ScrollView>
   );

@@ -3,7 +3,8 @@ import { Platform, StyleSheet, View, type LayoutChangeEvent } from "react-native
 
 import { useAdaptiveWorkspaceLayout } from "../../features/layout/adaptive-workspace-context";
 import { useAppearancePreferences } from "../../features/settings/appearance/AppearancePreferencesProvider";
-import { themeColorWithAlpha } from "../../lib/mobileTheme";
+import { cn } from "../../lib/cn";
+import { DEFAULT_MOBILE_THEME_ID, themeColorWithAlpha } from "../../lib/mobileTheme";
 import { RuticoMobileBackdrop } from "../RuticoMobileBackdrop";
 
 const SURFACE_CLASS_NAMES = {
@@ -41,8 +42,36 @@ export function ScreenContent({
   readonly onLayout?: (event: LayoutChangeEvent) => void;
 }) {
   const { layout } = useAdaptiveWorkspaceLayout();
-  const { themeAppearance, themeVariables } = useAppearancePreferences();
+  const { themeAppearance, themeId, themeVariables } = useAppearancePreferences();
+  const hasBackdrop = backdrop !== undefined;
+  const surfaceColor = themeVariables[SURFACE_THEME_VARS[surface]];
+  const backdropTintColor = hasBackdrop
+    ? themeColorWithAlpha(
+        surfaceColor,
+        backdrop === "hero" ? 0.12 : themeAppearance === "dark" ? 0.22 : 0.18,
+      )
+    : undefined;
+
   if (Platform.OS !== "android") {
+    if (hasBackdrop) {
+      return (
+        <View
+          className={cn(
+            fitToContents ? "shrink" : "flex-1",
+            "overflow-hidden",
+            SURFACE_CLASS_NAMES[surface],
+          )}
+          onLayout={onLayout}
+        >
+          <RuticoMobileBackdrop variant={backdrop} />
+          <View
+            pointerEvents="none"
+            style={[StyleSheet.absoluteFill, { backgroundColor: backdropTintColor }]}
+          />
+          {children}
+        </View>
+      );
+    }
     return onLayout ? (
       <View className="flex-1" onLayout={onLayout}>
         {children}
@@ -52,18 +81,15 @@ export function ScreenContent({
     );
   }
 
-  const hasBackdrop = backdrop !== undefined;
-  const surfaceColor = themeVariables[SURFACE_THEME_VARS[surface]];
-  const backdropTintColor = hasBackdrop
-    ? themeColorWithAlpha(
-        surfaceColor,
-        backdrop === "hero" ? 0.12 : themeAppearance === "dark" ? 0.22 : 0.18,
-      )
-    : undefined;
   const borderColor = hasBackdrop
-    ? themeAppearance === "dark"
-      ? "rgba(196, 178, 255, 0.18)"
-      : "rgba(155, 130, 235, 0.24)"
+    ? themeId === DEFAULT_MOBILE_THEME_ID
+      ? themeAppearance === "dark"
+        ? "rgba(196, 178, 255, 0.18)"
+        : "rgba(155, 130, 235, 0.24)"
+      : themeColorWithAlpha(
+          themeVariables["--color-primary"],
+          themeAppearance === "dark" ? 0.18 : 0.22,
+        )
     : undefined;
 
   return (

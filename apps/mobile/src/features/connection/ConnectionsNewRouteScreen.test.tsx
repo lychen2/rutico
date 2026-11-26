@@ -13,10 +13,42 @@ const { Children, harness } = vi.hoisted(() => ({
 }));
 
 vi.mock("react-native", () => ({
+  Animated: {
+    View: Children,
+    loop: () => ({ start: () => {}, stop: () => {} }),
+    sequence: () => ({}),
+    timing: () => ({}),
+  },
+  Easing: { inOut: () => () => 0, sin: () => 0 },
+  useAnimatedValue: () => ({
+    setValue: () => {},
+    interpolate: () => 0,
+  }),
   View: Children,
   Pressable: Children,
   Linking: { openSettings: vi.fn() },
   StyleSheet: { absoluteFill: {} },
+}));
+vi.mock("react-native-reanimated", () => ({
+  useReducedMotion: () => false,
+}));
+vi.mock("../../lib/appState", () => ({
+  useAppActive: () => true,
+}));
+vi.mock("../../components/ui/Button", () => ({
+  Button: ({
+    label,
+    disabled,
+    onPress,
+  }: {
+    label: string;
+    disabled?: boolean;
+    onPress?: () => void;
+  }) => (
+    <button type="button" disabled={disabled} onClick={onPress}>
+      {label}
+    </button>
+  ),
 }));
 vi.mock("react-native-svg", () => ({
   default: Children,
@@ -151,6 +183,12 @@ it("splits a pasted pairing link and preserves the code during address edits", (
       expect(address.value).toBe(value);
       expect(code.value).toBe("replacement-code");
     }
+
+    const connectButton = [...container.querySelectorAll("button")].find(
+      (button) => button.textContent === "Connect",
+    );
+    expect(connectButton).toBeDefined();
+    expect(connectButton?.disabled).toBe(false);
   } finally {
     act(() => root.unmount());
   }

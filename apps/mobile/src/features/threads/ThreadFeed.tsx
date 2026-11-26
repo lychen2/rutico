@@ -145,6 +145,8 @@ import {
   type SetStateAction,
 } from "react";
 import {
+  Animated as RNAnimated,
+  Easing as RNEasing,
   Image,
   ScrollView,
   Platform,
@@ -154,12 +156,13 @@ import {
   Pressable,
   StyleSheet,
   type ColorValue,
+  useAnimatedValue,
   useWindowDimensions,
   View,
 } from "react-native";
 import { Image as ExpoImage } from "expo-image";
 import { useResolveClassNames } from "uniwind";
-import { useReduceMotionEnabled } from "../../lib/appState";
+import { useAppActive, useReduceMotionEnabled } from "../../lib/appState";
 import { useFilePreviewGallery, FilePreviewGallery } from "../../components/ui/FilePreviewGallery";
 import { assetImageSource } from "../../lib/assetImageSource";
 import {
@@ -185,7 +188,13 @@ import { ThreadInlineFilePreview } from "./ThreadInlineFilePreview";
 import { flattenThemeColor, themeColorWithContrast } from "../../lib/mobileTheme";
 import { PresentationSource } from "../../components/ui/NativePresentation";
 import { NativeScrollViewMarker } from "../../native/NativeScrollViewMarker";
-import Animated, { FadeIn, FadeInDown, type SharedValue } from "react-native-reanimated";
+import Animated, {
+  FadeIn,
+  FadeInDown,
+  FadeOut,
+  ReduceMotion,
+  type SharedValue,
+} from "react-native-reanimated";
 import { useUniwindTheme } from "../../lib/useUniwindTheme";
 import { FONT_FAMILIES } from "../../lib/fontFamilies";
 import { scopedThreadKey } from "../../lib/scopedEntities";
@@ -256,6 +265,7 @@ import type { ThreadContentPresentation } from "./threadContentPresentation";
 import { type ThreadWorkGroupScrollPosition } from "./thread-feed-scroll-position";
 import {
   collapsedWorkLogHeight,
+  ShimmeringWorkContent,
   ThreadDisclosureChevron,
   THREAD_DISCLOSURE_TRANSITION_MS,
   ThreadWorkGroupToggle,
@@ -1842,6 +1852,65 @@ function compactionLabel(
   return text.replace(/ (→|tokens)/g, "\u00A0$1").replace(/→ /g, "→\u00A0");
 }
 
+const DEFERRED_SKELETON_ENTERING = FadeIn.duration(160).reduceMotion(ReduceMotion.System);
+const DEFERRED_SKELETON_EXITING = FadeOut.duration(120).reduceMotion(ReduceMotion.System);
+
+function DeferredWorkSkeleton() {
+  const appActive = useAppActive();
+  const isFocused = useIsFocused();
+  const reducedMotion = useReduceMotionEnabled();
+  const animate = appActive && isFocused && !reducedMotion;
+  const opacity = useAnimatedValue(0.65, { useNativeDriver: true });
+
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- drives a gentle native opacity pulse on the deferred history skeleton while visible
+  useEffect(() => {
+    if (!animate) {
+      opacity.setValue(0.65);
+      return;
+    }
+    opacity.setValue(0.45);
+    const loop = RNAnimated.loop(
+      RNAnimated.sequence([
+        RNAnimated.timing(opacity, {
+          toValue: 0.9,
+          duration: 850,
+          easing: RNEasing.inOut(RNEasing.sin),
+          useNativeDriver: true,
+        }),
+        RNAnimated.timing(opacity, {
+          toValue: 0.45,
+          duration: 850,
+          easing: RNEasing.inOut(RNEasing.sin),
+          useNativeDriver: true,
+        }),
+      ]),
+    );
+    loop.start();
+    return () => {
+      loop.stop();
+      opacity.setValue(0.65);
+    };
+  }, [animate, opacity]);
+
+  return (
+    <Animated.View
+      accessible={false}
+      importantForAccessibility="no-hide-descendants"
+      entering={DEFERRED_SKELETON_ENTERING}
+      exiting={DEFERRED_SKELETON_EXITING}
+    >
+      <RNAnimated.View className="gap-2 px-1 pb-2" style={{ opacity }}>
+        {(["40%", "60%", "33%"] as const).map((width) => (
+          <View key={width} className="flex-row items-center gap-2">
+            <View className="size-3 rounded bg-subtle-strong" />
+            <View className="h-2.5 rounded-full bg-subtle-strong" style={{ width }} />
+          </View>
+        ))}
+      </RNAnimated.View>
+    </Animated.View>
+  );
+}
+
 function RunFoldWorking(props: {
   environmentId: EnvironmentId;
   startedAt: string;
@@ -1851,23 +1920,23 @@ function RunFoldWorking(props: {
   const seconds = Math.floor((nowMs - Date.parse(props.startedAt)) / 1_000);
   const gt = useGT();
   const messages = useMessages();
+  const workingLabel = gt("Working for {duration}", {
+    duration:
+      seconds > 0 ? formatDuration(seconds * 1_000, messages) : gt("{seconds}s", { seconds: 0 }),
+  });
   return (
     <View
       className="min-h-11 min-w-0 flex-1 flex-row items-center"
       style={{ minHeight: Math.max(TURN_FOLD_HEIGHT - 3.5, props.rowSizing.estimatedRowHeight) }}
     >
-      <Text
+      <ShimmeringWorkContent
         key={props.rowSizing.textSizeKey}
-        numberOfLines={1}
-        className="shrink font-t3-medium text-sm tabular-nums text-foreground-muted"
-      >
-        {gt("Working for {duration}", {
-          duration:
-            seconds > 0
-              ? formatDuration(seconds * 1_000, messages)
-              : gt("{seconds}s", { seconds: 0 }),
-        })}
-      </Text>
+        icon="circle.dashed"
+        iconSubtleColor="transparent"
+        label={workingLabel}
+        showIcon={false}
+        textClassName="font-t3-medium tabular-nums"
+      />
     </View>
   );
 }
@@ -1932,7 +2001,7 @@ function RunFoldButton({
           className="shrink font-t3-medium text-sm tabular-nums text-foreground-muted"
         >
           {entry.label}
-          {error ? ` · ${error}` : ""}
+          {error ? <Text className="text-danger-foreground">{` · ${error}`}</Text> : null}
         </Text>
         <ThreadDisclosureChevron
           expanded={entry.expanded}
@@ -1941,20 +2010,7 @@ function RunFoldButton({
           tintColor={iconColor}
         />
       </Pressable>
-      {loading ? (
-        <View
-          accessible={false}
-          importantForAccessibility="no-hide-descendants"
-          className="gap-2 px-1 pb-2"
-        >
-          {(["40%", "60%", "33%"] as const).map((width) => (
-            <View key={width} className="flex-row items-center gap-2">
-              <View className="size-3 rounded bg-subtle-strong" />
-              <View className="h-2.5 rounded-full bg-subtle-strong" style={{ width }} />
-            </View>
-          ))}
-        </View>
-      ) : null}
+      {loading ? <DeferredWorkSkeleton /> : null}
     </View>
   );
 }
@@ -2953,6 +3009,14 @@ function ThreadFeedPlaceholder(props: {
       }}
     >
       <View className="max-w-[320px] items-center gap-2">
+        <View className="mb-1 size-11 items-center justify-center rounded-full border border-border/60 bg-subtle">
+          <SymbolView
+            name="text.bubble"
+            size={20}
+            tintColorClassName="accent-icon-muted"
+            type="monochrome"
+          />
+        </View>
         <Text className="text-center font-t3-bold text-lg text-foreground">{props.title}</Text>
         <Text className="text-center text-sm leading-normal text-foreground-secondary">
           {props.detail}
@@ -4439,8 +4503,6 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
 
 function ThreadFeedLoadEarlierControl(props: ThreadFeedHistoryControls) {
   const gt = useGT();
-  const theme = useUniwindTheme();
-  const mutedColor = theme["--color-icon-subtle"];
   if (!props.hasMoreHistory && props.error === null) {
     return null;
   }
@@ -4460,7 +4522,7 @@ function ThreadFeedLoadEarlierControl(props: ThreadFeedHistoryControls) {
         </View>
       ) : null}
       {props.error !== null ? (
-        <Text className="text-center text-xs" style={{ color: mutedColor }}>
+        <Text accessibilityRole="alert" className="text-center text-xs text-danger-foreground">
           {props.error}
         </Text>
       ) : null}

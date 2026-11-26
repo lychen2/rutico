@@ -1,11 +1,15 @@
 import { useGT } from "gt-react-native";
 import { useEffect } from "react";
 import { AccessibilityInfo, Platform, Pressable, View } from "react-native";
+import Animated, { FadeIn, FadeOut, ReduceMotion } from "react-native-reanimated";
 
 import { cn } from "../../lib/cn";
 import { AppText } from "./AppText";
 import { SymbolView, type AppSymbolName } from "./AppSymbol";
 import { GlassSurface } from "./GlassSurface";
+
+const NOTICE_ENTERING = FadeIn.duration(160).reduceMotion(ReduceMotion.System);
+const NOTICE_EXITING = FadeOut.duration(120).reduceMotion(ReduceMotion.System);
 
 export function Notice(props: {
   readonly message: string;
@@ -68,21 +72,28 @@ export function Notice(props: {
       ) : null}
     </View>
   );
-  if (props.floating && Platform.OS === "ios")
+  if (props.floating) {
     return (
-      <GlassSurface className="p-4" style={{ borderRadius: 20 }}>
-        {content}
-      </GlassSurface>
+      <Animated.View entering={NOTICE_ENTERING} exiting={NOTICE_EXITING}>
+        <GlassSurface
+          className={cn("p-4", danger && "border-danger-border")}
+          style={{ borderRadius: 20 }}
+        >
+          {content}
+        </GlassSurface>
+      </Animated.View>
     );
+  }
   return (
-    <View
+    <Animated.View
+      entering={NOTICE_ENTERING}
+      exiting={NOTICE_EXITING}
       className={cn(
         "rounded-2xl border px-3.5 py-3",
         danger ? "border-danger-border bg-danger" : "border-border bg-card",
-        props.floating && "p-4",
       )}
     >
       {content}
-    </View>
+    </Animated.View>
   );
 }

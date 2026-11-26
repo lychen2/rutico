@@ -1,13 +1,31 @@
 import { Pressable, View } from "react-native";
+import Animated, {
+  ReduceMotion,
+  useAnimatedStyle,
+  useSharedValue,
+  withSpring,
+} from "react-native-reanimated";
 import { AppActivityIndicator } from "./AppActivityIndicator";
 import { AppText } from "./AppText";
 import { SymbolView } from "./AppSymbol";
 import { Menu } from "./Menu";
 import type { SplitButtonProps } from "./SplitButton.types";
 
+const PRESS_SPRING_CONFIG = {
+  damping: 20,
+  stiffness: 420,
+  mass: 0.6,
+  reduceMotion: ReduceMotion.System,
+} as const;
+
 export function SplitButton(props: SplitButtonProps) {
   const active = !props.disabled;
   const menuEnabled = props.actions.some((action) => !action.attributes?.disabled);
+  const menuPressScale = useSharedValue(1);
+  const menuPressStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: menuPressScale.get() }],
+  }));
+
   return (
     <View
       className={`flex-row overflow-hidden rounded-xl border-continuous ${active ? "bg-prominent-action" : "bg-subtle-strong"}`}
@@ -47,15 +65,25 @@ export function SplitButton(props: SplitButtonProps) {
               accessibilityLabel={props.menuTitle}
               accessibilityState={{ disabled: !menuEnabled }}
               disabled={!menuEnabled}
-              className="min-h-11 w-11 items-center justify-center border-l border-border-subtle"
-            >
-              <SymbolView
-                name="chevron.down"
-                size={13}
-                tintColorClassName={
-                  active ? "accent-prominent-action-foreground" : "accent-icon-muted"
+              onPressIn={() => {
+                if (menuEnabled) {
+                  menuPressScale.set(withSpring(0.9, PRESS_SPRING_CONFIG));
                 }
-              />
+              }}
+              onPressOut={() => {
+                menuPressScale.set(withSpring(1, PRESS_SPRING_CONFIG));
+              }}
+              className={`min-h-11 w-11 items-center justify-center border-l border-border-subtle${menuEnabled ? " active:opacity-70" : ""}`}
+            >
+              <Animated.View style={menuPressStyle}>
+                <SymbolView
+                  name="chevron.down"
+                  size={13}
+                  tintColorClassName={
+                    active ? "accent-prominent-action-foreground" : "accent-icon-muted"
+                  }
+                />
+              </Animated.View>
             </Pressable>
           </Menu>
         </View>

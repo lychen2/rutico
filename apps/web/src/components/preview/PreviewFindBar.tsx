@@ -3,6 +3,8 @@ import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 import { ChevronDownIcon, ChevronUpIcon, XIcon } from "lucide-react";
 import { Button } from "../ui/button";
 import { InputGroup, InputGroupAddon, InputGroupInput } from "../ui/input-group";
+import { Kbd } from "../ui/kbd";
+import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { cn } from "~/lib/utils";
 import { previewBridge } from "./previewBridge";
 
@@ -82,7 +84,7 @@ export function PreviewFindBar({ tabId, focusRequestId, onClose }: PreviewFindBa
   const navigationDisabled = !result || result.matches === 0;
 
   return (
-    <div className="absolute top-3 right-3 z-40 w-[min(22rem,calc(100%-1.5rem))]">
+    <div className="absolute top-3 right-3 z-40 w-[min(22rem,calc(100%-1.5rem))] transition-[opacity,translate] duration-200 ease-(--ease-spring-gentle) starting:-translate-y-1.5 starting:opacity-0 motion-reduce:transition-none motion-reduce:starting:translate-y-0">
       <InputGroup
         variant="popover"
         size="lg"
@@ -113,27 +115,68 @@ export function PreviewFindBar({ tabId, focusRequestId, onClose }: PreviewFindBa
           >
             {label}
           </span>
-          <Button
-            size="icon-xs"
-            variant="ghost"
-            aria-label={gt("Previous match")}
-            disabled={navigationDisabled}
-            onClick={() => step(false)}
-          >
-            <ChevronUpIcon />
-          </Button>
-          <Button
-            size="icon-xs"
-            variant="ghost"
-            aria-label={gt("Next match")}
-            disabled={navigationDisabled}
-            onClick={() => step(true)}
-          >
-            <ChevronDownIcon />
-          </Button>
-          <Button size="icon-xs" variant="ghost" aria-label={gt("Close find")} onClick={onClose}>
-            <XIcon />
-          </Button>
+          <Tooltip>
+            <TooltipTrigger
+              render={
+                <Button
+                  size="icon-xs"
+                  variant="ghost"
+                  aria-label={gt("Previous match")}
+                  disabled={navigationDisabled}
+                  onClick={() => step(false)}
+                />
+              }
+            >
+              <ChevronUpIcon />
+            </TooltipTrigger>
+            <TooltipPopup side="bottom">
+              <span className="inline-flex items-center gap-1.5">
+                {gt("Previous match")}
+                <Kbd>⇧↵</Kbd>
+              </span>
+            </TooltipPopup>
+          </Tooltip>
+          <Tooltip>
+            <TooltipTrigger
+              render={
+                <Button
+                  size="icon-xs"
+                  variant="ghost"
+                  aria-label={gt("Next match")}
+                  disabled={navigationDisabled}
+                  onClick={() => step(true)}
+                />
+              }
+            >
+              <ChevronDownIcon />
+            </TooltipTrigger>
+            <TooltipPopup side="bottom">
+              <span className="inline-flex items-center gap-1.5">
+                {gt("Next match")}
+                <Kbd>↵</Kbd>
+              </span>
+            </TooltipPopup>
+          </Tooltip>
+          <Tooltip>
+            <TooltipTrigger
+              render={
+                <Button
+                  size="icon-xs"
+                  variant="ghost"
+                  aria-label={gt("Close find")}
+                  onClick={onClose}
+                />
+              }
+            >
+              <XIcon />
+            </TooltipTrigger>
+            <TooltipPopup side="bottom">
+              <span className="inline-flex items-center gap-1.5">
+                {gt("Close find")}
+                <Kbd>Esc</Kbd>
+              </span>
+            </TooltipPopup>
+          </Tooltip>
         </InputGroupAddon>
       </InputGroup>
     </div>

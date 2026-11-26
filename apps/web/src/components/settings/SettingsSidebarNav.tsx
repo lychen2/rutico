@@ -265,7 +265,7 @@ export function SettingsSidebarNav({ pathname }: { pathname: string }) {
       className={cn(
         "flex w-60 shrink-0 flex-col border-e bg-sidebar text-sidebar-foreground max-md:w-14",
         compactSearchOpen &&
-          "max-md:absolute max-md:inset-y-0 max-md:start-0 max-md:z-10 max-md:w-full",
+          "max-md:absolute max-md:inset-y-0 max-md:start-0 max-md:z-10 max-md:w-full max-md:transition-opacity max-md:duration-150 max-md:ease-out max-md:starting:opacity-0 motion-reduce:transition-none",
       )}
     >
       <SidebarContent className="overflow-x-hidden">
@@ -273,11 +273,11 @@ export function SettingsSidebarNav({ pathname }: { pathname: string }) {
           <div className="flex flex-col gap-2">
             <div
               className={cn(
-                "flex h-8 items-center gap-2 rounded-md px-2 py-1.5 text-sm font-medium text-sidebar-muted-foreground hover:bg-sidebar-row-hover hover:text-sidebar-foreground",
+                "group/search flex h-8 items-center gap-2 rounded-md px-2 py-1.5 text-sm font-medium text-sidebar-muted-foreground transition-[background-color,color,box-shadow,opacity] duration-150 ease-out hover:bg-sidebar-row-hover hover:text-sidebar-foreground focus-within:bg-sidebar-row-hover/80 focus-within:text-sidebar-foreground focus-within:ring-1 focus-within:ring-inset focus-within:ring-ring/50 max-md:starting:opacity-0 motion-reduce:transition-none",
                 !compactSearchOpen && "max-md:hidden",
               )}
             >
-              <SearchIcon className="size-4 shrink-0 text-sidebar-muted-foreground/80" />
+              <SearchIcon className="size-4 shrink-0 text-sidebar-muted-foreground/80 transition-colors duration-150 group-focus-within/search:text-sidebar-foreground motion-reduce:transition-none" />
               {/* Native search inputs clear on Escape even during IME composition. */}
               <SidebarInput
                 ref={searchInputRef}
@@ -318,19 +318,32 @@ export function SettingsSidebarNav({ pathname }: { pathname: string }) {
                     searchInputRef.current?.focus();
                   }}
                 >
-                  <XIcon className="size-3" />
+                  <XIcon className="t3-icon-pop size-3" />
                 </Button>
               ) : (
                 <Kbd>/</Kbd>
               )}
             </div>
             {isSearching && results.length === 0 ? (
-              <p
+              <div
                 role="status"
-                className="px-2 py-6 text-center text-xs text-sidebar-muted-foreground"
+                className="flex flex-col items-center gap-2 rounded-lg border border-dashed border-sidebar-border/70 px-3 py-5 text-center"
               >
-                <T>No settings found</T>
-              </p>
+                <p className="text-xs text-sidebar-muted-foreground">
+                  <T>No settings found</T>
+                </p>
+                <Button
+                  type="button"
+                  size="xs"
+                  variant="ghost"
+                  onClick={() => {
+                    clearSearch();
+                    searchInputRef.current?.focus();
+                  }}
+                >
+                  <T>Clear search</T>
+                </Button>
+              </div>
             ) : null}
             {isSearching ? (
               <SidebarMenu

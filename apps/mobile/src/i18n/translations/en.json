@@ -4498,7 +4498,6 @@
     }
   ],
   "d201af23193100b9": "Enter a workspace path",
-  "042c9c88de8cd95c": "Plan saved to workspace",
   "979cece449deec58": "Could not save plan",
   "ff9b542ab2e00cc3": "Copy plan",
   "3414b088dde8621b": "Saving...",
@@ -5618,5 +5617,15 @@
   "8d545d54c0a9e950": "Hide the commands, edits, and searches agents run. Hide successful keeps failures. Zen shows only final answers. Approvals, questions, and errors always show.",
   "99d51127f573296b": "Another account",
   "8ec2c57414669b79": "Connect a second {tracker} workspace or user.",
-  "892f08d21b8e48a9": "Merge {layers} into {base} using {kind, select, squash {squash} merge {merge} rebase {rebase} fastForward {fast-forward} other {{method}}} once their requirements are met. This may happen immediately."
+  "892f08d21b8e48a9": "Merge {layers} into {base} using {kind, select, squash {squash} merge {merge} rebase {rebase} fastForward {fast-forward} other {{method}}} once their requirements are met. This may happen immediately.",
+  "6f7d97c066011a2f": "QR scanned. Ready to connect.",
+  "ffaaca09d46973a8": "Scanned",
+  "c6fa2905d56a750c": "Saved",
+  "64b304394646c690": "Escape",
+  "fd63fffe51680c58": "Tab",
+  "1bad92ef235cfdfc": "Control modifier",
+  "d51dc8c3400d83d7": "Up arrow",
+  "ef47ee341965574e": "Down arrow",
+  "44de850d36d1bccd": "{minutes, plural, one {{minutes} minute} other {{minutes} minutes}} {seconds, plural, one {{seconds} second} other {{seconds} seconds}} elapsed",
+  "055f73f1ec23d268": "{seconds, plural, one {{seconds} second} other {{seconds} seconds}} elapsed"
 }

@@ -199,7 +199,9 @@ export function DiffFileTree({
         <span className="px-1 font-medium text-foreground">
           <T>Files</T>
         </span>
-        <span className="ml-auto tabular-nums">{entries.length}</span>
+        <span className="ml-auto rounded-full bg-muted/70 px-1.5 py-0.5 font-medium text-2xs tabular-nums text-muted-foreground">
+          {entries.length}
+        </span>
         {headerAccessory}
         {directoryPaths.length > 0 ? (
           <Tooltip>

@@ -140,9 +140,12 @@ export function SidebarCategoryHeader({
         data-sidebar-row={sidebarCategoryRowId(id)}
         aria-expanded={!collapsed}
         onClick={() => onToggle(id)}
-        className="flex h-8 w-full cursor-pointer items-center gap-2.5 rounded-(--control-radius) px-(--sidebar-row-content-inset) text-start outline-none hover:bg-sidebar-row-hover focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+        className="group/category flex h-8 w-full cursor-pointer items-center gap-2.5 rounded-(--control-radius) px-(--sidebar-row-content-inset) text-start outline-none transition-[background-color,color,scale] duration-150 ease-out hover:bg-sidebar-row-hover focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring active:scale-[0.99] motion-reduce:transition-none motion-reduce:active:scale-100"
       >
-        <FolderIcon aria-hidden className="size-4 shrink-0 text-sidebar-muted-foreground" />
+        <FolderIcon
+          aria-hidden
+          className="size-4 shrink-0 text-sidebar-muted-foreground transition-colors duration-150 group-hover/category:text-sidebar-foreground/80 motion-reduce:transition-none"
+        />
         <span className="min-w-0 flex-1 truncate text-sm font-medium text-sidebar-foreground/90">
           {name}
         </span>
@@ -152,14 +155,14 @@ export function SidebarCategoryHeader({
           </span>
         ) : null}
         {collapsed && hiddenThreads.length > 0 ? (
-          <span className="shrink-0 text-xs tabular-nums text-sidebar-muted-foreground">
+          <span className="shrink-0 rounded-full bg-sidebar-control-surface/70 px-1.5 py-0.5 text-2xs leading-none font-medium tabular-nums text-sidebar-muted-foreground ring-1 ring-inset ring-sidebar-border/40 dark:ring-white/6">
             {hiddenThreads.length}
           </span>
         ) : null}
         <ChevronDownIcon
           aria-hidden
           className={cn(
-            "size-3 shrink-0 text-sidebar-muted-foreground motion-safe:transition-transform motion-safe:duration-150",
+            "size-3 shrink-0 text-sidebar-muted-foreground motion-safe:transition-transform motion-safe:duration-150 motion-safe:ease-(--ease-drawer)",
             collapsed && "-rotate-90 rtl:rotate-90",
           )}
         />

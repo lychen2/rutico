@@ -417,6 +417,26 @@ describe("DesktopApplicationMenu", () => {
     }),
   );
 
+  it.effect("uses Rutico branding in every native update dialog state", () =>
+    Effect.gen(function* () {
+      const states: ReadonlyArray<Partial<DesktopUpdateState>> = [
+        { status: "up-to-date" },
+        { status: "available", availableVersion: null },
+        { status: "available", availableVersion: "0.1.7" },
+        { status: "downloading", availableVersion: null },
+        { status: "downloading", availableVersion: "0.1.7" },
+        { status: "downloaded", availableVersion: null, downloadedVersion: null },
+        { status: "downloaded", availableVersion: "0.1.7", downloadedVersion: "0.1.7" },
+      ];
+      for (const state of states) {
+        const dialog = yield* checkForUpdatesFromMacMenu(state);
+        const copy = `${dialog.title ?? ""} ${dialog.message} ${dialog.detail ?? ""}`;
+        assert.include(copy, "Rutico", state.status);
+        assert.notInclude(copy, "T3 Code", state.status);
+      }
+    }),
+  );
+
   it.effect("labels every role item so the menu follows the UI language", () =>
     Effect.gen(function* () {
       // Electron's role defaults are English on every platform, so each role item needs a label.

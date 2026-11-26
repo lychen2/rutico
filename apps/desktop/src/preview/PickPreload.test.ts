@@ -205,3 +205,11 @@ it("keeps only the well-typed fields of what the page reports about an element",
     stack: [frame, { functionName: null, fileName: null, lineNumber: null, columnNumber: null }],
   });
 });
+
+it("includes dark-mode Rutico tokens in the annotation overlay stylesheet", () => {
+  const shadowRoot = startAnnotation();
+  const stylesheet = shadowRoot.querySelector("style")?.textContent ?? "";
+  expect(stylesheet).toContain("@media (prefers-color-scheme: dark)");
+  expect(stylesheet).toContain("--t3-background: oklch(0.215 0.032 292)");
+  expect(stylesheet).toContain("--t3-popover: oklch(0.265 0.035 292)");
+});

@@ -1,12 +1,17 @@
 import type { EnvironmentId, ThreadId } from "@t3tools/contracts";
+import * as Haptics from "expo-haptics";
 import { T, useGT } from "gt-react-native";
-import { Platform, Pressable, ScrollView, View } from "react-native";
+import { Pressable, ScrollView, View } from "react-native";
+import Animated, { FadeIn, FadeOut, ReduceMotion } from "react-native-reanimated";
 
 import { AppText as Text } from "../../components/ui/AppText";
 import { SymbolView } from "../../components/ui/AppSymbol";
 import { cn } from "../../lib/cn";
 import { useSideChats } from "../../state/entities";
 import { useOpenLinkedThread } from "./useOpenLinkedThread";
+
+const SIDE_CHATS_ENTERING = FadeIn.duration(160).reduceMotion(ReduceMotion.System);
+const SIDE_CHATS_EXITING = FadeOut.duration(120).reduceMotion(ReduceMotion.System);
 
 /**
  * The thread's side chats, started on web or desktop. Each opens as a normal thread, so its
@@ -21,11 +26,10 @@ export function ThreadSideChatsRow(props: {
   const gt = useGT();
   if (sideChats.length === 0) return null;
   return (
-    <View
-      className={cn(
-        "flex-row items-center gap-2 py-2 pl-4",
-        Platform.OS === "android" ? "bg-transparent" : "bg-screen",
-      )}
+    <Animated.View
+      entering={SIDE_CHATS_ENTERING}
+      exiting={SIDE_CHATS_EXITING}
+      className="flex-row items-center gap-2 bg-transparent py-2 pl-4"
     >
       <SymbolView
         name="bubble.left.and.bubble.right"
@@ -36,7 +40,7 @@ export function ThreadSideChatsRow(props: {
         <T>Side chats</T>
       </Text>
       <ScrollView horizontal showsHorizontalScrollIndicator={false} className="flex-1">
-        <View className="flex-row gap-1 pr-4">
+        <View className="flex-row gap-1.5 pr-4">
           {sideChats.map((sideChat) => {
             const needs =
               sideChat.hasPendingApprovals || sideChat.pendingSubagentRequest === "approval"
@@ -55,10 +59,12 @@ export function ThreadSideChatsRow(props: {
                       ? gt("Open side chat {title}, needs approval", { title: sideChat.title })
                       : gt("Open side chat {title}, needs input", { title: sideChat.title })
                 }
-                className="max-w-48 flex-row items-center gap-1.5 rounded-full bg-subtle px-2.5 py-1"
-                onPress={() =>
-                  openLinkedThread({ environmentId: props.environmentId, threadId: sideChat.id })
-                }
+                hitSlop={8}
+                className="min-h-[32px] max-w-48 flex-row items-center gap-1.5 rounded-full bg-subtle px-3 py-1.5 active:opacity-70"
+                onPress={() => {
+                  void Haptics.selectionAsync().catch(() => undefined);
+                  openLinkedThread({ environmentId: props.environmentId, threadId: sideChat.id });
+                }}
               >
                 {needs === null ? null : (
                   <View
@@ -76,6 +82,6 @@ export function ThreadSideChatsRow(props: {
           })}
         </View>
       </ScrollView>
-    </View>
+    </Animated.View>
   );
 }

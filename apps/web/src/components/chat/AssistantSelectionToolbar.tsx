@@ -35,6 +35,7 @@ export function AssistantSelectionToolbar({
     position: SelectionActionPoint;
     sourceAnchor: AssistantCitationSourceAnchor;
   } | null>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
   const toolbarRef = useRef<HTMLButtonElement>(null);
   const actionsRef = useRef<ReturnType<typeof observeSelectionActions> | null>(null);
   const backgroundThread = use(BackgroundThreadContext);
@@ -42,11 +43,11 @@ export function AssistantSelectionToolbar({
 
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- measures the toolbar DOM node and clamps its position inside the window before paint
   useLayoutEffect(() => {
-    const toolbar = toolbarRef.current;
-    if (!toolbar || !selection) return;
-    const rect = toolbar.getBoundingClientRect();
-    toolbar.style.left = `${Math.max(8, Math.min(selection.position.x, window.innerWidth - rect.width - 8))}px`;
-    toolbar.style.top = `${Math.max(8, Math.min(selection.position.y, window.innerHeight - rect.height - 8))}px`;
+    const container = containerRef.current;
+    if (!container || !selection) return;
+    const rect = container.getBoundingClientRect();
+    container.style.left = `${Math.max(8, Math.min(selection.position.x, window.innerWidth - rect.width - 8))}px`;
+    container.style.top = `${Math.max(8, Math.min(selection.position.y, window.innerHeight - rect.height - 8))}px`;
   }, [selection]);
 
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- subscribes to document selectionchange and keydown to track text selections in the viewport
@@ -141,7 +142,7 @@ export function AssistantSelectionToolbar({
     };
     const actions = observeSelectionActions({
       element: viewport,
-      getActionElement: () => toolbarRef.current,
+      getActionElement: () => containerRef.current,
       restoreAfterScroll: true,
       immediateMultiClick: true,
       onSelection: update,
@@ -192,30 +193,36 @@ export function AssistantSelectionToolbar({
     return true;
   };
   return createPortal(
-    <Button
-      ref={toolbarRef}
-      type="button"
-      size="xs"
-      variant="glass"
-      disabled={tooLong}
-      aria-label={tooLong ? gt("Selection is too long to cite") : gt("Cite selection in composer")}
-      className="fixed z-50 max-w-[calc(100vw-1rem)]"
+    <div
+      ref={containerRef}
+      className="fixed z-50 max-w-[calc(100vw-1rem)] origin-bottom transition-[opacity,transform] duration-140 ease-(--ease-spring-snappy) starting:translate-y-1 starting:scale-95 starting:opacity-0 motion-reduce:transition-none"
       style={{ left: selection.position.x, top: selection.position.y }}
-      onPointerDown={(event) => event.preventDefault()}
-      onClick={cite}
-      onKeyDown={(event) => {
-        event.stopPropagation();
-        if (event.key === "Escape" && !event.nativeEvent.isComposing) {
-          event.preventDefault();
-          dismiss();
-        }
-      }}
     >
-      <QuoteIcon aria-hidden="true" className="size-3.5" />
-      {tooLong
-        ? gt("Shorten selection")
-        : gt("Cite", { $context: "verb, button that quotes the selected text" })}
-    </Button>,
+      <Button
+        ref={toolbarRef}
+        type="button"
+        size="xs"
+        variant="glass"
+        disabled={tooLong}
+        aria-label={
+          tooLong ? gt("Selection is too long to cite") : gt("Cite selection in composer")
+        }
+        onPointerDown={(event) => event.preventDefault()}
+        onClick={cite}
+        onKeyDown={(event) => {
+          event.stopPropagation();
+          if (event.key === "Escape" && !event.nativeEvent.isComposing) {
+            event.preventDefault();
+            dismiss();
+          }
+        }}
+      >
+        <QuoteIcon aria-hidden="true" className="size-3.5" />
+        {tooLong
+          ? gt("Shorten selection")
+          : gt("Cite", { $context: "verb, button that quotes the selected text" })}
+      </Button>
+    </div>,
     document.body,
   );
 }

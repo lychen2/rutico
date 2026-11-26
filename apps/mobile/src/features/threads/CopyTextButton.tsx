@@ -3,11 +3,17 @@ import { SymbolView } from "../../components/ui/AppSymbol";
 import { useGT } from "gt-react-native";
 import { memo, useState } from "react";
 import { Pressable, type ColorValue } from "react-native";
+import Animated, { ReduceMotion, ZoomIn } from "react-native-reanimated";
 
 import { useDeadlinePassed } from "../../lib/clock";
 import { tryCopyTextWithHaptic } from "../../lib/copyTextWithHaptic";
 
 const COPY_FEEDBACK_DURATION_MS = 1200;
+const CHECKMARK_ENTERING = ZoomIn.springify()
+  .damping(16)
+  .stiffness(360)
+  .mass(0.6)
+  .reduceMotion(ReduceMotion.System);
 
 export const CopyTextButton = memo(function CopyTextButton(props: {
   readonly accessibilityLabel: string;
@@ -34,7 +40,7 @@ export const CopyTextButton = memo(function CopyTextButton(props: {
       accessibilityRole="button"
       accessibilityLabel={copied ? gt("Copied") : props.accessibilityLabel}
       disabled={props.text.length === 0}
-      hitSlop={8}
+      hitSlop={10}
       onLongPress={props.onLongPress}
       onPress={async () => {
         try {
@@ -61,17 +67,28 @@ export const CopyTextButton = memo(function CopyTextButton(props: {
         opacity: pressed ? 0.52 : 1,
       })}
     >
-      <SymbolView
-        name={
-          copied
-            ? { ios: "checkmark", android: "check" }
-            : { ios: "doc.on.doc", android: "content_copy" }
-        }
-        size={props.iconSize ?? 13}
-        tintColor={copied ? (props.copiedTintColor ?? props.tintColor) : props.tintColor}
-        tintColorClassName={props.tintColor ? undefined : "accent-foreground"}
-        type="monochrome"
-      />
+      {copied ? (
+        <Animated.View key="copied" entering={CHECKMARK_ENTERING}>
+          <SymbolView
+            name={{ ios: "checkmark", android: "check" }}
+            size={props.iconSize ?? 13}
+            tintColor={props.copiedTintColor}
+            tintColorClassName={
+              props.copiedTintColor ? undefined : "accent-adaptive-emerald-600-400"
+            }
+            type="monochrome"
+          />
+        </Animated.View>
+      ) : (
+        <SymbolView
+          key="idle"
+          name={{ ios: "doc.on.doc", android: "content_copy" }}
+          size={props.iconSize ?? 13}
+          tintColor={props.tintColor}
+          tintColorClassName={props.tintColor ? undefined : "accent-foreground"}
+          type="monochrome"
+        />
+      )}
     </Pressable>
   );
 });

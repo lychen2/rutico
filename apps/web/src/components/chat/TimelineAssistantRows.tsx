@@ -10,6 +10,7 @@ import { GitForkIcon, ReplyIcon } from "lucide-react";
 import { captureAssistantMessageOpening } from "~/lib/assistantTextSelection";
 import { responseContextRecord } from "~/lib/composerContextRecords";
 import { Button } from "../ui/button";
+import { Spinner } from "../ui/spinner";
 import { ProposedPlanCard } from "./ProposedPlanCard";
 import { HtmlRenderFrame } from "./HtmlRenderFrame";
 import { McpAppFrame } from "./McpAppFrame";
@@ -48,7 +49,8 @@ export function AssistantTimelineRow({ row }: { row: Extract<TimelineRow, { kind
         }
         data-result-landed={row.showAssistantMeta && !row.message.streaming ? "true" : undefined}
       >
-        <MessageAuthorHeading>T3 Code</MessageAuthorHeading>
+        {/* oxlint-disable-next-line t3code/no-untranslated-copy -- product name stays English */}
+        <MessageAuthorHeading>Rutico</MessageAuthorHeading>
         <div data-thread-find-text="true">
           <AssistantCitationSource
             messageId={row.message.id}
@@ -106,7 +108,8 @@ export function SentMessageTimelineRow({
 
   return (
     <div className="min-w-0 px-1 py-0.5">
-      <MessageAuthorHeading>T3 Code</MessageAuthorHeading>
+      {/* oxlint-disable-next-line t3code/no-untranslated-copy -- product name stays English */}
+      <MessageAuthorHeading>Rutico</MessageAuthorHeading>
       {/* Sent messages have no message id; citations name their turn item instead. */}
       <AssistantCitationSource
         messageId={MessageId.make(row.id)}
@@ -172,7 +175,7 @@ function AssistantForkButton({
           />
         }
       >
-        <GitForkIcon className={cn("size-3", busy && "animate-pulse")} />
+        {busy ? <Spinner size="xs" /> : <GitForkIcon className="size-3" />}
       </TooltipTrigger>
       <TooltipPopup side="top">
         <T>Fork from this response</T>
@@ -221,10 +224,10 @@ function AssistantMessageMeta({
   return (
     <div
       className={cn(
-        "flex items-center gap-2 text-xs tabular-nums transition-opacity duration-200",
+        "flex items-center gap-2 text-xs tabular-nums transition-[opacity,transform] duration-180 ease-out motion-reduce:transition-none",
         alwaysVisible
           ? "opacity-100"
-          : "opacity-0 pointer-coarse:opacity-100 focus-within:opacity-100 group-hover/assistant:opacity-100",
+          : "translate-y-0.5 opacity-0 pointer-coarse:translate-y-0 pointer-coarse:opacity-100 focus-within:translate-y-0 focus-within:opacity-100 group-hover/assistant:translate-y-0 group-hover/assistant:opacity-100 motion-reduce:translate-y-0",
         className,
       )}
     >

@@ -222,7 +222,7 @@ export function ComposerAttachmentMediaRow({
                 "group/attachment shrink-0 snap-start bg-background",
                 source?.kind === "snap-shot"
                   ? SNAP_SHOT_ATTACHMENT_FRAME_CLASS
-                  : "relative h-16 w-16 overflow-hidden rounded-lg border border-border/80",
+                  : "relative h-16 w-16 origin-center overflow-hidden rounded-lg border border-border/80 transition-[opacity,scale,border-color] duration-180 ease-(--ease-spring-gentle) starting:scale-95 starting:opacity-0 any-hover:border-foreground/22 motion-reduce:transition-none motion-reduce:starting:scale-100 motion-reduce:starting:opacity-100",
                 snapShotAnimationPending && "invisible",
               )}
             >
@@ -241,7 +241,11 @@ export function ComposerAttachmentMediaRow({
                   <ComposerImageThumbnail
                     file={image.file}
                     alt={image.name}
-                    className="h-full w-full object-cover"
+                    className={cn(
+                      "h-full w-full object-cover",
+                      ready &&
+                        "transition-transform duration-200 ease-out group-any-hover/attachment:scale-[1.04] motion-reduce:transition-none motion-reduce:group-any-hover/attachment:scale-100",
+                    )}
                     fallback={
                       ready && isHeicImageFile({ name: ready.name, type: ready.mimeType }) ? (
                         <AttachmentImage
@@ -249,7 +253,7 @@ export function ComposerAttachmentMediaRow({
                           mimeType={ready.mimeType}
                           src={ready.previewUrl}
                           alt=""
-                          className="h-full w-full object-cover"
+                          className="h-full w-full object-cover transition-transform duration-200 ease-out group-any-hover/attachment:scale-[1.04] motion-reduce:transition-none motion-reduce:group-any-hover/attachment:scale-100"
                         />
                       ) : (
                         <ComposerImageFallback />
@@ -291,7 +295,7 @@ export function ComposerAttachmentMediaRow({
                 </Tooltip>
               )}
               {(!ready || upload?.status === "uploading") && (
-                <span className="pointer-events-none absolute inset-x-0 bottom-0 bg-background/85 px-1 text-center text-3xs text-foreground">
+                <span className="pointer-events-none absolute inset-x-0 bottom-0 bg-background/85 px-1 text-center text-3xs text-foreground tabular-nums">
                   {upload?.status === "uploading" ? (
                     <ComposerAttachmentUploadProgress id={image.id} upload={upload} />
                   ) : (
@@ -328,13 +332,7 @@ export function ComposerAttachmentMediaRow({
                   </TooltipPopup>
                 </Tooltip>
               )}
-              <span
-                className={cn(
-                  "absolute right-1 top-1 flex",
-                  source?.kind === "snap-shot" &&
-                    "opacity-0 transition-opacity pointer-coarse:opacity-100 group-hover/attachment:opacity-100 group-focus-within/attachment:opacity-100",
-                )}
-              >
+              <span className="absolute right-1 top-1 flex opacity-0 transition-opacity duration-150 ease-out pointer-coarse:opacity-100 group-any-hover/attachment:opacity-100 group-focus-within/attachment:opacity-100 motion-reduce:transition-none">
                 <Button
                   variant="media-close"
                   size="icon-xs"
@@ -372,7 +370,7 @@ export function ComposerAttachmentMediaRow({
         return (
           <div
             key={file.id}
-            className="relative h-16 w-16 shrink-0 snap-start overflow-hidden rounded-lg border border-border/80 bg-black"
+            className="group/attachment relative h-16 w-16 shrink-0 origin-center snap-start overflow-hidden rounded-lg border border-border/80 bg-black transition-[opacity,scale,border-color] duration-180 ease-(--ease-spring-gentle) starting:scale-95 starting:opacity-0 any-hover:border-foreground/22 motion-reduce:transition-none motion-reduce:starting:scale-100 motion-reduce:starting:opacity-100"
           >
             <button
               type="button"
@@ -397,7 +395,7 @@ export function ComposerAttachmentMediaRow({
               <PlayIcon className="relative z-10 size-4 fill-current drop-shadow-md" />
             </button>
             {upload?.status === "uploading" && (
-              <span className="pointer-events-none absolute inset-x-0 bottom-0 bg-background/85 px-1 text-center text-3xs text-foreground">
+              <span className="pointer-events-none absolute inset-x-0 bottom-0 bg-background/85 px-1 text-center text-3xs text-foreground tabular-nums">
                 <ComposerAttachmentUploadProgress id={file.id} upload={upload} />
               </span>
             )}
@@ -428,15 +426,16 @@ export function ComposerAttachmentMediaRow({
                 </TooltipPopup>
               </Tooltip>
             )}
-            <Button
-              variant="media-close"
-              size="icon-xs"
-              className="absolute right-1 top-1"
-              onClick={() => onRemoveFile(file.id)}
-              aria-label={gt("Remove {name}", { name: file.name })}
-            >
-              <XIcon />
-            </Button>
+            <span className="absolute right-1 top-1 flex opacity-0 transition-opacity duration-150 ease-out pointer-coarse:opacity-100 group-any-hover/attachment:opacity-100 group-focus-within/attachment:opacity-100 motion-reduce:transition-none">
+              <Button
+                variant="media-close"
+                size="icon-xs"
+                onClick={() => onRemoveFile(file.id)}
+                aria-label={gt("Remove {name}", { name: file.name })}
+              >
+                <XIcon />
+              </Button>
+            </span>
           </div>
         );
       })}
@@ -484,7 +483,7 @@ export function ComposerAttachmentFileList({
         return (
           <div
             key={file.id}
-            className="flex min-w-0 items-center gap-2 py-1 text-sm text-foreground"
+            className="-mx-1.5 flex min-w-0 items-center gap-2 rounded-md px-1.5 py-1 text-sm text-foreground transition-colors duration-150 ease-out any-hover:bg-foreground/[0.04] motion-reduce:transition-none"
           >
             <PierreEntryIcon pathValue={file.name} kind="file" theme={resolvedTheme} />
             <button
@@ -495,7 +494,7 @@ export function ComposerAttachmentFileList({
             >
               {file.name}
             </button>
-            <span className="shrink-0 text-xs text-secondary-label">
+            <span className="shrink-0 text-xs text-secondary-label tabular-nums">
               {needsReattach ? (
                 canReattachFile ? (
                   gt("Attach again")
@@ -707,7 +706,7 @@ export function ComposerQueuedAttachmentRow({
       {attachments.map(({ attachment, url }) => (
         <div
           key={attachment.id}
-          className="relative h-16 w-16 overflow-hidden rounded-lg border border-border/80 bg-background"
+          className="group/attachment relative h-16 w-16 origin-center overflow-hidden rounded-lg border border-border/80 bg-background transition-[opacity,scale,border-color] duration-180 ease-(--ease-spring-gentle) starting:scale-95 starting:opacity-0 any-hover:border-foreground/22 motion-reduce:transition-none motion-reduce:starting:scale-100 motion-reduce:starting:opacity-100"
         >
           {attachment.type === "image" && url ? (
             <img src={url} alt={attachment.name} className="h-full w-full object-cover" />
@@ -716,15 +715,16 @@ export function ComposerQueuedAttachmentRow({
               {attachment.name}
             </div>
           )}
-          <Button
-            variant="media-close"
-            size="icon-xs"
-            className="absolute right-1 top-1"
-            onClick={() => onRemove(attachment.id)}
-            aria-label={gt("Remove {name}", { name: attachment.name })}
-          >
-            <XIcon />
-          </Button>
+          <span className="absolute right-1 top-1 flex opacity-0 transition-opacity duration-150 ease-out pointer-coarse:opacity-100 group-any-hover/attachment:opacity-100 group-focus-within/attachment:opacity-100 motion-reduce:transition-none">
+            <Button
+              variant="media-close"
+              size="icon-xs"
+              onClick={() => onRemove(attachment.id)}
+              aria-label={gt("Remove {name}", { name: attachment.name })}
+            >
+              <XIcon />
+            </Button>
+          </span>
         </div>
       ))}
     </div>

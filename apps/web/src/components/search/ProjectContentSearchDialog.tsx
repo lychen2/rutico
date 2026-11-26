@@ -2,6 +2,7 @@ import { Spinner } from "~/components/ui/spinner";
 import { AuthFilesystemReadScope, type ProjectContentMatch } from "@t3tools/contracts";
 
 import { T, useGT, useMessages } from "gt-react";
+import { FolderSearchIcon, LockIcon, SearchIcon, SearchXIcon } from "lucide-react";
 import { useState, type ReactNode } from "react";
 
 import { useActiveProjectTarget, type ActiveProjectTarget } from "~/hooks/useActiveProjectTarget";
@@ -13,6 +14,7 @@ import { readEnvironmentScope } from "~/state/session";
 
 import { PierreEntryIcon } from "../chat/PierreEntryIcon";
 import { CommandPaletteContent } from "../CommandPaletteContent";
+import { Empty, EmptyDescription, EmptyHeader, EmptyMedia } from "../ui/empty";
 import { ScrollArea } from "../ui/scroll-area";
 import { Toggle } from "../ui/toggle";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
@@ -92,9 +94,16 @@ function EmptyContentSearchDialog() {
       testId="project-content-search"
       value=""
     >
-      <p className="m-auto px-6 text-center text-muted-foreground text-sm">
-        <T>Open a project to search its files.</T>
-      </p>
+      <Empty size="compact">
+        <EmptyMedia variant="icon">
+          <FolderSearchIcon className="size-4.5 text-muted-foreground" />
+        </EmptyMedia>
+        <EmptyHeader>
+          <EmptyDescription>
+            <T>Open a project to search its files.</T>
+          </EmptyDescription>
+        </EmptyHeader>
+      </Empty>
     </CommandPaletteContent>
   );
 }
@@ -260,15 +269,30 @@ function OpenContentSearchDialog(props: {
       ) : null}
 
       {matches.length === 0 ? (
-        <div className="flex flex-1 items-center justify-center px-6 text-center text-sm text-muted-foreground">
-          {search.isCheckingAccess
-            ? gt("Checking file access…")
-            : !search.canReadFiles
-              ? search.error
-              : search.hasQuery && !search.isPending && !search.error
-                ? gt("No results found.")
-                : gt("Type to search across your project.")}
-        </div>
+        <Empty size="compact">
+          <EmptyMedia variant={search.isCheckingAccess ? "default" : "icon"}>
+            {search.isCheckingAccess ? (
+              <Spinner />
+            ) : !search.canReadFiles ? (
+              <LockIcon className="size-4.5 text-muted-foreground" />
+            ) : search.hasQuery && !search.isPending && !search.error ? (
+              <SearchXIcon className="size-4.5 text-muted-foreground" />
+            ) : (
+              <SearchIcon className="size-4.5 text-muted-foreground" />
+            )}
+          </EmptyMedia>
+          <EmptyHeader>
+            <EmptyDescription>
+              {search.isCheckingAccess
+                ? gt("Checking file access…")
+                : !search.canReadFiles
+                  ? search.error
+                  : search.hasQuery && !search.isPending && !search.error
+                    ? gt("No results found.")
+                    : gt("Type to search across your project.")}
+            </EmptyDescription>
+          </EmptyHeader>
+        </Empty>
       ) : (
         <ScrollArea className="min-h-0 flex-1" scrollFade>
           <div className="py-2">
@@ -301,7 +325,7 @@ function OpenContentSearchDialog(props: {
                         match.resultIndex === selectedIndex ? scrollSelectedRowIntoView : undefined
                       }
                       className={cn(
-                        "flex h-7 w-full min-w-0 items-center gap-3 px-3 text-left font-mono text-xs hover:bg-accent/60 disabled:pointer-events-none",
+                        "flex h-7 w-full min-w-0 cursor-pointer items-center gap-3 px-3 text-left font-mono text-xs transition-[background-color,color,scale] duration-120 ease-out hover:bg-accent/60 motion-safe:active:scale-[0.995] motion-reduce:transition-none disabled:pointer-events-none",
                         match.resultIndex === selectedIndex && "bg-accent text-accent-foreground",
                       )}
                       disabled={!canOpenMatches}

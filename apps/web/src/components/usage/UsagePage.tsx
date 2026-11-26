@@ -80,7 +80,9 @@ import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "../
 
 import { Toggle } from "../ui/toggle-group";
 import { UsageSegments as ToggleGroup } from "./UsageSegments";
+import { Kbd } from "../ui/kbd";
 import { Popover, PopoverPopup, PopoverTrigger } from "../ui/popover";
+import { Tooltip, TooltipPopup, TooltipProvider, TooltipTrigger } from "../ui/tooltip";
 import {
   WorkspaceBreadcrumb,
   WorkspaceBreadcrumbItem,
@@ -162,12 +164,16 @@ export function UsagePage() {
   const [preferences, setPreferences] = useState(readUsagePagePreferences);
   const keybindings = useAtomValue(primaryServerKeybindingsAtom);
   const hour12 = usePrimarySettings((settings) => resolveHour12(settings.timestampFormat));
+  const shortcutForOption = (
+    option: (typeof METRIC_OPTIONS)[number] | (typeof WINDOW_OPTIONS)[number],
+  ) =>
+    shortcutLabelForCommand(keybindings, option.command, {
+      context: { usagePageOpen: true },
+    });
   const shortcutTitle = (
     option: (typeof METRIC_OPTIONS)[number] | (typeof WINDOW_OPTIONS)[number],
   ) => {
-    const shortcut = shortcutLabelForCommand(keybindings, option.command, {
-      context: { usagePageOpen: true },
-    });
+    const shortcut = shortcutForOption(option);
     return shortcut ? `${option.label} (${shortcut})` : option.label;
   };
   const [windowSelection, setWindowSelection] = useState(() => ({
@@ -372,32 +378,58 @@ export function UsagePage() {
         </span>
       ) : null}
       <div className="ms-auto hidden shrink-0 items-center justify-end gap-2 @4xl/usage-header:flex">
-        <ToggleGroup
-          aria-label={uiText("Usage metric")}
-          variant="segmented"
-          value={[metric]}
-          onValueChange={(next) => {
-            const value = next[0];
-            if (isUsageMetric(value)) selectMetric(value);
-          }}
-        >
-          {METRIC_OPTIONS.map((option) => (
-            <Toggle
-              key={option.value}
-              value={option.value}
-              aria-description={shortcutTitle(option)}
-            >
-              {option.label}
-            </Toggle>
-          ))}
-        </ToggleGroup>
-        <UsageRefreshButton
-          iconOnly
-          busy={isRefreshing}
-          disabled={isRefreshing || (!showingLimits && !canReadDiagnostics)}
-          onClick={refreshWindow}
-          label={showingLimits ? uiText("Refresh limits") : uiText("Refresh usage")}
-        />
+        <TooltipProvider>
+          <ToggleGroup
+            aria-label={uiText("Usage metric")}
+            variant="segmented"
+            value={[metric]}
+            onValueChange={(next) => {
+              const value = next[0];
+              if (isUsageMetric(value)) selectMetric(value);
+            }}
+          >
+            {METRIC_OPTIONS.map((option) => {
+              const shortcut = shortcutForOption(option);
+              const toggle = (
+                <Toggle
+                  key={option.value}
+                  value={option.value}
+                  aria-description={shortcutTitle(option)}
+                >
+                  {option.label}
+                </Toggle>
+              );
+              if (!shortcut) return toggle;
+              return (
+                <Tooltip key={option.value}>
+                  <TooltipTrigger render={toggle} />
+                  <TooltipPopup data-usage-portal side="bottom">
+                    <span className="inline-flex items-center gap-1.5">
+                      <span>{option.label}</span>
+                      <Kbd>{shortcut}</Kbd>
+                    </span>
+                  </TooltipPopup>
+                </Tooltip>
+              );
+            })}
+          </ToggleGroup>
+          <Tooltip>
+            <TooltipTrigger
+              render={
+                <UsageRefreshButton
+                  iconOnly
+                  busy={isRefreshing}
+                  disabled={isRefreshing || (!showingLimits && !canReadDiagnostics)}
+                  onClick={refreshWindow}
+                  label={showingLimits ? uiText("Refresh limits") : uiText("Refresh usage")}
+                />
+              }
+            />
+            <TooltipPopup data-usage-portal side="bottom">
+              {showingLimits ? uiText("Refresh limits") : uiText("Refresh usage")}
+            </TooltipPopup>
+          </Tooltip>
+        </TooltipProvider>
       </div>
       <div className="ms-auto flex shrink-0 items-center justify-end gap-1 @4xl/usage-header:hidden">
         {showingLimits ? null : (
