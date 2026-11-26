@@ -1,49 +1,56 @@
-import { stripDisplayedPlanMarkdown, proposedPlanTitle } from "@t3tools/shared/proposedPlanText";
-import { msg } from "gt-react";
+import { proposedPlanTitle, stripDisplayedPlanMarkdown } from "@t3tools/shared/proposedPlanText";
 
-import { m, type MessageResolver } from "./i18n/messages";
+interface ProposedPlanOutlineHeading {
+  readonly id: string;
+  readonly level: 2 | 3;
+  readonly text: string;
+}
 
-export function buildCollapsedProposedPlanPreviewMarkdown(
+function stripInlineMarkdown(raw: string): string {
+  return raw
+    .replace(/!\[([^\]]*)\]\([^)]*\)/g, "$1")
+    .replace(/\[([^\]]+)\]\([^)]*\)/g, "$1")
+    .replace(/[`*_~]/g, "")
+    .replace(/\s+#+\s*$/, "")
+    .trim();
+}
+
+/** Extract ATX H2/H3 section headings outside fenced code blocks for quick outline navigation. */
+export function extractProposedPlanHeadings(
   planMarkdown: string,
-  options?: {
-    maxLines?: number;
-  },
-  resolve: MessageResolver = m,
-): string {
-  const maxLines = options?.maxLines ?? 8;
-  const lines = stripDisplayedPlanMarkdown(planMarkdown)
-    .trimEnd()
-    .split(/\r?\n/)
-    .map((line) => line.trimEnd());
-  const previewLines: string[] = [];
-  let visibleLineCount = 0;
-  let hasMoreContent = false;
-
+): ReadonlyArray<ProposedPlanOutlineHeading> {
+  const lines = stripDisplayedPlanMarkdown(planMarkdown).split(/\r?\n/);
+  const headings: ProposedPlanOutlineHeading[] = [];
+  const seenCounts = new Map<string, number>();
+  let activeFence: string | null = null;
   for (const line of lines) {
-    const isVisibleLine = line.trim().length > 0;
-    if (isVisibleLine && visibleLineCount >= maxLines) {
-      hasMoreContent = true;
-      break;
+    const fenceMatch = line.match(/^\s*(`{3,}|~{3,})/);
+    if (fenceMatch) {
+      const marker = fenceMatch[1]!;
+      if (activeFence === null) {
+        activeFence = marker[0]!;
+      } else if (marker[0] === activeFence) {
+        activeFence = null;
+      }
+      continue;
     }
-    previewLines.push(line);
-    if (isVisibleLine) {
-      visibleLineCount += 1;
+    if (activeFence !== null) continue;
+    const match = line.match(/^\s*(#{2,3})\s+(.+)$/);
+    if (!match) continue;
+    const level = match[1]!.length === 2 ? 2 : 3;
+    const text = stripInlineMarkdown(match[2]!);
+    if (text.length > 0) {
+      const key = `${level}:${text}`;
+      const occurrence = seenCounts.get(key) ?? 0;
+      seenCounts.set(key, occurrence + 1);
+      headings.push({
+        id: occurrence === 0 ? key : `${key}#${occurrence}`,
+        level,
+        text,
+      });
     }
   }
-
-  while (previewLines.length > 0 && previewLines.at(-1)?.trim().length === 0) {
-    previewLines.pop();
-  }
-
-  if (previewLines.length === 0) {
-    return proposedPlanTitle(planMarkdown) ?? resolve(msg("Plan preview unavailable."));
-  }
-
-  if (hasMoreContent) {
-    previewLines.push("", "...");
-  }
-
-  return previewLines.join("\n");
+  return headings;
 }
 
 function sanitizePlanFileSegment(input: string): string {

@@ -1,6 +1,6 @@
 import { proposedPlanTitle, stripDisplayedPlanMarkdown } from "@t3tools/shared/proposedPlanText";
-import { msg, T, useGT, useMessages, Var } from "gt-react";
-import { memo, useState, useId } from "react";
+import { msg, T, useGT, Var } from "gt-react";
+import { memo, useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import { findRevealRef } from "./markdownFindContext";
 import {
   isAtomCommandInterrupted,
@@ -12,11 +12,12 @@ import {
   type ScopedThreadRef,
 } from "@t3tools/contracts";
 import {
-  buildCollapsedProposedPlanPreviewMarkdown,
   buildProposedPlanMarkdownFilename,
   downloadPlanAsTextFile,
+  extractProposedPlanHeadings,
   normalizePlanMarkdownForExport,
 } from "../../proposedPlan";
+import { getSpringWaapiTiming, prefersReducedMotion } from "~/lib/motion/springs";
 import ChatMarkdown from "../ChatMarkdown";
 import { CheckIcon, ChevronDownIcon, CopyIcon, EllipsisIcon } from "lucide-react";
 import { Button } from "../ui/button";
@@ -46,7 +47,7 @@ export const ProposedPlanCard = memo(function ProposedPlanCard({
   threadRef,
   cwd,
   workspaceRoot,
-  findActive = false,
+  findActive: _findActive = false,
 }: {
   planMarkdown: string;
   environmentId: EnvironmentId;
@@ -56,12 +57,18 @@ export const ProposedPlanCard = memo(function ProposedPlanCard({
   findActive?: boolean;
 }) {
   const gt = useGT();
-  const messages = useMessages();
   const [expanded, setExpanded] = useState(false);
+  const bodyRef = useRef<HTMLDivElement | null>(null);
+  const pendingUnfoldRef = useRef<{
+    readonly fromHeight: number;
+    readonly targetExpanded: boolean;
+  } | null>(null);
+  const unfoldAnimationRef = useRef<Animation | null>(null);
   const canWriteFiles = useEnvironmentScope(environmentId, AuthFilesystemWriteScope);
   const [isSaveDialogOpen, setIsSaveDialogOpen] = useState(false);
   const [lastSavePath, setLastSavePath] = useState("");
   const [isSavingToWorkspace, setIsSavingToWorkspace] = useState(false);
+  const [savedNoticeVisible, setSavedNoticeVisible] = useState(false);
   const writeProjectFile = useAtomCommand(projectEnvironment.writeFile, {
     reportFailure: false,
   });
@@ -86,13 +93,96 @@ export const ProposedPlanCard = memo(function ProposedPlanCard({
   const lineCount = planMarkdown.split("\n").length;
   const canCollapse = planMarkdown.length > 900 || lineCount > 20;
   const displayedPlanMarkdown = stripDisplayedPlanMarkdown(planMarkdown);
-  const collapsedPreview = canCollapse
-    ? buildCollapsedProposedPlanPreviewMarkdown(planMarkdown, { maxLines: 10 }, messages)
-    : null;
+  const outlineHeadings = extractProposedPlanHeadings(planMarkdown);
   const isCollapsed = canCollapse && !expanded;
-  // Mount clipped plans during find to count hidden matches without revealing them.
-  const showPreview = isCollapsed && !findActive;
+  const showOutline = (!canCollapse || expanded) && outlineHeadings.length >= 2;
+
+  const setExpandedWithUnfold = (nextExpanded: boolean) => {
+    const body = bodyRef.current;
+    if (body && nextExpanded !== expanded) {
+      pendingUnfoldRef.current = {
+        fromHeight: body.offsetHeight,
+        targetExpanded: nextExpanded,
+      };
+    }
+    setExpanded(nextExpanded);
+  };
+
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- auto-clears the transient 2s saved confirmation badge
+  useEffect(() => {
+    if (!savedNoticeVisible) return;
+    const timer = window.setTimeout(() => setSavedNoticeVisible(false), 2000);
+    return () => window.clearTimeout(timer);
+  }, [savedNoticeVisible]);
+
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- runs discrete WAAPI height unfold/fold on the unified single markdown tree and releases inline styles on completion
+  useLayoutEffect(() => {
+    const pending = pendingUnfoldRef.current;
+    pendingUnfoldRef.current = null;
+    const body = bodyRef.current;
+    if (
+      !pending ||
+      pending.targetExpanded !== expanded ||
+      !body ||
+      typeof body.animate !== "function"
+    ) {
+      return;
+    }
+    unfoldAnimationRef.current?.cancel();
+    unfoldAnimationRef.current = null;
+    if (prefersReducedMotion()) return;
+    const toHeight = body.offsetHeight;
+    if (Math.abs(toHeight - pending.fromHeight) < 2) return;
+    body.style.overflow = "hidden";
+    const timing = getSpringWaapiTiming("spatial");
+    const animation = body.animate(
+      [
+        { height: `${pending.fromHeight}px`, maxHeight: "none" },
+        { height: `${toHeight}px`, maxHeight: "none" },
+      ],
+      {
+        duration: Math.min(340, timing.duration),
+        easing: timing.easing,
+      },
+    );
+    unfoldAnimationRef.current = animation;
+    const release = () => {
+      if (unfoldAnimationRef.current === animation) {
+        unfoldAnimationRef.current = null;
+      }
+      body.style.removeProperty("overflow");
+    };
+    void animation.finished.catch(() => undefined).then(release);
+    return () => {
+      animation.cancel();
+      release();
+    };
+  }, [expanded]);
+
+  const jumpToOutlineHeading = (headingIndex: number, headingText: string) => {
+    const body = bodyRef.current;
+    if (!body) return;
+    const headingNodes = Array.from(body.querySelectorAll<HTMLElement>("h1, h2, h3, h4, h5, h6"));
+    const normalized = headingText.trim().toLowerCase();
+    const target =
+      headingNodes.find((node) => (node.textContent ?? "").trim().toLowerCase() === normalized) ??
+      headingNodes[headingIndex];
+    if (!target) return;
+    target.scrollIntoView({
+      behavior: prefersReducedMotion() ? "auto" : "smooth",
+      block: "nearest",
+    });
+    target.dataset.planJumpTarget = "true";
+    window.setTimeout(() => {
+      delete target.dataset.planJumpTarget;
+    }, 650);
+  };
+
   const revealRef = findRevealRef(() => setExpanded(true));
+  const attachBodyRef = (node: HTMLDivElement | null) => {
+    bodyRef.current = node;
+    return revealRef(node);
+  };
   const downloadFilename = buildProposedPlanMarkdownFilename(planMarkdown);
   const saveContents = normalizePlanMarkdownForExport(planMarkdown);
 
@@ -146,6 +236,7 @@ export const ProposedPlanCard = memo(function ProposedPlanCard({
       setIsSavingToWorkspace(false);
       if (result._tag === "Success") {
         setIsSaveDialogOpen(false);
+        setSavedNoticeVisible(true);
         toastManager.add({
           type: "success",
           title: gt("Plan saved to workspace"),
@@ -180,6 +271,12 @@ export const ProposedPlanCard = memo(function ProposedPlanCard({
           </h3>
         </div>
         <div className="flex shrink-0 items-center gap-1">
+          {savedNoticeVisible ? (
+            <Badge variant="success" size="sm" data-plan-saved-badge="true">
+              <CheckIcon aria-hidden="true" className="size-3" />
+              <span>{gt("Saved")}</span>
+            </Badge>
+          ) : null}
           <Tooltip>
             <TooltipTrigger
               render={
@@ -225,32 +322,43 @@ export const ProposedPlanCard = memo(function ProposedPlanCard({
           </Menu>
         </div>
       </div>
+      {showOutline ? (
+        <nav
+          aria-label={gt("Plan sections")}
+          data-plan-outline-rail="true"
+          className="mt-3 flex flex-wrap items-center gap-1.5 border-b border-border/60 pb-2.5"
+        >
+          {outlineHeadings.map((heading, headingIndex) => (
+            <button
+              key={heading.id}
+              type="button"
+              data-plan-outline-pill={heading.level === 2 ? "h2" : "h3"}
+              onClick={() => jumpToOutlineHeading(headingIndex, heading.text)}
+              className={cn(
+                "inline-flex max-w-52 cursor-pointer items-center rounded-full border border-border/75 bg-muted/45 px-2 py-0.5 text-2xs transition-[background-color,border-color,color,transform] duration-150 ease-out hover:border-foreground/25 hover:bg-muted hover:text-foreground focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring active:scale-[0.97] motion-reduce:transition-none",
+                heading.level === 2 ? "font-medium text-foreground/85" : "text-muted-foreground",
+              )}
+            >
+              <span className="truncate">{heading.text}</span>
+            </button>
+          ))}
+        </nav>
+      ) : null}
       <div className="mt-4">
         <div
-          ref={revealRef}
+          ref={attachBodyRef}
           className={cn("relative", isCollapsed && "max-h-104 overflow-hidden")}
           data-thread-find-text="true"
           data-thread-find-fold={isCollapsed ? "" : undefined}
         >
-          {showPreview ? (
-            <ChatMarkdown
-              text={collapsedPreview ?? ""}
-              cwd={cwd}
-              environmentId={environmentId}
-              threadRef={threadRef}
-              isStreaming={false}
-              headingLevelOffset={3}
-            />
-          ) : (
-            <ChatMarkdown
-              text={displayedPlanMarkdown}
-              cwd={cwd}
-              environmentId={environmentId}
-              threadRef={threadRef}
-              isStreaming={false}
-              headingLevelOffset={3}
-            />
-          )}
+          <ChatMarkdown
+            text={displayedPlanMarkdown}
+            cwd={cwd}
+            environmentId={environmentId}
+            threadRef={threadRef}
+            isStreaming={false}
+            headingLevelOffset={3}
+          />
           {isCollapsed ? (
             <div className="pointer-events-none absolute inset-x-0 bottom-0 h-24 bg-linear-to-t from-card/95 via-card/80 to-transparent" />
           ) : null}
@@ -262,7 +370,7 @@ export const ProposedPlanCard = memo(function ProposedPlanCard({
               variant="outline"
               aria-expanded={expanded}
               data-scroll-anchor-ignore
-              onClick={() => setExpanded((value) => !value)}
+              onClick={() => setExpandedWithUnfold(!expanded)}
             >
               <ChevronDownIcon
                 aria-hidden="true"

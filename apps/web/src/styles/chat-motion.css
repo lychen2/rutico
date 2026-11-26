@@ -936,3 +936,42 @@
     transform: none;
   }
 }
+
+/* ==========================================================================
+   D10 / C034: ProposedPlanCard Outline Pills, Jump Highlight & Saved Badge
+   ========================================================================== */
+
+@keyframes chat-plan-jump-highlight {
+  0% {
+    background-color: color-mix(in oklch, var(--primary) 18%, transparent);
+  }
+  100% {
+    background-color: transparent;
+  }
+}
+
+[data-plan-jump-target="true"] {
+  border-radius: 0.375rem;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  [data-plan-outline-rail="true"] {
+    animation: chat-work-cascade-in 200ms var(--spring-snappy) both;
+  }
+
+  [data-plan-saved-badge="true"] {
+    animation: chat-approval-stamp-pop 240ms var(--spring-bouncy) both;
+  }
+
+  [data-plan-jump-target="true"] {
+    animation: chat-plan-jump-highlight 650ms ease-out both;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-plan-outline-rail="true"],
+  [data-plan-saved-badge="true"],
+  [data-plan-jump-target="true"] {
+    animation: none;
+  }
+}
