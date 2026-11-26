@@ -2,7 +2,8 @@ import { T, Var, msg, useGT, useMessages } from "gt-react";
 import { ThreadHoverCardPopup } from "../ThreadHoverCard";
 import { AgentElapsed } from "./AgentElapsed";
 import { projectedSubagentsToRuntime } from "@t3tools/client-runtime/state/subagentRuntime";
-import { use, type ReactNode } from "react";
+import { use, useState, type ReactNode } from "react";
+import { observeVisibleAnimation } from "~/lib/visibleAnimation";
 import { useThreadShell, useProject } from "../../state/entities";
 import type { SideThreadOpenIntent } from "@t3tools/client-runtime/side-thread";
 import { SideThreadsOpenContext, useSideThreadTrigger } from "../../hooks/useSideThreadTrigger";
@@ -238,6 +239,12 @@ export function SubagentElapsed({ agent }: { agent: Parameters<typeof AgentElaps
   return <AgentElapsed agent={agent} />;
 }
 
+const ACTIVE_SUBAGENT_STATUSES = new Set<OrchestrationV2TurnItem["status"]>([
+  "pending",
+  "running",
+  "waiting",
+]);
+
 function SubagentAvatar({
   driver,
   displayName,
@@ -257,6 +264,7 @@ function SubagentAvatar({
   status?: OrchestrationV2TurnItem["status"] | undefined;
   className?: string;
 }) {
+  const isOrbiting = status !== undefined && ACTIVE_SUBAGENT_STATUSES.has(status);
   return (
     <span
       aria-hidden
@@ -265,6 +273,35 @@ function SubagentAvatar({
         className,
       )}
     >
+      {isOrbiting ? (
+        <svg
+          ref={observeVisibleAnimation}
+          aria-hidden="true"
+          viewBox="0 0 32 32"
+          fill="none"
+          data-subagent-orbit="true"
+          className="pointer-events-none absolute -inset-1 size-8 text-info"
+        >
+          <circle
+            cx="16"
+            cy="16"
+            r="14.5"
+            stroke="currentColor"
+            strokeOpacity="0.18"
+            strokeWidth="1.5"
+          />
+          <circle
+            cx="16"
+            cy="16"
+            r="14.5"
+            stroke="currentColor"
+            strokeWidth="1.75"
+            strokeLinecap="round"
+            strokeDasharray="24 68"
+            data-subagent-orbit-arc="true"
+          />
+        </svg>
+      ) : null}
       {driver ? (
         <ProviderInstanceIcon
           driverKind={driver}
@@ -479,20 +516,73 @@ function SubagentTimelineLink(props: {
   const panel = threadId !== null || remoteOpener?.mode === "linked";
   const liveStatus = agent?.status ?? props.status;
   const status = props.event ? props.event.status : liveStatus;
+  const effectiveStatus = status ?? liveStatus;
   const statusLabel = props.event?.label ?? m(subagentStatusVisual(liveStatus).label);
   const result = (agent?.result ?? props.result)?.trim();
   const progress = (agent?.progress ?? props.progress)?.trim();
-  const settled = SETTLED_SUBAGENT_STATUSES.has(status ?? liveStatus);
+  const settled = SETTLED_SUBAGENT_STATUSES.has(effectiveStatus);
   const rawDetail = settled ? result || progress : progress || result;
   const detail = subagentCardDetail(rawDetail);
   const failed = status === "failed";
+  const currentLineText = detail ?? statusLabel;
+
+  const [lifecycleState, setLifecycleState] = useState<{
+    readonly subagentId: NodeId;
+    readonly status: OrchestrationV2TurnItem["status"];
+    readonly lineText: string;
+    readonly justCompleted: boolean;
+    readonly progressSwapping: boolean;
+  }>({
+    subagentId: props.subagentId,
+    status: effectiveStatus,
+    lineText: currentLineText,
+    justCompleted: false,
+    progressSwapping: false,
+  });
+  if (lifecycleState.subagentId !== props.subagentId) {
+    setLifecycleState({
+      subagentId: props.subagentId,
+      status: effectiveStatus,
+      lineText: currentLineText,
+      justCompleted: false,
+      progressSwapping: false,
+    });
+  } else if (
+    lifecycleState.status !== effectiveStatus ||
+    lifecycleState.lineText !== currentLineText
+  ) {
+    setLifecycleState({
+      subagentId: props.subagentId,
+      status: effectiveStatus,
+      lineText: currentLineText,
+      justCompleted:
+        !SETTLED_SUBAGENT_STATUSES.has(lifecycleState.status) && effectiveStatus === "completed",
+      progressSwapping: lifecycleState.lineText !== currentLineText,
+    });
+  }
+
   const timing = {
     status: liveStatus,
     startedAt: isoOrNull(agent?.startedAt ?? props.startedAt),
     completedAt: isoOrNull(agent?.completedAt ?? props.completedAt),
   };
+  const statusBarTone = ACTIVE_SUBAGENT_STATUSES.has(effectiveStatus)
+    ? "bg-info"
+    : effectiveStatus === "completed"
+      ? "bg-success"
+      : effectiveStatus === "failed"
+        ? "bg-destructive"
+        : "bg-border";
   const content = (
     <>
+      <span
+        aria-hidden="true"
+        data-subagent-status-bar={effectiveStatus}
+        className={cn(
+          "h-6 w-0.5 shrink-0 rounded-full transition-colors duration-200",
+          statusBarTone,
+        )}
+      />
       <EnvironmentSubagentAvatar
         environmentId={props.parentRef.environmentId}
         providerInstanceId={props.providerInstanceId}
@@ -512,6 +602,8 @@ function SubagentTimelineLink(props: {
           ) : null}
         </span>
         <span
+          key={currentLineText}
+          data-subagent-progress-line={lifecycleState.progressSwapping ? "swap" : "steady"}
           className={cn(
             "block text-2xs leading-relaxed",
             failed ? "text-destructive" : "text-muted-foreground",
@@ -539,32 +631,40 @@ function SubagentTimelineLink(props: {
       {open !== null ? (
         <ChevronRightIcon
           aria-hidden
-          className="size-3.5 shrink-0 text-muted-foreground/60 transition-colors group-hover/subagent:text-foreground"
+          className="size-3.5 shrink-0 text-muted-foreground/60 transition-[color,transform] duration-150 ease-(--ease-spring-snappy) group-hover/subagent:translate-x-0.5 group-hover/subagent:text-foreground motion-reduce:transition-none motion-reduce:group-hover/subagent:translate-x-0 rtl:rotate-180 rtl:group-hover/subagent:-translate-x-0.5"
         />
       ) : null}
     </>
   );
   const className =
-    "group/subagent flex w-full min-w-0 items-center gap-2.5 rounded-md px-2 py-1.5 text-left";
+    "group/subagent relative my-0.5 flex w-full min-w-0 items-center gap-2.5 overflow-hidden rounded-xl border border-border/70 bg-card/85 px-2.5 py-2 text-left shadow-xs";
   return (
     <Tooltip>
       <TooltipTrigger
         delay={200}
         render={
           open === null ? (
-            <div data-v2-item-type="subagent" aria-description={statusLabel} className={className}>
+            <div
+              data-v2-item-type="subagent"
+              data-subagent-card={effectiveStatus}
+              data-subagent-just-completed={lifecycleState.justCompleted ? "true" : undefined}
+              aria-description={statusLabel}
+              className={className}
+            >
               {content}
             </div>
           ) : (
             <button
               type="button"
               data-v2-item-type="subagent"
+              data-subagent-card={effectiveStatus}
+              data-subagent-just-completed={lifecycleState.justCompleted ? "true" : undefined}
               aria-label={gt("Open {title}", { title: props.title })}
               aria-description={statusLabel}
               {...trigger(open, { panel })}
               className={cn(
                 className,
-                "cursor-pointer transition-colors hover:bg-accent/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/70",
+                "cursor-pointer transition-[background-color,border-color,transform] duration-150 ease-out hover:border-foreground/20 hover:bg-card focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/70 active:scale-[0.995] motion-reduce:transition-none motion-reduce:active:scale-100",
               )}
             >
               {content}
