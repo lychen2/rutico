@@ -394,6 +394,10 @@ export const DIFF_SURFACE_THEME_UNSAFE_CSS = `
   color: var(--code-foreground) !important;
 }
 
+[data-separator-content] {
+  user-select: none;
+}
+
 /* The library's change-icon colors are tuned for dark canvases; light mode takes the app's darker tokens. */
 [data-change-icon="new"] {
   color: var(

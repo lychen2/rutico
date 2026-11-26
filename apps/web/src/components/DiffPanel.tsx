@@ -46,6 +46,7 @@ import { toolCallDiff } from "../lib/toolCallDiff";
 import { useCheckpointDiff, useTurnItemDetail } from "~/state/queries";
 import { revisionedQuery } from "~/state/revisionedQuery";
 import { cn } from "~/lib/utils";
+import { getSpringWaapiTiming, prefersReducedMotion } from "~/lib/motion/springs";
 import {
   type DiffPanelSelection,
   resolveToolCallDiffTarget,
@@ -286,6 +287,24 @@ export default function DiffPanel({
   );
   const [hideTestFiles, setHideTestFiles] = useHideTestFiles();
   const [baseRefQuery, setBaseRefQuery] = useState("");
+  const diffViewportRef = useRef<HTMLDivElement | null>(null);
+  const layoutTransitionAnimRef = useRef<Animation | null>(null);
+  const triggerLayoutCrossfade = () => {
+    const node = diffViewportRef.current;
+    if (!node || typeof node.animate !== "function" || prefersReducedMotion()) return;
+    layoutTransitionAnimRef.current?.cancel();
+    const timing = getSpringWaapiTiming("snappy");
+    layoutTransitionAnimRef.current = node.animate(
+      [
+        { opacity: 0.72, transform: "scale(0.994)" },
+        { opacity: 1, transform: "scale(1)" },
+      ],
+      {
+        duration: Math.min(180, timing.duration),
+        easing: timing.easing,
+      },
+    );
+  };
   // The open commit menu keeps the list it opened with, so rows do not move under the pointer.
   const [openCommitMenu, setOpenCommitMenu] = useState<ReviewBranchCommitsResult | null>(null);
 
@@ -1538,7 +1557,8 @@ export default function DiffPanel({
             value={[diffLayout]}
             onValueChange={(value) => {
               const next = value[0];
-              if (next === "stacked" || next === "split") {
+              if ((next === "stacked" || next === "split") && next !== diffLayout) {
+                triggerLayoutCrossfade();
                 updateClientSettings({ diffLayout: next });
               }
             }}
@@ -1756,7 +1776,9 @@ export default function DiffPanel({
             ) : lazySource || renderablePatch?.kind === "files" ? (
               <div className="flex min-h-0 flex-1 overflow-hidden">
                 <div
-                  className="relative min-h-0 min-w-0 flex-1"
+                  ref={diffViewportRef}
+                  data-diff-layout={diffLayout}
+                  className="relative min-h-0 min-w-0 flex-1 origin-center"
                   onClickCapture={(event) => {
                     const action = getDiffHeaderClickAction(event.nativeEvent);
                     if (action?.type === "open") openDiffFile(action.filePath);
