@@ -380,12 +380,14 @@ function WorkflowRunListItem({
         type="button"
         aria-current={current ? "true" : undefined}
         className={cn(
-          "flex w-full cursor-pointer flex-col gap-0.5 rounded-lg px-2 py-1.5 text-left focus-visible:ring-2 focus-visible:ring-ring/70 focus-visible:outline-none focus-visible:ring-inset",
-          current ? "bg-accent" : "hover:bg-accent/50",
+          "flex w-full cursor-pointer flex-col gap-0.5 rounded-lg px-2 py-1.5 text-left transition-[background-color,color,box-shadow] duration-150 ease-out motion-reduce:transition-none focus-visible:ring-2 focus-visible:ring-ring/70 focus-visible:outline-none focus-visible:ring-inset",
+          current
+            ? "bg-accent ring-1 ring-inset ring-border/70 dark:ring-white/10"
+            : "hover:bg-accent/50 active:bg-accent/70",
         )}
         onClick={() => onSelect(run.runId)}
       >
-        <span className="flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground">
+        <span className="flex min-w-0 items-center gap-1.5 text-xs tabular-nums text-muted-foreground">
           <WorkflowChip name={run.workflow} />
           <span className="min-w-0 flex-1 truncate">{run.workflow}</span>
           <WorkflowStateWord node={node} />
@@ -393,7 +395,7 @@ function WorkflowRunListItem({
         <span className="truncate text-sm text-foreground">{run.title}</span>
         <span className="flex min-w-0 gap-1.5 text-xs text-muted-foreground">
           <span className="min-w-0 flex-1 truncate">{workflowRunNow(node, m)}</span>
-          <span className="shrink-0">
+          <span className="shrink-0 tabular-nums">
             <RelativeLabel value={run.updatedAt} />
           </span>
         </span>
