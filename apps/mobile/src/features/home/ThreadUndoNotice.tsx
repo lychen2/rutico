@@ -5,6 +5,7 @@ import { Platform, View } from "react-native";
 import { useGT } from "gt-react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Toast } from "../../components/ui/Toast";
+import { triggerSemanticHaptic } from "../../lib/hapticChoreography";
 import {
   useDeviceType,
   useDuoBottomBarInset,
@@ -42,9 +43,13 @@ export function ThreadUndoNotice(props: { readonly visible: boolean }) {
         ? 32
         : 16
       : 8;
+  const [held, setHeld] = useState(false);
   // Replacing a notice must also cancel the native gesture tracking the old one.
   const [instance, setInstance] = useState({ notice, key: 0 });
-  if (instance.notice !== notice) setInstance({ notice, key: instance.key + 1 });
+  if (instance.notice !== notice) {
+    setInstance({ notice, key: instance.key + 1 });
+    if (held) setHeld(false);
+  }
   if (!props.visible || notice === null) return null;
   const foldedResting =
     rootMetrics?.hasHinge &&
@@ -91,9 +96,13 @@ export function ThreadUndoNotice(props: { readonly visible: boolean }) {
               ? gt("Snoozed thread")
               : gt("Unpinned thread")
         }
+        countdownMs={5_000}
+        countdownPaused={held}
+        onHoldChange={setHeld}
         action={{
           label: gt("Undo"),
           onPress: () => {
+            triggerSemanticHaptic("confirm");
             void notice.undo();
           },
         }}
