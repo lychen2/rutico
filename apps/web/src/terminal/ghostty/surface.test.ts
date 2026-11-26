@@ -383,6 +383,30 @@ describe("GhosttyTerminalSurface visibility", () => {
     expect(onResize).toHaveBeenCalledTimes(2);
   });
 
+  it("reports selection anchor geometry, hovered link anchors, and live output activity", async () => {
+    const harness = createHarness();
+    const onHoveredLinkChange = vi.fn();
+    const onOutputActivity = vi.fn();
+    const surface = await harness.create({ onHoveredLinkChange, onOutputActivity });
+
+    surface.write("https://t3.codes");
+    expect(onOutputActivity).toHaveBeenCalledOnce();
+    harness.flushFrame();
+
+    harness.pointer("pointermove", 8, 0);
+    expect(onHoveredLinkChange).toHaveBeenLastCalledWith(
+      expect.objectContaining({ text: "https://t3.codes" }),
+    );
+    harness.pointer("pointerleave", 8, 0);
+    expect(onHoveredLinkChange).toHaveBeenLastCalledWith(null);
+
+    surface.selectAll();
+    const rect = surface.getSelectionAnchorRect();
+    expect(rect).not.toBeNull();
+    expect(rect!.width).toBeGreaterThan(0);
+    expect(rect!.height).toBeGreaterThan(0);
+  });
+
   it("leaves modified history keys with alternate-screen applications", async () => {
     vi.stubGlobal("navigator", { platform: "Linux x86_64" });
     const harness = createHarness();

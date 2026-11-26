@@ -542,6 +542,12 @@ export interface GhosttyTerminalSurfaceOptions {
   readonly validateLink?: (text: string) => Promise<boolean>;
   /** Reports hovered candidates once their rendered text is stable for 250 ms; null cancels. */
   readonly onLinkHover?: (text: string | null) => void;
+  /** Reports active hovered link anchor coordinates relative to the terminal mount. */
+  readonly onHoveredLinkChange?: (
+    info: { readonly text: string; readonly left: number; readonly top: number } | null,
+  ) => void;
+  /** Fires when live PTY output appends to this surface (not on initial reset/replay). */
+  readonly onOutputActivity?: () => void;
   /** The host must prevent the default menu; native Paste cannot reach a canvas terminal. */
   readonly onContextMenu?: (event: MouseEvent) => void;
 }
@@ -619,6 +625,7 @@ export class GhosttyTerminalSurface {
   }> = [];
   private selectionClickSequence: TerminalSelectionClickSequence | null = null;
   private selectionMoved = false;
+  private pointerSelecting = false;
   private composing = false;
   private focused = false;
   private resizeNotified = false;
@@ -792,6 +799,7 @@ export class GhosttyTerminalSurface {
     this.synchronizeMouseTrackingState();
     this.cursorOn = true;
     this.scrollbarDirty = true;
+    if (data.length > 0) this.options.onOutputActivity?.();
     this.requestRender();
   }
 
@@ -1116,6 +1124,35 @@ export class GhosttyTerminalSurface {
     return before ? { start, end } : { start: end, end: start };
   }
 
+  isPointerSelecting(): boolean {
+    return this.pointerSelecting;
+  }
+
+  getSelectionAnchorRect(): {
+    readonly left: number;
+    readonly top: number;
+    readonly width: number;
+    readonly height: number;
+  } | null {
+    const position = this.getSelectionPosition();
+    if (!position) return null;
+    const startVp = this.core.screenPointToViewport(position.start.x, position.start.y);
+    const endVp = this.core.screenPointToViewport(position.end.x, position.end.y);
+    if (!startVp && !endVp) return null;
+    const anchorRow = startVp ? startVp.y : 0;
+    const leftCol = startVp ? startVp.x : 0;
+    const rightCol =
+      startVp && endVp && startVp.y === endVp.y
+        ? Math.max(leftCol + 1, endVp.x + 1)
+        : Math.min(this.cols, leftCol + 12);
+    return {
+      left: CONTENT_PADDING + leftCol * this.metrics.width,
+      top: this.originY + anchorRow * this.metrics.height,
+      width: Math.max(this.metrics.width, (rightCol - leftCol) * this.metrics.width),
+      height: this.metrics.height,
+    };
+  }
+
   clearSelection({ source = "user" }: { source?: "user" | "output" } = {}): void {
     if (source === "user") this.linkActivationRequestId += 1;
     this.clearPrimedCopy();
@@ -1124,6 +1161,8 @@ export class GhosttyTerminalSurface {
     this.selectionAnchorScreen = null;
     this.selectionMode = "cell";
     this.selectionBase = null;
+    this.pointerSelecting = false;
+    this.selectionPointer = null;
     this.setSelectionAutoscroll(0);
     this.options.onSelectionChange();
     // Selection highlights span rows Ghostty may not mark dirty for this change.
@@ -1524,6 +1563,7 @@ export class GhosttyTerminalSurface {
   private beginSelection(event: { clientX: number; clientY: number }, clickCount: number): void {
     const cell = this.cellAt(event.clientX, event.clientY);
     this.selectionMoved = false;
+    this.pointerSelecting = true;
     this.selectionMode = clickCount >= 3 ? "line" : clickCount === 2 ? "word" : "cell";
     const range =
       this.selectionMode === "line"
@@ -1763,6 +1803,15 @@ export class GhosttyTerminalSurface {
     this.canvas.style.cursor = link ? "pointer" : "";
     if (unchanged) return;
     this.hoveredLink = link;
+    this.options.onHoveredLinkChange?.(
+      link
+        ? {
+            text: link.text,
+            left: CONTENT_PADDING + link.range.start.x * this.metrics.width,
+            top: this.originY + link.range.start.y * this.metrics.height,
+          }
+        : null,
+    );
     this.forceFullRender = true;
     this.requestRender();
   }
@@ -1833,6 +1882,8 @@ export class GhosttyTerminalSurface {
       return;
     }
     if (event.button !== 0) return;
+    this.pointerSelecting = false;
+    this.selectionPointer = null;
     if (!this.selectionMoved && this.selectionMode === "cell") {
       this.clearSelection();
     }

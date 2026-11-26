@@ -736,3 +736,49 @@
     transition: none;
   }
 }
+
+/* --------------------------------------------------------------------------
+   D22 / C074: Terminal Selection Pill, Link Hover Pill & Activity Heartbeat
+   -------------------------------------------------------------------------- */
+
+.terminal-selection-pill,
+.terminal-link-pill {
+  transition:
+    opacity 130ms ease-out,
+    transform 160ms var(--spring-snappy);
+}
+
+@starting-style {
+  .terminal-selection-pill,
+  .terminal-link-pill {
+    opacity: 0;
+    transform: translate3d(0, 4px, 0) scale(0.96);
+  }
+}
+
+@keyframes terminal-activity-breathe {
+  0%,
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.42;
+    transform: scale(0.8);
+  }
+}
+
+.terminal-activity-pulse {
+  animation: terminal-activity-breathe 1.3s ease-in-out infinite;
+  animation-play-state: var(--visible-animation-state, running);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .terminal-selection-pill,
+  .terminal-link-pill {
+    transition: none;
+  }
+  .terminal-activity-pulse {
+    animation: none;
+  }
+}

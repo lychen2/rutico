@@ -17,6 +17,8 @@ import {
   type TerminalSessionState,
 } from "@t3tools/client-runtime/state/terminal";
 import {
+  CopyIcon,
+  MessageSquarePlusIcon,
   Plus,
   Square,
   SquareSplitHorizontal,
@@ -60,7 +62,8 @@ import { PanelTabCloseButton } from "~/components/ui/panel-tab-close-button";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "~/components/ui/tooltip";
 import { stackedThreadToast, toastManager } from "~/components/ui/toast";
 import { readTextFromClipboard, writeTextToClipboard } from "~/hooks/useCopyToClipboard";
-import { cn } from "~/lib/utils";
+import { cn, isMacPlatform } from "~/lib/utils";
+import { observeVisibleAnimation } from "~/lib/visibleAnimation";
 import { type TerminalContextSelection } from "~/lib/terminalContext";
 import {
   GhosttyTerminalSurface,
@@ -491,6 +494,7 @@ interface TerminalViewportProps {
   providerInstanceId?: ProviderInstanceId;
   onSessionExited: () => void;
   onAddTerminalContext?: (selection: TerminalContextSelection) => void;
+  onOutputActivity?: () => void;
   /** Focuses the viewport when it mounts; otherwise focus arrives through `focusTerminal`. */
   autoFocus?: boolean;
   visible: boolean;
@@ -527,10 +531,12 @@ function TerminalSessionViewport({
   providerInstanceId,
   onSessionExited,
   onAddTerminalContext,
+  onOutputActivity,
   autoFocus = false,
   visible,
   keybindings,
 }: TerminalViewportProps) {
+  const gt = useGT();
   const containerRef = useRef<HTMLDivElement>(null);
   const autoFocusedRef = useRef(false);
   const terminalRef = useRef<GhosttyTerminalSurface | null>(null);
@@ -543,6 +549,20 @@ function TerminalSessionViewport({
   const canOpenHostEditor = useEnvironmentScope(environmentId, AuthOrchestrationOperateScope);
   const canReadFilesystem = useEnvironmentScope(environmentId, AuthFilesystemReadScope);
   const [linkPath, setLinkPath] = useState<string | null>(null);
+  const [hoveredLinkPill, setHoveredLinkPill] = useState<{
+    readonly text: string;
+    readonly left: number;
+    readonly top: number;
+  } | null>(null);
+  const [selectionPill, setSelectionPill] = useState<{
+    readonly left: number;
+    readonly top: number;
+    readonly clipboardText: string;
+    readonly selection: TerminalContextSelection;
+  } | null>(null);
+  const notifyOutputActivity = useEffectEvent(() => {
+    onOutputActivity?.();
+  });
   const metadataThreadRef = useContext(FileMetadataThreadContext);
   const serverConfig = useAtomValue(serverEnvironment.configValueAtom(environmentId));
   const hostname = serverConfig?.hostname;
@@ -746,12 +766,25 @@ function TerminalSessionViewport({
         onBinary: (data) => void sendTerminalInput(data, m(msg("Terminal write failed")), "binary"),
         onReply: (data) => void sendTerminalInput(data, m(msg("Terminal write failed")), "reply"),
         onResize: (cols, rows) => void resizeTerminal(cols, rows),
-        onSelectionChange: () => {},
+        onSelectionChange: () => syncSelectionPill(),
         beforeKey: (event) => handleBeforeKey(event),
         onLinkActivate: (text, event) => handleLinkActivate(text, event),
         canActivateLink: (text) => canActivateTerminalLink(text),
         validateLink: (text) => validateTerminalLink(text),
         onLinkHover: (text) => setLinkPath(text !== null && !isTerminalUrl(text) ? text : null),
+        onHoveredLinkChange: (info) => {
+          if (!info) {
+            setHoveredLinkPill(null);
+            return;
+          }
+          const maxLeft = Math.max(8, mount.clientWidth - 150);
+          setHoveredLinkPill({
+            text: info.text,
+            left: Math.max(8, Math.min(maxLeft, info.left)),
+            top: info.top >= 32 ? info.top - 26 : info.top + 22,
+          });
+        },
+        onOutputActivity: () => notifyOutputActivity(),
         // Surface listeners start before WASM loading finishes and the terminal handler exists.
         onContextMenu: (event) => {
           if (terminalRef.current) void showTerminalContextMenu(event);
@@ -821,8 +854,17 @@ function TerminalSessionViewport({
 
       const clearSelectionAction = () => {
         selectionActionRequestIdRef.current += 1;
+        setSelectionPill(null);
       };
       setupCleanups.push(clearSelectionAction);
+
+      const dismissSelectionPill = () => setSelectionPill(null);
+      mount.addEventListener("wheel", dismissSelectionPill, { passive: true });
+      terminal.input.addEventListener("keydown", dismissSelectionPill);
+      setupCleanups.push(() => {
+        mount.removeEventListener("wheel", dismissSelectionPill);
+        terminal.input.removeEventListener("keydown", dismissSelectionPill);
+      });
 
       const readSelectionAction = (): {
         clipboardText: string;
@@ -850,6 +892,33 @@ function TerminalSessionViewport({
           },
         };
       };
+
+      function syncSelectionPill() {
+        const activeTerminal = terminalRef.current;
+        if (
+          !activeTerminal ||
+          activeTerminal.isPointerSelecting() ||
+          !activeTerminal.hasSelection()
+        ) {
+          setSelectionPill(null);
+          return;
+        }
+        const action = readSelectionAction();
+        const anchor = activeTerminal.getSelectionAnchorRect();
+        if (!action || !anchor) {
+          setSelectionPill(null);
+          return;
+        }
+        const maxLeft = Math.max(8, (mount?.clientWidth ?? 0) - 220);
+        const left = Math.max(8, Math.min(maxLeft, anchor.left));
+        const top = anchor.top >= 40 ? anchor.top - 34 : anchor.top + anchor.height + 6;
+        setSelectionPill({
+          left,
+          top,
+          clipboardText: action.clipboardText,
+          selection: action.selection,
+        });
+      }
 
       const addSelectionToChat = (clipboardText: string) => {
         // Output keeps moving the selected rows while a menu is open, so take
@@ -1226,12 +1295,71 @@ function TerminalSessionViewport({
       containerRef.current = null;
     };
   };
+  const isMac = typeof navigator !== "undefined" && isMacPlatform(navigator.platform);
+  const copyShortcutHint = isMac ? "⌘C" : "Ctrl+Shift+C";
+  const linkOpenHint = isMac ? gt("⌘+Click · Open") : gt("Ctrl+Click · Open");
+
   return (
-    <div
-      ref={attachContainer}
-      tabIndex={-1}
-      className="relative h-full w-full overflow-hidden bg-(--terminal-background)"
-    />
+    <div className="relative h-full w-full overflow-hidden bg-(--terminal-background)">
+      <div ref={attachContainer} tabIndex={-1} className="relative h-full w-full overflow-hidden" />
+      {visible && selectionPill ? (
+        <div
+          role="toolbar"
+          aria-label={gt("Terminal selection actions")}
+          className="terminal-selection-pill surface-optical-chrome surface-elevated-rim absolute z-20 flex items-center gap-1 rounded-md px-1 py-0.5 text-2xs text-foreground"
+          style={{ left: selectionPill.left, top: selectionPill.top }}
+          onPointerDown={(event) => event.stopPropagation()}
+        >
+          {onAddTerminalContext ? (
+            <button
+              type="button"
+              onClick={() => {
+                onAddTerminalContext(selectionPill.selection);
+                setSelectionPill(null);
+                terminalRef.current?.clearSelection();
+                terminalRef.current?.focus();
+              }}
+              className="inline-flex cursor-pointer items-center gap-1 rounded-sm px-1.5 py-0.5 font-medium text-foreground transition-colors duration-120 hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
+            >
+              <MessageSquarePlusIcon className="size-3 text-primary" />
+              <T>Add to chat</T>
+            </button>
+          ) : null}
+          {onAddTerminalContext ? (
+            <span aria-hidden="true" className="h-3 w-px bg-border/70" />
+          ) : null}
+          <button
+            type="button"
+            onClick={() => {
+              const text = selectionPill.clipboardText;
+              setSelectionPill(null);
+              void writeTextToClipboard(text, {
+                target: "terminal selection",
+                unavailableMessage: msg(
+                  "Clipboard API is unavailable while copying terminal selection.",
+                ),
+                failureMessage: msg("Failed to copy terminal selection to the clipboard."),
+              }).catch(() => {});
+              terminalRef.current?.focus();
+            }}
+            className="inline-flex cursor-pointer items-center gap-1 rounded-sm px-1.5 py-0.5 text-muted-foreground transition-colors duration-120 hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
+          >
+            <CopyIcon className="size-3" />
+            <T>Copy</T>
+            <span className="font-mono text-3xs text-muted-foreground/80">{copyShortcutHint}</span>
+          </button>
+        </div>
+      ) : null}
+      {visible && hoveredLinkPill && !selectionPill ? (
+        <div
+          aria-hidden="true"
+          className="terminal-link-pill surface-optical-chrome surface-elevated-rim pointer-events-none absolute z-20 rounded-md px-2 py-0.5 font-mono text-3xs text-foreground"
+          style={{ left: hoveredLinkPill.left, top: hoveredLinkPill.top }}
+        >
+          {linkOpenHint}
+        </div>
+      ) : null}
+    </div>
   );
 }
 
@@ -1342,6 +1470,7 @@ function TerminalSplitPanes({
   onActiveTerminalChange,
   onCloseTerminal,
   onPaneWeightsChange,
+  onTerminalOutputActivity,
   advancedTypography,
   threadRef,
   threadId,
@@ -1359,6 +1488,7 @@ function TerminalSplitPanes({
   onActiveTerminalChange: (terminalId: string) => void;
   onCloseTerminal: (terminalId: string, threadRef?: ScopedThreadRef) => void;
   onPaneWeightsChange?: ((groupId: string, weights: number[] | undefined) => void) | undefined;
+  onTerminalOutputActivity?: ((terminalId: string) => void) | undefined;
   advancedTypography: boolean;
   threadRef: ScopedThreadRef;
   threadId: ThreadId;
@@ -1546,6 +1676,7 @@ function TerminalSplitPanes({
                   : {})}
                 onSessionExited={() => onCloseTerminal(terminalId, threadRef)}
                 onAddTerminalContext={onAddTerminalContext}
+                onOutputActivity={() => onTerminalOutputActivity?.(terminalId)}
                 visible={visible}
                 keybindings={keybindings}
               />
@@ -1560,6 +1691,8 @@ function TerminalSplitPanes({
 function TerminalSidebarGroup({
   terminalGroup,
   activeTerminalId,
+  streamingTerminalIds,
+  unreadTerminalIds,
   showHeader,
   terminalLabelById,
   closeShortcutLabel,
@@ -1569,6 +1702,8 @@ function TerminalSidebarGroup({
 }: {
   terminalGroup: ThreadTerminalGroup;
   activeTerminalId: string;
+  streamingTerminalIds: ReadonlySet<string>;
+  unreadTerminalIds: ReadonlySet<string>;
   showHeader: boolean;
   terminalLabelById: ReadonlyMap<string, string>;
   closeShortcutLabel: string | undefined;
@@ -1616,6 +1751,8 @@ function TerminalSidebarGroup({
       <div className="flex flex-col gap-0.5">
         {terminalGroup.terminalIds.map((terminalId) => {
           const isActive = terminalId === activeTerminalId;
+          const isStreaming = streamingTerminalIds.has(terminalId);
+          const isUnread = !isActive && unreadTerminalIds.has(terminalId);
           const terminalLabel = terminalLabelById.get(terminalId) ?? gt("Terminal");
           const closeTerminalLabel =
             isActive && closeShortcutLabel
@@ -1650,7 +1787,19 @@ function TerminalSidebarGroup({
                 className="flex min-w-0 flex-1 cursor-pointer items-center gap-1 text-left"
                 onClick={() => onActiveTerminalChange(terminalId)}
               >
-                <span className="truncate">{terminalLabel}</span>
+                <span className="min-w-0 flex-1 truncate">{terminalLabel}</span>
+                {isStreaming ? (
+                  <span
+                    ref={observeVisibleAnimation}
+                    aria-label={gt("Terminal active")}
+                    className="terminal-activity-pulse size-1.5 shrink-0 rounded-full bg-primary"
+                  />
+                ) : isUnread ? (
+                  <span
+                    aria-label={gt("Unread terminal output")}
+                    className="size-1.5 shrink-0 rounded-full bg-primary/65"
+                  />
+                ) : null}
               </button>
             </div>
           );
@@ -1706,16 +1855,23 @@ export default function ThreadTerminalDrawer({
   const resizeHudTextRef = useRef<HTMLSpanElement | null>(null);
   const resizeHandleRef = useRef<HTMLDivElement | null>(null);
   const snapSettleTimerRef = useRef<number | null>(null);
+  const activityTimersRef = useRef(new Map<string, number>());
+  const [streamingTerminalIds, setStreamingTerminalIds] = useState<ReadonlySet<string>>(
+    () => new Set(),
+  );
+  const [unreadTerminalIds, setUnreadTerminalIds] = useState<ReadonlySet<string>>(() => new Set());
   const [drawerLayout, setDrawerLayout] = useState(() => readDrawerLayout(null));
   const [isResizing, setIsResizing] = useState(false);
   const maxDrawerHeight = resolveTerminalDrawerMaxHeight({ ...drawerLayout, composerHeight });
   const referenceDrawerHeight =
     drawerLayout.chatColumnHeight ?? drawerLayout.viewportHeight ?? maxDrawerHeight;
   const drawerHeight = clampDrawerHeight(height, maxDrawerHeight);
-  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Clears any pending spring-snap resize coalescing timer on unmount.
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Clears pending spring-snap and terminal output activity timers on unmount.
   useEffect(
     () => () => {
       if (snapSettleTimerRef.current !== null) window.clearTimeout(snapSettleTimerRef.current);
+      for (const timer of activityTimersRef.current.values()) window.clearTimeout(timer);
+      activityTimersRef.current.clear();
     },
     [],
   );
@@ -1862,6 +2018,44 @@ export default function ThreadTerminalDrawer({
   const splitDirection = activeGroup?.splitDirection ?? "horizontal";
   const activeGroupId = activeGroup?.id ?? activeTerminalGroupId;
   const activeGroupPaneWeights = activeGroup?.paneWeights;
+  const readActiveTerminalId = useEffectEvent(() => resolvedActiveTerminalId);
+  const handleTerminalOutputActivity = (sourceTerminalId: string) => {
+    setStreamingTerminalIds((previous) => {
+      if (previous.has(sourceTerminalId)) return previous;
+      const next = new Set(previous);
+      next.add(sourceTerminalId);
+      return next;
+    });
+    const existingTimer = activityTimersRef.current.get(sourceTerminalId);
+    if (existingTimer !== undefined) window.clearTimeout(existingTimer);
+    const timer = window.setTimeout(() => {
+      activityTimersRef.current.delete(sourceTerminalId);
+      setStreamingTerminalIds((previous) => {
+        if (!previous.has(sourceTerminalId)) return previous;
+        const next = new Set(previous);
+        next.delete(sourceTerminalId);
+        return next;
+      });
+      if (sourceTerminalId !== readActiveTerminalId()) {
+        setUnreadTerminalIds((previous) => {
+          if (previous.has(sourceTerminalId)) return previous;
+          const next = new Set(previous);
+          next.add(sourceTerminalId);
+          return next;
+        });
+      }
+    }, 500);
+    activityTimersRef.current.set(sourceTerminalId, timer);
+  };
+  const handleActiveTerminalSelect = (nextTerminalId: string) => {
+    setUnreadTerminalIds((previous) => {
+      if (!previous.has(nextTerminalId)) return previous;
+      const next = new Set(previous);
+      next.delete(nextTerminalId);
+      return next;
+    });
+    onActiveTerminalChange(nextTerminalId);
+  };
   const hasTerminalSidebar = normalizedTerminalIds.length > 1;
   const showGroupHeaders =
     resolvedTerminalGroups.length > 1 ||
@@ -2253,9 +2447,10 @@ export default function ThreadTerminalDrawer({
               activeTerminalId={resolvedActiveTerminalId}
               terminalLabelById={terminalLabelById}
               resolveLaunchLocation={resolveTerminalLaunchLocation}
-              onActiveTerminalChange={onActiveTerminalChange}
+              onActiveTerminalChange={handleActiveTerminalSelect}
               onCloseTerminal={onCloseTerminal}
               onPaneWeightsChange={onPaneWeightsChange}
+              onTerminalOutputActivity={handleTerminalOutputActivity}
               advancedTypography={advancedTypography}
               threadRef={threadRef}
               threadId={threadId}
@@ -2308,11 +2503,13 @@ export default function ThreadTerminalDrawer({
                     key={terminalGroup.id}
                     terminalGroup={terminalGroup}
                     activeTerminalId={resolvedActiveTerminalId}
+                    streamingTerminalIds={streamingTerminalIds}
+                    unreadTerminalIds={unreadTerminalIds}
                     showHeader={showGroupHeaders}
                     terminalLabelById={terminalLabelById}
                     closeShortcutLabel={closeShortcutLabel}
                     canOperateTerminal={canOperateTerminal}
-                    onActiveTerminalChange={onActiveTerminalChange}
+                    onActiveTerminalChange={handleActiveTerminalSelect}
                     onCloseTerminal={confirmCloseTerminal}
                   />
                 ))}
