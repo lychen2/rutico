@@ -46,7 +46,11 @@ import { startGlobalShiftShortcutProcess } from "./GlobalShiftShortcutProcess.ts
 import { startMacModifierPairShortcutProcess } from "./MacModifierPairShortcutProcess.ts";
 import { activeWindow, type ActiveWindow } from "./ActiveWindow.ts";
 import { captureMacWindowSnapshot, type MacSnapShotSource } from "./MacSnapShot.ts";
-import type { LinuxCaptureFeedback, LinuxWindowMetadata } from "./LinuxSnapShot.ts";
+import type {
+  LinuxCaptureBackend,
+  LinuxCaptureFeedback,
+  LinuxWindowMetadata,
+} from "./LinuxSnapShot.ts";
 import { niriSocketPath } from "./NiriSnapShot.ts";
 import { CaptureShortcutConfig, niriCaptureConfigPath } from "./CaptureShortcutConfig.ts";
 import type { PortalCaptureShortcut } from "./PortalCaptureShortcut.ts";
@@ -325,8 +329,9 @@ function readDisplayScaleFactorForBounds(
 }
 
 /**
- * Classifies Linux SnapShot execution into 4 capability tiers (Tier 3 helper/X11 flight,
- * Tier 2 trusted-bounds direct, Tier 4 portal/Niri direct + landing, Tier 1 untrusted).
+ * Classifies Linux SnapShot execution into capability tiers on Wayland (Tier 3 helper flight,
+ * Tier 2 trusted-bounds direct, Tier 4 portal/Niri/picker direct + landing).
+ * X11 capture is unsupported and is never reported as executable.
  */
 export function resolveLinuxSnapShotCapability(input: {
   readonly isWayland: boolean;
@@ -353,20 +358,11 @@ export function resolveLinuxSnapShotCapability(input: {
   };
 
   if (!input.isWayland) {
-    if (input.hasTrustedSourceBounds) {
-      return {
-        tier: 3,
-        coordinateSpace: "global-dip",
-        helperAvailable: true,
-        backend: input.backend ?? "x11",
-        ...scaleFields,
-      };
-    }
     return {
       tier: 1,
       coordinateSpace: "unknown",
       helperAvailable: false,
-      backend: input.backend ?? "x11",
+      backend: "x11",
       ...scaleFields,
     };
   }
@@ -578,6 +574,7 @@ async function captureSource({
   let active: ActiveWindow | undefined;
   let linuxWindow: LinuxWindowMetadata | undefined;
   let linuxFeedback: LinuxCaptureFeedback | undefined;
+  let actualLinuxBackend: LinuxCaptureBackend | undefined;
   let linuxActivationFailure: { readonly cause: unknown } | undefined;
   const destinationWindow =
     Electron.BrowserWindow.getFocusedWindow() ??
@@ -626,12 +623,14 @@ async function captureSource({
         hyprlandCapturePaths,
       );
       if (snapshot) {
+        actualLinuxBackend = snapshot.backend;
         linuxFeedback = snapshot.feedback;
         if (linuxFeedback) onLinuxFeedback(linuxFeedback);
         linuxWindow = snapshot.window;
         source = { name: linuxWindow?.title || "Active window" };
         png = snapshot.png;
       } else {
+        actualLinuxBackend = "picker";
         const [selected] = await Electron.desktopCapturer.getSources({
           types: ["window", "screen"],
           thumbnailSize: snapShotThumbnailSize(active),
@@ -698,30 +697,16 @@ async function captureSource({
         active,
         platform,
         destinationWindowBounds,
-        isWayland,
       ));
-    const resolvedLinuxBackend =
-      linuxBackend ??
-      (niriSocketPath()
-        ? ("niri" as const)
-        : isHyprlandCaptureSession()
-          ? ("hyprland" as const)
-          : isKdeCaptureSession()
-            ? ("kde" as const)
-            : isGnomeCaptureSession(process.env)
-              ? ("gnome-extension" as const)
-              : isWayland
-                ? ("screenshot-portal" as const)
-                : ("x11" as const));
+    const resolvedLinuxBackend = actualLinuxBackend ?? linuxBackend;
     const linuxCaptureTelemetry =
-      platform === "linux"
+      platform === "linux" && isWayland
         ? resolveLinuxSnapShotCapability({
-            isWayland,
-            backend: resolvedLinuxBackend,
+            isWayland: true,
+            ...(resolvedLinuxBackend ? { backend: resolvedLinuxBackend } : {}),
             feedbackAvailable: Boolean(linuxFeedback?.animationStarted),
             hasTrustedSourceBounds: Boolean(
-              active !== undefined ||
-              (linuxWindow !== undefined && linuxWindow.accessibilityBoundsReliable !== false),
+              linuxWindow !== undefined && linuxWindow.accessibilityBoundsReliable !== false,
             ),
             ...(sourceScaleFactor !== undefined ? { sourceScaleFactor } : {}),
             ...(targetScaleFactor !== undefined ? { targetScaleFactor } : {}),
@@ -834,12 +819,10 @@ async function showCaptureFeedback(
   active: ActiveWindow | undefined,
   platform: NodeJS.Platform,
   destinationWindowBounds?: Electron.Rectangle,
-  isWayland = platform === "linux" && isWaylandSession(platform, process.env),
 ): Promise<boolean> {
-  // On Linux Wayland without a compositor helper, arbitrary global overlay positioning is
-  // unavailable; Tier 2/4 captures flow directly into in-Composer landing choreography.
-  // X11 is explicitly decoupled and only animates when trusted global source bounds exist.
-  if (platform === "linux" && (isWayland || active === undefined)) return false;
+  // On Linux, Wayland lacks arbitrary global overlay positioning (handled via compositor helpers
+  // or in-Composer landing choreography), and X11 capture is unsupported.
+  if (platform === "linux") return false;
   const bounds = snapShotFlashBounds(active, platform);
   const animationsEnabled =
     settings.snapShotAnimations &&
@@ -1851,9 +1834,9 @@ export const make = Effect.gen(function* () {
               ? kdeHelper.status === "ready" && kdeHelper.feedbackAvailable === true
               : state.linuxFeedbackAvailable === true;
           const linuxCaptureTelemetry =
-            environment.platform === "linux"
+            environment.platform === "linux" && state.mode === "portal"
               ? resolveLinuxSnapShotCapability({
-                  isWayland: isWaylandSession(environment.platform, process.env),
+                  isWayland: true,
                   ...(state.linuxBackend ? { backend: state.linuxBackend } : {}),
                   feedbackAvailable: resolvedFeedbackAvailable,
                   hasTrustedSourceBounds:

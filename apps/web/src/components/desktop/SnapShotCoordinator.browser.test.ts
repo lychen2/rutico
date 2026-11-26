@@ -1,5 +1,11 @@
 import { scopeProjectRef, scopeThreadRef } from "@t3tools/client-runtime/environment";
-import { type DesktopBridge, EnvironmentId, ProjectId, ThreadId } from "@t3tools/contracts";
+import {
+  DEFAULT_CLIENT_SETTINGS,
+  type DesktopBridge,
+  EnvironmentId,
+  ProjectId,
+  ThreadId,
+} from "@t3tools/contracts";
 import { describe, expect, it, vi } from "vite-plus/test";
 
 import {
@@ -7,6 +13,7 @@ import {
   hydrateImagesFromPersisted,
   useComposerDraftStore,
 } from "../../composerDraftStore";
+import * as useSettings from "../../hooks/useSettings";
 import * as imageCompression from "../../lib/imageCompression";
 import {
   questionAttachmentDraftId,
@@ -344,6 +351,57 @@ describe("Linux Tier 4 direct delivery landing choreography", () => {
       expect(frame.getAttribute("data-snapshot-tier")).toBe("4");
       expect(frame.getAttribute("data-snapshot-coord-space")).toBe("window-local");
       expect(acknowledgeSnapShot).toHaveBeenCalledExactlyOnceWith(capture.id);
+    } finally {
+      frame.remove();
+    }
+  });
+
+  it("delivers and persists the attachment without data-snapshot-landed when snapShotAnimations is off", async () => {
+    using _env = setup();
+    vi.spyOn(useSettings, "getClientSettings").mockReturnValue({
+      ...DEFAULT_CLIENT_SETTINGS,
+      snapShotAnimations: false,
+    });
+    const target = scopeThreadRef(environmentId, ThreadId.make("no-animation-thread"));
+    const capture = {
+      id: "87654321-4321-4321-4321-000000000001",
+      name: "portal-window.png",
+      mimeType: "image/png" as const,
+      sizeBytes: 3,
+      dataUrl: "data:image/png;base64,AQID",
+      source: {
+        kind: "snap-shot" as const,
+        capturedAt: "2026-09-01T00:00:00.000Z",
+        appName: "Files",
+        windowTitle: "Home",
+      },
+    };
+    const frame = document.createElement("div");
+    frame.className = "composer-attachment-card";
+    const img = document.createElement("img");
+    img.alt = capture.name;
+    frame.append(img);
+    document.body.append(frame);
+    const acknowledgeSnapShot = vi.fn(async () => undefined);
+    const bridge = {
+      readSnapShot: async () => capture,
+      acknowledgeSnapShot,
+    } as unknown as DesktopBridge;
+
+    try {
+      recordSnapShotTelemetry(capture.id, {
+        tier: 4,
+        coordinateSpace: "unknown",
+        helperAvailable: false,
+        backend: "screenshot-portal",
+      });
+      await deliverSnapShot(bridge, capture, () => target);
+      const draft = useComposerDraftStore.getState().getComposerDraft(target);
+      expect(draft?.images.map(({ id }) => id)).toEqual([capture.id]);
+      expect(draft?.persistedAttachments.map(({ id }) => id)).toEqual([capture.id]);
+      expect(acknowledgeSnapShot).toHaveBeenCalledExactlyOnceWith(capture.id);
+      expect(frame.getAttribute("data-snapshot-landed")).toBeNull();
+      expect(document.querySelectorAll("[data-snapshot-landed]")).toHaveLength(0);
     } finally {
       frame.remove();
     }

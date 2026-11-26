@@ -2299,15 +2299,15 @@ it("classifies Linux SnapShot capability into 4 explicit tiers with dual-DPI sca
     DesktopSnapShot.resolveLinuxSnapShotCapability({
       isWayland: false,
       backend: "x11",
-      feedbackAvailable: false,
+      feedbackAvailable: true,
       hasTrustedSourceBounds: true,
       sourceScaleFactor: 1,
       targetScaleFactor: 2,
     }),
     {
-      tier: 3,
-      coordinateSpace: "global-dip",
-      helperAvailable: true,
+      tier: 1,
+      coordinateSpace: "unknown",
+      helperAvailable: false,
       backend: "x11",
       sourceScaleFactor: 1,
       targetScaleFactor: 2,
@@ -2398,6 +2398,119 @@ it.effect("reports Linux Wayland capability tier and telemetry on state and read
       }
     }),
   ).pipe(Effect.provide(layer), Effect.ensuring(Effect.sync(() => vi.unstubAllEnvs())));
+});
+
+it.effect(
+  "reports actual screenshot-portal and picker backends on ready events instead of guessing from XDG_CURRENT_DESKTOP",
+  () => {
+    vi.stubEnv("XDG_SESSION_TYPE", "wayland");
+    vi.stubEnv("XDG_CURRENT_DESKTOP", "GNOME");
+    linuxBackendMock.mockResolvedValue("screenshot-portal");
+    const events: Array<DesktopSnapShotEvent> = [];
+    const layer = Layer.mergeAll(
+      layerTest("linux", {
+        makeDirectory: () => Effect.void,
+        writeFile: () => Effect.void,
+        writeFileString: () => Effect.void,
+        rename: () => Effect.void,
+        remove: () => Effect.void,
+      }),
+      Layer.succeed(
+        DesktopWindow.DesktopWindow,
+        DesktopWindow.DesktopWindow.of({
+          activate: Effect.void,
+          prepareCaptureReveal: Effect.void,
+          dispatchMenuAction: () => Effect.void,
+          dispatchSnapShotEvent: (event: DesktopSnapShotEvent) =>
+            Effect.sync(() => {
+              events.push(event);
+            }),
+        } as unknown as DesktopWindow.DesktopWindow["Service"]),
+      ),
+    );
+    return Effect.scoped(
+      Effect.gen(function* () {
+        const service = yield* DesktopSnapShot.make;
+        yield* service.configure(enabledSettings());
+
+        // GNOME session where LinuxSnapShot actually captured via screenshot-portal.
+        linuxCaptureMock.mockResolvedValueOnce({
+          png: Buffer.from([1, 2, 3]),
+          backend: "screenshot-portal",
+        });
+        yield* service.capture;
+        const portalReady = events.findLast((event) => event.type === "ready");
+        assert.isDefined(portalReady);
+        if (portalReady?.type === "ready") {
+          assert.equal(portalReady.linuxCaptureTelemetry?.backend, "screenshot-portal");
+          assert.equal(portalReady.linuxCaptureTelemetry?.tier, 4);
+          assert.equal(portalReady.linuxCaptureTelemetry?.helperAvailable, false);
+        }
+
+        // KDE session where LinuxSnapShot actually fell back to screenshot-portal.
+        vi.stubEnv("XDG_CURRENT_DESKTOP", "KDE");
+        linuxCaptureMock.mockResolvedValueOnce({
+          png: Buffer.from([1, 2, 3]),
+          backend: "screenshot-portal",
+        });
+        yield* service.capture;
+        const kdePortalReady = events.findLast((event) => event.type === "ready");
+        assert.isDefined(kdePortalReady);
+        if (kdePortalReady?.type === "ready") {
+          assert.equal(kdePortalReady.linuxCaptureTelemetry?.backend, "screenshot-portal");
+          assert.equal(kdePortalReady.linuxCaptureTelemetry?.tier, 4);
+        }
+
+        // GNOME session where LinuxSnapShot returns undefined and falls back to desktopCapturer picker.
+        vi.stubEnv("XDG_CURRENT_DESKTOP", "GNOME");
+        linuxCaptureMock.mockResolvedValueOnce(undefined);
+        getSourcesMock.mockResolvedValueOnce([
+          {
+            name: "Picked Window",
+            thumbnail: { isEmpty: () => false, toPNG: () => Buffer.from([1, 2, 3]) },
+          },
+        ]);
+        yield* service.capture;
+        const pickerReady = events.findLast((event) => event.type === "ready");
+        assert.isDefined(pickerReady);
+        if (pickerReady?.type === "ready") {
+          assert.equal(pickerReady.linuxCaptureTelemetry?.backend, "picker");
+          assert.equal(pickerReady.linuxCaptureTelemetry?.tier, 4);
+          assert.equal(pickerReady.linuxCaptureTelemetry?.helperAvailable, false);
+        }
+      }),
+    ).pipe(
+      Effect.provide(layer),
+      Effect.ensuring(
+        Effect.sync(() => {
+          linuxBackendMock.mockResolvedValue("picker");
+          vi.unstubAllEnvs();
+        }),
+      ),
+    );
+  },
+);
+
+it.effect("does not advertise unsupported X11 sessions as executable in state or capture", () => {
+  vi.stubEnv("XDG_SESSION_TYPE", "x11");
+  vi.stubEnv("WAYLAND_DISPLAY", "");
+  vi.stubEnv("XDG_CURRENT_DESKTOP", "GNOME");
+  return Effect.scoped(
+    Effect.gen(function* () {
+      const service = yield* DesktopSnapShot.make;
+      yield* service.configure(enabledSettings());
+      const state = yield* service.state;
+      assert.equal(state.mode, "unavailable");
+      assert.isUndefined(state.linuxCaptureTier);
+      assert.isUndefined(state.linuxCaptureTelemetry);
+      assert.include(state.message ?? "", "X11 capture is not supported");
+      const error = yield* Effect.flip(service.capture);
+      assert.equal(error.operation, "unsupported");
+    }),
+  ).pipe(
+    Effect.provide(layerTest("linux")),
+    Effect.ensuring(Effect.sync(() => vi.unstubAllEnvs())),
+  );
 });
 
 it.each([
