@@ -1,10 +1,14 @@
+import { getSpringWaapiTiming, prefersReducedMotion } from "~/lib/motion/springs";
 import { observeResize } from "~/lib/observeResize";
 import { shouldAnimateComposerRestingTransition } from "../composerFooterLayout";
 import { useEffect, useLayoutEffect, useRef } from "react";
 
 const COMPOSER_RESTING_TRANSITION_CLEANUP_BUFFER_MS = 50;
-const COMPOSER_RESTING_TRANSITION_EASING = "cubic-bezier(0.32, 0.72, 0, 1)";
 const COMPOSER_RESTING_CONTROLS_ARRIVAL_DRIFT_PX = 4;
+
+function resolveRestingTransitionEasing(): string {
+  return getSpringWaapiTiming("snappy").easing;
+}
 
 export function useComposerRestingTransition(
   isCollapsed: boolean,
@@ -159,9 +163,11 @@ export function useComposerRestingTransition(
     if (
       shouldAnimate &&
       animationsActive &&
+      !prefersReducedMotion() &&
       previousHeight !== null &&
       Math.abs(previousHeight - nextHeight) >= 0.5
     ) {
+      const springEasing = resolveRestingTransitionEasing();
       const remainingDuration =
         typeof interruptedDuration === "number" && interruptedCurrentTime !== null
           ? Math.max(1, interruptedDuration - interruptedCurrentTime)
@@ -197,7 +203,7 @@ export function useComposerRestingTransition(
         [{ height: `${previousHeight}px` }, { height: `${nextHeight}px` }],
         {
           duration,
-          easing: COMPOSER_RESTING_TRANSITION_EASING,
+          easing: springEasing,
           fill: "both",
         },
       );
@@ -233,10 +239,10 @@ export function useComposerRestingTransition(
         if (Math.abs(offset) < 0.5 && Math.abs(offsetX) < 0.5) return;
         contentAnimations.push(
           content.animate(
-            [{ transform: `translate(${offsetX}px, ${offset}px)` }, { transform: "none" }],
+            [{ transform: `translate3d(${offsetX}px, ${offset}px, 0)` }, { transform: "none" }],
             {
               duration,
-              easing: COMPOSER_RESTING_TRANSITION_EASING,
+              easing: springEasing,
             },
           ),
         );
@@ -278,7 +284,7 @@ export function useComposerRestingTransition(
               ],
               {
                 duration,
-                easing: COMPOSER_RESTING_TRANSITION_EASING,
+                easing: springEasing,
               },
             ),
           );
@@ -294,14 +300,16 @@ export function useComposerRestingTransition(
           stateChangeAnimations.push(
             arrivingControls.animate(
               [
-                { opacity: 0, transform: `translateY(${String(drift)}px)` },
+                { opacity: 0, transform: `translate3d(0, ${String(drift)}px, 0)` },
                 { opacity: 1, transform: "none" },
               ],
               {
-                duration: nextIsCollapsed ? duration : duration / 2,
-                delay: nextIsCollapsed ? 0 : duration / 2,
+                duration: nextIsCollapsed
+                  ? Math.round(duration * 0.85)
+                  : Math.round(duration * 0.65),
+                delay: nextIsCollapsed ? 0 : Math.round(duration * 0.35),
                 fill: "backwards",
-                easing: COMPOSER_RESTING_TRANSITION_EASING,
+                easing: springEasing,
               },
             ),
           );
@@ -317,10 +325,10 @@ export function useComposerRestingTransition(
         for (const imagePreview of arrivingImagePreviews) {
           stateChangeAnimations.push(
             imagePreview.animate([{ opacity: 0 }, { opacity: 1 }], {
-              duration: nextIsCollapsed ? duration : duration / 2,
-              delay: nextIsCollapsed ? 0 : duration / 2,
+              duration: nextIsCollapsed ? Math.round(duration * 0.85) : Math.round(duration * 0.65),
+              delay: nextIsCollapsed ? 0 : Math.round(duration * 0.35),
               fill: "backwards",
-              easing: COMPOSER_RESTING_TRANSITION_EASING,
+              easing: springEasing,
             }),
           );
         }
