@@ -38,6 +38,24 @@ vi.mock("react-native", () => ({
 vi.mock("react-native-keyboard-controller", () => ({
   useKeyboardState: () => false,
 }));
+vi.mock("react-native-reanimated", () => ({
+  default: {
+    View: (props: { readonly children?: ReactNode }) => <div>{props.children}</div>,
+  },
+  Extrapolation: { CLAMP: "clamp" },
+  ReduceMotion: { System: "system" },
+  interpolate: (_v: number, _i: number[], o: number[]) => o[o.length - 1] ?? 1,
+  useAnimatedStyle: () => ({}),
+  useReducedMotion: () => false,
+  useSharedValue: (initial: number) => ({ get: () => initial, set: () => {} }),
+  withSpring: (value: number) => value,
+}));
+vi.mock("../../lib/hapticChoreography", () => ({
+  triggerSemanticHaptic: vi.fn(),
+}));
+vi.mock("../../features/settings/appearance/AppearancePreferencesProvider", () => ({
+  useAppearancePreferences: () => ({ themeAppearance: "dark", themeVariables: {} }),
+}));
 vi.mock("../../lib/backHandler", () => ({
   useHardwareBack: () => {},
 }));
