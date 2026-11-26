@@ -20,6 +20,48 @@ vi.mock("react-native", () => ({
   View: Slot,
   Share: {},
 }));
+vi.mock("react-native-reanimated", () => ({
+  default: { View: Slot },
+  ReduceMotion: { System: "system" },
+  useAnimatedStyle: () => ({}),
+  useSharedValue: (initial: number) => ({
+    get: () => initial,
+    set: () => {},
+  }),
+  withSpring: (value: number) => value,
+}));
+vi.mock("react-native-svg", () => ({
+  default: ({ children, ...props }: { children?: ReactNode; [key: string]: unknown }) => (
+    <svg data-testid="guest-pass-qr" {...props}>
+      {children}
+    </svg>
+  ),
+  G: ({ children }: { children?: ReactNode }) => <g>{children}</g>,
+  Path: ({ d }: { d?: string }) => <path d={d} />,
+  Rect: () => <rect />,
+}));
+vi.mock("expo-haptics", () => ({
+  AndroidHaptics: {
+    Confirm: "confirm",
+    Reject: "reject",
+    Gesture_Start: "gesture-start",
+    Gesture_End: "gesture-end",
+    Segment_Tick: "segment-tick",
+    Segment_Frequent_Tick: "segment-frequent-tick",
+    Clock_Tick: "clock-tick",
+    Toggle_On: "toggle-on",
+    Toggle_Off: "toggle-off",
+    Context_Click: "context-click",
+    Drag_Start: "drag-start",
+    Long_Press: "long-press",
+  },
+  performAndroidHapticsAsync: vi.fn(async () => {}),
+  notificationAsync: vi.fn(async () => {}),
+  impactAsync: vi.fn(async () => {}),
+  selectionAsync: vi.fn(async () => {}),
+  NotificationFeedbackType: { Success: "success", Error: "error" },
+  ImpactFeedbackStyle: { Light: "light", Medium: "medium", Soft: "soft" },
+}));
 vi.mock("@react-navigation/native", () => ({
   useNavigation: () => ({ goBack: () => {} }),
   usePreventRemove: () => {},
@@ -79,7 +121,12 @@ vi.mock("../../components/ui/Dialog", () => ({}));
 vi.mock("../../native/StackHeader", () => ({ NativeStackScreenOptions: () => null }));
 vi.mock("../../lib/copyTextWithHaptic", () => ({ tryCopyTextWithHaptic: () => true }));
 
-import { ThreadGuestShareSheet } from "./ThreadGuestShareSheet";
+import * as hapticChoreography from "../../lib/hapticChoreography";
+import {
+  buildGuestPassQrSvg,
+  formatGuestPassCountdown,
+  ThreadGuestShareSheet,
+} from "./ThreadGuestShareSheet";
 
 it("stops treating a retained guest link as active when it expires", async () => {
   sharing.messages = [];
@@ -188,3 +235,66 @@ it.each(["expired", "stopped", "replaced", "redeemed"] as const)(
     }
   },
 );
+
+it("renders an instant in-sheet Guest Live Pass QR with role badge, 24h countdown, and Confirm haptic on copy", async () => {
+  created.share = null;
+  created.updatedAt = "1970-01-01T00:00:00.000Z";
+  sharing.messages = [];
+  const share: ThreadGuestShare = {
+    id: GuestShareId.make("guest-pass-1"),
+    host: "linux.t3.test",
+    createdAt: "1970-01-01T00:00:00.100Z",
+    expiresAt: "1970-01-02T00:00:00.000Z",
+    guestName: null,
+    messages: [],
+  };
+  const url = "https://linux.t3.test/guest#invite-token-42";
+  created.command.mockResolvedValue({ _tag: "Success", value: { url, share } });
+  const hapticSpy = vi.spyOn(hapticChoreography, "triggerSemanticHaptic");
+
+  vi.useFakeTimers();
+  vi.setSystemTime(0);
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  const container = document.createElement("div");
+  const root = createRoot(container);
+
+  try {
+    await act(() =>
+      root.render(
+        <ThreadGuestShareSheet
+          route={{
+            params: {
+              environmentId: EnvironmentId.make("test"),
+              threadId: ThreadId.make("thread"),
+            },
+          }}
+        />,
+      ),
+    );
+    await act(async () => container.querySelector("button")!.click());
+
+    expect(container.querySelector('[data-testid="guest-pass-qr"]')).not.toBeNull();
+    expect(container.textContent).toContain("Guest pass");
+    expect(container.textContent).toContain("24h left");
+    expect(container.textContent).toContain(url);
+
+    const copyButton = [...container.querySelectorAll("button")].find(
+      (button) => button.textContent === "Copy",
+    );
+    expect(copyButton).toBeDefined();
+    await act(async () => copyButton?.click());
+    expect(hapticSpy).toHaveBeenCalledWith("confirm");
+
+    const qrData = buildGuestPassQrSvg(url);
+    expect(qrData.finderEyes).toHaveLength(3);
+    expect(qrData.moduleCount).toBeGreaterThan(50);
+    expect(formatGuestPassCountdown(share.expiresAt, 30 * 60_000)).toBe("23h 30m");
+  } finally {
+    hapticSpy.mockRestore();
+    act(() => root.unmount());
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+    created.command.mockReset();
+    created.share = undefined;
+  }
+});

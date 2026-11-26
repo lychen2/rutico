@@ -16,7 +16,14 @@ import {
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 import { formatAttachmentSize } from "@t3tools/client-runtime/state/attachments";
-import { ArrowUpIcon, PaperclipIcon, XIcon } from "lucide-react";
+import {
+  ArrowUpIcon,
+  CheckIcon,
+  PaperclipIcon,
+  ShieldCheckIcon,
+  UsersIcon,
+  XIcon,
+} from "lucide-react";
 import {
   useEffect,
   useReducer,
@@ -34,7 +41,11 @@ import { useDeadlinePassed } from "~/hooks/useDeadline";
 import { useNowMinute } from "~/hooks/useNowMinute";
 import { useStableCallback } from "~/hooks/useStableCallback";
 import { useTheme } from "~/hooks/useTheme";
+import { useSpecularPointer } from "~/lib/motion/useSpecularPointer";
 import { cn } from "~/lib/utils";
+import { observeVisibleAnimation } from "~/lib/visibleAnimation";
+import "~/styles/pairing-motion.css";
+import { T3Wordmark } from "../T3Wordmark";
 import { ComposerControl, ComposerControlIcon } from "../chat/ComposerControl";
 import type { ExpandedImagePreview } from "../chat/ExpandedImagePreview";
 import { GuestMessageAttachments } from "../chat/GuestMessageAttachments";
@@ -340,10 +351,23 @@ function GuestSession({ shareId }: { readonly shareId: string }) {
 }
 
 function Notice({ title, detail }: { readonly title: string; readonly detail?: string }) {
+  const cardRef = useRef<HTMLDivElement>(null);
+  useSpecularPointer(cardRef);
   return (
-    <div className="m-auto flex max-w-sm flex-col gap-1 p-6 text-center">
-      <p className="text-sm font-medium">{title}</p>
-      {detail ? <p className="text-xs text-muted-foreground">{detail}</p> : null}
+    <div className="m-auto w-full max-w-md px-4 py-10">
+      <div
+        ref={cardRef}
+        data-slot="guest-notice-card"
+        className="dialog-glass surface-specular-prism flex flex-col gap-2 rounded-2xl border p-6 text-center"
+      >
+        <div className="mx-auto flex items-center gap-1.5 text-muted-foreground">
+          <T3Wordmark className="h-3 w-auto shrink-0 text-foreground" aria-hidden />
+          {/* oxlint-disable-next-line t3code/no-untranslated-copy -- product wordmark */}
+          <span className="text-sm font-medium tracking-tight">Rutico</span>
+        </div>
+        <p className="mt-2 text-base font-medium text-foreground">{title}</p>
+        {detail ? <p className="text-xs leading-relaxed text-muted-foreground">{detail}</p> : null}
+      </div>
     </div>
   );
 }
@@ -356,6 +380,8 @@ function NameForm({
   readonly onJoined: () => void;
 }) {
   const gt = useGT();
+  const cardRef = useRef<HTMLFormElement>(null);
+  useSpecularPointer(cardRef);
   const [name, setName] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -370,33 +396,59 @@ function NameForm({
     else setError(failure);
   };
   return (
-    <form className="m-auto flex w-full max-w-xs flex-col gap-3 p-6" onSubmit={submit}>
-      <h1 className="text-base font-medium">
-        <T>Join a shared thread</T>
-      </h1>
-      <label className="flex flex-col gap-1.5 text-sm" htmlFor="guest-name">
-        {gt("Your name")}
-        <Input
-          id="guest-name"
-          autoFocus
-          autoComplete="name"
-          maxLength={GUEST_NAME_MAX_LENGTH}
-          value={name}
-          onChange={(event) => setName(event.target.value)}
-        />
-      </label>
-      {error !== null ? (
-        <p role="alert" className="text-sm text-destructive">
-          {error}
-        </p>
-      ) : null}
-      <Button type="submit" disabled={submitting || name.trim() === ""}>
-        <T context="verb, join a shared thread">Join</T>
-      </Button>
-      <p className="text-xs text-muted-foreground">
-        <T>The owner sees your name and approves each message before the agent gets it.</T>
-      </p>
-    </form>
+    <div className="m-auto w-full max-w-md px-4 py-10">
+      <form
+        ref={cardRef}
+        data-slot="guest-entry-card"
+        className="dialog-glass surface-specular-prism flex w-full flex-col gap-4 rounded-2xl border p-6"
+        onSubmit={submit}
+      >
+        <div className="flex items-center justify-between gap-2 text-muted-foreground">
+          <span className="flex items-baseline gap-1.5" aria-hidden="true">
+            <T3Wordmark className="h-3 w-auto shrink-0 text-foreground" />
+            {/* oxlint-disable-next-line t3code/no-untranslated-copy -- product wordmark */}
+            <span className="text-base font-medium tracking-tight">Rutico</span>
+          </span>
+          <span className="inline-flex items-center gap-1.5 rounded-full border border-border/70 bg-muted/40 px-2.5 py-0.5 text-2xs font-medium text-muted-foreground">
+            <UsersIcon className="size-3" aria-hidden />
+            <T>Guest pass</T>
+          </span>
+        </div>
+        <div className="space-y-1">
+          <h1 className="text-lg font-semibold tracking-tight text-foreground">
+            <T>Join a shared thread</T>
+          </h1>
+          <p className="text-xs leading-relaxed text-muted-foreground">
+            <T>Follow the live thread stream and propose messages for the owner to approve.</T>
+          </p>
+        </div>
+        <label className="flex flex-col gap-1.5 text-sm font-medium" htmlFor="guest-name">
+          {gt("Your name")}
+          <Input
+            id="guest-name"
+            autoFocus
+            autoComplete="name"
+            maxLength={GUEST_NAME_MAX_LENGTH}
+            value={name}
+            onChange={(event) => setName(event.target.value)}
+          />
+        </label>
+        {error !== null ? (
+          <p role="alert" className="text-sm text-destructive">
+            {error}
+          </p>
+        ) : null}
+        <Button type="submit" disabled={submitting || name.trim() === ""}>
+          {submitting ? gt("Joining…") : <T context="verb, join a shared thread">Join</T>}
+        </Button>
+        <div className="flex items-start gap-2 rounded-xl border border-border/65 bg-muted/25 px-3 py-2.5 text-xs text-muted-foreground">
+          <ShieldCheckIcon className="mt-0.5 size-3.5 shrink-0 text-muted-foreground" aria-hidden />
+          <p>
+            <T>The owner sees your name and approves each message before the agent gets it.</T>
+          </p>
+        </div>
+      </form>
+    </div>
   );
 }
 
@@ -412,6 +464,7 @@ function GuestThread({
   readonly awaitingRowIds: GuestStreamState["awaitingRowIds"];
   readonly historyControls: MessagesTimelineHistoryControls | undefined;
 }) {
+  const gt = useGT();
   // Files load through the guest route.
   const [attachmentUrls] = useState(() => createGuestAttachmentUrls(shareId));
   // Expanded rows read detail and command output through the guest routes.
@@ -425,9 +478,38 @@ function GuestThread({
       <GuestHtmlRender itemId={row.id} reference={row.htmlRender} shareId={shareId} />
     ),
   );
+  const hasPendingApproval = messages.some((message) => message.status === "pending");
   return (
     <>
-      <header className="flex shrink-0 items-center gap-3 border-b border-border px-4 py-2.5">
+      <header className="flex shrink-0 items-center gap-3 border-b border-border bg-background px-4 py-2.5">
+        <div
+          data-slot="guest-presence-pill"
+          data-state={hasPendingApproval ? "pending" : "live"}
+          className={cn(
+            "inline-flex shrink-0 items-center gap-1.5 rounded-full border px-2 py-0.5 text-2xs font-medium transition-colors duration-200",
+            hasPendingApproval
+              ? "border-warning/40 bg-warning/10 text-warning"
+              : "border-success/35 bg-success/10 text-success",
+          )}
+        >
+          <span className="relative flex size-2 items-center justify-center" aria-hidden="true">
+            <span
+              ref={observeVisibleAnimation}
+              data-slot="guest-presence-halo"
+              className={cn(
+                "absolute inset-0 rounded-full",
+                hasPendingApproval ? "bg-warning/70" : "bg-success/70",
+              )}
+            />
+            <span
+              className={cn(
+                "relative size-1.5 rounded-full",
+                hasPendingApproval ? "bg-warning" : "bg-success",
+              )}
+            />
+          </span>
+          <span>{hasPendingApproval ? gt("Pending approval") : gt("Live")}</span>
+        </div>
         <h1 className="min-w-0 flex-1 truncate text-sm font-medium">{title}</h1>
         <ExpiryLabel expiresAt={expiresAt} />
       </header>
@@ -447,7 +529,7 @@ function GuestThread({
             return unplaced.length === 0 ? null : (
               <ol className="chat-content-lane flex flex-col gap-4 pb-4">
                 {unplaced.map((message) => (
-                  <li key={message.id}>
+                  <li key={message.id} data-slot="guest-message-item">
                     <UnplacedGuestMessage shareId={shareId} message={message} />
                   </li>
                 ))}
@@ -497,6 +579,8 @@ function UnplacedGuestMessage({
 }) {
   // A dismissed message's files are deleted, so only their names remain.
   const served = message.status !== "dismissed";
+  const isPending = message.status === "pending";
+  const isApproved = message.status === "sent";
   const gt = useGT();
   const m = useMessages();
   const url = (attachment: { readonly id: string }) => guestAttachmentUrl(shareId, attachment.id);
@@ -504,10 +588,14 @@ function UnplacedGuestMessage({
     <div className="flex flex-col items-end gap-1">
       <GuestMessageName name={gt("You", { $context: "the guest's own messages" })} />
       <div
+        data-slot="guest-message-bubble"
+        data-guest-status={message.status}
         className={cn(
           BUBBLE,
           guestBubbleClassName(message.status !== "sent"),
-          message.status === "dismissed" ? "text-muted-foreground" : "text-message-foreground",
+          isPending && "border-warning/55 bg-warning/[0.06] text-message-foreground",
+          isApproved && "border border-success/45 bg-success/[0.08] text-message-foreground",
+          message.status === "dismissed" && "text-muted-foreground",
         )}
       >
         <GuestMessageAttachments
@@ -518,7 +606,24 @@ function UnplacedGuestMessage({
         />
         {message.text ? <span>{message.text}</span> : null}
       </div>
-      <p className="me-1 text-2xs text-muted-foreground">{m(STATUS_LABEL[message.status])}</p>
+      <p
+        className={cn(
+          "me-1 inline-flex items-center gap-1.5 text-2xs",
+          isPending ? "text-warning" : isApproved ? "text-success" : "text-muted-foreground",
+        )}
+      >
+        {isPending ? (
+          <span
+            ref={observeVisibleAnimation}
+            aria-hidden="true"
+            data-slot="guest-pending-dot"
+            className="size-1.5 rounded-full bg-warning"
+          />
+        ) : isApproved ? (
+          <CheckIcon aria-hidden="true" className="size-3" />
+        ) : null}
+        {m(STATUS_LABEL[message.status])}
+      </p>
     </div>
   );
 }

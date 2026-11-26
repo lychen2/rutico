@@ -352,12 +352,26 @@ describe("GuestPage", () => {
     await userEvent.click(screen.getByRole("button", { name: "Send" }));
     send({ type: "view", view: { ...view, messages: [waiting] } });
     await expect.element(screen.getByText(waiting.text)).toBeInTheDocument();
+    expect(
+      screen.container.querySelector<HTMLElement>('[data-slot="guest-presence-pill"]')?.dataset
+        .state,
+    ).toBe("pending");
+    expect(
+      screen.container.querySelector<HTMLElement>('[data-slot="guest-message-bubble"]')?.dataset
+        .guestStatus,
+    ).toBe("pending");
     await expectAtEnd();
 
     // The owner sends it: the run ends, the message becomes a row, and a new run's reply grows.
     const sent = { ...waiting, status: "sent" as const };
     send(threadEvent(3, { type: "run.updated", payload: run("run-1", 1, "completed") }));
     send({ type: "view", view: { ...view, messages: [sent] } });
+    await vi.waitFor(() => {
+      expect(
+        screen.container.querySelector<HTMLElement>('[data-slot="guest-presence-pill"]')?.dataset
+          .state,
+      ).toBe("live");
+    });
     send(threadEvent(4, { type: "run.updated", payload: run("run-2", 2, "running") }));
     send(
       threadEvent(5, {
