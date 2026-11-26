@@ -3,6 +3,7 @@ import { uiText as copy } from "~/i18n";
 // One accent ramp on greys, real data only.
 import type { EnvironmentId, UsageProviderKind, UsageSummaryInput } from "@t3tools/contracts";
 import {
+  enumerateDays,
   enumerateHourStarts,
   formatCount,
   formatPercent,
@@ -17,6 +18,7 @@ import {
 } from "@t3tools/shared/usageMerge";
 import {
   Fragment,
+  useEffect,
   useId,
   useLayoutEffect,
   useRef,
@@ -32,11 +34,12 @@ import { UsageDetailsSheet } from "./UsageDetailsSheet";
 import { UsageCount } from "./UsageMotion";
 import {
   clampChartPointerFraction,
-  fractionToPeriodIndex,
+  fractionToBucketIndex,
   normalizeBrushRange,
   summarizeBrushRange,
   type BrushIndexRange,
 } from "./usageChartBrush.logic";
+import { previousUsageWindow } from "./usagePreviousWindow";
 import { useUiText } from "~/i18n/useUiText";
 import { scopeUsageEnvironments, mergeUsageEnvironments } from "./usageAnalysis";
 import { useUsage, type EnvironmentUsageStatus } from "../../state/usage";
@@ -1673,6 +1676,7 @@ interface V9CostDashboardProps {
   readonly hiddenProviders: ReadonlySet<UsageProviderKind>;
   readonly rankedProviders: readonly UsageProviderKind[];
   readonly shownWindow: UsageSummaryInput;
+  readonly previousWindow?: UsageSummaryInput;
   readonly periods: readonly string[];
   readonly hourly: boolean;
   readonly formatPeriod: (period: string) => string;
@@ -1700,6 +1704,8 @@ export function V9CostDashboard({
   environmentIds,
   hiddenProviders,
   rankedProviders,
+  shownWindow,
+  previousWindow,
   periods,
   hourly,
   formatPeriod,
@@ -1721,7 +1727,14 @@ export function V9CostDashboard({
   const areaGradId = useId();
   const [hoveredIndex, setHoveredIndex] = useState<number | null>(null);
   const [brushRange, setBrushRange] = useState<BrushIndexRange | null>(null);
+  const brushWindowKey = `${shownWindow.sinceDay}:${shownWindow.untilDay}:${shownWindow.sinceTime ?? ""}:${shownWindow.untilTime ?? ""}`;
+  const [brushKey, setBrushKey] = useState(brushWindowKey);
+  if (brushKey !== brushWindowKey) {
+    setBrushKey(brushWindowKey);
+    setBrushRange(null);
+  }
   const heroStageRef = useRef<HTMLDivElement | null>(null);
+  const heroSvgRef = useRef<SVGSVGElement | null>(null);
   const heroCrosshairRef = useRef<HTMLDivElement | null>(null);
   const heroBrushPreviewRef = useRef<HTMLDivElement | null>(null);
   const heroDragRef = useRef<{
@@ -1731,7 +1744,10 @@ export function V9CostDashboard({
     focusIndex: number;
     isBrushing: boolean;
   } | null>(null);
+  const heroDragCleanupRef = useRef<(() => void) | null>(null);
   const suppressBarClickRef = useRef(false);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- releases temporary window pointer listeners if unmounted mid-drag
+  useEffect(() => () => heroDragCleanupRef.current?.(), []);
   const [insightOpen, setInsightOpen] = useState(true);
   const [rankTab, setRankTab] = useState<"model" | "project" | "hour">("model");
   const [rankExpanded, setRankExpanded] = useState(false);
@@ -1747,9 +1763,12 @@ export function V9CostDashboard({
 
   const filteredPrevious =
     previous && selectedProvider !== null
-      ? mergeUsageEnvironments(
-          scopeUsageEnvironments(priorEnvironments, hiddenProviders, selectedProvider),
-        )
+      ? priorEnvironments.length > 0 &&
+        priorEnvironments.every((env) => env.summary !== null && !env.error && !env.isPending)
+        ? mergeUsageEnvironments(
+            scopeUsageEnvironments(priorEnvironments, hiddenProviders, selectedProvider),
+          )
+        : undefined
       : previous;
 
   const byPeriod = new Map<string, { costUsd: number; totalTokens: number }>();
@@ -1800,12 +1819,38 @@ export function V9CostDashboard({
     .map((p, i) => `${i === 0 ? "M" : "L"} ${p[0].toFixed(2)} ${p[1].toFixed(2)}`)
     .join(" ");
 
+  const resolvedPreviousWindow = previousWindow ?? previousUsageWindow(shownWindow);
+  const previousPeriods = hourly
+    ? resolvedPreviousWindow.sinceTime && resolvedPreviousWindow.untilTime
+      ? enumerateHourStarts(resolvedPreviousWindow.sinceTime, resolvedPreviousWindow.untilTime)
+      : []
+    : enumerateDays(resolvedPreviousWindow.sinceDay, resolvedPreviousWindow.untilDay);
+  const previousByPeriod = new Map<string, number>();
+  if (filteredPrevious) {
+    if (hourly) {
+      for (const entry of filteredPrevious.hourly) {
+        previousByPeriod.set(
+          entry.hourStart,
+          (previousByPeriod.get(entry.hourStart) ?? 0) + entry.costUsd,
+        );
+      }
+    } else {
+      for (const entry of filteredPrevious.daily) {
+        previousByPeriod.set(entry.day, (previousByPeriod.get(entry.day) ?? 0) + entry.costUsd);
+      }
+    }
+  }
+  const previousCostValues =
+    filteredPrevious !== undefined && previousPeriods.length === chartRows.length
+      ? previousPeriods.map((period) => previousByPeriod.get(period) ?? 0)
+      : undefined;
+
   const activeBrush =
     brushRange === null || brushRange.endIndex >= chartRows.length
       ? null
       : summarizeBrushRange(
           chartRows.map((row) => row.costUsd),
-          undefined,
+          previousCostValues,
           brushRange.startIndex,
           brushRange.endIndex,
         );
@@ -1821,16 +1866,27 @@ export function V9CostDashboard({
     preview.style.clipPath = "inset(0 100% 0 0 round 6px)";
   };
 
+  const clearHeroDragListeners = () => {
+    heroDragCleanupRef.current?.();
+    heroDragCleanupRef.current = null;
+  };
+
   const heroPlotXMetrics = (clientX: number) => {
     const stage = heroStageRef.current;
     if (!stage || chartRows.length === 0) return null;
     const bounds = stage.getBoundingClientRect();
     if (bounds.width <= 0) return null;
-    const plotLeftPx = (L / 1040) * bounds.width;
-    const plotWidthPx = (CW / 1040) * bounds.width;
-    const fraction = clampChartPointerFraction(clientX, bounds.left + plotLeftPx, plotWidthPx);
+    const ctm = heroSvgRef.current?.getScreenCTM?.();
+    const plotClientLeft =
+      ctm && Number.isFinite(ctm.a) && ctm.a > 0
+        ? ctm.a * L + ctm.e
+        : bounds.left + (L / 1040) * bounds.width;
+    const plotWidthPx =
+      ctm && Number.isFinite(ctm.a) && ctm.a > 0 ? ctm.a * CW : (CW / 1040) * bounds.width;
+    const plotLeftPx = plotClientLeft - bounds.left;
+    const fraction = clampChartPointerFraction(clientX, plotClientLeft, plotWidthPx);
     const localX = plotLeftPx + fraction * plotWidthPx;
-    const index = fractionToPeriodIndex(fraction, chartRows.length);
+    const index = fractionToBucketIndex(fraction, chartRows.length);
     return { localX, index, stageWidth: bounds.width };
   };
 
@@ -1838,15 +1894,30 @@ export function V9CostDashboard({
     if (event.button !== 0 || chartRows.length < 2) return;
     const metrics = heroPlotXMetrics(event.clientX);
     if (!metrics) return;
+    clearHeroDragListeners();
     suppressBarClickRef.current = false;
+    const pointerId = event.pointerId;
     heroDragRef.current = {
-      pointerId: event.pointerId,
+      pointerId,
       startX: metrics.localX,
       anchorIndex: metrics.index,
       focusIndex: metrics.index,
       isBrushing: false,
     };
-    event.currentTarget.setPointerCapture?.(event.pointerId);
+    const handleWindowEnd = (windowEvent: PointerEvent) => {
+      if (windowEvent.pointerId !== pointerId) return;
+      clearHeroDragListeners();
+      const drag = heroDragRef.current;
+      if (drag === null || drag.pointerId !== pointerId) return;
+      heroDragRef.current = null;
+      hideHeroBrushPreviewDom();
+    };
+    globalThis.window.addEventListener("pointerup", handleWindowEnd);
+    globalThis.window.addEventListener("pointercancel", handleWindowEnd);
+    heroDragCleanupRef.current = () => {
+      globalThis.window.removeEventListener("pointerup", handleWindowEnd);
+      globalThis.window.removeEventListener("pointercancel", handleWindowEnd);
+    };
   };
 
   const handleHeroPointerMove = (event: ReactPointerEvent<HTMLDivElement>) => {
@@ -1861,6 +1932,11 @@ export function V9CostDashboard({
       if (drag.pointerId !== event.pointerId) return;
       if (!drag.isBrushing && Math.abs(metrics.localX - drag.startX) >= 6) {
         drag.isBrushing = true;
+        try {
+          event.currentTarget.setPointerCapture?.(event.pointerId);
+        } catch {
+          // Synthetic pointer events without an active pointer may reject capture.
+        }
       }
       if (drag.isBrushing) {
         drag.focusIndex = metrics.index;
@@ -1881,6 +1957,7 @@ export function V9CostDashboard({
   const finishHeroPointer = (event: ReactPointerEvent<HTMLDivElement>, cancelled: boolean) => {
     const drag = heroDragRef.current;
     if (drag === null || drag.pointerId !== event.pointerId) return;
+    clearHeroDragListeners();
     heroDragRef.current = null;
     hideHeroBrushPreviewDom();
     if (event.currentTarget.hasPointerCapture?.(event.pointerId)) {
@@ -1897,7 +1974,12 @@ export function V9CostDashboard({
   };
 
   const hoveredRow = hoveredIndex === null ? undefined : chartRows[hoveredIndex];
-  const readoutText =
+  const formatBrushDelta = (delta: number) => {
+    const rounded = Math.round(Math.abs(delta) * 10) / 10;
+    const magnitude = Number.isInteger(rounded) ? String(rounded) : rounded.toFixed(1);
+    return `${delta >= 0 ? "+" : "−"}${magnitude}%`;
+  };
+  const baseBrushReadout =
     activeBrush !== null &&
     chartRows[activeBrush.startIndex] !== undefined &&
     chartRows[activeBrush.endIndex] !== undefined
@@ -1907,6 +1989,12 @@ export function V9CostDashboard({
           total: formatUsd(activeBrush.total),
           average: formatUsd(activeBrush.average),
         })
+      : null;
+  const readoutText =
+    baseBrushReadout !== null
+      ? activeBrush?.deltaPercent !== null && activeBrush?.deltaPercent !== undefined
+        ? `${baseBrushReadout} · ${formatBrushDelta(activeBrush.deltaPercent)} ${text("vs previous")}`
+        : baseBrushReadout
       : hoveredRow
         ? text("{period} · Est. {cost} · {tokens} tokens", {
             period: hoveredRow.label,
@@ -2097,6 +2185,12 @@ export function V9CostDashboard({
           onPointerMove={handleHeroPointerMove}
           onPointerUp={(event) => finishHeroPointer(event, false)}
           onPointerCancel={(event) => finishHeroPointer(event, true)}
+          onClickCapture={(event) => {
+            if (suppressBarClickRef.current) {
+              suppressBarClickRef.current = false;
+              event.stopPropagation();
+            }
+          }}
           onDoubleClick={() => setBrushRange(null)}
           onMouseLeave={() => {
             if (heroDragRef.current === null) {
@@ -2108,6 +2202,7 @@ export function V9CostDashboard({
           <div ref={heroBrushPreviewRef} aria-hidden="true" data-ctv9="hero-brush-preview" />
           <div ref={heroCrosshairRef} aria-hidden="true" data-ctv9="hero-crosshair" />
           <svg
+            ref={heroSvgRef}
             data-ctv9="hero-chart-svg"
             viewBox="0 0 1040 184"
             role="img"
@@ -2182,6 +2277,7 @@ export function V9CostDashboard({
                           suppressBarClickRef.current = false;
                           return;
                         }
+                        setBrushRange(null);
                         onSelectPeriod(sel ? null : row.period);
                       }}
                     >
@@ -2255,6 +2351,7 @@ export function V9CostDashboard({
                           suppressBarClickRef.current = false;
                           return;
                         }
+                        setBrushRange(null);
                         onSelectPeriod(sel ? null : row.period);
                       }}
                     >

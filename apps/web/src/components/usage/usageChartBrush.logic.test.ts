@@ -3,6 +3,7 @@ import { describe, expect, it } from "vite-plus/test";
 import {
   clampChartPointerFraction,
   computeEdgeAwarePopoverPosition,
+  fractionToBucketIndex,
   fractionToPeriodIndex,
   normalizeBrushRange,
   summarizeBrushRange,
@@ -15,10 +16,28 @@ describe("usageChartBrush.logic", () => {
     expect(clampChartPointerFraction(500, 100, 200)).toBe(1);
     expect(clampChartPointerFraction(100, 100, 0)).toBe(0);
 
+    // Endpoint-aligned line/area charts keep round(fraction * (count - 1)).
     expect(fractionToPeriodIndex(0, 7)).toBe(0);
+    expect(fractionToPeriodIndex(0.1, 7)).toBe(1);
     expect(fractionToPeriodIndex(0.5, 7)).toBe(3);
     expect(fractionToPeriodIndex(1, 7)).toBe(6);
     expect(fractionToPeriodIndex(0.5, 1)).toBe(0);
+  });
+
+  it("maps equal-width bucket fractions with floor(ratio * count) and clean boundary clamping", () => {
+    expect(fractionToBucketIndex(-0.2, 7)).toBe(0);
+    expect(fractionToBucketIndex(0, 7)).toBe(0);
+    expect(fractionToBucketIndex(0.1, 7)).toBe(0);
+    expect(fractionToBucketIndex(1 / 7 - 1e-6, 7)).toBe(0);
+    expect(fractionToBucketIndex(1 / 7, 7)).toBe(1);
+    expect(fractionToBucketIndex(0.5, 7)).toBe(3);
+    expect(fractionToBucketIndex(6 / 7 - 1e-6, 7)).toBe(5);
+    expect(fractionToBucketIndex(6 / 7, 7)).toBe(6);
+    expect(fractionToBucketIndex(1, 7)).toBe(6);
+    expect(fractionToBucketIndex(1.5, 7)).toBe(6);
+    expect(fractionToBucketIndex(Number.NaN, 7)).toBe(0);
+    expect(fractionToBucketIndex(0.5, 1)).toBe(0);
+    expect(fractionToBucketIndex(0.5, 0)).toBe(0);
   });
 
   it("normalizes forward and reverse brush drags into ordered inclusive bounds", () => {

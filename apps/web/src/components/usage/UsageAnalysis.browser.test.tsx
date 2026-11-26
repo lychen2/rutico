@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { expect, it, vi } from "vite-plus/test";
 import { page, userEvent } from "vite-plus/test/browser";
-import { render } from "../../../test/render";
+import { render, act } from "../../../test/render";
 import { testUiLocale } from "../../../test/uiLocale";
 import { applyThemePalette } from "../../themePalette";
 import {
@@ -23,7 +23,9 @@ import {
   toggleUsageFilter,
 } from "./usageAnalysis";
 import type { UsageProviderKind } from "@t3tools/contracts";
-import { EnvironmentId, UsageDay } from "@t3tools/contracts";
+import { EnvironmentId, USAGE_CONTRACT_VERSION, UsageDay } from "@t3tools/contracts";
+import type { EnvironmentUsageStatus } from "../../state/usage";
+import { previousUsageWindow } from "./usagePreviousWindow";
 import { useUsage } from "../../state/usage";
 import "~/index.css";
 import "./usagePresentation.css";
@@ -526,5 +528,241 @@ it("adapts V9 cost cards and accent colors to the active dark theme tokens", asy
     if (prevStyle === null) root.removeAttribute("style");
     else root.setAttribute("style", prevStyle);
     root.classList.toggle("dark", wasDark);
+  }
+});
+
+function sevenDayEnv(
+  days: readonly string[],
+  costs: readonly number[],
+): readonly EnvironmentUsageStatus[] {
+  const buckets = days.flatMap((day, index) => {
+    const cost = costs[index] ?? 0;
+    if (cost <= 0) return [];
+    return [
+      {
+        day: UsageDay.make(day),
+        hourStart: `${day}T12:00:00.000Z`,
+        provider: "codex" as const,
+        model: "gpt-5.4",
+        sourcePath: "/codex",
+        totals: {
+          uncachedInputTokens: 1000,
+          cachedInputTokens: 2000,
+          cacheCreationTokens: 0,
+          outputTokens: 500,
+          reasoningTokens: 0,
+        },
+        costUsd: cost,
+        cacheSavingsUsd: 1,
+        costSource: "modelPriced" as const,
+        records: 1,
+        unpricedRecords: 0,
+        sessions: 1,
+      },
+    ];
+  });
+  return [
+    {
+      environmentId: EnvironmentId.make("test"),
+      label: "Test",
+      isPending: false,
+      canReadDiagnostics: true,
+      isConnected: true,
+      error: null,
+      summary: {
+        contractVersion: USAGE_CONTRACT_VERSION,
+        readAt: "2026-11-16T16:00:00Z",
+        timeZone: "UTC",
+        sinceDay: UsageDay.make(days[0]!),
+        untilDay: UsageDay.make(days.at(-1)!),
+        buckets,
+        sources: [
+          {
+            fingerprint: {
+              hostId: "test",
+              provider: "codex",
+              resolvedHomePath: "/codex",
+              volumeId: "test",
+            },
+            status: "ok",
+            scannedFiles: 1,
+            skippedFiles: 0,
+            malformedRecords: 0,
+            distinctSessions: 1,
+            message: null,
+          },
+        ],
+        pricing: { status: "fresh", source: "litellm", fetchedAt: null, knownModels: 1 },
+        scanDurationMs: 1,
+        projectTotals: [],
+      },
+    },
+  ];
+}
+
+function SevenDayCostFixture({ includePrior }: { readonly includePrior: boolean }) {
+  const currentDays = [
+    "2026-11-10",
+    "2026-11-11",
+    "2026-11-12",
+    "2026-11-13",
+    "2026-11-14",
+    "2026-11-15",
+    "2026-11-16",
+  ] as const;
+  const priorDays = [
+    "2026-11-03",
+    "2026-11-04",
+    "2026-11-05",
+    "2026-11-06",
+    "2026-11-07",
+    "2026-11-08",
+    "2026-11-09",
+  ] as const;
+  // Bars 0..1 sum to 7 + 8 = 15; corresponding prior bars 0..1 sum to 5 + 7 = 12 (+25%).
+  // Bars 5..6 have 0 prior cost so brushing them must not fabricate a percentage.
+  const currentEnvs = sevenDayEnv(currentDays, [7, 8, 4, 6, 5, 3, 2]);
+  const priorEnvs = sevenDayEnv(priorDays, [5, 7, 4, 4, 4, 0, 0]);
+  const merged = mergeUsageEnvironments(currentEnvs);
+  const previous = includePrior ? mergeUsageEnvironments(priorEnvs) : undefined;
+  const shownWindow = {
+    sinceDay: UsageDay.make(currentDays[0]),
+    untilDay: UsageDay.make(currentDays[6]),
+    timeZone: "UTC",
+    resolution: "day" as const,
+  };
+  const [provider, setProvider] = useState<UsageProviderKind | null>(null);
+  const [period, setPeriod] = useState<string | null>(null);
+  return (
+    <div style={{ width: 920 }}>
+      <V9CostDashboard
+        merged={merged}
+        previous={previous}
+        selectedEnvironments={currentEnvs}
+        priorEnvironments={includePrior ? priorEnvs : []}
+        environmentIds={new Set([EnvironmentId.make("test")])}
+        hiddenProviders={new Set()}
+        rankedProviders={["codex"]}
+        shownWindow={shownWindow}
+        previousWindow={previousUsageWindow(shownWindow)}
+        periods={currentDays}
+        hourly={false}
+        formatPeriod={(day) => day.slice(5)}
+        windowDays={7}
+        periodOptions={[{ days: 7, label: "7 days" }]}
+        onSelectWindow={() => {}}
+        chartStyle="bar"
+        onChangeChartStyle={() => {}}
+        selectedProvider={provider}
+        onSelectProvider={setProvider}
+        selectedPeriod={period}
+        onSelectPeriod={setPeriod}
+        onSelectModel={() => {}}
+        heatmapReferenceTime="2026-11-16T16:00:00.000Z"
+      />
+    </div>
+  );
+}
+
+it("toggles bar drill-down on real pointer clicks, hits equal-width bar buckets on reverse drag, and renders prior-period brush delta only when prior data exists", async () => {
+  using _locale = testUiLocale("en");
+  using _theme = appleTheme();
+  const envs = analysisFixture();
+  vi.mocked(useUsage).mockReturnValue({
+    merged: mergeUsageEnvironments(envs),
+    environments: envs,
+    selectedEnvironments: envs,
+    isPending: false,
+    isPartial: false,
+    shown: null,
+    refresh: vi.fn(async () => {}),
+  });
+  try {
+    await using screen = await render(<SevenDayCostFixture includePrior />);
+
+    const barCols = () => [
+      ...screen.container.querySelectorAll<SVGGElement>(
+        '[data-v9-cost-bars] [data-ctv9="chart-col-g"]',
+      ),
+    ];
+    expect(barCols()).toHaveLength(7);
+
+    // 1. Real pointer click on the same bar twice selects then clears without pointer capture stealing the click.
+    await userEvent.click(barCols()[0]!);
+    expect(barCols()[0]!.getAttribute("opacity")).toBe("1");
+    expect(barCols()[1]!.getAttribute("opacity")).toBe("0.32");
+    await userEvent.click(barCols()[0]!);
+    expect(barCols()[1]!.getAttribute("opacity")).toBe("1");
+
+    // Helper mapping a normalized [0, 1] plot fraction to actual viewport clientX via the rendered bar rects.
+    const stage = screen.container.querySelector<HTMLElement>('[data-ctv9="hero-chart-stage"]')!;
+    const firstRect = barCols()[0]!.querySelector("rect")!.getBoundingClientRect();
+    const lastRect = barCols()[6]!.querySelector("rect")!.getBoundingClientRect();
+    const plotLeft = firstRect.left;
+    const plotWidth = lastRect.right - firstRect.left;
+    const plotY = firstRect.top + firstRect.height / 2;
+    const xAt = (ratio: number) => plotLeft + ratio * plotWidth;
+
+    const dragPlot = async (fromRatio: number, toRatio: number, pointerId: number) => {
+      await act(async () => {
+        stage.dispatchEvent(
+          new PointerEvent("pointerdown", {
+            bubbles: true,
+            button: 0,
+            pointerId,
+            clientX: xAt(fromRatio),
+            clientY: plotY,
+          }),
+        );
+        stage.dispatchEvent(
+          new PointerEvent("pointermove", {
+            bubbles: true,
+            buttons: 1,
+            pointerId,
+            clientX: xAt(toRatio),
+            clientY: plotY,
+          }),
+        );
+        stage.dispatchEvent(
+          new PointerEvent("pointerup", {
+            bubbles: true,
+            button: 0,
+            pointerId,
+            clientX: xAt(toRatio),
+            clientY: plotY,
+          }),
+        );
+      });
+    };
+
+    const readout = () =>
+      screen.container.querySelector<HTMLElement>('[data-ctv9="hero-readout-pill"]')!.textContent ??
+      "";
+
+    // 2. 10% across a 7-bar plot hits bar 0 (11-10), NOT bar 1; dragging to bar 1 sums 7+8=$15 vs prior 5+7=$12 -> +25%.
+    await dragPlot(0.1, 1.5 / 7, 11);
+    expect(readout()).toContain("11-10 – 11-11");
+    expect(readout()).toContain("$15.00");
+    expect(readout()).toContain("+25%");
+
+    // 3. Reverse drag from bar 4 back to 10% (bar 0) normalizes to 11-10 – 11-14.
+    await dragPlot(4.5 / 7, 0.1, 12);
+    expect(readout()).toContain("11-10 – 11-14");
+    expect(readout()).toContain("$30.00");
+
+    // 4. Brushing bars 5..6 where prior period is $0 must not fabricate a percentage.
+    await dragPlot(5.2 / 7, 6.8 / 7, 13);
+    expect(readout()).toContain("11-15 – 11-16");
+    expect(readout()).toContain("$5.00");
+    expect(readout()).not.toContain("%");
+
+    // 5. Missing prior period (previous=undefined) must not fabricate a percentage on bars 0..1 either.
+    await screen.rerender(<SevenDayCostFixture includePrior={false} />);
+    await dragPlot(0.1, 1.5 / 7, 14);
+    expect(readout()).toContain("11-10 – 11-11");
+    expect(readout()).toContain("$15.00");
+    expect(readout()).not.toContain("%");
+  } finally {
+    vi.mocked(useUsage).mockReset();
   }
 });

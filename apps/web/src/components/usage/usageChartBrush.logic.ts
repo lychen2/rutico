@@ -35,6 +35,14 @@ export function fractionToPeriodIndex(fraction: number, count: number): number {
   return Math.min(count - 1, Math.max(0, Math.round(clamped * (count - 1))));
 }
 
+/** Converts a normalized [0, 1] fraction into a clamped index across equal-width buckets. */
+export function fractionToBucketIndex(fraction: number, count: number): number {
+  if (count <= 1) return 0;
+  if (!Number.isFinite(fraction)) return 0;
+  const clamped = Math.min(1, Math.max(0, fraction));
+  return Math.min(count - 1, Math.max(0, Math.floor(clamped * count)));
+}
+
 /** Normalizes any two anchor/focus indices into an ordered inclusive [startIndex, endIndex] span. */
 export function normalizeBrushRange(
   anchorIndex: number,

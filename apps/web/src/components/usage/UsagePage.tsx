@@ -701,7 +701,8 @@ function UsageOverview({
   );
 
   const ids = new Set(selectedEnvironments.map((e) => e.environmentId));
-  const prior = useUsage(previousUsageWindow(shownWindow), ids, hiddenProviders);
+  const previousWindow = previousUsageWindow(shownWindow);
+  const prior = useUsage(previousWindow, ids, hiddenProviders);
   const complete =
     !loadingPartial &&
     !prior.isPartial &&
@@ -768,6 +769,7 @@ function UsageOverview({
             hiddenProviders={hiddenProviders}
             rankedProviders={rankedProviders}
             shownWindow={shownWindow}
+            previousWindow={previousWindow}
             periods={periods}
             hourly={shownHourly}
             formatPeriod={formatPeriod}
