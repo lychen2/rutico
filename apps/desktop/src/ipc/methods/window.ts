@@ -7,6 +7,7 @@ import {
   DesktopThemeSchema,
   EDITORS,
   EditorId,
+  LinuxPortalAppearanceSchema,
   LinuxWindowControlActionSchema,
   LinuxWindowStateSchema,
   PickedThemeFileSchema,
@@ -169,6 +170,19 @@ export const performLinuxWindowControlAction = DesktopIpc.makeIpcMethod({
       }
     },
   ),
+});
+
+export const getLinuxPortalAppearance = DesktopIpc.makeSyncIpcMethod({
+  channel: IpcChannels.GET_LINUX_PORTAL_APPEARANCE_CHANNEL,
+  result: Schema.NullOr(LinuxPortalAppearanceSchema),
+  handler: Effect.fn("desktop.ipc.window.getLinuxPortalAppearance")(function* () {
+    const environment = yield* DesktopEnvironment.DesktopEnvironment;
+    if (environment.platform !== "linux") {
+      return null;
+    }
+    const electronTheme = yield* ElectronTheme.ElectronTheme;
+    return yield* electronTheme.linuxPortalAppearance;
+  }),
 });
 
 export const getLocalEnvironmentBootstraps = DesktopIpc.makeSyncIpcMethod({

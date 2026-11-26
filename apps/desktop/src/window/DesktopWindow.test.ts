@@ -229,6 +229,8 @@ const layerElectronTheme = Layer.succeed(ElectronTheme.ElectronTheme, {
   shouldUseDarkColors: Effect.succeed(false),
   setSource: () => Effect.void,
   onUpdated: () => Effect.void,
+  linuxPortalAppearance: Effect.succeed(null),
+  onLinuxPortalAppearanceChange: () => Effect.void,
 } satisfies ElectronTheme.ElectronTheme["Service"]);
 
 const layerDesktopEnvironmentFor = (platform: NodeJS.Platform) =>

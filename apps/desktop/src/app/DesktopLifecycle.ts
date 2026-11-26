@@ -22,6 +22,7 @@ import * as ElectronTheme from "../electron/ElectronTheme.ts";
 import * as ElectronWindow from "../electron/ElectronWindow.ts";
 import * as DesktopState from "./DesktopState.ts";
 import * as DesktopWindow from "../window/DesktopWindow.ts";
+import { LINUX_PORTAL_APPEARANCE_CHANNEL } from "../ipc/channels.ts";
 
 export class DesktopLifecycleRelaunchError extends Schema.TaggedError<DesktopLifecycleRelaunchError>()(
   "DesktopLifecycleRelaunchError",
@@ -260,6 +261,13 @@ export const make = DesktopLifecycle.of({
     yield* electronTheme.onUpdated(() => {
       void runEffect(
         desktopWindow.syncAppearance.pipe(Effect.withSpan("desktop.lifecycle.themeUpdated")),
+      );
+    });
+    yield* electronTheme.onLinuxPortalAppearanceChange((appearance) => {
+      void runEffect(
+        electronWindow
+          .sendAll(LINUX_PORTAL_APPEARANCE_CHANNEL, appearance)
+          .pipe(Effect.withSpan("desktop.lifecycle.linuxPortalAppearanceUpdated")),
       );
     });
     yield* electronApp.onBeforeQuitForUpdate(() => {

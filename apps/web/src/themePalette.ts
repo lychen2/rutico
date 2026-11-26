@@ -1,5 +1,9 @@
 import { pipe } from "effect/Function";
-import { THEME_CSS_MAX_LENGTH, type EnvironmentTheme } from "@t3tools/contracts";
+import {
+  THEME_CSS_MAX_LENGTH,
+  type EnvironmentTheme,
+  type LinuxPortalAccentColor,
+} from "@t3tools/contracts";
 import * as Equal from "effect/Equal";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
@@ -1877,4 +1881,111 @@ export function resolveThemeHalf(
   appearance: ThemeAppearance,
 ): ThemePreference {
   return halves?.[appearance] ?? theme;
+}
+
+const LINUX_PORTAL_ACCENT_VARIABLES = {
+  accent: "--linux-portal-accent",
+  accentForeground: "--linux-portal-accent-foreground",
+  ring: "--linux-portal-ring",
+  accentSurface: "--linux-portal-accent-surface",
+  accentSurfaceForeground: "--linux-portal-accent-surface-foreground",
+} as const;
+
+interface LinuxPortalAccentPalette {
+  readonly accent: string;
+  readonly accentForeground: string;
+  readonly ring: string;
+  readonly accentSurface: string;
+  readonly accentSurfaceForeground: string;
+}
+
+/**
+ * Maps an XDG Desktop Portal `(r, g, b)` accent color in `[0, 1]` into an OKLCH token set
+ * that preserves desktop hue while guaranteeing WCAG AA (`>= 4.5:1`) readability against both
+ * canvas surfaces and solid accent foregrounds.
+ */
+export function deriveLinuxPortalAccentPalette(
+  accentColor: LinuxPortalAccentColor,
+  appearance: ThemeAppearance,
+): LinuxPortalAccentPalette {
+  const converted = convertToOklch({
+    mode: "rgb",
+    r: Math.min(1, Math.max(0, accentColor.r)),
+    g: Math.min(1, Math.max(0, accentColor.g)),
+    b: Math.min(1, Math.max(0, accentColor.b)),
+  });
+  const baseOklch: ThemeOklch = {
+    L: Math.min(1, Math.max(0, converted.l ?? (appearance === "dark" ? 0.72 : 0.48))),
+    C: Math.min(0.24, Math.max(0, converted.c ?? 0)),
+    h: Number.isFinite(converted.h) ? (converted.h ?? 0) : 0,
+  };
+
+  const standard = getStandardPaintedThemeColors(appearance);
+  const canvasRgb = parseThemeRgbColor(
+    standard.canvas,
+    appearance === "dark" ? { r: 26, g: 23, b: 39 } : { r: 250, g: 248, b: 253 },
+  );
+  const surfaceRgb = parseThemeRgbColor(standard.surface, canvasRgb);
+  const dark = appearance === "dark";
+  const direction = dark ? "lighter" : "darker";
+
+  // Solve accent lightness for >= 4.5:1 readability on standard canvas & surface.
+  const accentSolved = solveOklchLightness(baseOklch, [canvasRgb, surfaceRgb], 4.6, direction);
+  const accentRgb = themeOklchToRgb(accentSolved);
+  const accentForegroundRgb = readableThemeForeground(accentRgb);
+
+  const canvasOklch = themeRgbToOklch(canvasRgb);
+  const surfaceTintChroma = Math.min(0.085, Math.max(0.01, baseOklch.C * 0.4));
+  const accentSurfaceOklch: ThemeOklch = {
+    L: Math.min(0.96, Math.max(0.12, canvasOklch.L + (dark ? 0.14 : -0.07))),
+    C: surfaceTintChroma,
+    h: baseOklch.h,
+  };
+  const accentSurfaceRgb = themeOklchToRgb(accentSurfaceOklch);
+  const textBase: ThemeOklch = {
+    L: dark ? 0.94 : 0.22,
+    C: Math.min(0.035, baseOklch.C * 0.22),
+    h: baseOklch.h,
+  };
+  const accentSurfaceForegroundSolved = solveOklchLightness(
+    textBase,
+    [accentSurfaceRgb],
+    4.6,
+    direction,
+  );
+
+  const accentColorString = themeOklchToThemeColor(accentSolved);
+  return {
+    accent: accentColorString,
+    accentForeground: themeRgbToThemeColor(accentForegroundRgb),
+    ring: accentColorString,
+    accentSurface: themeOklchToThemeColor(accentSurfaceOklch),
+    accentSurfaceForeground: themeOklchToThemeColor(accentSurfaceForegroundSolved),
+  };
+}
+
+export function applyLinuxPortalAccent(
+  root: HTMLElement,
+  accentColor: LinuxPortalAccentColor | null,
+  appearance: ThemeAppearance,
+  enabled: boolean,
+): void {
+  if (!enabled || accentColor === null) {
+    delete root.dataset.linuxPortalAccent;
+    for (const variable of Object.values(LINUX_PORTAL_ACCENT_VARIABLES)) {
+      root.style.removeProperty(variable);
+    }
+    return;
+  }
+
+  const palette = deriveLinuxPortalAccentPalette(accentColor, appearance);
+  root.dataset.linuxPortalAccent = "true";
+  root.style.setProperty(LINUX_PORTAL_ACCENT_VARIABLES.accent, palette.accent);
+  root.style.setProperty(LINUX_PORTAL_ACCENT_VARIABLES.accentForeground, palette.accentForeground);
+  root.style.setProperty(LINUX_PORTAL_ACCENT_VARIABLES.ring, palette.ring);
+  root.style.setProperty(LINUX_PORTAL_ACCENT_VARIABLES.accentSurface, palette.accentSurface);
+  root.style.setProperty(
+    LINUX_PORTAL_ACCENT_VARIABLES.accentSurfaceForeground,
+    palette.accentSurfaceForeground,
+  );
 }

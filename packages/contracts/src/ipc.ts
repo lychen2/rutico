@@ -1125,6 +1125,23 @@ export const LinuxWindowControlActionSchema = Schema.Literals([
 ]);
 export type LinuxWindowControlAction = typeof LinuxWindowControlActionSchema.Type;
 
+const LinuxPortalAccentColorSchema = Schema.Struct({
+  r: Schema.Finite.check(Schema.isGreaterThanOrEqualTo(0), Schema.isLessThanOrEqualTo(1)),
+  g: Schema.Finite.check(Schema.isGreaterThanOrEqualTo(0), Schema.isLessThanOrEqualTo(1)),
+  b: Schema.Finite.check(Schema.isGreaterThanOrEqualTo(0), Schema.isLessThanOrEqualTo(1)),
+});
+export type LinuxPortalAccentColor = typeof LinuxPortalAccentColorSchema.Type;
+
+const LinuxPortalContrastSchema = Schema.Literals(["no-preference", "high"]);
+export type LinuxPortalContrast = typeof LinuxPortalContrastSchema.Type;
+
+export const LinuxPortalAppearanceSchema = Schema.Struct({
+  colorScheme: Schema.optionalKey(Schema.NullOr(Schema.Literals(["dark", "light"]))),
+  accentColor: Schema.optionalKey(Schema.NullOr(LinuxPortalAccentColorSchema)),
+  contrast: Schema.optionalKey(Schema.NullOr(LinuxPortalContrastSchema)),
+});
+export type LinuxPortalAppearance = typeof LinuxPortalAppearanceSchema.Type;
+
 export interface DesktopBridge {
   getAppBranding: () => DesktopAppBranding | null;
   getPathForFile: (file: File) => string;
@@ -1235,6 +1252,10 @@ export interface DesktopBridge {
   getLinuxWindowState?: () => LinuxWindowState | null;
   onLinuxWindowStateChange?: (listener: (state: LinuxWindowState) => void) => () => void;
   performLinuxWindowControlAction?: (action: LinuxWindowControlAction) => Promise<void>;
+  getLinuxPortalAppearance?: () => LinuxPortalAppearance | null;
+  onLinuxPortalAppearanceChange?: (
+    listener: (appearance: LinuxPortalAppearance) => void,
+  ) => () => void;
   getWindowZoomFactor: () => number;
   getUpdateState: () => Promise<DesktopUpdateState>;
   /** `minimumVersion` is a track switch's checked release; nothing older is offered after. */

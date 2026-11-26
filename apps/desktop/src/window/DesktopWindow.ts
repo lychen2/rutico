@@ -31,6 +31,7 @@ import * as ElectronShell from "../electron/ElectronShell.ts";
 import * as ElectronTheme from "../electron/ElectronTheme.ts";
 import * as ElectronWindow from "../electron/ElectronWindow.ts";
 import {
+  LINUX_PORTAL_APPEARANCE_CHANNEL,
   LINUX_WINDOW_STATE_CHANNEL,
   MENU_ACTION_CHANNEL,
   QUIT_SHORTCUT_CHANNEL,
@@ -1314,6 +1315,24 @@ export const make = Effect.gen(function* () {
         typeof window.isFocused === "function" ? window.isFocused() : true,
       );
       emitLinuxWindowState();
+      if (environment.platform === "linux") {
+        trackFork(
+          electronTheme.linuxPortalAppearance.pipe(
+            Effect.tap((appearance) =>
+              Effect.sync(() => {
+                if (
+                  appearance !== null &&
+                  !window.isDestroyed() &&
+                  !window.webContents.isDestroyed()
+                ) {
+                  window.webContents.send(LINUX_PORTAL_APPEARANCE_CHANNEL, appearance);
+                }
+              }),
+            ),
+            Effect.asVoid,
+          ),
+        );
+      }
     });
     window.webContents.on(
       "did-fail-load",

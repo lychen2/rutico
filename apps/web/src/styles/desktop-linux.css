@@ -121,3 +121,24 @@ html.electron-linux:is(
     transform: none;
   }
 }
+
+/* ==========================================================================
+   D30 / C098: XDG Desktop Portal Accent Color & High-Contrast Integration
+   ========================================================================== */
+
+html.electron-linux[data-linux-portal-accent="true"]:not([data-theme-id]) {
+  --primary: var(--linux-portal-accent);
+  --primary-foreground: var(--linux-portal-accent-foreground);
+  --ring: var(--linux-portal-ring);
+  --accent: var(--linux-portal-accent-surface);
+  --accent-foreground: var(--linux-portal-accent-surface-foreground);
+}
+
+html.electron-linux[data-linux-portal-contrast="high"] {
+  --border-width-hairline: 1.5px;
+}
+
+html.electron-linux[data-linux-portal-contrast="high"] :focus-visible {
+  outline-width: 2px;
+  outline-offset: 2px;
+}
