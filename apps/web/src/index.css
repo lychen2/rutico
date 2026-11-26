@@ -2197,9 +2197,30 @@ code {
 }
 
 :is(.chat-markdown, .composer-tiptap) blockquote {
-  border-inline-start: 2px solid color-mix(in srgb, currentcolor 35%, transparent);
-  padding-inline-start: 0.8rem;
-  color: inherit;
+  border-inline-start: 2px solid color-mix(in srgb, var(--contrast-foreground) 30%, transparent);
+  border-start-end-radius: 0.5rem;
+  border-end-end-radius: 0.5rem;
+  background: color-mix(in srgb, var(--contrast-foreground) 3.5%, transparent);
+  padding: 0.4rem 0.85rem;
+  color: color-mix(in srgb, var(--contrast-foreground) 84%, transparent);
+}
+
+:is(.chat-markdown, .composer-tiptap) blockquote > :first-child {
+  margin-top: 0;
+}
+
+:is(.chat-markdown, .composer-tiptap) blockquote > :last-child {
+  margin-bottom: 0;
+}
+
+.chat-markdown.user-message-markdown blockquote {
+  border-inline-start-color: color-mix(
+    in srgb,
+    var(--contrast-message-foreground) 32%,
+    transparent
+  );
+  background: color-mix(in srgb, var(--contrast-message-foreground) 4.5%, transparent);
+  color: color-mix(in srgb, var(--contrast-message-foreground) 86%, transparent);
 }
 
 .composer-tiptap blockquote {
