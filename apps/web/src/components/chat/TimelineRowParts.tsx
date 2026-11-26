@@ -1,11 +1,90 @@
 import { useMessages } from "gt-react";
-import { type ReactNode } from "react";
+import { type CSSProperties, type ReactNode } from "react";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
+import { observeVisibleAnimation } from "~/lib/visibleAnimation";
 import { cn } from "~/lib/utils";
 import { type TimestampFormat } from "@t3tools/contracts/settings";
 import { formatChatTimestampTooltip, formatDayAwareTimestamp } from "../../timestampFormat";
 
 export const MESSAGE_HEADING_LEVEL = 3;
+
+type DotMatrixPhase = "preparing" | "thinking" | "tooling" | "compacting";
+
+const DOT_MATRIX_COORDS = [2.5, 6.17, 9.83, 13.5] as const;
+const DOT_MATRIX_CELLS = [0, 1, 2, 3].flatMap((row) =>
+  [0, 1, 2, 3].map((col) => ({
+    row,
+    col,
+    cx: DOT_MATRIX_COORDS[col]!,
+    cy: DOT_MATRIX_COORDS[row]!,
+  })),
+);
+
+export function resolveDotMatrixPhase(rawPhase: string): DotMatrixPhase {
+  if (rawPhase === "preparing" || rawPhase === "starting") return "preparing";
+  if (rawPhase === "compacting") return "compacting";
+  if (rawPhase === "thinking" || rawPhase === "reasoning") return "thinking";
+  return "tooling";
+}
+
+export function dotMatrixPhaseDelayRatio(row: number, col: number, phase: DotMatrixPhase): number {
+  const dx = col - 1.5;
+  const dy = row - 1.5;
+  const dist = Math.hypot(dx, dy);
+  const maxDist = Math.SQRT2 * 1.5;
+  switch (phase) {
+    case "preparing":
+      return (row + col) / 6;
+    case "thinking":
+      return dist / maxDist;
+    case "compacting":
+      return 1 - dist / maxDist;
+    case "tooling": {
+      const angle = (Math.atan2(dy, dx) + Math.PI) / (2 * Math.PI);
+      return (angle * 2) % 1;
+    }
+  }
+}
+
+export function DotMatrixWorkingIndicator({
+  phase,
+  className,
+}: {
+  readonly phase: string;
+  readonly className?: string;
+}) {
+  const resolvedPhase = resolveDotMatrixPhase(phase);
+  const cycleMs = resolvedPhase === "compacting" ? 1100 : resolvedPhase === "tooling" ? 1250 : 1450;
+  return (
+    <svg
+      ref={observeVisibleAnimation}
+      aria-hidden="true"
+      viewBox="0 0 16 16"
+      data-dot-matrix-indicator="true"
+      data-dot-matrix-phase={resolvedPhase}
+      style={{ "--dm-cycle": `${cycleMs}ms` } as CSSProperties}
+      className={cn("size-3.5 shrink-0 text-info", className)}
+    >
+      {DOT_MATRIX_CELLS.map(({ row, col, cx, cy }) => {
+        const ratio = dotMatrixPhaseDelayRatio(row, col, resolvedPhase);
+        const delayMs = -Math.round(ratio * cycleMs);
+        const isCore = row >= 1 && row <= 2 && col >= 1 && col <= 2;
+        return (
+          <circle
+            key={`${row}-${col}`}
+            cx={cx}
+            cy={cy}
+            r="1.08"
+            fill="currentColor"
+            data-dm-dot="true"
+            data-dm-core={isCore ? "true" : undefined}
+            style={{ "--dm-delay": `${delayMs}ms` } as CSSProperties}
+          />
+        );
+      })}
+    </svg>
+  );
+}
 
 export function MessageAuthorHeading({ children }: { children: string }) {
   return <h3 className="sr-only select-none">{children}</h3>;

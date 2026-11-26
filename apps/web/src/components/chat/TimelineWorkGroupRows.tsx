@@ -30,6 +30,7 @@ import { workEntryDisplayIndicatesToolFailure } from "../../session-logic";
 import ChatMarkdown from "../ChatMarkdown";
 import { assetMediaActionsSource } from "./ChatMarkdownMedia";
 import { ChevronRightIcon, Minimize2Icon, WrenchIcon, XIcon } from "lucide-react";
+import { AnimatedNumber } from "../ui/animated-number";
 import { Button } from "../ui/button";
 import { getVirtualizedScrollFadeClassName } from "../ui/scroll-area";
 import {
@@ -53,7 +54,11 @@ import {
   type TimelineRow,
 } from "./timelineRowContext";
 import { ProviderStartingIcon } from "./ProviderStartingIcon";
-import { TimelineRowTimestamp, ActivityShimmerOverlay } from "./TimelineRowParts";
+import {
+  TimelineRowTimestamp,
+  ActivityShimmerOverlay,
+  DotMatrixWorkingIndicator,
+} from "./TimelineRowParts";
 import {
   failedToolIconClassName,
   toolIconAcceptsTint,
@@ -387,16 +392,6 @@ function ExpandedWorkGroupEntries({
 
 const workEntryKey = (entry: TimelineWorkEntry) => entry.id;
 
-function observeVisiblePulse(element: HTMLSpanElement | null) {
-  if (element === null) return;
-  element.style.animationPlayState = "var(--visible-animation-state, paused)";
-  const stop = observeVisibleAnimation(element);
-  return () => {
-    stop?.();
-    element.style.removeProperty("animation-play-state");
-  };
-}
-
 export function WorkingTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "working" }> }) {
   const {
     isCompacting,
@@ -439,12 +434,9 @@ export function WorkingTimelineRow({ row }: { row: Extract<TimelineRow, { kind: 
         <span
           aria-hidden="true"
           data-working-indicator="true"
-          className="relative flex size-2 shrink-0 items-center justify-center"
+          className="relative flex size-4 shrink-0 items-center justify-center"
         >
-          <span
-            ref={observeVisiblePulse}
-            className="size-1.5 rounded-full bg-info motion-safe:animate-pulse"
-          />
+          <DotMatrixWorkingIndicator phase={phase} />
         </span>
         <span
           ref={shimmer ? observeVisibleAnimation : undefined}
@@ -465,7 +457,7 @@ export function WorkingTimelineRow({ row }: { row: Extract<TimelineRow, { kind: 
                 className="inline-flex shrink-0 items-center gap-1 rounded-full bg-muted/65 px-1.5 py-0.5 font-medium tabular-nums"
               >
                 <WrenchIcon className="size-2.5 shrink-0 opacity-75" />
-                <span>{toolCallCount}</span>
+                <AnimatedNumber value={toolCallCount} />
               </span>
             ) : null}
             {showTaskPill ? (
@@ -481,7 +473,7 @@ export function WorkingTimelineRow({ row }: { row: Extract<TimelineRow, { kind: 
                   />
                 </span>
                 <span>
-                  {taskProgress.completed}/{taskProgress.total}
+                  <AnimatedNumber value={taskProgress.completed} />/{taskProgress.total}
                 </span>
               </span>
             ) : null}
