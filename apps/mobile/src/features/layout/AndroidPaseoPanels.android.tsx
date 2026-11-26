@@ -1,22 +1,27 @@
 import { useAtomValue } from "@effect/atom-react";
-import * as Haptics from "expo-haptics";
+import { useIsFocused } from "@react-navigation/native";
 import { useGT } from "gt-react-native";
 import { useCallback, useEffect, useEffectEvent, useMemo, useRef, useState } from "react";
-import { BackHandler, Keyboard, Pressable, ScrollView, StyleSheet, View } from "react-native";
+import {
+  Animated as RNAnimated,
+  BackHandler,
+  Keyboard,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  useAnimatedValue,
+  View,
+} from "react-native";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import Animated, {
-  Easing,
   Extrapolation,
-  ReduceMotion,
   cancelAnimation,
   interpolate,
   runOnJS,
   useAnimatedStyle,
   useReducedMotion,
   useSharedValue,
-  withRepeat,
   withSpring,
-  withTiming,
 } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
@@ -26,6 +31,17 @@ import { PaneContext } from "../../components/ui/Pane";
 import { RuticoMobileBackdrop } from "../../components/RuticoMobileBackdrop";
 import { useAppActive } from "../../lib/appState";
 import { cn } from "../../lib/cn";
+import { triggerSemanticHaptic } from "../../lib/hapticChoreography";
+import {
+  DEFAULT_DECELERATION_RATE,
+  DEFAULT_RUBBER_BAND_COEFFICIENT,
+  SPRING_DETENT_SNAP,
+  SPRING_SPATIAL_SNAPPY,
+  projectOffset,
+  rubberBandClamp,
+  startNativePulseLoop,
+  withVelocitySpringConfig,
+} from "../../lib/mobileMotion";
 import { themeColorWithAlpha } from "../../lib/mobileTheme";
 import { scopedThreadKey } from "../../lib/scopedEntities";
 import { steadyNavigationThreadShellsAtom } from "../../state/threads";
@@ -43,72 +59,53 @@ import { InspectorSheetContext } from "./workspace-inspector-sheet";
 import type { WorkspaceDetail, WorkspaceDetailSheet } from "./workspace/workspace-detail-selection";
 import { WorkspaceThreadSidebar } from "./workspace/WorkspaceThreadSidebar";
 
-const SPRING_CONFIG = {
-  damping: 24,
-  stiffness: 260,
-  mass: 0.85,
-  reduceMotion: ReduceMotion.System,
-} as const;
-
-const TAB_INDICATOR_SPRING = {
-  damping: 22,
-  stiffness: 310,
-  mass: 0.7,
-  reduceMotion: ReduceMotion.System,
-} as const;
+const PANEL_SPRING_CONFIG = SPRING_SPATIAL_SNAPPY;
+const TAB_INDICATOR_SPRING = SPRING_DETENT_SNAP;
+const OVERDRAG_COEFFICIENT = DEFAULT_RUBBER_BAND_COEFFICIENT;
 
 function PulsingStatusDot(props: {
   readonly tone: "warning" | "primary";
   readonly active: boolean;
 }) {
   const appActive = useAppActive();
+  const isFocused = useIsFocused();
   const reducedMotion = useReducedMotion();
-  const shouldPulse = props.active && appActive && !reducedMotion;
-  const pulse = useSharedValue(0);
+  const shouldPulse = props.active && appActive && isFocused && !reducedMotion;
+  const pulse = useAnimatedValue(0, { useNativeDriver: true });
 
-  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- drives continuous Reanimated breathing halo on active agent status pills when visible and foregrounded
-  useEffect(() => {
-    if (!shouldPulse) {
-      cancelAnimation(pulse);
-      pulse.set(0);
-      return;
-    }
-    pulse.set(
-      withRepeat(
-        withTiming(1, {
-          duration: 1800,
-          easing: Easing.out(Easing.quad),
-          reduceMotion: ReduceMotion.System,
-        }),
-        -1,
-        false,
-      ),
-    );
-    return () => {
-      cancelAnimation(pulse);
-    };
-  }, [pulse, shouldPulse]);
+  // Uses RN Animated (useNativeDriver) instead of Reanimated withRepeat to obey DISABLE_COMMIT_PAUSING_MECHANISM.
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- drives native breathing halo on active agent status pills when visible, focused and foregrounded
+  useEffect(
+    () =>
+      startNativePulseLoop(pulse, {
+        active: shouldPulse,
+        duration: 1800,
+        mode: "expand",
+      }),
+    [pulse, shouldPulse],
+  );
 
-  const haloStyle = useAnimatedStyle(() => {
-    const value = pulse.get();
-    return {
-      opacity: shouldPulse ? interpolate(value, [0, 1], [0.6, 0], Extrapolation.CLAMP) : 0,
-      transform: [
-        { scale: shouldPulse ? interpolate(value, [0, 1], [1, 2.3], Extrapolation.CLAMP) : 1 },
-      ],
-    };
+  const opacity = pulse.interpolate({
+    inputRange: [0, 1],
+    outputRange: [0.6, 0],
+  });
+  const scale = pulse.interpolate({
+    inputRange: [0, 1],
+    outputRange: [1, 2.3],
   });
 
   return (
     <View className="relative size-2 items-center justify-center">
-      <Animated.View
-        pointerEvents="none"
-        className={cn(
-          "absolute inset-0 rounded-full",
-          props.tone === "warning" ? "bg-warning-foreground" : "bg-primary",
-        )}
-        style={haloStyle}
-      />
+      {shouldPulse ? (
+        <RNAnimated.View
+          pointerEvents="none"
+          className={cn(
+            "absolute inset-0 rounded-full",
+            props.tone === "warning" ? "bg-warning-foreground" : "bg-primary",
+          )}
+          style={{ opacity, transform: [{ scale }] }}
+        />
+      ) : null}
       <View
         className={cn(
           "size-1.5 rounded-full",
@@ -191,7 +188,7 @@ function WorkbenchTabsBar(props: {
                 );
               }}
               onPress={() => {
-                void Haptics.selectionAsync().catch(() => undefined);
+                triggerSemanticHaptic("segmentTick");
                 props.onSelectPane?.(pane.key);
               }}
               className={cn(
@@ -267,6 +264,9 @@ export function AndroidPaseoPanels(props: AndroidPaseoPanelsProps) {
 
   const panelOffset = useSharedValue(0);
   const gestureStartOffset = useSharedValue(0);
+  const lastMidpointZone = useSharedValue<-1 | 0 | 1>(0);
+  const activeGesturePanel = useSharedValue<-1 | 0 | 1>(0);
+  const gestureVelocityCommitted = useSharedValue(false);
 
   const flushAfterWorkbenchClose = useCallback(() => {
     const pending = afterWorkbenchCloseRef.current;
@@ -308,7 +308,7 @@ export function AndroidPaseoPanels(props: AndroidPaseoPanelsProps) {
   const commitPanel = useCallback(
     (panel: -1 | 0 | 1, changed: boolean) => {
       if (changed) {
-        void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => undefined);
+        triggerSemanticHaptic("gestureEnd");
       }
       Keyboard.dismiss();
       if (panel === 0) {
@@ -326,22 +326,38 @@ export function AndroidPaseoPanels(props: AndroidPaseoPanelsProps) {
     [inspectorOpen, onCloseInspector],
   );
 
+  const triggerMidDragDetentHaptic = useCallback(() => {
+    triggerSemanticHaptic("segmentTick");
+  }, []);
+
   const handleBackPress = useEffectEvent(() => {
     if (!enabled || activePanel === 0) return false;
     closePanels();
     return true;
   });
 
-  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- drives Reanimated shared spring offset when active Paseo panel changes
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- drives Reanimated shared spring offset when active Paseo panel changes programmatically
   useEffect(() => {
+    activeGesturePanel.set(activePanel);
+    if (gestureVelocityCommitted.get()) {
+      gestureVelocityCommitted.set(false);
+      return;
+    }
     panelOffset.set(
-      withSpring(targetOffset, SPRING_CONFIG, (finished) => {
+      withSpring(targetOffset, PANEL_SPRING_CONFIG, (finished) => {
         if (finished && targetOffset === 0) {
           runOnJS(flushAfterWorkbenchClose)();
         }
       }),
     );
-  }, [flushAfterWorkbenchClose, panelOffset, targetOffset]);
+  }, [
+    activeGesturePanel,
+    activePanel,
+    flushAfterWorkbenchClose,
+    gestureVelocityCommitted,
+    panelOffset,
+    targetOffset,
+  ]);
 
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- subscribes to Android hardware back button while a Paseo side panel is open
   useEffect(() => {
@@ -358,44 +374,92 @@ export function AndroidPaseoPanels(props: AndroidPaseoPanelsProps) {
         .activeOffsetX([-24, 24])
         .failOffsetY([-14, 14])
         .onStart(() => {
-          gestureStartOffset.set(panelOffset.get());
+          cancelAnimation(panelOffset);
+          const current = panelOffset.get();
+          gestureStartOffset.set(current);
+          const initialZone: -1 | 0 | 1 =
+            current > drawerWidth * 0.5
+              ? -1
+              : hasWorkbench && current < -workbenchWidth * 0.5
+                ? 1
+                : 0;
+          lastMidpointZone.set(initialZone);
         })
         .onUpdate((event) => {
           const minOffset = hasWorkbench ? -workbenchWidth : 0;
-          const next = gestureStartOffset.get() + event.translationX;
-          panelOffset.set(Math.max(minOffset, Math.min(drawerWidth, next)));
+          const rawNext = gestureStartOffset.get() + event.translationX;
+          const damped = rubberBandClamp(
+            rawNext,
+            minOffset,
+            drawerWidth,
+            Math.max(viewportWidth, drawerWidth),
+            OVERDRAG_COEFFICIENT,
+          );
+          panelOffset.set(damped);
+
+          const nextZone: -1 | 0 | 1 =
+            damped >= drawerWidth * 0.5
+              ? -1
+              : hasWorkbench && damped <= -workbenchWidth * 0.5
+                ? 1
+                : 0;
+          if (nextZone !== lastMidpointZone.get()) {
+            lastMidpointZone.set(nextZone);
+            runOnJS(triggerMidDragDetentHaptic)();
+          }
         })
         .onEnd((event) => {
           const minOffset = hasWorkbench ? -workbenchWidth : 0;
-          const next = Math.max(
-            minOffset,
-            Math.min(drawerWidth, gestureStartOffset.get() + event.translationX),
-          );
+          const current = panelOffset.get();
+          const projected = projectOffset(current, event.velocityX, DEFAULT_DECELERATION_RATE);
+          const startPanel = activeGesturePanel.get();
           let nextPanel: -1 | 0 | 1 = 0;
-          if (activePanel === 0) {
-            if (next > drawerWidth * 0.28 || event.velocityX > 450) {
+
+          if (startPanel === 0) {
+            if (projected > drawerWidth * 0.45) {
               nextPanel = -1;
-            } else if (hasWorkbench && (next < -workbenchWidth * 0.28 || event.velocityX < -450)) {
+            } else if (hasWorkbench && projected < -workbenchWidth * 0.45) {
               nextPanel = 1;
             }
-          } else if (activePanel === -1) {
-            nextPanel = next < drawerWidth * 0.72 || event.velocityX < -380 ? 0 : -1;
-          } else if (activePanel === 1) {
-            nextPanel = next > -workbenchWidth * 0.72 || event.velocityX > 380 ? 0 : 1;
+          } else if (startPanel === -1) {
+            nextPanel = projected < drawerWidth * 0.5 ? 0 : -1;
+          } else if (startPanel === 1) {
+            nextPanel = projected > -workbenchWidth * 0.5 ? 0 : 1;
           }
-          const destination =
-            nextPanel === -1 ? drawerWidth : nextPanel === 1 && hasWorkbench ? -workbenchWidth : 0;
-          panelOffset.set(withSpring(destination, SPRING_CONFIG));
-          runOnJS(commitPanel)(nextPanel, nextPanel !== activePanel);
+
+          const clampedDestination = Math.max(
+            minOffset,
+            Math.min(
+              drawerWidth,
+              nextPanel === -1
+                ? drawerWidth
+                : nextPanel === 1 && hasWorkbench
+                  ? -workbenchWidth
+                  : 0,
+            ),
+          );
+          if (nextPanel !== startPanel) {
+            gestureVelocityCommitted.set(true);
+          }
+          panelOffset.set(
+            withSpring(
+              clampedDestination,
+              withVelocitySpringConfig(PANEL_SPRING_CONFIG, event.velocityX),
+            ),
+          );
+          runOnJS(commitPanel)(nextPanel, nextPanel !== startPanel);
         }),
     [
-      activePanel,
+      activeGesturePanel,
       commitPanel,
       drawerWidth,
       enabled,
       gestureStartOffset,
+      gestureVelocityCommitted,
       hasWorkbench,
+      lastMidpointZone,
       panelOffset,
+      triggerMidDragDetentHaptic,
       viewportWidth,
       workbenchWidth,
     ],
@@ -413,7 +477,7 @@ export function AndroidPaseoPanels(props: AndroidPaseoPanelsProps) {
       overflow: "hidden" as const,
       transform: [
         { translateX },
-        { scale: interpolate(progress, [0, 1], [1, 0.935], Extrapolation.CLAMP) },
+        { scale: interpolate(progress, [0, 1], [1, 0.984], Extrapolation.CLAMP) },
       ],
     };
   });
@@ -608,7 +672,7 @@ export function AndroidPaseoPanels(props: AndroidPaseoPanelsProps) {
                         accessibilityRole="button"
                         hitSlop={6}
                         onPress={() => {
-                          void Haptics.selectionAsync().catch(() => undefined);
+                          triggerSemanticHaptic("contextClick");
                           closePanels();
                           outerLayoutValue.selectDetail?.({
                             name: "Thread",
