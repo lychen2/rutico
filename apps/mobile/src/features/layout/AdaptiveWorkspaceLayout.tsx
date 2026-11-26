@@ -1,3 +1,4 @@
+import * as Haptics from "expo-haptics";
 import { useGT } from "gt-react-native";
 import {
   WorkspaceColumnsRendererContext,
@@ -36,10 +37,14 @@ import {
   View,
 } from "react-native";
 import Animated, {
+  ReduceMotion,
   runOnJS,
   useAnimatedStyle,
   useDerivedValue,
+  useReducedMotion,
   useSharedValue,
+  withSequence,
+  withSpring,
   withTiming,
 } from "react-native-reanimated";
 import { AsyncResult } from "effect/reactivity";
@@ -91,6 +96,7 @@ import { newTaskDestination, newTaskFilteredProject } from "../threads/new-task-
 import { RenderErrorBoundary, RenderFailureView } from "../../components/RenderErrorBoundary";
 import { PaneContext } from "../../components/ui/Pane";
 import { WORKSPACE_PANE_TIMING } from "./workspace-pane-animation";
+import { InspectorPanes } from "./inspector-host";
 import { WorkspaceInspectorPane } from "./workspace-inspector-pane";
 import { WorkspaceInspectorSheet } from "./workspace-inspector-sheet";
 import type { InspectorContent } from "./inspector-panes";
@@ -105,7 +111,18 @@ import {
 
 import { useNativeLayoutMetrics } from "../../native/native-layout-metrics";
 import { AndroidHingeObserver } from "../../native/AndroidHingeObserver";
-import { WindowHingeContext } from "../../native/window-hinge-context";
+import {
+  FoldPostureContext,
+  WindowHingeContext,
+  type AndroidFoldPosture,
+} from "../../native/window-hinge-context";
+
+const HINGE_ALIGN_SPRING = {
+  damping: 28,
+  stiffness: 300,
+  mass: 0.9,
+  reduceMotion: ReduceMotion.System,
+} as const;
 import { useAndroidWorkspaceRoot } from "./workspace/AndroidWorkspaceTabsProvider";
 import { dispatchRootStackReset, rootStackState } from "../../lib/root-stack-reset";
 import {
@@ -347,10 +364,45 @@ function AdaptiveWorkspaceLayoutContent(
   const navigationRailWidth = shouldRenderNavigationRail ? ANDROID_WORKSPACE_RAIL_WIDTH : 0;
   const [hinge, setHinge] = useState<VerticalHinge | null>(null);
   const [windowHinge, setWindowHinge] = useState<VerticalHinge | null>(null);
+  const [foldPosture, setFoldPosture] = useState<AndroidFoldPosture | null>(null);
+  const previousPostureKindRef = useRef<AndroidFoldPosture["posture"] | null>(null);
+  const seamCueOpacity = useSharedValue(0);
+  const reducedMotion = useReducedMotion();
   const handleHingeChange = (next: VerticalHinge | null, nextWindow: VerticalHinge | null) => {
     setHinge(next);
     setWindowHinge(nextWindow);
   };
+  const handlePostureChange = (next: AndroidFoldPosture | null) => {
+    setFoldPosture(next);
+    const nextKind = next?.posture ?? null;
+    if (nextKind !== null && previousPostureKindRef.current !== nextKind) {
+      if (Platform.OS === "android") {
+        void Haptics.performAndroidHapticsAsync(Haptics.AndroidHaptics.Toggle_On).catch(
+          () => undefined,
+        );
+      }
+      if (!reducedMotion) {
+        seamCueOpacity.set(
+          withSequence(
+            withTiming(0.65, { duration: 110, reduceMotion: ReduceMotion.System }),
+            withTiming(0, { duration: 380, reduceMotion: ReduceMotion.System }),
+          ),
+        );
+      }
+    }
+    previousPostureKindRef.current = nextKind;
+  };
+  const seamCueStyle = useAnimatedStyle(() => ({
+    opacity: seamCueOpacity.get(),
+  }));
+  const tabletopFold =
+    Platform.OS === "android" &&
+    foldPosture !== null &&
+    foldPosture.orientation === "horizontal" &&
+    foldPosture.y >= 160 &&
+    height - (foldPosture.y + foldPosture.height) >= 160
+      ? foldPosture
+      : null;
   const layout = useMemo(() => {
     const aligned = alignListPaneToHinge({
       layout: baseLayout,
@@ -415,6 +467,11 @@ function AdaptiveWorkspaceLayoutContent(
     workspaceInspector?.active === true &&
     workspaceInspector.routeKey === inspectorSheetRoute;
   const inspectorActive = workspaceInspector?.active ?? false;
+  const tabletopInspectorSplit =
+    tabletopFold !== null &&
+    !workspacePage &&
+    inspectorActive &&
+    (workspaceInspector?.content.panes.length ?? 0) > 0;
   const panes = useMemo(
     () =>
       deriveWorkspacePaneLayout({
@@ -814,19 +871,28 @@ function AdaptiveWorkspaceLayoutContent(
       ? (layout.listPaneWidth ?? 0) + (layout.listPaneGap ?? 0)
       : 0;
     // The content beside it already took its final width when the page closed.
+    // On Android foldable book-posture alignment, use a critically damped spring so the split
+    // snaps effortlessly onto the physical hinge crease.
+    const onSidebarSettle = (finished: boolean | undefined) => {
+      "worklet";
+      // Only a hinge resize widens the list's span; a toggle has nothing to settle.
+      if (finished && Platform.OS === "android" && listPaneFloor !== listPaneCeiling) {
+        runOnJS(settleListPane)(listPaneRevision);
+      }
+    };
     renderedSidebarWidth.set(
-      withTiming(targetWidth, snap ? { duration: 0 } : WORKSPACE_PANE_TIMING, (finished) => {
-        // Only a hinge resize widens the list's span; a toggle has nothing to settle.
-        if (finished && Platform.OS === "android" && listPaneFloor !== listPaneCeiling) {
-          runOnJS(settleListPane)(listPaneRevision);
-        }
-      }),
+      snap
+        ? withTiming(targetWidth, { duration: 0 }, onSidebarSettle)
+        : Platform.OS === "android" && hinge !== null
+          ? withSpring(targetWidth, HINGE_ALIGN_SPRING, onSidebarSettle)
+          : withTiming(targetWidth, WORKSPACE_PANE_TIMING, onSidebarSettle),
     );
   }, [
     nativeWorkspace,
     navigationRailWidth,
     layout.listPaneWidth,
     layout.listPaneGap,
+    hinge,
     panes.primarySidebarVisible,
     renderedSidebarWidth,
     renderedRailWidth,
@@ -984,7 +1050,7 @@ function AdaptiveWorkspaceLayoutContent(
 
   const inspectorSheet = (
     <WorkspaceInspectorSheet
-      open={inspectorSheetOpen && !paseoPanelsEnabled}
+      open={inspectorSheetOpen && !paseoPanelsEnabled && !tabletopInspectorSplit}
       onClose={dismissInspectorSheet}
       content={workspaceInspector?.content}
     />
@@ -1017,7 +1083,7 @@ function AdaptiveWorkspaceLayoutContent(
       testID="adaptive-workspace-layout"
       className={Platform.OS === "android" ? "flex-1 flex-row bg-header" : "flex-1 flex-row"}
     >
-      <AndroidHingeObserver onChange={handleHingeChange} />
+      <AndroidHingeObserver onChange={handleHingeChange} onPostureChange={handlePostureChange} />
       {shouldRenderNavigationRail ? (
         <Animated.View className="shrink self-stretch" style={railAnimatedStyle} />
       ) : null}
@@ -1120,18 +1186,43 @@ function AdaptiveWorkspaceLayoutContent(
                 }
               >
                 <View className="flex-1">
-                  <PaneContext value="content">
-                    <AndroidPaseoPanels
-                      enabled={paseoPanelsEnabled}
-                      viewportWidth={viewportWidth}
-                      inspectorContent={workspaceInspector?.content}
-                      inspectorOpen={inspectorSheetOpen}
-                      onCloseInspector={dismissInspectorSheet}
-                      onStartNewTask={handleStartNewTask}
-                    >
-                      <SettingsWorkspaceLayout>{children}</SettingsWorkspaceLayout>
-                    </AndroidPaseoPanels>
-                  </PaneContext>
+                  {tabletopInspectorSplit && tabletopFold !== null && workspaceInspector ? (
+                    <View className="flex-1 flex-col" testID="tabletop-split-container">
+                      <View style={{ height: tabletopFold.y, overflow: "hidden" }}>
+                        <PaneContext value="content">
+                          <SettingsWorkspaceLayout>{children}</SettingsWorkspaceLayout>
+                        </PaneContext>
+                      </View>
+                      <View
+                        className="bg-border/60"
+                        style={{ height: Math.max(2, tabletopFold.height) }}
+                      />
+                      <View
+                        className="flex-1 bg-screen"
+                        style={{ paddingBottom: safeAreaInsets.bottom }}
+                      >
+                        <PaneContext value="inspector">
+                          <InspectorPanes
+                            content={workspaceInspector.content}
+                            onClose={dismissInspectorSheet}
+                          />
+                        </PaneContext>
+                      </View>
+                    </View>
+                  ) : (
+                    <PaneContext value="content">
+                      <AndroidPaseoPanels
+                        enabled={paseoPanelsEnabled}
+                        viewportWidth={viewportWidth}
+                        inspectorContent={workspaceInspector?.content}
+                        inspectorOpen={inspectorSheetOpen}
+                        onCloseInspector={dismissInspectorSheet}
+                        onStartNewTask={handleStartNewTask}
+                      >
+                        <SettingsWorkspaceLayout>{children}</SettingsWorkspaceLayout>
+                      </AndroidPaseoPanels>
+                    </PaneContext>
+                  )}
                 </View>
               </SafeAreaInsetsContext>
               {floatingTabsEnabled &&
@@ -1161,17 +1252,19 @@ function AdaptiveWorkspaceLayoutContent(
           />
         </Animated.View>
       ) : null}
-      <PaneContext value="inspector">
-        <WorkspaceInspectorPane
-          renderedInspectorWidth={renderedInspectorWidth}
-          active={workspaceInspector?.active ?? false}
-          panes={panes}
-          content={workspaceInspector?.content}
-          setAuxiliaryPaneWidth={setFileInspectorPreferredWidth}
-          onClose={() => setFileInspectorPreferredVisible(false)}
-          onClosed={handleWorkspaceInspectorClosed}
-        />
-      </PaneContext>
+      {!tabletopInspectorSplit ? (
+        <PaneContext value="inspector">
+          <WorkspaceInspectorPane
+            renderedInspectorWidth={renderedInspectorWidth}
+            active={workspaceInspector?.active ?? false}
+            panes={panes}
+            content={workspaceInspector?.content}
+            setAuxiliaryPaneWidth={setFileInspectorPreferredWidth}
+            onClose={() => setFileInspectorPreferredVisible(false)}
+            onClosed={handleWorkspaceInspectorClosed}
+          />
+        </PaneContext>
+      ) : null}
       {inspectorSheet}
       {shouldRenderNavigationRail && navigationRailWidth > 0 ? (
         // Its trailing inset clips the old rail as soon as Android fits the workspace to a cover display.
@@ -1192,6 +1285,49 @@ function AdaptiveWorkspaceLayoutContent(
           />
         </View>
       ) : null}
+      {Platform.OS === "android" && hinge !== null ? (
+        <Animated.View
+          className="bg-primary"
+          pointerEvents="none"
+          style={[
+            {
+              position: "absolute",
+              top: 0,
+              bottom: 0,
+              left: hinge.x + hinge.width / 2,
+              width: 1,
+              zIndex: 4,
+            },
+            seamCueStyle,
+          ]}
+        />
+      ) : null}
+      {tabletopFold !== null ? (
+        <View
+          pointerEvents="none"
+          testID="tabletop-hinge-seam"
+          style={{
+            position: "absolute",
+            left: 0,
+            right: 0,
+            top: tabletopFold.y,
+            height: Math.max(1, tabletopFold.height),
+            justifyContent: "center",
+            zIndex: 4,
+          }}
+        >
+          <Animated.View
+            className="bg-primary"
+            style={[
+              {
+                height: 1,
+                width: "100%",
+              },
+              seamCueStyle,
+            ]}
+          />
+        </View>
+      ) : null}
     </View>
   );
 
@@ -1202,15 +1338,17 @@ function AdaptiveWorkspaceLayoutContent(
     >
       <AdaptiveWorkspaceContext value={contextValue}>
         <WorkspacePaneStateContext value={paneState}>
-          <WindowHingeContext value={windowHinge}>
-            {usesPresentationHost ? (
-              <WorkspaceColumnsRendererContext value={renderColumns}>
-                {props.children}
-              </WorkspaceColumnsRendererContext>
-            ) : (
-              renderColumns(props.children)
-            )}
-          </WindowHingeContext>
+          <FoldPostureContext value={foldPosture}>
+            <WindowHingeContext value={windowHinge}>
+              {usesPresentationHost ? (
+                <WorkspaceColumnsRendererContext value={renderColumns}>
+                  {props.children}
+                </WorkspaceColumnsRendererContext>
+              ) : (
+                renderColumns(props.children)
+              )}
+            </WindowHingeContext>
+          </FoldPostureContext>
         </WorkspacePaneStateContext>
       </AdaptiveWorkspaceContext>
     </HomeListOptionsProvider>
