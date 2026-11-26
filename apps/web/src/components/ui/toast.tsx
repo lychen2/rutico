@@ -129,7 +129,7 @@ function errorDescriptionClampClass(type: unknown, description: unknown): string
 
 const toastCornerDismissClass = "absolute z-20 -top-1.5 -right-1.5";
 const toastCornerOrbClass = cn(
-  "relative inline-flex size-6 shrink-0 cursor-pointer items-center justify-center rounded-full border border-border/60 bg-popover/92 text-muted-foreground shadow-sm outline-none backdrop-blur-sm",
+  "relative inline-flex size-6 shrink-0 cursor-pointer items-center justify-center rounded-full border border-border/75 bg-popover text-muted-foreground shadow-sm inset-shadow-[0_1px_0_rgb(255_255_255/35%)] outline-none dark:inset-shadow-[0_1px_0_rgb(255_255_255/10%)]",
   "transition-[opacity,scale,color,background-color,box-shadow] duration-150 ease-(--ease-spring-snappy) any-hover:bg-popover any-hover:text-foreground active:scale-90 motion-reduce:transition-none motion-reduce:scale-100",
   "pointer-fine:opacity-0 pointer-fine:scale-90 pointer-fine:group-hover/toast:opacity-100 pointer-fine:group-hover/toast:scale-100 pointer-fine:group-focus-within/toast:opacity-100 pointer-fine:group-focus-within/toast:scale-100 pointer-fine:hover:opacity-100 pointer-fine:hover:scale-100",
   "pointer-coarse:after:absolute pointer-coarse:after:size-full pointer-coarse:after:min-h-11 pointer-coarse:after:min-w-11",

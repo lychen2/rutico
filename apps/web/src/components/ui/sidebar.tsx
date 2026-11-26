@@ -311,7 +311,7 @@ function Sidebar({
       <SidebarInstanceContext value={instanceContextValue}>
         <div
           className={cn(
-            "flex h-full w-(--sidebar-width) flex-col bg-sidebar/88 backdrop-blur-md surface-grain text-sidebar-foreground [@media(prefers-reduced-transparency:reduce)]:bg-sidebar [@media(prefers-reduced-transparency:reduce)]:backdrop-blur-none",
+            "surface-optical-chrome flex h-full w-(--sidebar-width) flex-col text-sidebar-foreground",
             className,
           )}
           data-slot="sidebar"
@@ -338,7 +338,7 @@ function Sidebar({
             keepMounted
             {...(panelAnimationsActive ? {} : { transitionDurationMs: 0 })}
             className={cn(
-              "w-(--sidebar-width) max-w-none bg-sidebar/92 backdrop-blur-md surface-grain p-0 text-sidebar-foreground [@media(prefers-reduced-transparency:reduce)]:bg-sidebar [@media(prefers-reduced-transparency:reduce)]:backdrop-blur-none",
+              "surface-optical-chrome w-(--sidebar-width) max-w-none p-0 text-sidebar-foreground",
               className,
             )}
             data-mobile="true"
@@ -414,7 +414,7 @@ function Sidebar({
           {...props}
         >
           <div
-            className="flex h-full w-full flex-col bg-sidebar/88 backdrop-blur-md surface-grain group-data-[variant=floating]:rounded-lg group-data-[variant=floating]:border group-data-[variant=floating]:border-sidebar-border group-data-[variant=floating]:shadow-sm/5 [@media(prefers-reduced-transparency:reduce)]:bg-sidebar [@media(prefers-reduced-transparency:reduce)]:backdrop-blur-none"
+            className="surface-optical-chrome flex h-full w-full flex-col group-data-[variant=floating]:rounded-lg group-data-[variant=floating]:border group-data-[variant=floating]:border-sidebar-border group-data-[variant=floating]:shadow-sm/5"
             data-sidebar="sidebar"
             data-slot="sidebar-inner"
           >
