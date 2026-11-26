@@ -3,12 +3,13 @@ import { MessageId, type TurnItemId } from "@t3tools/contracts";
 import { canForkProjectedAssistantItem } from "@t3tools/client-runtime/state/thread-workflows";
 import { agentWorkingDirectories } from "@t3tools/client-runtime/workspace-basename-lookup";
 import { T, useGT, useMessages } from "gt-react";
-import { use, useState } from "react";
+import { use, useLayoutEffect, useRef, useState } from "react";
 import { type ChatMessage } from "../../types";
 import ChatMarkdown from "../ChatMarkdown";
 import { GitForkIcon, ReplyIcon } from "lucide-react";
 import { captureAssistantMessageOpening } from "~/lib/assistantTextSelection";
 import { responseContextRecord } from "~/lib/composerContextRecords";
+import { observeResize } from "~/lib/observeResize";
 import { Button } from "../ui/button";
 import { Spinner } from "../ui/spinner";
 import { ProposedPlanCard } from "./ProposedPlanCard";
@@ -39,6 +40,43 @@ export function AssistantTimelineRow({ row }: { row: Extract<TimelineRow, { kind
   const text = liveText ?? row.message.text;
   const messageText =
     text || (row.message.streaming || row.suppressEmptyResponse ? "" : gt("(empty response)"));
+  const streamingProseRef = useRef<HTMLDivElement | null>(null);
+  const streamingFloorRef = useRef<{ readonly key: string; height: number }>({
+    key: "",
+    height: 0,
+  });
+  const streamingFloorKey = `${ctx.routeThreadKey}:${row.message.id}`;
+  const isStreamingMessage = Boolean(row.message.streaming);
+
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- holds a monotonic downward-only min-height floor while streaming to eliminate jitter and clears immediately on settle or LegendList row recycle
+  useLayoutEffect(() => {
+    const container = streamingProseRef.current;
+    if (!container) return;
+    if (!isStreamingMessage) {
+      container.style.minHeight = "";
+      if (streamingFloorRef.current.key === streamingFloorKey) {
+        streamingFloorRef.current = { key: "", height: 0 };
+      }
+      return;
+    }
+    if (streamingFloorRef.current.key !== streamingFloorKey) {
+      streamingFloorRef.current = { key: streamingFloorKey, height: 0 };
+      container.style.minHeight = "";
+    }
+    const syncFloor = () => {
+      const measured = Math.ceil(container.offsetHeight);
+      if (measured > streamingFloorRef.current.height) {
+        streamingFloorRef.current.height = measured;
+        container.style.minHeight = `${measured}px`;
+      }
+    };
+    syncFloor();
+    const stop = observeResize(container, syncFloor);
+    return () => {
+      stop();
+      container.style.minHeight = "";
+    };
+  }, [isStreamingMessage, streamingFloorKey]);
 
   return (
     <>
@@ -51,7 +89,7 @@ export function AssistantTimelineRow({ row }: { row: Extract<TimelineRow, { kind
       >
         {/* oxlint-disable-next-line t3code/no-untranslated-copy -- product name stays English */}
         <MessageAuthorHeading>Rutico</MessageAuthorHeading>
-        <div data-thread-find-text="true">
+        <div ref={streamingProseRef} data-thread-find-text="true">
           <AssistantCitationSource
             messageId={row.message.id}
             {...(ctx.threadRef ? { threadRef: ctx.threadRef } : {})}

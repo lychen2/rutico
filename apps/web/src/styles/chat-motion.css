@@ -3,3 +3,101 @@
    Reserved modular stylesheet pre-imported by index.css for conflict-free
    parallel Stage 2 edits.
    ========================================================================== */
+
+/* ==========================================================================
+   D06 / C018: Kinetic Mask-Sweep Frontier Reveal & Zero-DOM-Residue Streaming
+   ========================================================================== */
+
+@keyframes chat-prose-frontier-reveal {
+  0% {
+    opacity: 0.28;
+    transform: translate3d(0, 3px, 0);
+    -webkit-mask-position: 100% 0;
+    mask-position: 100% 0;
+  }
+  100% {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+    -webkit-mask-position: 0% 0;
+    mask-position: 0% 0;
+  }
+}
+
+@keyframes chat-ink-caret-breathe {
+  0%,
+  100% {
+    opacity: 0.92;
+    transform: scaleY(1);
+  }
+  50% {
+    opacity: 0.24;
+    transform: scaleY(0.74);
+  }
+}
+
+.chat-markdown[data-streaming] > [data-streaming-tail="true"][data-streaming-frontier="enter"] {
+  -webkit-mask-image: linear-gradient(
+    90deg,
+    #000 0%,
+    #000 62%,
+    rgb(0 0 0 / 45%) 82%,
+    transparent 100%
+  );
+  mask-image: linear-gradient(90deg, #000 0%, #000 62%, rgb(0 0 0 / 45%) 82%, transparent 100%);
+  -webkit-mask-size: 240% 100%;
+  mask-size: 240% 100%;
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+}
+
+.chat-markdown > [data-streaming-tail]:is(p, blockquote, h1, h2, h3, h4, h5, h6)::after,
+.chat-markdown > [data-streaming-tail]:is(ul, ol) > li:last-child::after {
+  content: "";
+  display: inline-block;
+  width: 2px;
+  height: 1em;
+  margin-inline-start: 3px;
+  vertical-align: -0.14em;
+  border-radius: 9999px;
+  background-color: var(--primary);
+  pointer-events: none;
+  user-select: none;
+}
+
+.chat-markdown > [data-streaming-tail="settling"]:is(p, blockquote, h1, h2, h3, h4, h5, h6)::after,
+.chat-markdown > [data-streaming-tail="settling"]:is(ul, ol) > li:last-child::after {
+  opacity: 0;
+  transform: scaleY(0.45);
+  transition:
+    opacity 180ms ease-out,
+    transform 180ms ease-out;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .chat-markdown[data-streaming] > [data-streaming-tail="true"][data-streaming-frontier="enter"] {
+    animation: chat-prose-frontier-reveal 210ms var(--spring-micro) both;
+  }
+
+  .chat-markdown[data-streaming]
+    > [data-streaming-tail="true"]:is(p, blockquote, h1, h2, h3, h4, h5, h6)::after,
+  .chat-markdown[data-streaming] > [data-streaming-tail="true"]:is(ul, ol) > li:last-child::after {
+    animation: chat-ink-caret-breathe 960ms ease-in-out infinite;
+    animation-play-state: var(--visible-animation-state, paused);
+    will-change: var(--visible-animation-will-change, auto);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .chat-markdown[data-streaming] > [data-streaming-tail="true"][data-streaming-frontier="enter"] {
+    -webkit-mask-image: none;
+    mask-image: none;
+    animation: none;
+  }
+
+  .chat-markdown
+    > [data-streaming-tail="settling"]:is(p, blockquote, h1, h2, h3, h4, h5, h6)::after,
+  .chat-markdown > [data-streaming-tail="settling"]:is(ul, ol) > li:last-child::after {
+    display: none;
+    transition: none;
+  }
+}
