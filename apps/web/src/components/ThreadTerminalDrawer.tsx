@@ -12,6 +12,7 @@ import {
 import {
   INITIAL_TERMINAL_OUTPUT_CURSOR,
   readTerminalOutputUpdate,
+  type TerminalBufferState,
   type TerminalOutputCursor,
   type TerminalOutputUpdate,
   type TerminalSessionState,
@@ -32,7 +33,9 @@ import {
   AuthFilesystemReadScope,
   AuthOrchestrationOperateScope,
   AuthTerminalOperateScope,
+  AuthTerminalReadScope,
   TerminalProcessChangedError,
+  type EnvironmentId,
   type TerminalWriteInput,
   type ContextMenuItem,
   type ProviderInstanceId,
@@ -420,6 +423,21 @@ export function terminalThemeFromApp(mountElement?: HTMLElement | null): Ghostty
   };
 }
 
+/** Advances a background observer's cursor; only live appended output (never snapshot replay or clear) marks activity. */
+export function advanceBackgroundTerminalOutputCursor(
+  buffer: Pick<TerminalBufferState, "output" | "version">,
+  cursor: TerminalOutputCursor,
+): { readonly cursor: TerminalOutputCursor; readonly hasLiveOutput: boolean } {
+  if (buffer.version === 0) return { cursor, hasLiveOutput: false };
+  const update = readTerminalOutputUpdate(buffer.output, cursor);
+  if (update.type !== "append") {
+    return { cursor: update.cursor, hasLiveOutput: false };
+  }
+  const hasLiveOutput =
+    update.data.length > 0 && buffer.output.nextOffset > buffer.output.textStartOffset;
+  return { cursor: update.cursor, hasLiveOutput };
+}
+
 function terminalSelectionLineRange(position: { start: { y: number }; end: { y: number } }): {
   lineStart: number;
   lineEnd: number;
@@ -428,6 +446,39 @@ function terminalSelectionLineRange(position: { start: { y: number }; end: { y: 
   return {
     lineStart,
     lineEnd: Math.max(lineStart, position.end.y + 1),
+  };
+}
+
+function readTerminalSelectionAction(
+  activeTerminal: Pick<
+    GhosttyTerminalSurface,
+    "hasSelection" | "getSelection" | "getSelectionPosition"
+  > | null,
+  terminalId: string,
+  terminalLabel: string,
+): {
+  clipboardText: string;
+  selection: TerminalContextSelection;
+} | null {
+  if (!activeTerminal || !activeTerminal.hasSelection()) {
+    return null;
+  }
+  const selectionText = activeTerminal.getSelection();
+  const selectionPosition = activeTerminal.getSelectionPosition();
+  const normalizedText = selectionText.replace(/\r\n/g, "\n").replace(/^\n+|\n+$/g, "");
+  if (!selectionPosition || normalizedText.length === 0) {
+    return null;
+  }
+  const { lineStart, lineEnd } = terminalSelectionLineRange(selectionPosition);
+  return {
+    clipboardText: selectionText,
+    selection: {
+      terminalId,
+      terminalLabel,
+      lineStart,
+      lineEnd,
+      text: normalizedText,
+    },
   };
 }
 
@@ -573,7 +624,6 @@ function TerminalSessionViewport({
     readonly left: number;
     readonly top: number;
     readonly clipboardText: string;
-    readonly selection: TerminalContextSelection;
   } | null>(null);
   const [clipboardFeedback, setClipboardFeedback] = useState<{
     readonly kind: "copied" | "pasted";
@@ -921,32 +971,8 @@ function TerminalSessionViewport({
         terminal.input.removeEventListener("keydown", dismissSelectionPill);
       });
 
-      const readSelectionAction = (): {
-        clipboardText: string;
-        selection: TerminalContextSelection;
-      } | null => {
-        const activeTerminal = terminalRef.current;
-        if (!activeTerminal || !activeTerminal.hasSelection()) {
-          return null;
-        }
-        const selectionText = activeTerminal.getSelection();
-        const selectionPosition = activeTerminal.getSelectionPosition();
-        const normalizedText = selectionText.replace(/\r\n/g, "\n").replace(/^\n+|\n+$/g, "");
-        if (!selectionPosition || normalizedText.length === 0) {
-          return null;
-        }
-        const { lineStart, lineEnd } = terminalSelectionLineRange(selectionPosition);
-        return {
-          clipboardText: selectionText,
-          selection: {
-            terminalId,
-            terminalLabel: readTerminalLabel(),
-            lineStart,
-            lineEnd,
-            text: normalizedText,
-          },
-        };
-      };
+      const readSelectionAction = () =>
+        readTerminalSelectionAction(terminalRef.current, terminalId, readTerminalLabel());
 
       function syncSelectionPill() {
         const activeTerminal = terminalRef.current;
@@ -971,12 +997,11 @@ function TerminalSessionViewport({
           left,
           top,
           clipboardText: action.clipboardText,
-          selection: action.selection,
         });
       }
 
       const addSelectionToChat = (clipboardText: string) => {
-        // Output keeps moving the selected rows while a menu is open, so take
+        // Output keeps moving the selected rows while a menu or pill is open, so take
         // the line numbers now, and only if the same text is still selected.
         const current = readSelectionAction();
         if (current?.clipboardText !== clipboardText) return;
@@ -1419,8 +1444,17 @@ function TerminalSessionViewport({
             <button
               type="button"
               onClick={() => {
-                onAddTerminalContext(selectionPill.selection);
+                const clipboardText = selectionPill.clipboardText;
                 setSelectionPill(null);
+                // Re-read the live selection at click time so appended lines update line numbers
+                // and changed text is never submitted as stale content.
+                const current = readTerminalSelectionAction(
+                  terminalRef.current,
+                  terminalId,
+                  terminalLabel,
+                );
+                if (current?.clipboardText !== clipboardText) return;
+                onAddTerminalContext(current.selection);
                 terminalRef.current?.clearSelection();
                 terminalRef.current?.focus();
               }}
@@ -1936,6 +1970,45 @@ function TerminalSidebarGroup({
   );
 }
 
+function BackgroundTerminalOutputObserver({
+  environmentId,
+  threadId,
+  terminalId,
+  onOutputActivity,
+}: {
+  readonly environmentId: EnvironmentId;
+  readonly threadId: ThreadId;
+  readonly terminalId: string;
+  readonly onOutputActivity: (terminalId: string) => void;
+}) {
+  const notifyOutputActivity = useEffectEvent(() => {
+    onOutputActivity(terminalId);
+  });
+  const observeAtom = terminalEnvironment.observe({
+    environmentId,
+    input: { threadId, terminalId },
+  });
+  // Read-only observe streams follow live output for unmounted groups without taking PTY size ownership.
+  useAtomMount(observeAtom);
+
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- subscribes imperatively to background terminal output so unmounted groups report live activity without re-rendering React
+  useEffect(() => {
+    let cursor = INITIAL_TERMINAL_OUTPUT_CURSOR;
+    const handleResult = (result: AsyncResult.AsyncResult<TerminalBufferState, unknown>) => {
+      if (!AsyncResult.isSuccess(result)) return;
+      const step = advanceBackgroundTerminalOutputCursor(result.value, cursor);
+      cursor = step.cursor;
+      if (step.hasLiveOutput) {
+        notifyOutputActivity();
+      }
+    };
+    handleResult(appAtomRegistry.get(observeAtom));
+    return appAtomRegistry.subscribe(observeAtom, handleResult);
+  }, [observeAtom]);
+
+  return null;
+}
+
 export default function ThreadTerminalDrawer({
   mode = "drawer",
   threadRef,
@@ -1969,6 +2042,7 @@ export default function ThreadTerminalDrawer({
 }: ThreadTerminalDrawerProps) {
   const gt = useGT();
   const messages = useMessages();
+  const canReadTerminal = useEnvironmentScope(threadRef.environmentId, AuthTerminalReadScope);
   const canOperateTerminal = useEnvironmentScope(threadRef.environmentId, AuthTerminalOperateScope);
   const terminalArea = workspaceAreaProps("terminal", 5, gt("Terminal"));
   const isPanel = mode === "panel";
@@ -2142,9 +2216,18 @@ export default function ThreadTerminalDrawer({
   const visibleTerminalIds =
     activeGroup?.terminalIds ??
     (normalizedTerminalIds.length > 0 ? [resolvedActiveTerminalId] : []);
+  const visibleTerminalIdSet = new Set(visibleTerminalIds);
+  const backgroundTerminalIds = canReadTerminal
+    ? normalizedTerminalIds.filter((id) => !visibleTerminalIdSet.has(id))
+    : [];
   const splitDirection = activeGroup?.splitDirection ?? "horizontal";
   const activeGroupId = activeGroup?.id ?? activeTerminalGroupId;
   const activeGroupPaneWeights = activeGroup?.paneWeights;
+  if (resolvedActiveTerminalId.length > 0 && unreadTerminalIds.has(resolvedActiveTerminalId)) {
+    const next = new Set(unreadTerminalIds);
+    next.delete(resolvedActiveTerminalId);
+    setUnreadTerminalIds(next);
+  }
   const readActiveTerminalId = useEffectEvent(() => resolvedActiveTerminalId);
   const handleTerminalOutputActivity = (sourceTerminalId: string) => {
     setStreamingTerminalIds((previous) => {
@@ -2153,6 +2236,14 @@ export default function ThreadTerminalDrawer({
       next.add(sourceTerminalId);
       return next;
     });
+    if (sourceTerminalId !== readActiveTerminalId()) {
+      setUnreadTerminalIds((previous) => {
+        if (previous.has(sourceTerminalId)) return previous;
+        const next = new Set(previous);
+        next.add(sourceTerminalId);
+        return next;
+      });
+    }
     const existingTimer = activityTimersRef.current.get(sourceTerminalId);
     if (existingTimer !== undefined) window.clearTimeout(existingTimer);
     const timer = window.setTimeout(() => {
@@ -2163,14 +2254,6 @@ export default function ThreadTerminalDrawer({
         next.delete(sourceTerminalId);
         return next;
       });
-      if (sourceTerminalId !== readActiveTerminalId()) {
-        setUnreadTerminalIds((previous) => {
-          if (previous.has(sourceTerminalId)) return previous;
-          const next = new Set(previous);
-          next.add(sourceTerminalId);
-          return next;
-        });
-      }
     }, 500);
     activityTimersRef.current.set(sourceTerminalId, timer);
   };
@@ -2566,6 +2649,15 @@ export default function ThreadTerminalDrawer({
       )}
 
       <div className="min-h-0 w-full flex-1">
+        {backgroundTerminalIds.map((terminalId) => (
+          <BackgroundTerminalOutputObserver
+            key={terminalId}
+            environmentId={threadRef.environmentId}
+            threadId={threadId}
+            terminalId={terminalId}
+            onOutputActivity={handleTerminalOutputActivity}
+          />
+        ))}
         <div
           className={cn(
             "flex h-full min-h-0 bg-(--terminal-background)",

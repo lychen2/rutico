@@ -8,6 +8,7 @@ import {
 } from "@t3tools/client-runtime/state/terminal";
 
 import {
+  advanceBackgroundTerminalOutputCursor,
   shouldHandleTerminalExit,
   synchronizeTerminalOutput,
   synchronizeTerminalSession,
@@ -128,4 +129,60 @@ it("reports an attach failure that leaves the output unchanged", () => {
   synchronizeTerminalSession(terminal, attached, reconnected, cursor);
   expect(terminal.resetAndWrite).toHaveBeenLastCalledWith("");
   expect(terminal.write).toHaveBeenCalledWith("\r\n[terminal] Terminal attach failed\r\n");
+});
+
+describe("advanceBackgroundTerminalOutputCursor", () => {
+  const baseSnapshot = {
+    threadId: "thread",
+    terminalId: "term-a",
+    cwd: "/repo",
+    worktreePath: null,
+    status: "running" as const,
+    pid: 123,
+    history: "historical line 1\r\nhistorical line 2\r\n",
+    exitCode: null,
+    exitSignal: null,
+    label: "Terminal A",
+    updatedAt: "2026-11-20T00:00:00.000Z",
+  };
+
+  it("ignores historical snapshot replay, cleared events, and reconnect resets, and only flags live appended output", () => {
+    const seed = nextTerminalAttachSeedState();
+    const initial = advanceBackgroundTerminalOutputCursor(seed, INITIAL_TERMINAL_OUTPUT_CURSOR);
+    expect(initial.hasLiveOutput).toBe(false);
+
+    const afterSnapshot = applyTerminalAttachStreamEvent(seed, {
+      type: "snapshot",
+      snapshot: baseSnapshot,
+    });
+    const stepSnapshot = advanceBackgroundTerminalOutputCursor(afterSnapshot, initial.cursor);
+    expect(stepSnapshot.hasLiveOutput).toBe(false);
+
+    const afterLive = applyTerminalAttachStreamEvent(afterSnapshot, {
+      type: "output",
+      threadId: "thread",
+      terminalId: "term-a",
+      data: "fresh live output\r\n",
+    });
+    const stepLive = advanceBackgroundTerminalOutputCursor(afterLive, stepSnapshot.cursor);
+    expect(stepLive.hasLiveOutput).toBe(true);
+
+    const stepDuplicate = advanceBackgroundTerminalOutputCursor(afterLive, stepLive.cursor);
+    expect(stepDuplicate.hasLiveOutput).toBe(false);
+
+    const afterCleared = applyTerminalAttachStreamEvent(afterLive, {
+      type: "cleared",
+      threadId: "thread",
+      terminalId: "term-a",
+    });
+    const stepCleared = advanceBackgroundTerminalOutputCursor(afterCleared, stepDuplicate.cursor);
+    expect(stepCleared.hasLiveOutput).toBe(false);
+
+    const afterReconnect = applyTerminalAttachStreamEvent(afterCleared, {
+      type: "snapshot",
+      snapshot: { ...baseSnapshot, history: `${baseSnapshot.history}fresh live output\r\n` },
+    });
+    const stepReconnect = advanceBackgroundTerminalOutputCursor(afterReconnect, stepCleared.cursor);
+    expect(stepReconnect.hasLiveOutput).toBe(false);
+  });
 });
