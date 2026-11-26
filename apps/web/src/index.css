@@ -2341,18 +2341,22 @@ code {
 }
 
 /* Paragraphs and code blocks arrive in chunks while a response streams. Fade
-   each new block in so the chunk does not pop. @starting-style only applies
-   when an element is first inserted, and the rule is gated on data-streaming,
-   so opening a finished thread never replays the fade. Opacity only, one
-   shot, no layout change. */
+   and settle each new block in with a crisp 2px rise so chunks stay responsive
+   on fast streams without popping. @starting-style only applies when an element
+   is first inserted, and the rule is gated on data-streaming, so opening a
+   finished thread never replays the transition. Composited only, one shot, no
+   layout change. */
 @media (prefers-reduced-motion: no-preference) {
   .chat-markdown[data-streaming] > *,
   .chat-markdown[data-streaming] .chat-markdown-shiki,
   .chat-markdown[data-streaming] .chat-markdown-mermaid {
-    transition: opacity 600ms ease-out;
+    transition:
+      opacity 220ms var(--ease-spring-gentle),
+      transform 220ms var(--ease-spring-gentle);
 
     @starting-style {
       opacity: 0;
+      transform: translateY(2px);
     }
   }
 }
