@@ -135,6 +135,9 @@ export function makeQuitShortcutHandler(
       if (mode === "hold" && armed && Date.now() - heldSince >= QUIT_HOLD_DURATION_MS) {
         armed = false;
         quitOnRelease = true;
+        if (options.platform === "linux") {
+          options.notify({ state: "committing" });
+        }
         options.concealWindow();
         quitAfterQuietPeriod();
       }

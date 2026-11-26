@@ -38,6 +38,7 @@ export interface ContextMenuItem<T extends string = string> {
 
 export type QuitShortcutHintEvent =
   | { readonly state: "down"; readonly mode: Exclude<QuitConfirmationMode, "direct"> }
+  | { readonly state: "committing" }
   | { readonly state: "up" };
 
 export interface ContextMenuItemSchemaType {

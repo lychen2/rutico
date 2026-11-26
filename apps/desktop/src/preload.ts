@@ -368,6 +368,10 @@ contextBridge.exposeInMainWorld("desktopBridge", {
         listener({ state: "up" });
         return;
       }
+      if (hint.state === "committing") {
+        listener({ state: "committing" });
+        return;
+      }
       if (
         hint.state === "down" &&
         "mode" in hint &&

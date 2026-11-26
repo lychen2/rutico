@@ -146,6 +146,7 @@ const SPLASH_FADE_STEP_MS = 30;
 const SPLASH_FADE_OPACITIES = [0.75, 0.5, 0.25, 0] as const;
 const LINUX_SPLASH_CONTENT_FADE_MS = 130;
 const LINUX_SPLASH_DISMISS_TIMEOUT_MS = 140;
+const LINUX_EXIT_CURTAIN_MS = 90;
 export const LINUX_SPLASH_DISMISS_CONTENT_SCRIPT = `(() => {
   if (typeof window.matchMedia === "function" && window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
     return false;
@@ -443,13 +444,16 @@ function concealPendingQuitWindow(
     Electron.BrowserWindow,
     "isDestroyed" | "isFullScreen" | "setFullScreen" | "setOpacity"
   >,
+  platform: NodeJS.Platform,
 ): void {
   if (window.isDestroyed()) return;
   if (window.isFullScreen()) {
     window.setFullScreen(false);
   }
-  // Linux lacks Electron window opacity; release-gated quits remain visible there.
-  window.setOpacity(0);
+  // Linux lacks Electron window opacity; the renderer paints a 90ms exit curtain instead.
+  if (platform !== "linux") {
+    window.setOpacity(0);
+  }
 }
 
 // Low-specificity (:where) fallback aligned with apps/web/src/index.css so inactive
@@ -1159,8 +1163,22 @@ export const make = Effect.gen(function* () {
         }
       },
       // Hold focus until shortcut release so remaining repeats cannot reach the next app.
-      concealWindow: () => concealPendingQuitWindow(window),
+      concealWindow: () => concealPendingQuitWindow(window, environment.platform),
       quit: () => {
+        if (
+          environment.platform === "linux" &&
+          !window.isDestroyed() &&
+          !window.webContents.isDestroyed()
+        ) {
+          window.webContents.send(QUIT_SHORTCUT_CHANNEL, { state: "committing" });
+          trackFork(
+            Effect.sleep(LINUX_EXIT_CURTAIN_MS).pipe(
+              Effect.andThen(electronApp.quit),
+              Effect.ignoreCause,
+            ),
+          );
+          return;
+        }
         void runPromise(electronApp.quit);
       },
     });

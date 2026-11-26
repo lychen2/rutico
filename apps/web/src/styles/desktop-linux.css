@@ -275,3 +275,142 @@ html.electron-linux[data-desktop-window-focused="false"] .linux-window-control-b
     transform: none;
   }
 }
+
+/* ==========================================================================
+   D30 / C100: Kinetic Radial QuitHold HUD, 90ms Linux Exit Curtain &
+   Primary Selection / Paste-as-Text Caret Confirmation Pulse
+   ========================================================================== */
+
+.t3-quit-hold-hud {
+  transition:
+    transform 180ms var(--spring-snappy, cubic-bezier(0.23, 1, 0.32, 1)),
+    opacity 120ms ease-out;
+  will-change: transform, opacity;
+}
+
+.t3-quit-hold-hud[data-holding="true"] {
+  transform: scale(0.965);
+}
+
+.t3-quit-hold-hud[data-committing="true"] {
+  opacity: 0;
+  transform: scale(0.94);
+  transition:
+    opacity 90ms ease-out,
+    transform 90ms ease-out;
+}
+
+.t3-quit-radial-progress {
+  stroke-dashoffset: 94.25;
+  transition: stroke-dashoffset 220ms var(--spring-snappy, cubic-bezier(0.23, 1, 0.32, 1));
+}
+
+.t3-quit-radial-progress[data-mode="hold"][data-holding="true"] {
+  animation: t3-quit-radial-fill 1200ms linear forwards;
+}
+
+.t3-quit-radial-progress[data-committing="true"] {
+  stroke-dashoffset: 0;
+  animation: none;
+}
+
+.t3-quit-radial-progress[data-mode="double-click"] {
+  stroke-dashoffset: 47.12;
+  animation: t3-quit-double-pulse 500ms var(--spring-snappy, ease-out) 1;
+}
+
+@keyframes t3-quit-radial-fill {
+  from {
+    stroke-dashoffset: 94.25;
+  }
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+@keyframes t3-quit-double-pulse {
+  0% {
+    stroke-dashoffset: 94.25;
+    opacity: 0.45;
+  }
+  55% {
+    stroke-dashoffset: 42;
+    opacity: 1;
+  }
+  100% {
+    stroke-dashoffset: 47.12;
+    opacity: 0.9;
+  }
+}
+
+.t3-linux-exit-curtain {
+  background-color: var(--background);
+  animation: t3-linux-exit-fade 90ms ease-out forwards;
+  will-change: opacity;
+}
+
+@keyframes t3-linux-exit-fade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.t3-paste-pulse {
+  position: fixed;
+  z-index: 120;
+  width: 22px;
+  height: 22px;
+  margin-left: -11px;
+  margin-top: -11px;
+  border-radius: 999px;
+  pointer-events: none;
+  border: 1.5px solid color-mix(in oklch, var(--primary) 72%, transparent);
+  background: color-mix(in oklch, var(--primary) 16%, transparent);
+  animation: t3-paste-caret-pulse 280ms var(--spring-snappy, cubic-bezier(0.23, 1, 0.32, 1))
+    forwards;
+  will-change: transform, opacity;
+}
+
+@keyframes t3-paste-caret-pulse {
+  0% {
+    opacity: 0.85;
+    transform: scale(0.45);
+  }
+  65% {
+    opacity: 0.42;
+    transform: scale(1.18);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(1.45);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .t3-quit-hold-hud,
+  .t3-quit-hold-hud[data-holding="true"],
+  .t3-quit-hold-hud[data-committing="true"] {
+    transform: none;
+    transition: none;
+  }
+
+  .t3-quit-radial-progress,
+  .t3-quit-radial-progress[data-mode="hold"][data-holding="true"],
+  .t3-quit-radial-progress[data-mode="double-click"] {
+    animation: none;
+    transition: none;
+    stroke-dashoffset: 24;
+  }
+
+  .t3-linux-exit-curtain {
+    animation: none;
+    opacity: 1;
+  }
+
+  .t3-paste-pulse {
+    display: none;
+  }
+}
