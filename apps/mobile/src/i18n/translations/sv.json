@@ -4496,7 +4496,6 @@
     }
   ],
   "d201af23193100b9": "Ange en sökväg i arbetsytan",
-  "042c9c88de8cd95c": "Planen sparades i arbetsytan",
   "979cece449deec58": "Kunde inte spara planen",
   "ff9b542ab2e00cc3": "Kopiera plan",
   "3414b088dde8621b": "Sparar...",
@@ -5616,5 +5615,15 @@
   "8d545d54c0a9e950": "Dölj kommandon, redigeringar och sökningar som agenter kör. Dölj lyckade behåller misslyckanden. Zen visar bara slutliga svar. Godkännanden, frågor och fel visas alltid.",
   "99d51127f573296b": "Ett konto till",
   "8ec2c57414669b79": "Anslut en andra {tracker}-arbetsyta eller användare.",
-  "892f08d21b8e48a9": "Merga {layers} in i {base} med {kind, select, squash {squash} merge {merge} rebase {rebase} fastForward {fast-forward} other {{method}}} när kraven är uppfyllda. Det kan ske direkt."
+  "892f08d21b8e48a9": "Merga {layers} in i {base} med {kind, select, squash {squash} merge {merge} rebase {rebase} fastForward {fast-forward} other {{method}}} när kraven är uppfyllda. Det kan ske direkt.",
+  "6f7d97c066011a2f": "QR-kod skannad. Redo att ansluta.",
+  "ffaaca09d46973a8": "Skannad",
+  "c6fa2905d56a750c": "Sparad",
+  "64b304394646c690": "Escape",
+  "fd63fffe51680c58": "Tabb",
+  "1bad92ef235cfdfc": "Control-modifierare",
+  "d51dc8c3400d83d7": "Uppåtpil",
+  "ef47ee341965574e": "Nedåtpil",
+  "44de850d36d1bccd": "{minutes, plural, one {{minutes} minut} other {{minutes} minuter}} och {seconds, plural, one {{seconds} sekund} other {{seconds} sekunder}} förflutna",
+  "055f73f1ec23d268": "{seconds, plural, one {{seconds} sekund} other {{seconds} sekunder}} förflutna"
 }

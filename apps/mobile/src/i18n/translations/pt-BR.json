@@ -4490,7 +4490,6 @@
     }
   ],
   "d201af23193100b9": "Informe um caminho do workspace",
-  "042c9c88de8cd95c": "Plano salvo no workspace",
   "979cece449deec58": "Não foi possível salvar o plano",
   "ff9b542ab2e00cc3": "Copiar plano",
   "3414b088dde8621b": "Salvando...",
@@ -5610,5 +5609,15 @@
   "8d545d54c0a9e950": "Oculta os comandos, edições e pesquisas que os agentes executam. \"Ocultar bem-sucedidas\" mantém as falhas. Zen mostra só as respostas finais. Aprovações, perguntas e erros sempre aparecem.",
   "99d51127f573296b": "Outra conta",
   "8ec2c57414669b79": "Conecte um segundo espaço de trabalho ou usuário do {tracker}.",
-  "892f08d21b8e48a9": "Mesclar {layers} em {base} usando {kind, select, squash {squash} merge {merge} rebase {rebase} fastForward {fast-forward} other {{method}}} quando os requisitos forem atendidos. Isso pode acontecer imediatamente."
+  "892f08d21b8e48a9": "Mesclar {layers} em {base} usando {kind, select, squash {squash} merge {merge} rebase {rebase} fastForward {fast-forward} other {{method}}} quando os requisitos forem atendidos. Isso pode acontecer imediatamente.",
+  "6f7d97c066011a2f": "QR escaneado. Pronto para conectar.",
+  "ffaaca09d46973a8": "Escaneado",
+  "c6fa2905d56a750c": "Salvo",
+  "64b304394646c690": "Escape",
+  "fd63fffe51680c58": "Tab",
+  "1bad92ef235cfdfc": "Modificador Control",
+  "d51dc8c3400d83d7": "Seta para cima",
+  "ef47ee341965574e": "Seta para baixo",
+  "44de850d36d1bccd": "{minutes, plural, one {{minutes} minuto} other {{minutes} minutos}} e {seconds, plural, one {{seconds} segundo} other {{seconds} segundos}} decorridos",
+  "055f73f1ec23d268": "{seconds, plural, one {{seconds} segundo} other {{seconds} segundos}} decorridos"
 }

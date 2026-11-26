@@ -4489,7 +4489,6 @@
     }
   ],
   "d201af23193100b9": "Introduce una ruta del espacio de trabajo",
-  "042c9c88de8cd95c": "Plan guardado en el espacio de trabajo",
   "979cece449deec58": "No se pudo guardar el plan",
   "ff9b542ab2e00cc3": "Copiar plan",
   "3414b088dde8621b": "Guardando...",
@@ -5610,5 +5609,15 @@
   "8d545d54c0a9e950": "Oculta los comandos, ediciones y búsquedas que ejecutan los agentes. Ocultar las correctas mantiene los fallos. Zen solo muestra las respuestas finales. Las aprobaciones, preguntas y errores siempre se muestran.",
   "99d51127f573296b": "Otra cuenta",
   "8ec2c57414669b79": "Conecta un segundo espacio de trabajo o usuario de {tracker}.",
-  "892f08d21b8e48a9": "Fusionar {layers} en {base} con {kind, select, squash {squash} merge {merge} rebase {rebase} fastForward {fast-forward} other {{method}}} cuando se cumplan sus requisitos. Puede ocurrir de inmediato."
+  "892f08d21b8e48a9": "Fusionar {layers} en {base} con {kind, select, squash {squash} merge {merge} rebase {rebase} fastForward {fast-forward} other {{method}}} cuando se cumplan sus requisitos. Puede ocurrir de inmediato.",
+  "6f7d97c066011a2f": "QR escaneado. Listo para conectar.",
+  "ffaaca09d46973a8": "Escaneado",
+  "c6fa2905d56a750c": "Guardado",
+  "64b304394646c690": "Escape",
+  "fd63fffe51680c58": "Tabulador",
+  "1bad92ef235cfdfc": "Modificador Control",
+  "d51dc8c3400d83d7": "Flecha arriba",
+  "ef47ee341965574e": "Flecha abajo",
+  "44de850d36d1bccd": "{minutes, plural, one {{minutes} minuto} other {{minutes} minutos}} y {seconds, plural, one {{seconds} segundo} other {{seconds} segundos}} transcurridos",
+  "055f73f1ec23d268": "{seconds, plural, one {{seconds} segundo} other {{seconds} segundos}} transcurridos"
 }

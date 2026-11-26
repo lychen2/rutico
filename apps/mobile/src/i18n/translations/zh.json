@@ -4479,7 +4479,6 @@
     }
   ],
   "d201af23193100b9": "请输入工作区路径",
-  "042c9c88de8cd95c": "计划已保存到工作区",
   "979cece449deec58": "无法保存计划",
   "ff9b542ab2e00cc3": "复制计划",
   "3414b088dde8621b": "正在保存…",
@@ -5600,5 +5599,15 @@
   "8d545d54c0a9e950": "隐藏智能体执行的命令、编辑和搜索。“隐藏成功的调用”仍保留失败项；“专注模式”仅显示最终回答。审批、提问和错误始终显示。",
   "99d51127f573296b": "其他账号",
   "8ec2c57414669b79": "连接第二个 {tracker} 工作区或用户。",
-  "892f08d21b8e48a9": "满足要求时使用{kind, select, squash {压缩合并} merge {合并} rebase {变基} fastForward {快进} other {{method}}}方式将 {layers} 合并到 {base}。这可能会立即发生。"
+  "892f08d21b8e48a9": "满足要求时使用{kind, select, squash {压缩合并} merge {合并} rebase {变基} fastForward {快进} other {{method}}}方式将 {layers} 合并到 {base}。这可能会立即发生。",
+  "6f7d97c066011a2f": "已扫描二维码。准备连接。",
+  "ffaaca09d46973a8": "已扫描",
+  "c6fa2905d56a750c": "已保存",
+  "64b304394646c690": "Escape",
+  "fd63fffe51680c58": "Tab",
+  "1bad92ef235cfdfc": "Control 修饰键",
+  "d51dc8c3400d83d7": "向上箭头",
+  "ef47ee341965574e": "向下箭头",
+  "44de850d36d1bccd": "已用时 {minutes, plural, other {{minutes} 分}} {seconds, plural, other {{seconds} 秒}}",
+  "055f73f1ec23d268": "已用时 {seconds, plural, other {{seconds} 秒}}"
 }

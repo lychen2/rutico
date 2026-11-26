@@ -4496,7 +4496,6 @@
     " wird geklont"
   ],
   "d201af23193100b9": "Gib einen Arbeitsbereichspfad ein",
-  "042c9c88de8cd95c": "Plan im Arbeitsbereich gespeichert",
   "979cece449deec58": "Plan konnte nicht gespeichert werden",
   "ff9b542ab2e00cc3": "Plan kopieren",
   "3414b088dde8621b": "Wird gespeichert...",
@@ -5616,5 +5615,15 @@
   "8d545d54c0a9e950": "Die Befehle, Bearbeitungen und Suchen ausblenden, die Agenten ausführen. „Erfolgreiche ausblenden“ behält Fehler. „Zen“ zeigt nur endgültige Antworten. Genehmigungen, Fragen und Fehler werden immer angezeigt.",
   "99d51127f573296b": "Weiteres Konto",
   "8ec2c57414669b79": "Verbinde einen zweiten {tracker}-Workspace oder -Nutzer.",
-  "892f08d21b8e48a9": "{layers} per {kind, select, squash {Squash} merge {Merge} rebase {Rebase} fastForward {Fast-Forward} other {{method}}} in {base} mergen, sobald die Anforderungen erfüllt sind. Das kann sofort passieren."
+  "892f08d21b8e48a9": "{layers} per {kind, select, squash {Squash} merge {Merge} rebase {Rebase} fastForward {Fast-Forward} other {{method}}} in {base} mergen, sobald die Anforderungen erfüllt sind. Das kann sofort passieren.",
+  "6f7d97c066011a2f": "QR-Code gescannt. Bereit zum Verbinden.",
+  "ffaaca09d46973a8": "Gescannt",
+  "c6fa2905d56a750c": "Gespeichert",
+  "64b304394646c690": "Escape",
+  "fd63fffe51680c58": "Tabulator",
+  "1bad92ef235cfdfc": "Control-Modifikator",
+  "d51dc8c3400d83d7": "Pfeil nach oben",
+  "ef47ee341965574e": "Pfeil nach unten",
+  "44de850d36d1bccd": "{minutes, plural, one {{minutes} Minute} other {{minutes} Minuten}} {seconds, plural, one {{seconds} Sekunde} other {{seconds} Sekunden}} vergangen",
+  "055f73f1ec23d268": "{seconds, plural, one {{seconds} Sekunde} other {{seconds} Sekunden}} vergangen"
 }

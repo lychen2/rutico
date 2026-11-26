@@ -4490,7 +4490,6 @@
     }
   ],
   "d201af23193100b9": "Saisissez un chemin d’espace de travail",
-  "042c9c88de8cd95c": "Plan enregistré dans l’espace de travail",
   "979cece449deec58": "Impossible d’enregistrer le plan",
   "ff9b542ab2e00cc3": "Copier le plan",
   "3414b088dde8621b": "Enregistrement...",
@@ -5610,5 +5609,15 @@
   "8d545d54c0a9e950": "Masque les commandes, modifications et recherches lancées par les agents. Masquer les réussis garde les échecs. Zen n’affiche que les réponses finales. Les approbations, questions et erreurs s’affichent toujours.",
   "99d51127f573296b": "Autre compte",
   "8ec2c57414669b79": "Connectez un second espace de travail ou utilisateur {tracker}.",
-  "892f08d21b8e48a9": "Fusionner {layers} dans {base} avec {kind, select, squash {squash} merge {merge} rebase {rebase} fastForward {fast-forward} other {{method}}} dès que leurs conditions sont remplies. Cela peut se produire immédiatement."
+  "892f08d21b8e48a9": "Fusionner {layers} dans {base} avec {kind, select, squash {squash} merge {merge} rebase {rebase} fastForward {fast-forward} other {{method}}} dès que leurs conditions sont remplies. Cela peut se produire immédiatement.",
+  "6f7d97c066011a2f": "Code QR scanné. Prêt à se connecter.",
+  "ffaaca09d46973a8": "Scanné",
+  "c6fa2905d56a750c": "Enregistré",
+  "64b304394646c690": "Échap",
+  "fd63fffe51680c58": "Tabulation",
+  "1bad92ef235cfdfc": "Modificateur Contrôle",
+  "d51dc8c3400d83d7": "Flèche haut",
+  "ef47ee341965574e": "Flèche bas",
+  "44de850d36d1bccd": "{minutes, plural, one {{minutes} minute} other {{minutes} minutes}} {seconds, plural, one {{seconds} seconde} other {{seconds} secondes}} écoulées",
+  "055f73f1ec23d268": "{seconds, plural, one {{seconds} seconde} other {{seconds} secondes}} écoulées"
 }
