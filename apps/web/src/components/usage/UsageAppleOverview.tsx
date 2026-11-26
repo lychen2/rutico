@@ -15,13 +15,28 @@ import {
   isModelCostUnknown,
   type MergedUsage,
 } from "@t3tools/shared/usageMerge";
-import { Fragment, useId, useLayoutEffect, useRef, useState, type ReactNode } from "react";
+import {
+  Fragment,
+  useId,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type PointerEvent as ReactPointerEvent,
+  type ReactNode,
+} from "react";
 
 import { observeResize } from "~/lib/observeResize";
 import { ProviderInstanceIcon } from "../chat/ProviderInstanceIcon";
 import { Tooltip, TooltipPopup, TooltipProvider, TooltipTrigger } from "../ui/tooltip";
 import { UsageDetailsSheet } from "./UsageDetailsSheet";
 import { UsageCount } from "./UsageMotion";
+import {
+  clampChartPointerFraction,
+  fractionToPeriodIndex,
+  normalizeBrushRange,
+  summarizeBrushRange,
+  type BrushIndexRange,
+} from "./usageChartBrush.logic";
 import { useUiText } from "~/i18n/useUiText";
 import { scopeUsageEnvironments, mergeUsageEnvironments } from "./usageAnalysis";
 import { useUsage, type EnvironmentUsageStatus } from "../../state/usage";
@@ -1464,6 +1479,18 @@ export function V9CostDashboard({
   const text = useUiText();
   const areaGradId = useId();
   const [hoveredIndex, setHoveredIndex] = useState<number | null>(null);
+  const [brushRange, setBrushRange] = useState<BrushIndexRange | null>(null);
+  const heroStageRef = useRef<HTMLDivElement | null>(null);
+  const heroCrosshairRef = useRef<HTMLDivElement | null>(null);
+  const heroBrushPreviewRef = useRef<HTMLDivElement | null>(null);
+  const heroDragRef = useRef<{
+    readonly pointerId: number;
+    readonly startX: number;
+    readonly anchorIndex: number;
+    focusIndex: number;
+    isBrushing: boolean;
+  } | null>(null);
+  const suppressBarClickRef = useRef(false);
   const [insightOpen, setInsightOpen] = useState(true);
   const [rankTab, setRankTab] = useState<"model" | "project" | "hour">("model");
   const [rankExpanded, setRankExpanded] = useState(false);
@@ -1532,16 +1559,122 @@ export function V9CostDashboard({
     .map((p, i) => `${i === 0 ? "M" : "L"} ${p[0].toFixed(2)} ${p[1].toFixed(2)}`)
     .join(" ");
 
+  const activeBrush =
+    brushRange === null || brushRange.endIndex >= chartRows.length
+      ? null
+      : summarizeBrushRange(
+          chartRows.map((row) => row.costUsd),
+          undefined,
+          brushRange.startIndex,
+          brushRange.endIndex,
+        );
+
+  const hideHeroOverlayDom = () => {
+    if (heroCrosshairRef.current) heroCrosshairRef.current.style.opacity = "0";
+  };
+
+  const hideHeroBrushPreviewDom = () => {
+    const preview = heroBrushPreviewRef.current;
+    if (!preview) return;
+    preview.style.opacity = "0";
+    preview.style.clipPath = "inset(0 100% 0 0 round 6px)";
+  };
+
+  const heroPlotXMetrics = (clientX: number) => {
+    const stage = heroStageRef.current;
+    if (!stage || chartRows.length === 0) return null;
+    const bounds = stage.getBoundingClientRect();
+    if (bounds.width <= 0) return null;
+    const plotLeftPx = (L / 1040) * bounds.width;
+    const plotWidthPx = (CW / 1040) * bounds.width;
+    const fraction = clampChartPointerFraction(clientX, bounds.left + plotLeftPx, plotWidthPx);
+    const localX = plotLeftPx + fraction * plotWidthPx;
+    const index = fractionToPeriodIndex(fraction, chartRows.length);
+    return { localX, index, stageWidth: bounds.width };
+  };
+
+  const handleHeroPointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (event.button !== 0 || chartRows.length < 2) return;
+    const metrics = heroPlotXMetrics(event.clientX);
+    if (!metrics) return;
+    suppressBarClickRef.current = false;
+    heroDragRef.current = {
+      pointerId: event.pointerId,
+      startX: metrics.localX,
+      anchorIndex: metrics.index,
+      focusIndex: metrics.index,
+      isBrushing: false,
+    };
+    event.currentTarget.setPointerCapture?.(event.pointerId);
+  };
+
+  const handleHeroPointerMove = (event: ReactPointerEvent<HTMLDivElement>) => {
+    const metrics = heroPlotXMetrics(event.clientX);
+    if (!metrics) return;
+    if (heroCrosshairRef.current) {
+      heroCrosshairRef.current.style.transform = `translate3d(${metrics.localX.toFixed(1)}px, 0, 0)`;
+      heroCrosshairRef.current.style.opacity = "1";
+    }
+    const drag = heroDragRef.current;
+    if (drag !== null) {
+      if (drag.pointerId !== event.pointerId) return;
+      if (!drag.isBrushing && Math.abs(metrics.localX - drag.startX) >= 6) {
+        drag.isBrushing = true;
+      }
+      if (drag.isBrushing) {
+        drag.focusIndex = metrics.index;
+        const preview = heroBrushPreviewRef.current;
+        if (preview) {
+          const left = Math.min(drag.startX, metrics.localX);
+          const rightEdge = Math.max(drag.startX, metrics.localX);
+          const right = Math.max(0, metrics.stageWidth - Math.max(left + 2, rightEdge));
+          preview.style.clipPath = `inset(0 ${right.toFixed(1)}px 0 ${left.toFixed(1)}px round 6px)`;
+          preview.style.opacity = "1";
+        }
+      }
+      return;
+    }
+    setHoveredIndex((current) => (current === metrics.index ? current : metrics.index));
+  };
+
+  const finishHeroPointer = (event: ReactPointerEvent<HTMLDivElement>, cancelled: boolean) => {
+    const drag = heroDragRef.current;
+    if (drag === null || drag.pointerId !== event.pointerId) return;
+    heroDragRef.current = null;
+    hideHeroBrushPreviewDom();
+    if (event.currentTarget.hasPointerCapture?.(event.pointerId)) {
+      event.currentTarget.releasePointerCapture?.(event.pointerId);
+    }
+    if (cancelled) return;
+    if (drag.isBrushing) {
+      suppressBarClickRef.current = true;
+      const normalized = normalizeBrushRange(drag.anchorIndex, drag.focusIndex, chartRows.length);
+      if (normalized && normalized.startIndex !== normalized.endIndex) {
+        setBrushRange(normalized);
+      }
+    }
+  };
+
   const hoveredRow = hoveredIndex === null ? undefined : chartRows[hoveredIndex];
-  const readoutText = hoveredRow
-    ? text("{period} · Est. {cost} · {tokens} tokens", {
-        period: hoveredRow.label,
-        cost: formatUsd(hoveredRow.costUsd),
-        tokens: formatTokens(hoveredRow.totalTokens),
-      })
-    : hourly
-      ? text("Hover chart for hourly details")
-      : text("Hover chart for daily details");
+  const readoutText =
+    activeBrush !== null &&
+    chartRows[activeBrush.startIndex] !== undefined &&
+    chartRows[activeBrush.endIndex] !== undefined
+      ? text("{start} – {end} · {total} ({average} avg)", {
+          start: chartRows[activeBrush.startIndex]!.label,
+          end: chartRows[activeBrush.endIndex]!.label,
+          total: formatUsd(activeBrush.total),
+          average: formatUsd(activeBrush.average),
+        })
+      : hoveredRow
+        ? text("{period} · Est. {cost} · {tokens} tokens", {
+            period: hoveredRow.label,
+            cost: formatUsd(hoveredRow.costUsd),
+            tokens: formatTokens(hoveredRow.totalTokens),
+          })
+        : hourly
+          ? text("Hover chart for hourly details")
+          : text("Hover chart for daily details");
 
   const periodRows = providerTotals(
     selectedPeriod === null
@@ -1700,11 +1833,12 @@ export function V9CostDashboard({
             <div data-ctv9="hero-readout-pill" data-ctv9-num data-usage-readout role="status">
               {readoutText}
             </div>
-            {selectedProvider !== null || selectedPeriod !== null ? (
+            {selectedProvider !== null || selectedPeriod !== null || activeBrush !== null ? (
               <button
                 type="button"
                 data-ctv9="chip-btn"
                 onClick={() => {
+                  setBrushRange(null);
                   onSelectProvider(null);
                   onSelectPeriod(null);
                 }}
@@ -1715,141 +1849,202 @@ export function V9CostDashboard({
           </div>
         </div>
 
-        <svg
-          data-ctv9="hero-chart-svg"
-          viewBox="0 0 1040 184"
-          role="img"
-          aria-label={copy("Cost trend. Hover for period details.")}
-          onMouseLeave={() => setHoveredIndex(null)}
+        <div
+          ref={heroStageRef}
+          data-ctv9="hero-chart-stage"
+          onPointerDown={handleHeroPointerDown}
+          onPointerMove={handleHeroPointerMove}
+          onPointerUp={(event) => finishHeroPointer(event, false)}
+          onPointerCancel={(event) => finishHeroPointer(event, true)}
+          onDoubleClick={() => setBrushRange(null)}
+          onMouseLeave={() => {
+            if (heroDragRef.current === null) {
+              setHoveredIndex(null);
+              hideHeroOverlayDom();
+            }
+          }}
         >
-          {[0, 1, 2, 3].map((i) => {
-            const y = B - (i / 3) * CH;
-            const v = (i / 3) * maxV;
-            return (
-              <g key={i}>
-                <line x1={L} y1={y} x2={R} y2={y} stroke="var(--hair)" />
-                <text
-                  x={L - 8}
-                  y={y + 3.5}
-                  textAnchor="end"
-                  fontSize="10.5"
-                  fill="var(--fg-3)"
-                  data-ctv9-num
-                >
-                  {formatAxisUsd(v, maxV)}
-                </text>
-              </g>
-            );
-          })}
+          <div ref={heroBrushPreviewRef} aria-hidden="true" data-ctv9="hero-brush-preview" />
+          <div ref={heroCrosshairRef} aria-hidden="true" data-ctv9="hero-crosshair" />
+          <svg
+            data-ctv9="hero-chart-svg"
+            viewBox="0 0 1040 184"
+            role="img"
+            aria-label={copy("Cost trend. Hover for period details.")}
+          >
+            {[0, 1, 2, 3].map((i) => {
+              const y = B - (i / 3) * CH;
+              const v = (i / 3) * maxV;
+              return (
+                <g key={i}>
+                  <line x1={L} y1={y} x2={R} y2={y} stroke="var(--hair)" />
+                  <text
+                    x={L - 8}
+                    y={y + 3.5}
+                    textAnchor="end"
+                    fontSize="10.5"
+                    fill="var(--fg-3)"
+                    data-ctv9-num
+                  >
+                    {formatAxisUsd(v, maxV)}
+                  </text>
+                </g>
+              );
+            })}
 
-          {chartStyle === "bar" ? (
-            <g data-v9-cost-bars>
-              {chartRows.map((row, i) => {
-                const cx = L + (i + 0.5) * slotW;
-                const bh = row.costUsd > 0 ? Math.max(3, (row.costUsd / maxV) * CH) : 0;
-                const sel = selectedPeriod === row.period;
-                const op = selectedPeriod !== null && !sel ? 0.32 : 1;
-                const showTick = i % labelEvery === 0 || sel;
-                return (
-                  <g
-                    key={row.period}
-                    data-ctv9="chart-col-g"
-                    data-period={row.period}
-                    opacity={op}
-                    onMouseEnter={() => setHoveredIndex(i)}
-                    onClick={() => onSelectPeriod(sel ? null : row.period)}
-                  >
-                    <rect x={L + i * slotW} y={T} width={slotW} height={CH} fill="transparent" />
-                    {bh > 0 ? (
-                      <rect
-                        x={cx - bw / 2}
-                        y={B - bh}
-                        width={bw}
-                        height={bh}
-                        rx={5}
-                        fill="var(--ac)"
-                      />
-                    ) : null}
-                    {showTick ? (
-                      <text
-                        x={cx}
-                        y={B + 18}
-                        textAnchor="middle"
-                        fontSize="10.5"
-                        fill={sel ? "var(--fg)" : "var(--fg-3)"}
-                        fontWeight={sel ? 700 : 400}
-                        data-ctv9-num
-                      >
-                        {row.label}
-                      </text>
-                    ) : null}
-                  </g>
-                );
-              })}
-            </g>
-          ) : (
-            <g data-v9-cost-area>
-              <defs>
-                <linearGradient id={areaGradId} x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor="var(--ac)" stopOpacity={0.26} />
-                  <stop offset="100%" stopColor="var(--ac)" stopOpacity={0.01} />
-                </linearGradient>
-              </defs>
-              {areaPoints.length >= 2 ? (
-                <>
-                  <path
-                    d={`${areaLineD} L ${areaPoints.at(-1)![0].toFixed(2)} ${B} L ${areaPoints[0]![0].toFixed(2)} ${B} Z`}
-                    fill={`url(#${areaGradId})`}
-                  />
-                  <path
-                    d={areaLineD}
-                    fill="none"
-                    stroke="var(--ac)"
-                    strokeWidth={2.2}
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  />
-                </>
-              ) : null}
-              {areaPoints.map((pt, i) => {
-                const row = chartRows[i]!;
-                const sel = selectedPeriod === row.period;
-                const showTick = i % labelEvery === 0 || sel;
-                return (
-                  <g
-                    key={row.period}
-                    data-ctv9="chart-col-g"
-                    data-period={row.period}
-                    onMouseEnter={() => setHoveredIndex(i)}
-                    onClick={() => onSelectPeriod(sel ? null : row.period)}
-                  >
-                    <circle cx={pt[0]} cy={pt[1]} r={sel ? 5 : 2.8} fill="var(--ac)" />
-                    <rect
-                      x={pt[0] - slotW / 2}
-                      y={T}
-                      width={slotW}
-                      height={CH}
-                      fill="transparent"
+            {activeBrush !== null ? (
+              <rect
+                data-ctv9="hero-brush-band"
+                x={L + activeBrush.startIndex * slotW}
+                y={T}
+                width={Math.max(4, (activeBrush.endIndex - activeBrush.startIndex + 1) * slotW)}
+                height={CH}
+                rx={6}
+                fill="var(--ac-soft)"
+                stroke="var(--ac)"
+                strokeOpacity={0.45}
+                strokeWidth={1}
+              />
+            ) : null}
+
+            {chartStyle === "bar" ? (
+              <g data-v9-cost-bars>
+                {chartRows.map((row, i) => {
+                  const cx = L + (i + 0.5) * slotW;
+                  const bh = row.costUsd > 0 ? Math.max(3, (row.costUsd / maxV) * CH) : 0;
+                  const sel = selectedPeriod === row.period;
+                  const inBrush =
+                    activeBrush !== null &&
+                    i >= activeBrush.startIndex &&
+                    i <= activeBrush.endIndex;
+                  const op =
+                    activeBrush !== null
+                      ? inBrush
+                        ? 1
+                        : 0.28
+                      : selectedPeriod !== null && !sel
+                        ? 0.32
+                        : 1;
+                  const showTick = i % labelEvery === 0 || sel;
+                  return (
+                    <g
+                      key={row.period}
+                      data-ctv9="chart-col-g"
+                      data-period={row.period}
+                      opacity={op}
+                      onMouseEnter={() => {
+                        if (heroDragRef.current !== null) return;
+                        setHoveredIndex(i);
+                      }}
+                      onClick={() => {
+                        if (suppressBarClickRef.current) {
+                          suppressBarClickRef.current = false;
+                          return;
+                        }
+                        onSelectPeriod(sel ? null : row.period);
+                      }}
+                    >
+                      <rect x={L + i * slotW} y={T} width={slotW} height={CH} fill="transparent" />
+                      {bh > 0 ? (
+                        <rect
+                          x={cx - bw / 2}
+                          y={B - bh}
+                          width={bw}
+                          height={bh}
+                          rx={5}
+                          fill="var(--ac)"
+                        />
+                      ) : null}
+                      {showTick ? (
+                        <text
+                          x={cx}
+                          y={B + 18}
+                          textAnchor="middle"
+                          fontSize="10.5"
+                          fill={sel ? "var(--fg)" : "var(--fg-3)"}
+                          fontWeight={sel ? 700 : 400}
+                          data-ctv9-num
+                        >
+                          {row.label}
+                        </text>
+                      ) : null}
+                    </g>
+                  );
+                })}
+              </g>
+            ) : (
+              <g data-v9-cost-area>
+                <defs>
+                  <linearGradient id={areaGradId} x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor="var(--ac)" stopOpacity={0.26} />
+                    <stop offset="100%" stopColor="var(--ac)" stopOpacity={0.01} />
+                  </linearGradient>
+                </defs>
+                {areaPoints.length >= 2 ? (
+                  <>
+                    <path
+                      d={`${areaLineD} L ${areaPoints.at(-1)![0].toFixed(2)} ${B} L ${areaPoints[0]![0].toFixed(2)} ${B} Z`}
+                      fill={`url(#${areaGradId})`}
                     />
-                    {showTick ? (
-                      <text
-                        x={pt[0]}
-                        y={B + 18}
-                        textAnchor="middle"
-                        fontSize="10.5"
-                        fill={sel ? "var(--fg)" : "var(--fg-3)"}
-                        fontWeight={sel ? 700 : 400}
-                        data-ctv9-num
-                      >
-                        {row.label}
-                      </text>
-                    ) : null}
-                  </g>
-                );
-              })}
-            </g>
-          )}
-        </svg>
+                    <path
+                      d={areaLineD}
+                      fill="none"
+                      stroke="var(--ac)"
+                      strokeWidth={2.2}
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    />
+                  </>
+                ) : null}
+                {areaPoints.map((pt, i) => {
+                  const row = chartRows[i]!;
+                  const sel = selectedPeriod === row.period;
+                  const showTick = i % labelEvery === 0 || sel;
+                  return (
+                    <g
+                      key={row.period}
+                      data-ctv9="chart-col-g"
+                      data-period={row.period}
+                      onMouseEnter={() => {
+                        if (heroDragRef.current !== null) return;
+                        setHoveredIndex(i);
+                      }}
+                      onClick={() => {
+                        if (suppressBarClickRef.current) {
+                          suppressBarClickRef.current = false;
+                          return;
+                        }
+                        onSelectPeriod(sel ? null : row.period);
+                      }}
+                    >
+                      <circle cx={pt[0]} cy={pt[1]} r={sel ? 5 : 2.8} fill="var(--ac)" />
+                      <rect
+                        x={pt[0] - slotW / 2}
+                        y={T}
+                        width={slotW}
+                        height={CH}
+                        fill="transparent"
+                      />
+                      {showTick ? (
+                        <text
+                          x={pt[0]}
+                          y={B + 18}
+                          textAnchor="middle"
+                          fontSize="10.5"
+                          fill={sel ? "var(--fg)" : "var(--fg-3)"}
+                          fontWeight={sel ? 700 : 400}
+                          data-ctv9-num
+                        >
+                          {row.label}
+                        </text>
+                      ) : null}
+                    </g>
+                  );
+                })}
+              </g>
+            )}
+          </svg>
+        </div>
       </section>
 
       <div data-ctv9="two-col-eq">

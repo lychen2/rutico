@@ -5,6 +5,7 @@ import { useUiText } from "~/i18n/useUiText";
 
 import type { UsageProviderKind, UsageSummaryInput } from "@t3tools/contracts";
 import { useRef, useState } from "react";
+import type { KeyboardEvent, MouseEvent, PointerEvent } from "react";
 
 import type { DailyTotals, HourlyTotals, MergedUsage } from "@t3tools/shared/usageMerge";
 import {
@@ -14,6 +15,14 @@ import {
   formatUsd,
 } from "@t3tools/shared/usageFormat";
 import { cn } from "~/lib/utils";
+import {
+  clampChartPointerFraction,
+  computeEdgeAwarePopoverPosition,
+  fractionToPeriodIndex,
+  normalizeBrushRange,
+  summarizeBrushRange,
+  type BrushIndexRange,
+} from "./usageChartBrush.logic";
 import {
   USAGE_SERIES_ORDER as PROVIDER_ORDER,
   PROVIDER_PRESENTATION,
@@ -317,6 +326,9 @@ function UsageChartTooltip({
   );
 }
 
+const BRUSH_DRAG_THRESHOLD_PX = 6;
+const POPOVER_FALLBACK_WIDTH_PX = 168;
+
 function UsageChartPlot({
   periods,
   previousValues,
@@ -325,6 +337,7 @@ function UsageChartPlot({
   stepX,
   providers,
   loadingProviders,
+  resolution,
   format,
   formatTooltipPeriod,
   children,
@@ -336,97 +349,387 @@ function UsageChartPlot({
   readonly stepX: number;
   readonly providers: readonly UsageProviderKind[];
   readonly loadingProviders: ReadonlySet<UsageProviderKind>;
+  readonly resolution: "day" | "hour";
   readonly format: (value: number) => string;
   readonly formatTooltipPeriod: (period: string) => string;
   readonly children: React.ReactNode;
 }) {
   const [hoverIndex, setHoverIndex] = useState<number | null>(null);
+  const [brushRange, setBrushRange] = useState<BrushIndexRange | null>(null);
   const plotRef = useRef<HTMLDivElement | null>(null);
-  const handleMove = (event: React.MouseEvent<HTMLDivElement>) => {
-    const plot = plotRef.current;
-    if (plot === null || periods.length === 0) return;
-    const bounds = plot.getBoundingClientRect();
-    if (bounds.width === 0) return;
-    const localX = Math.min(bounds.width, Math.max(0, event.clientX - bounds.left));
-    const fraction = localX / bounds.width;
-    const index = Math.round(fraction * (periods.length - 1));
-    setHoverIndex(Math.min(periods.length - 1, Math.max(0, index)));
+  const stageRef = useRef<HTMLDivElement | null>(null);
+  const crosshairRef = useRef<HTMLDivElement | null>(null);
+  const popoverRef = useRef<HTMLDivElement | null>(null);
+  const brushPreviewRef = useRef<HTMLDivElement | null>(null);
+  const dragStateRef = useRef<{
+    readonly pointerId: number;
+    readonly startX: number;
+    readonly anchorIndex: number;
+    focusIndex: number;
+    isBrushing: boolean;
+  } | null>(null);
+
+  const columnTotals = columns.map((column) => column.total);
+  const activeBrush =
+    brushRange === null || brushRange.endIndex >= periods.length
+      ? null
+      : summarizeBrushRange(
+          columnTotals,
+          previousValues,
+          brushRange.startIndex,
+          brushRange.endIndex,
+        );
+
+  const hideCrosshairDom = () => {
+    if (crosshairRef.current) crosshairRef.current.style.opacity = "0";
+    if (popoverRef.current) popoverRef.current.style.opacity = "0";
+  };
+
+  const hideBrushPreviewDom = () => {
+    const preview = brushPreviewRef.current;
+    if (!preview) return;
+    preview.style.opacity = "0";
+    preview.style.clipPath = "inset(0 100% 0 0)";
+  };
+
+  const positionCrosshairDom = (localX: number, width: number, showPopover: boolean) => {
+    if (crosshairRef.current) {
+      crosshairRef.current.style.transform = `translate3d(${localX.toFixed(1)}px, 0, 0)`;
+      crosshairRef.current.style.opacity = "1";
+    }
+    const popover = popoverRef.current;
+    if (popover) {
+      if (!showPopover) {
+        popover.style.opacity = "0";
+        return;
+      }
+      const popoverWidth = popover.offsetWidth || POPOVER_FALLBACK_WIDTH_PX;
+      const placement = computeEdgeAwarePopoverPosition(localX, width, popoverWidth);
+      popover.style.transform = `translate3d(${placement.x.toFixed(1)}px, 0, 0)`;
+      popover.dataset.align = placement.align;
+      popover.style.opacity = "1";
+    }
+  };
+
+  const updatePointerVisuals = (clientX: number) => {
+    const stage = stageRef.current;
+    if (stage === null || periods.length === 0) return;
+    const bounds = stage.getBoundingClientRect();
+    if (bounds.width <= 0) return;
+    const fraction = clampChartPointerFraction(clientX, bounds.left, bounds.width);
+    const localX = fraction * bounds.width;
+    const index = fractionToPeriodIndex(fraction, periods.length);
+    const drag = dragStateRef.current;
+
+    if (drag !== null) {
+      // Zero setState during drag: paint the range-brush band and crosshair purely on GPU DOM refs.
+      const deltaX = Math.abs(localX - drag.startX);
+      if (!drag.isBrushing && deltaX >= BRUSH_DRAG_THRESHOLD_PX) {
+        drag.isBrushing = true;
+      }
+      if (drag.isBrushing) {
+        drag.focusIndex = index;
+        const left = Math.min(drag.startX, localX);
+        const rightEdge = Math.max(drag.startX, localX);
+        const right = Math.max(0, bounds.width - Math.max(left + 2, rightEdge));
+        const preview = brushPreviewRef.current;
+        if (preview) {
+          preview.style.clipPath = `inset(0 ${right.toFixed(1)}px 0 ${left.toFixed(1)}px)`;
+          preview.style.opacity = "1";
+        }
+      }
+      positionCrosshairDom(localX, bounds.width, false);
+      return;
+    }
+
+    positionCrosshairDom(localX, bounds.width, activeBrush === null);
+    setHoverIndex((current) => (current === index ? current : index));
+  };
+
+  const handleMouseMove = (event: MouseEvent<HTMLDivElement>) => {
+    if (dragStateRef.current !== null) return;
+    updatePointerVisuals(event.clientX);
+  };
+
+  const handlePointerDown = (event: PointerEvent<HTMLDivElement>) => {
+    if (event.button !== 0 || periods.length < 2) return;
+    const stage = stageRef.current;
+    if (stage === null) return;
+    const bounds = stage.getBoundingClientRect();
+    if (bounds.width <= 0) return;
+    const fraction = clampChartPointerFraction(event.clientX, bounds.left, bounds.width);
+    const startX = fraction * bounds.width;
+    const anchorIndex = fractionToPeriodIndex(fraction, periods.length);
+    dragStateRef.current = {
+      pointerId: event.pointerId,
+      startX,
+      anchorIndex,
+      focusIndex: anchorIndex,
+      isBrushing: false,
+    };
+    event.currentTarget.setPointerCapture?.(event.pointerId);
+  };
+
+  const handlePointerMove = (event: PointerEvent<HTMLDivElement>) => {
+    const drag = dragStateRef.current;
+    if (drag !== null && drag.pointerId !== event.pointerId) return;
+    updatePointerVisuals(event.clientX);
+  };
+
+  const finishBrushDrag = (event: PointerEvent<HTMLDivElement>, cancelled: boolean) => {
+    const drag = dragStateRef.current;
+    if (drag === null || drag.pointerId !== event.pointerId) return;
+    dragStateRef.current = null;
+    hideBrushPreviewDom();
+    if (event.currentTarget.hasPointerCapture?.(event.pointerId)) {
+      event.currentTarget.releasePointerCapture?.(event.pointerId);
+    }
+    if (cancelled) return;
+    if (drag.isBrushing) {
+      const normalized = normalizeBrushRange(drag.anchorIndex, drag.focusIndex, periods.length);
+      if (normalized && normalized.startIndex !== normalized.endIndex) {
+        setBrushRange(normalized);
+        return;
+      }
+    }
+    if (brushRange !== null) {
+      setBrushRange(null);
+    }
+  };
+
+  const handleKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+    if (periods.length === 0) return;
+    if (event.key === "Escape") {
+      if (brushRange !== null || hoverIndex !== null) {
+        event.preventDefault();
+        setBrushRange(null);
+        setHoverIndex(null);
+        hideCrosshairDom();
+      }
+      return;
+    }
+    if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
+    event.preventDefault();
+    const step = event.key === "ArrowRight" ? 1 : -1;
+    const base = hoverIndex ?? (step > 0 ? 0 : periods.length - 1);
+    const next = Math.min(periods.length - 1, Math.max(0, base + step));
+    setHoverIndex(next);
+    if (event.shiftKey && periods.length > 1) {
+      setBrushRange((current) => {
+        const anchor = current ? current.startIndex : base;
+        return normalizeBrushRange(anchor, next, periods.length);
+      });
+    } else if (brushRange !== null) {
+      setBrushRange(null);
+    }
+    const stage = stageRef.current;
+    if (stage) {
+      const width = stage.getBoundingClientRect().width;
+      if (width > 0) {
+        const localX = periods.length < 2 ? width / 2 : (next / (periods.length - 1)) * width;
+        positionCrosshairDom(localX, width, !event.shiftKey);
+      }
+    }
   };
 
   const hoveredPeriod = hoverIndex === null ? undefined : periods[hoverIndex];
+  const hoveredColumn = hoverIndex === null ? undefined : columns[hoverIndex];
+  const hoveredPrevious = hoverIndex === null ? undefined : previousValues?.[hoverIndex];
+  const brushStartX = activeBrush ? activeBrush.startIndex * stepX : 0;
+  const brushEndX = activeBrush ? activeBrush.endIndex * stepX : 0;
 
   return (
     <div
       ref={plotRef}
       role="img"
+      tabIndex={0}
       aria-label={
         format === formatUsd
           ? copy("Cost trend. Hover for period details.")
           : copy("Token trend. Hover for period details.")
       }
-      className="usage-cost-plot relative flex-1"
-      onMouseMove={handleMove}
-      onMouseLeave={() => setHoverIndex(null)}
+      className="usage-cost-plot relative flex-1 outline-none"
+      onMouseMove={handleMouseMove}
+      onMouseLeave={() => {
+        if (dragStateRef.current === null) {
+          setHoverIndex(null);
+          hideCrosshairDom();
+        }
+      }}
+      onBlur={() => {
+        if (dragStateRef.current === null) {
+          setHoverIndex(null);
+          hideCrosshairDom();
+        }
+      }}
+      onDoubleClick={() => setBrushRange(null)}
+      onKeyDown={handleKeyDown}
     >
-      {hoverIndex === null || hoveredPeriod === undefined ? (
+      {activeBrush !== null &&
+      periods[activeBrush.startIndex] !== undefined &&
+      periods[activeBrush.endIndex] !== undefined ? (
+        <div
+          className="usage-readout usage-cost-readout usage-brush-readout"
+          data-usage-readout
+          data-usage-brush-readout
+          role="status"
+        >
+          <div className="min-w-0">
+            <span>
+              {formatTooltipPeriod(periods[activeBrush.startIndex]!)} –{" "}
+              {formatTooltipPeriod(periods[activeBrush.endIndex]!)} ·{" "}
+              {resolution === "hour"
+                ? copy("{count} hours", { count: activeBrush.count })
+                : copy("{count} days", { count: activeBrush.count })}
+            </span>
+            <strong className="usage-tooltip-total tabular-nums">
+              {format(activeBrush.total)}
+            </strong>
+          </div>
+          <div className="usage-readout-parts">
+            <span className="tabular-nums">
+              <b>{format(activeBrush.average)}</b>{" "}
+              {resolution === "hour" ? copy("per hour") : copy("per day")}
+            </span>
+            {activeBrush.deltaPercent !== null ? (
+              <span className="tabular-nums">
+                <b>
+                  {activeBrush.deltaPercent >= 0 ? "+" : "−"}
+                  {Math.abs(activeBrush.deltaPercent).toFixed(1)}%
+                </b>{" "}
+                {copy("vs previous")}
+              </span>
+            ) : null}
+            <button type="button" className="usage-brush-clear" onClick={() => setBrushRange(null)}>
+              {copy("Clear selection")}
+            </button>
+          </div>
+        </div>
+      ) : hoverIndex === null || hoveredPeriod === undefined ? (
         <div className="usage-readout" data-usage-readout>
           <span>{copy("Hover to see period details")}</span>
         </div>
       ) : (
         <UsageChartTooltip
-          previousValue={previousValues?.[hoverIndex]}
+          previousValue={hoveredPrevious}
           tooltipRef={undefined}
           label={formatTooltipPeriod(hoveredPeriod)}
-          column={columns[hoverIndex]}
+          column={hoveredColumn}
           providers={providers}
           loadingProviders={loadingProviders}
           format={format}
         />
       )}
-      <svg
-        className="h-56 w-full"
-        viewBox={`0 0 ${VIEW_WIDTH} ${VIEW_HEIGHT}`}
-        preserveAspectRatio="none"
-        aria-hidden
+      <div
+        ref={stageRef}
+        className="usage-chart-stage relative select-none"
+        onPointerDown={handlePointerDown}
+        onPointerMove={handlePointerMove}
+        onPointerUp={(event) => finishBrushDrag(event, false)}
+        onPointerCancel={(event) => finishBrushDrag(event, true)}
       >
-        {children}
-        {hoverIndex === null ? null : (
-          <>
-            <circle
-              data-usage-hover="current"
-              cx={hoverIndex * stepX}
-              cy={valueToY(columns[hoverIndex]?.total ?? 0, max)}
-              r="4.5"
-              fill="var(--card)"
+        <div
+          ref={brushPreviewRef}
+          aria-hidden="true"
+          data-usage-brush-preview
+          className="usage-chart-brush-preview"
+        />
+        <div
+          ref={crosshairRef}
+          aria-hidden="true"
+          data-usage-crosshair
+          className="usage-chart-crosshair"
+        />
+        <div ref={popoverRef} aria-hidden="true" data-usage-popover className="usage-chart-popover">
+          {hoveredPeriod !== undefined && hoveredColumn !== undefined ? (
+            <>
+              <div className="usage-chart-popover-label">{formatTooltipPeriod(hoveredPeriod)}</div>
+              <div className="usage-chart-popover-value tabular-nums">
+                {format(hoveredColumn.total)}
+              </div>
+              {hoveredPrevious !== undefined && hoveredPrevious > 0 ? (
+                <div className="usage-chart-popover-delta tabular-nums">
+                  {((hoveredColumn.total - hoveredPrevious) / hoveredPrevious) * 100 >= 0
+                    ? "+"
+                    : "−"}
+                  {Math.abs(
+                    ((hoveredColumn.total - hoveredPrevious) / hoveredPrevious) * 100,
+                  ).toFixed(0)}
+                  %
+                </div>
+              ) : null}
+            </>
+          ) : null}
+        </div>
+        <svg
+          className="h-56 w-full"
+          viewBox={`0 0 ${VIEW_WIDTH} ${VIEW_HEIGHT}`}
+          preserveAspectRatio="none"
+          aria-hidden
+        >
+          {children}
+          {activeBrush !== null ? (
+            <rect
+              data-usage-brush-band
+              x={brushStartX}
+              y={PLOT_TOP}
+              width={Math.max(2, brushEndX - brushStartX)}
+              height={VIEW_HEIGHT - PLOT_TOP}
+              fill="var(--primary)"
+              fillOpacity={0.12}
               stroke="var(--primary)"
-              strokeWidth="2"
+              strokeOpacity={0.42}
+              strokeWidth={1}
               vectorEffect="non-scaling-stroke"
             />
-            {previousValues?.[hoverIndex] !== undefined ? (
+          ) : null}
+          {hoverIndex === null ? null : (
+            <>
               <circle
-                data-usage-hover="previous"
                 cx={hoverIndex * stepX}
-                cy={valueToY(previousValues[hoverIndex]!, max)}
-                r="4"
+                cy={valueToY(columns[hoverIndex]?.total ?? 0, max)}
+                r="9"
+                fill="var(--primary)"
+                fillOpacity={0.14}
+                className="usage-chart-point-halo"
+              />
+              <circle
+                data-usage-hover="current"
+                cx={hoverIndex * stepX}
+                cy={valueToY(columns[hoverIndex]?.total ?? 0, max)}
+                r="4.5"
                 fill="var(--card)"
-                stroke="var(--muted-foreground)"
-                strokeWidth="1.5"
+                stroke="var(--primary)"
+                strokeWidth="2"
                 vectorEffect="non-scaling-stroke"
               />
-            ) : null}
-            <line
-              x1={hoverIndex * stepX}
-              x2={hoverIndex * stepX}
-              y1={PLOT_TOP}
-              y2={VIEW_HEIGHT}
-              stroke="currentColor"
-              strokeWidth={1}
-              className="text-muted-foreground"
-              vectorEffect="non-scaling-stroke"
-            />
-          </>
-        )}
-      </svg>
+              {previousValues?.[hoverIndex] !== undefined ? (
+                <circle
+                  data-usage-hover="previous"
+                  cx={hoverIndex * stepX}
+                  cy={valueToY(previousValues[hoverIndex]!, max)}
+                  r="4"
+                  fill="var(--card)"
+                  stroke="var(--muted-foreground)"
+                  strokeWidth="1.5"
+                  vectorEffect="non-scaling-stroke"
+                />
+              ) : null}
+              <line
+                x1={hoverIndex * stepX}
+                x2={hoverIndex * stepX}
+                y1={PLOT_TOP}
+                y2={VIEW_HEIGHT}
+                stroke="currentColor"
+                strokeWidth={1}
+                strokeOpacity={0.28}
+                className="text-muted-foreground"
+                vectorEffect="non-scaling-stroke"
+              />
+            </>
+          )}
+        </svg>
+      </div>
     </div>
   );
 }
@@ -531,6 +834,7 @@ export function UsageProviderChart({
           stepX={stepX}
           providers={providers}
           loadingProviders={loadingProviders}
+          resolution={resolution}
           format={format}
           formatTooltipPeriod={formatTooltipPeriod}
         >

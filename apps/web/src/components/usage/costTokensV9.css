@@ -397,6 +397,41 @@
   color: var(--fg-2);
 }
 
+[data-ctv9-root] [data-ctv9="hero-chart-stage"] {
+  position: relative;
+  user-select: none;
+  touch-action: pan-y;
+}
+
+[data-ctv9-root] [data-ctv9="hero-crosshair"] {
+  position: absolute;
+  top: 10px;
+  bottom: 26px;
+  left: 0;
+  width: 1px;
+  background: color-mix(in srgb, var(--ac) 52%, var(--fg-3));
+  pointer-events: none;
+  opacity: 0;
+  z-index: 2;
+  will-change: transform, opacity;
+  transition: opacity 120ms ease-out;
+}
+
+[data-ctv9-root] [data-ctv9="hero-brush-preview"] {
+  position: absolute;
+  top: 10px;
+  bottom: 26px;
+  inset-inline: 0;
+  border-radius: 6px;
+  background: var(--ac-soft);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--ac) 42%, transparent);
+  pointer-events: none;
+  opacity: 0;
+  clip-path: inset(0 100% 0 0 round 6px);
+  z-index: 1;
+  will-change: clip-path, opacity;
+}
+
 [data-ctv9-root] [data-ctv9="hero-chart-svg"] {
   width: 100%;
   height: 180px;
