@@ -8,9 +8,19 @@ import { AppBar } from "../../components/ui/AppBar";
 import type { AppBarMenuItem } from "../../components/ui/AppBar.types";
 import type { ReviewSectionItem } from "./reviewModel";
 import { useReviewHeaderPresentation } from "./useReviewHeaderPresentation";
+import * as Haptics from "expo-haptics";
 import { T, useGT, Var } from "gt-react-native";
 import { type Ref, type ReactElement, useImperativeHandle, useRef, useState } from "react";
-import { Pressable, ScrollView, type NativeSyntheticEvent, StyleSheet, View } from "react-native";
+import {
+  Platform,
+  Pressable,
+  ScrollView,
+  type NativeSyntheticEvent,
+  StyleSheet,
+  View,
+} from "react-native";
+import Animated, { FadeInDown, FadeOutDown, ReduceMotion } from "react-native-reanimated";
+import Svg, { Circle } from "react-native-svg";
 import { RefreshControl } from "../../components/ui/RefreshControl";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useReduceMotionEnabled } from "../../lib/appState";
@@ -57,6 +67,7 @@ import { useReviewCommentSelectionController } from "./useReviewCommentSelection
 import { resolveReviewAvailability } from "./reviewAvailability";
 import { resolveSelectedReviewFileId } from "./reviewPaneSelection";
 import { buildReviewSectionMenu } from "./review-section-menu";
+import { computeViewedProgressRing } from "./reviewNavigatorHud";
 import { reportShowcaseSceneRendered } from "../showcase/showcaseRenderSignal";
 import { useSelectWorkspaceDetail } from "../layout/workspace/useSelectWorkspaceDetail";
 import type { usePullRequestFileFilter } from "../pull-requests/usePullRequestFileFilter";
@@ -227,7 +238,9 @@ function ReviewSelectionActionBar(props: {
   );
 
   return (
-    <View
+    <Animated.View
+      entering={FadeInDown.springify().reduceMotion(ReduceMotion.System)}
+      exiting={FadeOutDown.duration(150).reduceMotion(ReduceMotion.System)}
       pointerEvents="box-none"
       style={{
         position: "absolute",
@@ -263,7 +276,109 @@ function ReviewSelectionActionBar(props: {
           type="monochrome"
         />
       </Pressable>
-    </View>
+    </Animated.View>
+  );
+}
+
+const HUD_RING_SIZE = 22;
+const HUD_RING_STROKE = 2.5;
+const HUD_RING_RADIUS = (HUD_RING_SIZE - HUD_RING_STROKE) / 2;
+
+function ReviewDiffNavigatorHud(props: {
+  readonly bottomInset: number;
+  readonly viewedCount: number;
+  readonly totalCount: number;
+  readonly ringTrackColor: string;
+  readonly ringFillColor: string;
+  readonly onPrevHunk: () => void;
+  readonly onNextHunk: () => void;
+}) {
+  const gt = useGT();
+  const ring = computeViewedProgressRing(props.viewedCount, props.totalCount, HUD_RING_RADIUS);
+
+  return (
+    <Animated.View
+      entering={FadeInDown.duration(180).reduceMotion(ReduceMotion.System)}
+      exiting={FadeOutDown.duration(140).reduceMotion(ReduceMotion.System)}
+      pointerEvents="box-none"
+      style={{
+        position: "absolute",
+        left: 0,
+        right: 0,
+        bottom: Math.max(props.bottomInset, 10) + 14,
+        alignItems: "center",
+      }}
+    >
+      <View
+        className="flex-row items-center gap-1 rounded-full border border-border bg-card pl-3 pr-1.5 py-1"
+        style={{ elevation: 4 }}
+      >
+        <View
+          accessible
+          accessibilityLabel={gt("{viewed} of {total} files viewed", {
+            viewed: ring.viewed,
+            total: ring.total,
+          })}
+          className="flex-row items-center gap-2 pr-1.5"
+        >
+          <Svg width={HUD_RING_SIZE} height={HUD_RING_SIZE}>
+            <Circle
+              cx={HUD_RING_SIZE / 2}
+              cy={HUD_RING_SIZE / 2}
+              r={HUD_RING_RADIUS}
+              stroke={props.ringTrackColor}
+              strokeWidth={HUD_RING_STROKE}
+              fill="none"
+            />
+            <Circle
+              cx={HUD_RING_SIZE / 2}
+              cy={HUD_RING_SIZE / 2}
+              r={HUD_RING_RADIUS}
+              stroke={props.ringFillColor}
+              strokeWidth={HUD_RING_STROKE}
+              strokeDasharray={`${ring.circumference} ${ring.circumference}`}
+              strokeDashoffset={ring.strokeDashoffset}
+              strokeLinecap="round"
+              fill="none"
+              rotation={-90}
+              origin={`${HUD_RING_SIZE / 2}, ${HUD_RING_SIZE / 2}`}
+            />
+          </Svg>
+          <Text className="font-mono text-xs font-t3-semibold tabular-nums text-foreground">
+            {`${ring.viewed}/${ring.total}`}
+          </Text>
+        </View>
+        <View className="h-5 w-px bg-border" />
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={gt("Previous hunk")}
+          hitSlop={4}
+          onPress={props.onPrevHunk}
+          className="size-10 items-center justify-center rounded-full active:bg-primary/15"
+        >
+          <SymbolView
+            name="chevron.up"
+            size={15}
+            tintColorClassName="accent-foreground"
+            type="monochrome"
+          />
+        </Pressable>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={gt("Next hunk")}
+          hitSlop={4}
+          onPress={props.onNextHunk}
+          className="size-10 items-center justify-center rounded-full active:bg-primary/15"
+        >
+          <SymbolView
+            name="chevron.down"
+            size={15}
+            tintColorClassName="accent-foreground"
+            type="monochrome"
+          />
+        </Pressable>
+      </View>
+    </Animated.View>
   );
 }
 
@@ -403,7 +518,7 @@ export function ReviewSheet(props: ReviewSheetProps) {
   const navigation = useNavigation();
   const selectDetail = useSelectWorkspaceDetail();
   const insets = useSafeAreaInsets();
-  const { themeAppearance: selectedTheme } = useAppearancePreferences();
+  const { themeAppearance: selectedTheme, themeVariables } = useAppearancePreferences();
   const { environmentId, threadId } = props.route.params;
   const environment = useEnvironmentPresentation(environmentId);
   const retryEnvironment = useRetryEnvironment();
@@ -626,6 +741,24 @@ export function ReviewSheet(props: ReviewSheetProps) {
     .filter((part): part is string => Boolean(part))
     .join(" · ");
 
+  const handleNavigateHunk = async (direction: -1 | 1) => {
+    const scrollToHunk = nativeReviewDiffViewRef.current?.scrollToHunk;
+    if (!scrollToHunk) return;
+    const result = await settlePromise(() => scrollToHunk(direction, !reduceMotion));
+    if (AsyncResult.isSuccess(result) && result.value) {
+      if (Platform.OS === "android") {
+        void Haptics.performAndroidHapticsAsync(Haptics.AndroidHaptics.Segment_Tick).catch(
+          () => undefined,
+        );
+      } else {
+        void Haptics.selectionAsync().catch(() => undefined);
+      }
+    }
+  };
+  const visibleViewedFileCount = reviewFiles.reduce(
+    (count, file) => count + (viewedFileIds.includes(file.id) ? 1 : 0),
+    0,
+  );
   const showChangedFilesPane =
     !showConnectionNotice &&
     selectedSection !== null &&
@@ -634,6 +767,12 @@ export function ReviewSheet(props: ReviewSheetProps) {
   const showChangedFilesToggle = panes.supportsAuxiliaryPane && showChangedFilesPane;
 
   const allFilesHidden = reviewFiles.length === 0 && fileFilter.hiddenCount > 0;
+  const showAndroidDiffNavigatorHud =
+    Platform.OS === "android" &&
+    showChangedFilesPane &&
+    !allFilesHidden &&
+    reviewFiles.length > 0 &&
+    commentSelection.selectionAction === null;
   const listHeader = (() => {
     const children: ReactElement[] = [];
 
@@ -863,6 +1002,17 @@ export function ReviewSheet(props: ReviewSheetProps) {
               ) : null}
             </ScrollView>
           )}
+          {showAndroidDiffNavigatorHud ? (
+            <ReviewDiffNavigatorHud
+              bottomInset={insets.bottom}
+              viewedCount={visibleViewedFileCount}
+              totalCount={reviewFiles.length}
+              ringTrackColor={themeVariables["--color-border"]}
+              ringFillColor={themeVariables["--color-primary"]}
+              onPrevHunk={() => void handleNavigateHunk(-1)}
+              onNextHunk={() => void handleNavigateHunk(1)}
+            />
+          ) : null}
           <ReviewSelectionActionBar
             bottomInset={insets.bottom}
             title={commentSelection.selectionAction?.title ?? null}

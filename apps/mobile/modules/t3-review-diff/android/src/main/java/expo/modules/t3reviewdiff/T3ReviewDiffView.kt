@@ -5,12 +5,17 @@ import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.RectF
+import android.os.Build
+import android.os.SystemClock
+import android.provider.Settings
 import android.view.GestureDetector
+import android.view.HapticFeedbackConstants
 import android.view.MotionEvent
 import android.view.VelocityTracker
 import android.view.View
 import android.view.ViewGroup
 import android.view.ViewConfiguration
+import android.widget.EdgeEffect
 import android.widget.OverScroller
 import expo.modules.kotlin.AppContext
 import expo.modules.kotlin.viewevent.EventDispatcher
@@ -55,6 +60,12 @@ class T3ReviewDiffView(context: Context, appContext: AppContext) : ExpoView(cont
   private val minimumFlingVelocity = ViewConfiguration.get(context).scaledMinimumFlingVelocity
   private val verticalScroller = OverScroller(context)
   private val horizontalScroller = OverScroller(context)
+  private val topEdge = EdgeEffect(context)
+  private val bottomEdge = EdgeEffect(context)
+  private val leftEdge = EdgeEffect(context)
+  private val rightEdge = EdgeEffect(context)
+  private var verticalFlingActive = false
+  private var horizontalFlingActive = false
   private var dragAxis: DragAxis? = null
   private var scrollEnabled = true
   private var horizontalDragTarget: HorizontalPanTarget? = null
@@ -106,6 +117,9 @@ class T3ReviewDiffView(context: Context, appContext: AppContext) : ExpoView(cont
     canvasView.setViewportEventsPaused(true)
     verticalScroller.forceFinished(true)
     horizontalScroller.forceFinished(true)
+    verticalFlingActive = false
+    horizontalFlingActive = false
+    canvasView.clearHunkHighlight()
     rows = emptyList()
     visibleRows = emptyList()
     visibleRowIndices = IntArray(0)
@@ -247,12 +261,53 @@ class T3ReviewDiffView(context: Context, appContext: AppContext) : ExpoView(cont
 
   fun cleanup() {
     payloadDecodeExecutor.shutdownNow()
+    topEdge.finish()
+    bottomEdge.finish()
+    leftEdge.finish()
+    rightEdge.finish()
+    canvasView.clearHunkHighlight()
+  }
+
+  override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
+    super.onSizeChanged(w, h, oldw, oldh)
+    topEdge.setSize(w, h)
+    bottomEdge.setSize(w, h)
+    leftEdge.setSize(h, w)
+    rightEdge.setSize(h, w)
+  }
+
+  override fun onDetachedFromWindow() {
+    topEdge.finish()
+    bottomEdge.finish()
+    leftEdge.finish()
+    rightEdge.finish()
+    canvasView.clearHunkHighlight()
+    super.onDetachedFromWindow()
   }
 
   fun scrollToFile(fileId: String, animated: Boolean) {
     val index = visibleRows.indexOfFirst { it.kind == "file" && it.resolvedFileId == fileId }
     if (index < 0) return
     scrollToY(canvasView.rowTop(index), animated)
+  }
+
+  fun scrollToHunk(direction: Int, animated: Boolean): Boolean {
+    if (visibleRows.isEmpty() || direction == 0) return false
+    val stickyClearance = canvasView.style.fileHeaderHeightPx.toInt()
+    val anchorOffset = canvasView.verticalOffset() + stickyClearance
+    val targetIndex = findTargetHunkIndex(
+      rows = visibleRows,
+      anchorOffset = anchorOffset,
+      rowTop = { canvasView.rowTop(it) },
+      direction = direction,
+    )
+    if (targetIndex < 0) return false
+    val targetY = max(0, canvasView.rowTop(targetIndex) - stickyClearance)
+    scrollToY(targetY, animated && !isReducedMotion())
+    if (!isReducedMotion()) {
+      canvasView.flashHunkRow(visibleRows[targetIndex].id, HUNK_FLASH_DURATION_MS)
+    }
+    return true
   }
 
   fun setScrollEnabled(enabled: Boolean) {
@@ -324,27 +379,69 @@ class T3ReviewDiffView(context: Context, appContext: AppContext) : ExpoView(cont
     return handled
   }
 
-  @Suppress("NestedBlockDepth")
+  @Suppress("NestedBlockDepth", "CyclomaticComplexMethod")
   override fun onTouchEvent(event: MotionEvent): Boolean {
     val axis = dragAxis ?: return false
     when (event.actionMasked) {
       MotionEvent.ACTION_MOVE -> {
         val deltaX = (lastTouchX - event.x).toInt()
         val deltaY = (lastTouchY - event.y).toInt()
+        val viewportWidth = max(width.toFloat(), 1f)
+        val viewportHeight = max(height.toFloat(), 1f)
+        val displacementX = (event.x / viewportWidth).coerceIn(0f, 1f)
+        val displacementY = (event.y / viewportHeight).coerceIn(0f, 1f)
         if (axis == DragAxis.VERTICAL) {
-          canvasView.scrollByVertical(deltaY)
+          when {
+            edgeDistance(topEdge) > 0f && deltaY > 0 ->
+              pullEdge(topEdge, -deltaY / viewportHeight, displacementX)
+            edgeDistance(bottomEdge) > 0f && deltaY < 0 ->
+              pullEdge(bottomEdge, deltaY / viewportHeight, 1f - displacementX)
+            else -> {
+              val before = canvasView.verticalOffset()
+              canvasView.scrollByVertical(deltaY)
+              val unconsumed = deltaY - (canvasView.verticalOffset() - before)
+              if (unconsumed < 0) {
+                pullEdge(topEdge, abs(unconsumed) / viewportHeight, displacementX)
+              } else if (unconsumed > 0) {
+                pullEdge(bottomEdge, abs(unconsumed) / viewportHeight, 1f - displacementX)
+              }
+            }
+          }
         } else {
-          horizontalDragTarget?.let { canvasView.scrollByHorizontal(deltaX, it) }
+          val target = horizontalDragTarget
+          if (target?.kind == HorizontalPanKind.CODE && canvasView.maxHorizontalOffset() > 0) {
+            when {
+              edgeDistance(leftEdge) > 0f && deltaX > 0 ->
+                pullEdge(leftEdge, -deltaX / viewportWidth, 1f - displacementY)
+              edgeDistance(rightEdge) > 0f && deltaX < 0 ->
+                pullEdge(rightEdge, deltaX / viewportWidth, displacementY)
+              else -> {
+                val before = canvasView.horizontalOffset()
+                canvasView.scrollByHorizontal(deltaX, target)
+                val unconsumed = deltaX - (canvasView.horizontalOffset() - before)
+                if (unconsumed < 0) {
+                  pullEdge(leftEdge, abs(unconsumed) / viewportWidth, 1f - displacementY)
+                } else if (unconsumed > 0) {
+                  pullEdge(rightEdge, abs(unconsumed) / viewportWidth, displacementY)
+                }
+              }
+            }
+          } else {
+            target?.let { canvasView.scrollByHorizontal(deltaX, it) }
+          }
         }
         lastTouchX = event.x
         lastTouchY = event.y
       }
       MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+        val verticalStretched = edgeDistance(topEdge) > 0f || edgeDistance(bottomEdge) > 0f
+        val horizontalStretched = edgeDistance(leftEdge) > 0f || edgeDistance(rightEdge) > 0f
         if (event.actionMasked == MotionEvent.ACTION_UP) {
           velocityTracker?.computeCurrentVelocity(1000)
-          if (axis == DragAxis.VERTICAL) {
+          if (axis == DragAxis.VERTICAL && !verticalStretched) {
             val velocity = -(velocityTracker?.yVelocity ?: 0f).toInt()
             if (abs(velocity) >= minimumFlingVelocity) {
+              verticalFlingActive = true
               verticalScroller.fling(
                 0,
                 canvasView.verticalOffset(),
@@ -357,9 +454,10 @@ class T3ReviewDiffView(context: Context, appContext: AppContext) : ExpoView(cont
               )
               postInvalidateOnAnimation()
             }
-          } else if (horizontalDragTarget?.kind == HorizontalPanKind.CODE) {
+          } else if (horizontalDragTarget?.kind == HorizontalPanKind.CODE && !horizontalStretched) {
             val velocity = -(velocityTracker?.xVelocity ?: 0f).toInt()
             if (abs(velocity) >= minimumFlingVelocity) {
+              horizontalFlingActive = true
               horizontalScroller.fling(
                 canvasView.horizontalOffset(),
                 0,
@@ -374,6 +472,7 @@ class T3ReviewDiffView(context: Context, appContext: AppContext) : ExpoView(cont
             }
           }
         }
+        releaseEdges()
         dragAxis = null
         horizontalDragTarget = null
         velocityTracker?.recycle()
@@ -387,16 +486,55 @@ class T3ReviewDiffView(context: Context, appContext: AppContext) : ExpoView(cont
   override fun computeScroll() {
     var animating = false
     if (verticalScroller.computeScrollOffset()) {
-      canvasView.setVerticalOffset(verticalScroller.currY)
+      val prevY = canvasView.verticalOffset()
+      val nextY = verticalScroller.currY
+      val maxY = canvasView.maxVerticalOffset()
+      canvasView.setVerticalOffset(nextY)
+      if (verticalFlingActive && maxY > 0) {
+        if (nextY <= 0 && prevY > 0) {
+          absorbEdge(topEdge, verticalScroller.currVelocity.toInt())
+          verticalFlingActive = false
+        } else if (nextY >= maxY && prevY < maxY) {
+          absorbEdge(bottomEdge, verticalScroller.currVelocity.toInt())
+          verticalFlingActive = false
+        }
+      }
+      if (verticalScroller.isFinished) {
+        verticalFlingActive = false
+      }
       animating = true
+    } else {
+      verticalFlingActive = false
     }
     if (horizontalScroller.computeScrollOffset()) {
-      canvasView.setHorizontalOffset(horizontalScroller.currX)
+      val prevX = canvasView.horizontalOffset()
+      val nextX = horizontalScroller.currX
+      val maxX = canvasView.maxHorizontalOffset()
+      canvasView.setHorizontalOffset(nextX)
+      if (horizontalFlingActive && maxX > 0) {
+        if (nextX <= 0 && prevX > 0) {
+          absorbEdge(leftEdge, horizontalScroller.currVelocity.toInt())
+          horizontalFlingActive = false
+        } else if (nextX >= maxX && prevX < maxX) {
+          absorbEdge(rightEdge, horizontalScroller.currVelocity.toInt())
+          horizontalFlingActive = false
+        }
+      }
+      if (horizontalScroller.isFinished) {
+        horizontalFlingActive = false
+      }
       animating = true
+    } else {
+      horizontalFlingActive = false
     }
     if (animating) {
       postInvalidateOnAnimation()
     }
+  }
+
+  override fun dispatchDraw(canvas: Canvas) {
+    super.dispatchDraw(canvas)
+    drawEdgeEffects(canvas)
   }
 
   private fun rebuildVisibleRows() {
@@ -427,6 +565,7 @@ class T3ReviewDiffView(context: Context, appContext: AppContext) : ExpoView(cont
       "file" -> {
         if (gesture != "tap") return
         if (target == RowTapTarget.VIEWED_CHECKBOX) {
+          performConfirmHaptic()
           onToggleViewedFile(mapOf("fileId" to row.resolvedFileId))
         } else {
           onToggleFile(mapOf("fileId" to row.resolvedFileId))
@@ -437,6 +576,9 @@ class T3ReviewDiffView(context: Context, appContext: AppContext) : ExpoView(cont
         onPressNotice(mapOf("rowId" to row.id, "fileId" to row.resolvedFileId))
       }
       "line" -> {
+        if (gesture == "longPress") {
+          performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
+        }
         val payload = mutableMapOf<String, Any>(
           "rowId" to row.id,
           "fileId" to row.resolvedFileId,
@@ -483,7 +625,8 @@ class T3ReviewDiffView(context: Context, appContext: AppContext) : ExpoView(cont
 
   private fun scrollToY(y: Int, animated: Boolean) {
     val target = y.coerceIn(0, canvasView.maxVerticalOffset())
-    if (animated) {
+    verticalFlingActive = false
+    if (animated && !isReducedMotion()) {
       verticalScroller.startScroll(
         0,
         canvasView.verticalOffset(),
@@ -498,11 +641,102 @@ class T3ReviewDiffView(context: Context, appContext: AppContext) : ExpoView(cont
     }
   }
 
+  private fun isReducedMotion(): Boolean =
+    Settings.Global.getFloat(
+      context.contentResolver,
+      Settings.Global.ANIMATOR_DURATION_SCALE,
+      1f,
+    ) == 0f
+
+  private fun supportsStretchEdgeEffect(): Boolean =
+    Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && !isReducedMotion()
+
+  private fun edgeDistance(edge: EdgeEffect): Float =
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) edge.distance else 0f
+
+  private fun pullEdge(edge: EdgeEffect, deltaDistance: Float, displacement: Float) {
+    if (!supportsStretchEdgeEffect()) return
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+      edge.onPullDistance(deltaDistance, displacement)
+    }
+    postInvalidateOnAnimation()
+  }
+
+  private fun absorbEdge(edge: EdgeEffect, velocity: Int) {
+    if (!supportsStretchEdgeEffect() || velocity <= 0) return
+    edge.onAbsorb(velocity)
+    postInvalidateOnAnimation()
+  }
+
+  private fun releaseEdges() {
+    var needsInvalidate = false
+    for (edge in arrayOf(topEdge, bottomEdge, leftEdge, rightEdge)) {
+      if (!edge.isFinished) {
+        edge.onRelease()
+        needsInvalidate = true
+      }
+    }
+    if (needsInvalidate) {
+      postInvalidateOnAnimation()
+    }
+  }
+
+  private fun drawEdgeEffects(canvas: Canvas) {
+    if (!supportsStretchEdgeEffect() || width <= 0 || height <= 0) return
+    var needsInvalidate = false
+    if (!topEdge.isFinished) {
+      val save = canvas.save()
+      topEdge.setSize(width, height)
+      if (topEdge.draw(canvas)) needsInvalidate = true
+      canvas.restoreToCount(save)
+    }
+    if (!bottomEdge.isFinished) {
+      val save = canvas.save()
+      canvas.translate(width.toFloat(), height.toFloat())
+      canvas.rotate(180f)
+      bottomEdge.setSize(width, height)
+      if (bottomEdge.draw(canvas)) needsInvalidate = true
+      canvas.restoreToCount(save)
+    }
+    if (!leftEdge.isFinished) {
+      val save = canvas.save()
+      canvas.translate(0f, height.toFloat())
+      canvas.rotate(270f)
+      leftEdge.setSize(height, width)
+      if (leftEdge.draw(canvas)) needsInvalidate = true
+      canvas.restoreToCount(save)
+    }
+    if (!rightEdge.isFinished) {
+      val save = canvas.save()
+      canvas.translate(width.toFloat(), 0f)
+      canvas.rotate(90f)
+      rightEdge.setSize(height, width)
+      if (rightEdge.draw(canvas)) needsInvalidate = true
+      canvas.restoreToCount(save)
+    }
+    if (needsInvalidate) {
+      postInvalidateOnAnimation()
+    }
+  }
+
+  private fun performConfirmHaptic() {
+    val constant = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+      HapticFeedbackConstants.CONFIRM
+    } else {
+      HapticFeedbackConstants.CLOCK_TICK
+    }
+    performHapticFeedback(constant)
+  }
+
   private fun dp(value: Float): Float = value * resources.displayMetrics.density
 
   private enum class DragAxis {
     VERTICAL,
     HORIZONTAL
+  }
+
+  companion object {
+    private const val HUNK_FLASH_DURATION_MS = 350L
   }
 }
 
@@ -798,6 +1032,9 @@ private class DiffCanvasView(context: Context) : View(context) {
 
   private var contentWidthPx = 0
   private val headerPathOffsetsByFileId = mutableMapOf<String, Int>()
+  private var highlightedHunkRowId: String? = null
+  private var hunkHighlightEndUptimeMs = 0L
+  private var hunkHighlightDurationMs = 350L
   private var lastVisibleRange: Pair<Int, Int>? = null
   private var viewportEventsPaused = true
   var rows: List<DiffRow> = emptyList()
@@ -969,6 +1206,21 @@ private class DiffCanvasView(context: Context) : View(context) {
     setHorizontalOffset(0)
     if (headerPathOffsetsByFileId.isNotEmpty()) {
       headerPathOffsetsByFileId.clear()
+      invalidate()
+    }
+  }
+
+  fun flashHunkRow(rowId: String, durationMs: Long) {
+    highlightedHunkRowId = rowId
+    hunkHighlightDurationMs = max(durationMs, 1L)
+    hunkHighlightEndUptimeMs = SystemClock.uptimeMillis() + hunkHighlightDurationMs
+    postInvalidateOnAnimation()
+  }
+
+  fun clearHunkHighlight() {
+    if (highlightedHunkRowId != null) {
+      highlightedHunkRowId = null
+      hunkHighlightEndUptimeMs = 0L
       invalidate()
     }
   }
@@ -1191,6 +1443,23 @@ private class DiffCanvasView(context: Context) : View(context) {
 
   private fun drawHunkRow(canvas: Canvas, row: DiffRow, top: Int, bottom: Int) {
     fill(canvas, theme.hunkBackground, 0f, top.toFloat(), width.toFloat(), bottom.toFloat())
+    if (highlightedHunkRowId == row.id) {
+      val remaining = hunkHighlightEndUptimeMs - SystemClock.uptimeMillis()
+      if (remaining > 0L) {
+        val fraction = (remaining.toFloat() / hunkHighlightDurationMs.toFloat()).coerceIn(0f, 1f)
+        fill(
+          canvas,
+          withAlpha(theme.hunkText, (72f * fraction).toInt()),
+          0f,
+          top.toFloat(),
+          width.toFloat(),
+          bottom.toFloat(),
+        )
+        postInvalidateOnAnimation()
+      } else {
+        highlightedHunkRowId = null
+      }
+    }
     drawing.configureMonospacePaint(
       color = theme.hunkText,
       size = style.hunkFontSizePx,
@@ -1477,6 +1746,25 @@ private fun indexFileHeaders(rows: List<DiffRow>): IntArray {
     if (row.kind == "file") headers.add(index)
   }
   return headers.toIntArray()
+}
+
+internal fun findTargetHunkIndex(
+  rows: List<DiffRow>,
+  anchorOffset: Int,
+  rowTop: (Int) -> Int,
+  direction: Int,
+  tolerancePx: Int = 4,
+): Int {
+  if (rows.isEmpty() || direction == 0) return -1
+  return if (direction > 0) {
+    rows.indices.firstOrNull { index ->
+      rows[index].kind == "hunk" && rowTop(index) > anchorOffset + tolerancePx
+    } ?: -1
+  } else {
+    rows.indices.lastOrNull { index ->
+      rows[index].kind == "hunk" && rowTop(index) < anchorOffset - tolerancePx
+    } ?: -1
+  }
 }
 
 private fun withAlpha(color: Int, alpha: Int): Int =

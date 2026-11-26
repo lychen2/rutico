@@ -1,9 +1,10 @@
 import { useNavigation, type StaticScreenProps } from "@react-navigation/native";
+import * as Haptics from "expo-haptics";
 import { TextInputWrapper } from "expo-paste-input";
 import type { EnvironmentId, ThreadId } from "@t3tools/contracts";
 import { T, useGT } from "gt-react-native";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ScrollView, View, useWindowDimensions } from "react-native";
+import { Platform, ScrollView, View, useWindowDimensions } from "react-native";
 import * as Dialog from "../../components/ui/Dialog";
 import { FilePreviewModal, type FilePreviewSource } from "../../components/ui/FilePreviewModal";
 
@@ -150,6 +151,15 @@ export function ReviewCommentComposerSheet(props: ReviewCommentComposerSheetProp
       text: formatReviewCommentContext(target, commentText),
       attachments: attachmentsRef.current,
     });
+    if (Platform.OS === "android") {
+      void Haptics.performAndroidHapticsAsync(Haptics.AndroidHaptics.Confirm).catch(
+        () => undefined,
+      );
+    } else {
+      void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(
+        () => undefined,
+      );
+    }
     scheduleUnusedComposerAttachmentCleanup(attachmentsRef.current);
     replaceAttachments([]);
     dismissComposer();
