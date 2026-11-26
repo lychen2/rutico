@@ -181,7 +181,7 @@ function SidebarBrand({ onBackdrop }: { onBackdrop: boolean }) {
     <Link
       aria-label={gt("Rutico home")}
       className={cn(
-        "relative z-10 ml-[var(--workspace-titlebar-content-left)] hidden h-7 w-fit min-w-0 shrink-0 items-center overflow-hidden rounded-md outline-hidden ring-ring focus-visible:ring-2 focus-visible:ring-inset md:flex",
+        "relative z-10 ml-[var(--workspace-titlebar-content-left)] hidden h-7 w-fit min-w-0 shrink-0 items-center overflow-hidden rounded-md outline-hidden ring-ring transition-[opacity,scale] duration-150 ease-out any-hover:hover:opacity-80 focus-visible:ring-2 focus-visible:ring-inset active:scale-[0.97] motion-reduce:transition-none motion-reduce:active:scale-100 md:flex",
         onBackdrop ? "text-white" : "text-foreground",
       )}
       to="/"
@@ -311,9 +311,18 @@ const SidebarUtilityMenu = memo(function SidebarUtilityMenu() {
           {pullRequestsSupported || issuesSupported ? (
             <SidebarMenuItem className="shrink-0">
               <Menu>
-                <MenuTrigger render={<SidebarMenuButton aria-label={gt("More")} size="icon" />}>
-                  <EllipsisIcon />
-                </MenuTrigger>
+                <Tooltip>
+                  <TooltipTrigger
+                    render={
+                      <MenuTrigger
+                        render={<SidebarMenuButton aria-label={gt("More")} size="icon" />}
+                      />
+                    }
+                  >
+                    <EllipsisIcon />
+                  </TooltipTrigger>
+                  <TooltipPopup side="top">{gt("More")}</TooltipPopup>
+                </Tooltip>
                 <MenuPopup side="top" align="start">
                   {pullRequestsSupported ? (
                     <MenuItem onClick={handlePullRequestsClick}>
