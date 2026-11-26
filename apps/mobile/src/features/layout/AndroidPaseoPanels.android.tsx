@@ -520,7 +520,6 @@ export function AndroidPaseoPanels(props: AndroidPaseoPanelsProps) {
     <AndroidPaseoPanelsContext value={contextValue}>
       <GestureDetector gesture={panGesture}>
         <View className="flex-1 overflow-hidden bg-header">
-          <RuticoMobileBackdrop variant="drawer" />
           <Animated.View
             style={[
               {
@@ -540,7 +539,7 @@ export function AndroidPaseoPanels(props: AndroidPaseoPanelsProps) {
             accessibilityElementsHidden={activePanel !== -1}
             importantForAccessibility={activePanel === -1 ? "auto" : "no-hide-descendants"}
           >
-            <RuticoMobileBackdrop variant="drawer" />
+            <RuticoMobileBackdrop variant="drawer" active={activePanel === -1} />
             <View
               pointerEvents="none"
               style={[
@@ -672,7 +671,7 @@ export function AndroidPaseoPanels(props: AndroidPaseoPanelsProps) {
               accessibilityElementsHidden={activePanel !== 1}
               importantForAccessibility={activePanel === 1 ? "auto" : "no-hide-descendants"}
             >
-              <RuticoMobileBackdrop variant="canvas" />
+              <RuticoMobileBackdrop variant="canvas" active={activePanel === 1} />
               <View
                 pointerEvents="none"
                 style={[

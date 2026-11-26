@@ -15,6 +15,8 @@ import Animated, {
 import Svg, { Defs, LinearGradient, RadialGradient, Rect, Stop } from "react-native-svg";
 
 import { useAppearancePreferences } from "../features/settings/appearance/AppearancePreferencesProvider";
+import { useAppActive } from "../lib/appState";
+import { DEFAULT_MOBILE_THEME_ID } from "../lib/mobileTheme";
 
 const MOBILE_HERO_SOURCE = require("../../assets/rutico-hero-mobile.webp");
 
@@ -45,12 +47,17 @@ const SCRIM_STOPS: Readonly<
 export function RuticoMobileBackdrop(
   props: {
     readonly variant?: RuticoBackdropVariant;
+    readonly active?: boolean;
   } = {},
 ) {
-  const { themeAppearance } = useAppearancePreferences();
+  const { themeAppearance, themeId, themeVariables } = useAppearancePreferences();
+  const appActive = useAppActive();
   const variant = props.variant ?? "hero";
+  const isActive = props.active ?? true;
   const isDark = themeAppearance === "dark";
+  const isDefaultTheme = themeId === DEFAULT_MOBILE_THEME_ID;
   const reducedMotion = useReducedMotion();
+  const shouldAnimate = isActive && appActive && variant !== "header" && !reducedMotion;
   const rawId = useId();
   const safeId = rawId.replace(/[^a-zA-Z0-9_-]/g, "");
   const scrimGradientId = `rutico-scrim-${safeId}`;
@@ -58,9 +65,9 @@ export function RuticoMobileBackdrop(
 
   const drift = useSharedValue(0);
 
-  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- drives continuous ambient floating animation on the anime backdrop
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- drives continuous ambient floating animation on the backdrop while visible and foregrounded
   useEffect(() => {
-    if (variant === "header" || reducedMotion) {
+    if (!shouldAnimate) {
       cancelAnimation(drift);
       drift.set(0);
       return;
@@ -79,7 +86,7 @@ export function RuticoMobileBackdrop(
     return () => {
       cancelAnimation(drift);
     };
-  }, [drift, reducedMotion, variant]);
+  }, [drift, shouldAnimate]);
 
   const imageMotionStyle = useAnimatedStyle(() => {
     const progress = drift.get();
@@ -92,16 +99,31 @@ export function RuticoMobileBackdrop(
     };
   });
 
+  const auroraMinOpacity = isDefaultTheme ? 0.14 : 0.08;
+  const auroraMaxOpacity = isDefaultTheme ? 0.28 : 0.16;
   const auroraStyle = useAnimatedStyle(() => {
     const progress = drift.get();
     return {
-      opacity: variant === "header" ? 0.14 : interpolate(progress, [0, 1], [0.14, 0.28]),
+      opacity:
+        variant === "header"
+          ? auroraMinOpacity
+          : interpolate(progress, [0, 1], [auroraMinOpacity, auroraMaxOpacity]),
     };
   });
 
   const imageOpacity = isDark ? IMAGE_OPACITY[variant].dark : IMAGE_OPACITY[variant].light;
   const stops = isDark ? SCRIM_STOPS[variant].dark : SCRIM_STOPS[variant].light;
-  const scrimHex = isDark ? "#141022" : "#FAF5FF";
+  const scrimHex = isDefaultTheme
+    ? isDark
+      ? "#141022"
+      : "#FAF5FF"
+    : themeVariables["--color-screen"];
+  const auroraPrimary = isDefaultTheme
+    ? isDark
+      ? "#C77DFF"
+      : "#EE93B2"
+    : themeVariables["--color-primary"];
+  const auroraSecondary = isDefaultTheme ? "#B7A3F5" : themeVariables["--color-focus"];
 
   return (
     <View pointerEvents="none" style={StyleSheet.absoluteFill} className="overflow-hidden">
@@ -140,9 +162,9 @@ export function RuticoMobileBackdrop(
         >
           <Defs>
             <RadialGradient id={auroraGradientId} cx="82%" cy="22%" r="60%">
-              <Stop offset="0%" stopColor={isDark ? "#C77DFF" : "#EE93B2"} stopOpacity="0.65" />
-              <Stop offset="55%" stopColor="#B7A3F5" stopOpacity="0.24" />
-              <Stop offset="100%" stopColor="#B7A3F5" stopOpacity="0" />
+              <Stop offset="0%" stopColor={auroraPrimary} stopOpacity="0.65" />
+              <Stop offset="55%" stopColor={auroraSecondary} stopOpacity="0.24" />
+              <Stop offset="100%" stopColor={auroraSecondary} stopOpacity="0" />
             </RadialGradient>
           </Defs>
           <Rect x="0" y="0" width="100" height="100" fill={`url(#${auroraGradientId})`} />
