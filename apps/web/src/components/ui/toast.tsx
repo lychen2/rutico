@@ -19,12 +19,12 @@ import {
   XIcon,
   CheckIcon,
   ChevronDownIcon,
-  ChevronUpIcon,
   CopyIcon,
 } from "lucide-react";
 
 import { cn } from "~/lib/utils";
 import { Button, buttonVariants } from "~/components/ui/button";
+import { Collapsible, CollapsiblePanel, CollapsibleTrigger } from "~/components/ui/collapsible";
 import { useComposerDraftStore } from "~/composerDraftStore";
 import { useCopyToClipboard } from "~/hooks/useCopyToClipboard";
 import {
@@ -129,9 +129,11 @@ function errorDescriptionClampClass(type: unknown, description: unknown): string
 
 const toastCornerDismissClass = "absolute z-20 -top-1.5 -right-1.5";
 const toastCornerOrbClass = cn(
-  "inline-flex size-6 shrink-0 cursor-pointer items-center justify-center rounded-full border border-border/60 bg-popover/92 text-muted-foreground shadow-sm outline-none backdrop-blur-sm",
-  "transition-[color,background-color,box-shadow] hover:bg-popover hover:text-foreground",
-  "focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background",
+  "relative inline-flex size-6 shrink-0 cursor-pointer items-center justify-center rounded-full border border-border/60 bg-popover/92 text-muted-foreground shadow-sm outline-none backdrop-blur-sm",
+  "transition-[opacity,scale,color,background-color,box-shadow] duration-150 ease-(--ease-spring-snappy) any-hover:bg-popover any-hover:text-foreground active:scale-90 motion-reduce:transition-none motion-reduce:scale-100",
+  "pointer-fine:opacity-0 pointer-fine:scale-90 pointer-fine:group-hover/toast:opacity-100 pointer-fine:group-hover/toast:scale-100 pointer-fine:group-focus-within/toast:opacity-100 pointer-fine:group-focus-within/toast:scale-100 pointer-fine:hover:opacity-100 pointer-fine:hover:scale-100",
+  "pointer-coarse:after:absolute pointer-coarse:after:size-full pointer-coarse:after:min-h-11 pointer-coarse:after:min-w-11",
+  "focus-visible:opacity-100 focus-visible:scale-100 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background",
 );
 
 function handleToastDismissClick(
@@ -179,7 +181,7 @@ function CopyErrorButton({ text }: { text: string }) {
 }
 
 const toastExpandablePanelClassName =
-  "mt-2 max-h-40 min-h-0 overflow-y-auto overscroll-contain pr-0.5 select-text";
+  "max-h-40 min-h-0 overflow-y-auto overscroll-contain pr-0.5 select-text";
 
 function ToastExpandableSection({
   children,
@@ -194,22 +196,24 @@ function ToastExpandableSection({
   const collapseLabel = labels.collapse ?? gt("Hide details");
 
   return (
-    <div className="min-w-0">
-      <button
-        aria-expanded={open}
-        className="inline-flex cursor-pointer items-center gap-1 rounded-md py-0.5 text-left text-xs font-medium text-muted-foreground transition-colors hover:text-foreground"
-        onClick={() => setOpen((prev) => !prev)}
-        type="button"
-      >
-        {open ? (
-          <ChevronUpIcon className="size-3.5 shrink-0 opacity-80" strokeWidth={2.25} />
-        ) : (
-          <ChevronDownIcon className="size-3.5 shrink-0 opacity-80" strokeWidth={2.25} />
-        )}
+    <Collapsible className="min-w-0" open={open} onOpenChange={setOpen}>
+      <CollapsibleTrigger className="inline-flex cursor-pointer items-center gap-1 rounded-md py-0.5 text-left text-xs font-medium text-muted-foreground outline-none transition-colors duration-150 ease-out any-hover:text-foreground focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring motion-reduce:transition-none">
+        <ChevronDownIcon
+          aria-hidden
+          className={cn(
+            "size-3.5 shrink-0 opacity-80 transition-transform duration-180 ease-(--ease-drawer) motion-reduce:transition-none",
+            open && "rotate-180",
+          )}
+          strokeWidth={2.25}
+        />
         {open ? collapseLabel : expandLabel}
-      </button>
-      {open ? <div className={toastExpandablePanelClassName}>{children}</div> : null}
-    </div>
+      </CollapsibleTrigger>
+      <CollapsiblePanel>
+        <div className="pt-2">
+          <div className={toastExpandablePanelClassName}>{children}</div>
+        </div>
+      </CollapsiblePanel>
+    </Collapsible>
   );
 }
 
@@ -257,7 +261,7 @@ function ToastDescriptionAndExpandable({
   };
 
   return (
-    <>
+    <Collapsible className="min-w-0" open={open} onOpenChange={setOpen}>
       <Tooltip>
         <TooltipTrigger
           render={
@@ -266,7 +270,7 @@ function ToastDescriptionAndExpandable({
               aria-expanded={open}
               className={cn(
                 "group flex min-w-0 w-full cursor-pointer select-none items-start gap-1.5 rounded-sm text-left outline-none ring-offset-background",
-                "transition-colors hover:bg-muted/40",
+                "transition-colors duration-150 ease-out any-hover:bg-muted/40 motion-reduce:transition-none",
                 "focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background",
               )}
               onClick={toggle}
@@ -286,24 +290,23 @@ function ToastDescriptionAndExpandable({
               data-slot="toast-description"
             />
           </div>
-          {open ? (
-            <ChevronUpIcon
-              aria-hidden
-              className="size-3.5 h-lh shrink-0 text-muted-foreground opacity-80"
-              strokeWidth={2.25}
-            />
-          ) : (
-            <ChevronDownIcon
-              aria-hidden
-              className="size-3.5 h-lh shrink-0 text-muted-foreground opacity-80"
-              strokeWidth={2.25}
-            />
-          )}
+          <ChevronDownIcon
+            aria-hidden
+            className={cn(
+              "size-3.5 h-lh shrink-0 text-muted-foreground opacity-80 transition-transform duration-180 ease-(--ease-drawer) motion-reduce:transition-none",
+              open && "rotate-180",
+            )}
+            strokeWidth={2.25}
+          />
         </TooltipTrigger>
         <TooltipPopup side="top">{open ? collapseLabel : expandLabel}</TooltipPopup>
       </Tooltip>
-      {open ? <div className={toastExpandablePanelClassName}>{expandableContent}</div> : null}
-    </>
+      <CollapsiblePanel>
+        <div className="pt-2">
+          <div className={toastExpandablePanelClassName}>{expandableContent}</div>
+        </div>
+      </CollapsiblePanel>
+    </Collapsible>
   );
 }
 
@@ -406,7 +409,13 @@ function ToastBodyContent({
               className="[&>svg]:h-lh [&>svg]:w-4 [&_svg]:pointer-events-none [&_svg]:shrink-0"
               data-slot="toast-icon"
             >
-              <Icon className="in-data-[type=error]:text-destructive in-data-[type=info]:text-info in-data-[type=success]:text-success in-data-[type=warning]:text-warning in-data-[type=loading]:opacity-80" />
+              <Icon
+                key={typeof toastType === "string" ? toastType : "icon"}
+                className={cn(
+                  "in-data-[type=error]:text-destructive in-data-[type=info]:text-info in-data-[type=success]:text-success in-data-[type=warning]:text-warning in-data-[type=loading]:opacity-80",
+                  toastType !== "loading" && "t3-icon-pop",
+                )}
+              />
             </div>
           ) : null}
           <Toast.Title className="min-w-0 wrap-break-word font-medium" data-slot="toast-title" />
@@ -627,7 +636,7 @@ function Toasts({ position }: { position: ToastPosition }) {
           return (
             <Toast.Root
               className={cn(
-                "dropdown-glass absolute z-[calc(9999-var(--toast-index))] w-full overflow-visible select-none rounded-lg text-popover-foreground shadow-xl shadow-black/25 [transition:transform_.5s_cubic-bezier(.22,1,.36,1),opacity_.5s,height_.15s] motion-reduce:[transition:opacity_.15s_ease-out]",
+                "group/toast dropdown-glass absolute z-[calc(9999-var(--toast-index))] w-full overflow-visible select-none rounded-lg text-popover-foreground shadow-xl shadow-black/25 [transition:transform_.5s_cubic-bezier(.22,1,.36,1),opacity_.5s,height_.15s] motion-reduce:[transition:opacity_.15s_ease-out]",
                 "data-[position*=right]:right-0 data-[position*=right]:left-auto",
                 "data-[position*=left]:right-auto data-[position*=left]:left-0",
                 "data-[position*=center]:right-0 data-[position*=center]:left-0",
@@ -772,7 +781,7 @@ function AnchoredToasts() {
               >
                 <Toast.Root
                   className={cn(
-                    "dropdown-glass relative origin-(--transform-origin) overflow-visible text-balance text-popover-foreground text-xs shadow-xl shadow-black/25 transition-[scale,opacity] duration-180 ease-(--ease-spring-snappy) data-ending-style:duration-120 data-ending-style:ease-(--ease-exit) motion-safe:data-ending-style:scale-98 motion-safe:data-starting-style:scale-98 data-ending-style:opacity-0 data-starting-style:opacity-0 motion-reduce:transition-opacity motion-reduce:duration-150",
+                    "group/toast dropdown-glass relative origin-(--transform-origin) overflow-visible text-balance text-popover-foreground text-xs shadow-xl shadow-black/25 transition-[scale,opacity] duration-180 ease-(--ease-spring-snappy) data-ending-style:duration-120 data-ending-style:ease-(--ease-exit) motion-safe:data-ending-style:scale-98 motion-safe:data-starting-style:scale-98 data-ending-style:opacity-0 data-starting-style:opacity-0 motion-reduce:transition-opacity motion-reduce:duration-150",
                     tooltipStyle ? "rounded-md" : "rounded-lg",
                   )}
                   data-slot="toast-popup"
