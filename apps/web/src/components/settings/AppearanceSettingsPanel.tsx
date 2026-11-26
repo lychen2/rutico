@@ -23,6 +23,7 @@ import {
 import { useCustomThemes } from "../../hooks/useCustomThemes";
 import { useEnvironmentIdentificationMode } from "../../hooks/useSettings";
 import { useTheme } from "../../hooks/useTheme";
+import { cn } from "../../lib/utils";
 import { useScopedSettings, useUpdateScopedSettings } from "./useScopedSettings";
 import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "../ui/select";
 import { Switch } from "../ui/switch";
@@ -133,8 +134,13 @@ export function AppearanceSettingsPanel() {
     : environmentStageVariant
       ? gt("Choose how Dev and Nightly environments are identified.")
       : gt("Show Dev or Nightly artwork in the sidebar header.");
+  const sliderTrackPosition = (ratio: number) => `calc(${ratio * 100}% + ${0.5 - ratio}rem)`;
   const glassOpacityRatio =
     (settings.glassOpacity - MIN_GLASS_OPACITY) / (MAX_GLASS_OPACITY - MIN_GLASS_OPACITY);
+  const defaultGlassOpacityRatio =
+    (DEFAULT_UNIFIED_SETTINGS.glassOpacity - MIN_GLASS_OPACITY) /
+    (MAX_GLASS_OPACITY - MIN_GLASS_OPACITY);
+  const glassOpacityCustomized = settings.glassOpacity !== DEFAULT_UNIFIED_SETTINGS.glassOpacity;
   const glassOpacitySliderStyle = {
     "--settings-slider-progress": `${glassOpacityRatio * 100}%`,
     "--settings-slider-fill-offset": `${0.5 - glassOpacityRatio}rem`,
@@ -142,6 +148,11 @@ export function AppearanceSettingsPanel() {
   const appearanceContrastRatio =
     (settings.appearanceContrast - MIN_APPEARANCE_CONTRAST) /
     (MAX_APPEARANCE_CONTRAST - MIN_APPEARANCE_CONTRAST);
+  const defaultAppearanceContrastRatio =
+    (DEFAULT_UNIFIED_SETTINGS.appearanceContrast - MIN_APPEARANCE_CONTRAST) /
+    (MAX_APPEARANCE_CONTRAST - MIN_APPEARANCE_CONTRAST);
+  const appearanceContrastCustomized =
+    settings.appearanceContrast !== DEFAULT_UNIFIED_SETTINGS.appearanceContrast;
   const appearanceContrastSliderStyle = {
     "--settings-slider-progress": `${appearanceContrastRatio * 100}%`,
     "--settings-slider-fill-offset": `${0.5 - appearanceContrastRatio}rem`,
@@ -193,32 +204,60 @@ export function AppearanceSettingsPanel() {
           control={
             <div className="flex w-full items-center gap-3 sm:w-52">
               <output
-                className="min-w-12 rounded-md bg-muted px-2 py-1 text-center font-mono text-xs font-medium tabular-nums text-foreground"
+                className={cn(
+                  "min-w-12 select-none rounded-md px-2 py-1 text-center font-mono text-xs font-medium tabular-nums transition-colors duration-150 ease-out motion-reduce:transition-none",
+                  appearanceContrastCustomized
+                    ? "cursor-pointer bg-primary/10 text-primary ring-1 ring-inset ring-primary/20"
+                    : "bg-muted text-foreground",
+                )}
                 htmlFor="appearance-contrast"
+                onDoubleClick={
+                  appearanceContrastCustomized
+                    ? () =>
+                        updateSettings({
+                          appearanceContrast: DEFAULT_UNIFIED_SETTINGS.appearanceContrast,
+                        })
+                    : undefined
+                }
               >
                 {settings.appearanceContrast}%
               </output>
-              <input
-                aria-label={gt("Contrast")}
-                className="settings-slider min-w-0 flex-1"
-                id="appearance-contrast"
-                max={MAX_APPEARANCE_CONTRAST}
-                min={MIN_APPEARANCE_CONTRAST}
-                onChange={(event) => {
-                  const appearanceContrast = Number(event.currentTarget.value);
-                  if (
-                    Number.isInteger(appearanceContrast) &&
-                    appearanceContrast >= MIN_APPEARANCE_CONTRAST &&
-                    appearanceContrast <= MAX_APPEARANCE_CONTRAST
-                  ) {
-                    updateSettings({ appearanceContrast });
+              <div className="relative flex min-w-0 flex-1 items-center">
+                <span
+                  aria-hidden="true"
+                  className="pointer-events-none absolute bottom-0 h-1 w-px -translate-x-1/2 rounded-full bg-muted-foreground/45"
+                  style={{ left: sliderTrackPosition(defaultAppearanceContrastRatio) }}
+                />
+                <input
+                  aria-label={gt("Contrast")}
+                  className="settings-slider min-w-0 flex-1"
+                  id="appearance-contrast"
+                  max={MAX_APPEARANCE_CONTRAST}
+                  min={MIN_APPEARANCE_CONTRAST}
+                  onChange={(event) => {
+                    const appearanceContrast = Number(event.currentTarget.value);
+                    if (
+                      Number.isInteger(appearanceContrast) &&
+                      appearanceContrast >= MIN_APPEARANCE_CONTRAST &&
+                      appearanceContrast <= MAX_APPEARANCE_CONTRAST
+                    ) {
+                      updateSettings({ appearanceContrast });
+                    }
+                  }}
+                  onDoubleClick={
+                    appearanceContrastCustomized
+                      ? () =>
+                          updateSettings({
+                            appearanceContrast: DEFAULT_UNIFIED_SETTINGS.appearanceContrast,
+                          })
+                      : undefined
                   }
-                }}
-                step={5}
-                style={appearanceContrastSliderStyle}
-                type="range"
-                value={settings.appearanceContrast}
-              />
+                  step={5}
+                  style={appearanceContrastSliderStyle}
+                  type="range"
+                  value={settings.appearanceContrast}
+                />
+              </div>
             </div>
           }
         />
@@ -227,7 +266,7 @@ export function AppearanceSettingsPanel() {
           {...searchableSetting("setting-glass-opacity")}
           description={gt("Higher values make menus, dialogs, and the composer more solid.")}
           resetAction={
-            settings.glassOpacity !== DEFAULT_UNIFIED_SETTINGS.glassOpacity ? (
+            glassOpacityCustomized ? (
               <SettingResetButton
                 ariaLabel={gt("Reset glass opacity to default")}
                 onClick={() =>
@@ -239,32 +278,55 @@ export function AppearanceSettingsPanel() {
           control={
             <div className="flex w-full items-center gap-3 sm:w-52">
               <output
-                className="min-w-12 rounded-md bg-muted px-2 py-1 text-center font-mono text-xs font-medium tabular-nums text-foreground"
+                className={cn(
+                  "min-w-12 select-none rounded-md px-2 py-1 text-center font-mono text-xs font-medium tabular-nums transition-colors duration-150 ease-out motion-reduce:transition-none",
+                  glassOpacityCustomized
+                    ? "cursor-pointer bg-primary/10 text-primary ring-1 ring-inset ring-primary/20"
+                    : "bg-muted text-foreground",
+                )}
                 htmlFor="glass-opacity"
+                onDoubleClick={
+                  glassOpacityCustomized
+                    ? () => updateSettings({ glassOpacity: DEFAULT_UNIFIED_SETTINGS.glassOpacity })
+                    : undefined
+                }
               >
                 {settings.glassOpacity}%
               </output>
-              <input
-                aria-label={gt("Glass opacity")}
-                className="settings-slider min-w-0 flex-1"
-                id="glass-opacity"
-                max={MAX_GLASS_OPACITY}
-                min={MIN_GLASS_OPACITY}
-                onChange={(event) => {
-                  const glassOpacity = Number(event.currentTarget.value);
-                  if (
-                    Number.isInteger(glassOpacity) &&
-                    glassOpacity >= MIN_GLASS_OPACITY &&
-                    glassOpacity <= MAX_GLASS_OPACITY
-                  ) {
-                    updateSettings({ glassOpacity });
+              <div className="relative flex min-w-0 flex-1 items-center">
+                <span
+                  aria-hidden="true"
+                  className="pointer-events-none absolute bottom-0 h-1 w-px -translate-x-1/2 rounded-full bg-muted-foreground/45"
+                  style={{ left: sliderTrackPosition(defaultGlassOpacityRatio) }}
+                />
+                <input
+                  aria-label={gt("Glass opacity")}
+                  className="settings-slider min-w-0 flex-1"
+                  id="glass-opacity"
+                  max={MAX_GLASS_OPACITY}
+                  min={MIN_GLASS_OPACITY}
+                  onChange={(event) => {
+                    const glassOpacity = Number(event.currentTarget.value);
+                    if (
+                      Number.isInteger(glassOpacity) &&
+                      glassOpacity >= MIN_GLASS_OPACITY &&
+                      glassOpacity <= MAX_GLASS_OPACITY
+                    ) {
+                      updateSettings({ glassOpacity });
+                    }
+                  }}
+                  onDoubleClick={
+                    glassOpacityCustomized
+                      ? () =>
+                          updateSettings({ glassOpacity: DEFAULT_UNIFIED_SETTINGS.glassOpacity })
+                      : undefined
                   }
-                }}
-                step={5}
-                style={glassOpacitySliderStyle}
-                type="range"
-                value={settings.glassOpacity}
-              />
+                  step={5}
+                  style={glassOpacitySliderStyle}
+                  type="range"
+                  value={settings.glassOpacity}
+                />
+              </div>
             </div>
           }
         />
