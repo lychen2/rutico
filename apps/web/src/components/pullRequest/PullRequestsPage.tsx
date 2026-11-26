@@ -127,6 +127,7 @@ import {
 } from "~/state/pullRequests";
 import { useAtomCommand } from "~/state/use-atom-command";
 import { cn } from "~/lib/utils";
+import "~/styles/workspace-hubs.css";
 import { primaryServerKeybindingsAtom } from "~/state/server";
 import { getSourceControlPresentationForKind } from "~/sourceControlPresentation";
 import {
@@ -1633,82 +1634,91 @@ export function PullRequestsPage() {
             deviceAvailable={false}
             pullRequestStatusSeeds={listedPullRequestTabStatuses}
           >
-            <PullRequestDetailPanel
-              getShortcutContext={getShortcutContext}
-              shortcutsEnabled={activePullRequestSurface?.id === renderedPullRequestSurface.id}
+            <div
               key={renderedPullRequestSurface.id}
-              revealUrl={renderedPullRequestSurface.revealUrl}
-              onRevealSettled={(revealUrl) => {
-                if (rightPanelRef === null) return;
-                useRightPanelStore
-                  .getState()
-                  .settlePullRequestReveal(rightPanelRef, renderedPullRequestSurface.id, revealUrl);
-              }}
-              environmentId={panelEnvironmentId}
-              onGuideShown={onGuideShown}
-              onSelectPullRequest={(reference) => {
-                if (rightPanelRef === null) return;
-                useRightPanelStore.getState().openPullRequest(rightPanelRef, {
-                  projectId: reference.projectId,
-                  repository: reference.repository,
-                  number: reference.number,
-                  ...(reference.host ? { host: reference.host } : {}),
-                  environmentId: panelEnvironmentId,
-                });
-                updateSearch({
-                  repository: reference.repository,
-                  number: reference.number,
-                  selectedHost: reference.host,
-                  selectedProjectId: reference.projectId,
-                  selectedEnvironmentId: panelEnvironmentId,
-                });
-              }}
-              reference={pullRequestPanelReference({
-                ...renderedPullRequestSurface,
-                projectId: renderedPullRequestSurface.projectId as ProjectId,
-              })}
-              listEntry={
-                listedPullRequestsBySurface.get(
-                  pullRequestListEntryId(renderedPullRequestSurface),
-                ) ?? null
-              }
-              refreshToken={detailRefreshToken}
-              tabOnPage
-              onActed={(action, phase = "done", reply) => {
-                // From every row held, not the ones on screen: a pull request closed from an open
-                // list has left the screen, and reopening it has to find it anyway.
-                const acted = heldPullRequestsBySurface.get(
-                  pullRequestListEntryId(renderedPullRequestSurface),
-                );
-                if (reply !== undefined) {
-                  if (acted !== undefined) {
-                    if (action !== undefined) overrideEntry(acted, action, reply);
-                    detailOverrideTokens.current.delete(pullRequestEntryKey(acted));
-                  }
-                  return;
+              data-slot="pr-detail-stage"
+              className="flex h-full min-h-0 flex-col"
+            >
+              <PullRequestDetailPanel
+                getShortcutContext={getShortcutContext}
+                shortcutsEnabled={activePullRequestSurface?.id === renderedPullRequestSurface.id}
+                revealUrl={renderedPullRequestSurface.revealUrl}
+                onRevealSettled={(revealUrl) => {
+                  if (rightPanelRef === null) return;
+                  useRightPanelStore
+                    .getState()
+                    .settlePullRequestReveal(
+                      rightPanelRef,
+                      renderedPullRequestSurface.id,
+                      revealUrl,
+                    );
+                }}
+                environmentId={panelEnvironmentId}
+                onGuideShown={onGuideShown}
+                onSelectPullRequest={(reference) => {
+                  if (rightPanelRef === null) return;
+                  useRightPanelStore.getState().openPullRequest(rightPanelRef, {
+                    projectId: reference.projectId,
+                    repository: reference.repository,
+                    number: reference.number,
+                    ...(reference.host ? { host: reference.host } : {}),
+                    environmentId: panelEnvironmentId,
+                  });
+                  updateSearch({
+                    repository: reference.repository,
+                    number: reference.number,
+                    selectedHost: reference.host,
+                    selectedProjectId: reference.projectId,
+                    selectedEnvironmentId: panelEnvironmentId,
+                  });
+                }}
+                reference={pullRequestPanelReference({
+                  ...renderedPullRequestSurface,
+                  projectId: renderedPullRequestSurface.projectId as ProjectId,
+                })}
+                listEntry={
+                  listedPullRequestsBySurface.get(
+                    pullRequestListEntryId(renderedPullRequestSurface),
+                  ) ?? null
                 }
-                const stateOnly =
-                  action !== undefined &&
-                  acted !== undefined &&
-                  pullRequestOverrideAfterAction(acted, action, new Date(), 0) !== null;
-                if (stateOnly) {
-                  const key = pullRequestEntryKey(acted);
-                  if (phase === "sent" && action !== "merge") {
-                    detailOverrideTokens.current.set(key, overrideEntry(acted, action));
+                refreshToken={detailRefreshToken}
+                tabOnPage
+                onActed={(action, phase = "done", reply) => {
+                  // From every row held, not the ones on screen: a pull request closed from an open
+                  // list has left the screen, and reopening it has to find it anyway.
+                  const acted = heldPullRequestsBySurface.get(
+                    pullRequestListEntryId(renderedPullRequestSurface),
+                  );
+                  if (reply !== undefined) {
+                    if (acted !== undefined) {
+                      if (action !== undefined) overrideEntry(acted, action, reply);
+                      detailOverrideTokens.current.delete(pullRequestEntryKey(acted));
+                    }
+                    return;
                   }
-                  if (phase === "failed" && action !== "merge") {
-                    revertOverride(key, detailOverrideTokens.current.get(key) ?? null);
+                  const stateOnly =
+                    action !== undefined &&
+                    acted !== undefined &&
+                    pullRequestOverrideAfterAction(acted, action, new Date(), 0) !== null;
+                  if (stateOnly) {
+                    const key = pullRequestEntryKey(acted);
+                    if (phase === "sent" && action !== "merge") {
+                      detailOverrideTokens.current.set(key, overrideEntry(acted, action));
+                    }
+                    if (phase === "failed" && action !== "merge") {
+                      revertOverride(key, detailOverrideTokens.current.get(key) ?? null);
+                    }
+                    if (phase !== "sent") detailOverrideTokens.current.delete(key);
+                    if (phase === "done" && action === "merge") {
+                      overrideEntry(acted, action);
+                      refreshListAndStats(undefined, panelEnvironmentId);
+                    }
+                    return;
                   }
-                  if (phase !== "sent") detailOverrideTokens.current.delete(key);
-                  if (phase === "done" && action === "merge") {
-                    overrideEntry(acted, action);
-                    refreshListAndStats(undefined, panelEnvironmentId);
-                  }
-                  return;
-                }
-                if (phase === "done") refreshListAndStats(undefined, panelEnvironmentId);
-              }}
-            />
+                  if (phase === "done") refreshListAndStats(undefined, panelEnvironmentId);
+                }}
+              />
+            </div>
           </RightPanelTabs>
         ) : null}
       </div>

@@ -21,6 +21,7 @@ import { ScrollArea } from "../ui/scroll-area";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { toastManager } from "../ui/toast";
 import { groupPullRequestChecks } from "./pullRequestDetail.logic";
+import { summarizeChecksRing, type ChecksRingSegment } from "./pullRequestStackRail.logic";
 import {
   PullRequestCheckStatusIcon,
   pullRequestChecksCountLabel,
@@ -28,6 +29,79 @@ import {
   pullRequestChecksStatePresentation,
   summarizePullRequestChecks,
 } from "./pullRequestPresentation";
+
+const CHECKS_RING_RADIUS = 14;
+const CHECKS_RING_CIRCUMFERENCE = 2 * Math.PI * CHECKS_RING_RADIUS;
+
+const CHECKS_SEGMENT_TONES: Record<ChecksRingSegment["kind"], string> = {
+  passed: "text-success",
+  running: "text-warning",
+  failed: "text-destructive",
+  neutral: "text-muted-foreground/45",
+};
+
+function ChecksProgressRing({ checks }: { readonly checks: ReadonlyArray<PullRequestCheck> }) {
+  const gt = useGT();
+  const ring = summarizeChecksRing(checks, CHECKS_RING_CIRCUMFERENCE);
+  if (ring.total === 0) return null;
+
+  return (
+    <div
+      data-slot="pr-checks-ring-summary"
+      className="mb-2.5 flex items-center gap-3 rounded-lg border border-border/60 bg-muted/35 px-2.5 py-2"
+    >
+      <div className="relative flex size-9 shrink-0 items-center justify-center">
+        <svg aria-hidden="true" viewBox="0 0 36 36" className="size-9 -rotate-90">
+          <circle
+            cx="18"
+            cy="18"
+            r={CHECKS_RING_RADIUS}
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="3.2"
+            className="text-border/75"
+          />
+          {ring.segments.map((segment) => (
+            <circle
+              key={segment.kind}
+              cx="18"
+              cy="18"
+              r={CHECKS_RING_RADIUS}
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="3.2"
+              strokeDasharray={`${segment.dashLength} ${CHECKS_RING_CIRCUMFERENCE}`}
+              strokeDashoffset={segment.dashOffset}
+              className={cn(
+                "transition-[stroke-dasharray,stroke-dashoffset] duration-(--duration-fluid) ease-(--spring-fluid) motion-reduce:transition-none",
+                CHECKS_SEGMENT_TONES[segment.kind],
+              )}
+            />
+          ))}
+        </svg>
+        <span className="absolute font-mono text-3xs font-semibold tabular-nums text-foreground">
+          {ring.passed}/{ring.total}
+        </span>
+      </div>
+      <div className="min-w-0 flex-1 space-y-0.5 text-xs">
+        <p className="font-medium tabular-nums text-foreground">
+          {gt("{passed}/{total} passed", { passed: ring.passed, total: ring.total })}
+        </p>
+        <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-2xs tabular-nums text-muted-foreground">
+          {ring.failed > 0 ? (
+            <span className="text-destructive">{gt("{count} failed", { count: ring.failed })}</span>
+          ) : null}
+          {ring.running > 0 ? (
+            <span className="text-warning-foreground">
+              {gt("{count} running", { count: ring.running })}
+            </span>
+          ) : null}
+          {ring.neutral > 0 ? <span>{gt("{count} neutral", { count: ring.neutral })}</span> : null}
+        </div>
+      </div>
+    </div>
+  );
+}
 
 // Fetch only on open to avoid per-row requests.
 function LazyChecksBody({
@@ -81,6 +155,7 @@ function ChecksBody({
   }
   return (
     <>
+      <ChecksProgressRing checks={checks} />
       <ScrollArea className="-me-3 w-auto max-h-64">
         <ul
           className={cn(

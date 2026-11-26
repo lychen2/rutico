@@ -27,6 +27,7 @@ function StackBody({
       <>
         <PullRequestStackHeader
           number={query.data.number}
+          layerCount={query.data.layers.length}
           notice={query.notice}
           stale={!!query.error}
         />
@@ -76,7 +77,8 @@ export function PullRequestStackPopover({
                 <span
                   role="button"
                   tabIndex={0}
-                  className="inline-flex shrink-0 cursor-pointer items-center gap-1 text-xs font-normal text-muted-foreground"
+                  data-slot="pr-stack-trigger"
+                  className="inline-flex shrink-0 cursor-pointer items-center gap-1 rounded-full border border-transparent px-1.5 py-0.5 text-xs font-normal tabular-nums text-muted-foreground transition-colors duration-150 hover:border-border/70 hover:bg-muted/60 hover:text-foreground motion-reduce:transition-none"
                 />
               }
               aria-label={gt("Stack {number}, layer {position} of {size}", {

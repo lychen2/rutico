@@ -12,6 +12,7 @@ import {
 import { memo, type RefCallback } from "react";
 
 import { cn } from "~/lib/utils";
+import "~/styles/workspace-hubs.css";
 import { getSourceControlPresentationForKind } from "~/sourceControlPresentation";
 
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
@@ -111,13 +112,24 @@ function PullRequestRowImpl({
   return (
     <div
       ref={statsRef}
+      data-slot="pr-row-container"
+      data-selected={selected ? "true" : undefined}
+      data-closing={closing ? "true" : undefined}
       data-pull-request-stats-key={statsKey}
       data-pull-request-key={statsKey}
       className={cn(
-        "flex items-center rounded-md [content-visibility:auto] [contain-intrinsic-block-size:56.5px]",
-        selected ? "bg-accent" : "hover:bg-accent/60",
+        "group/pr-row relative flex items-center rounded-md [content-visibility:auto] [contain-intrinsic-block-size:56.5px]",
+        selected ? "bg-accent ring-1 ring-inset ring-primary/18" : "hover:bg-accent/60",
       )}
     >
+      <span
+        aria-hidden="true"
+        data-slot="pr-row-indicator"
+        className={cn(
+          "pointer-events-none absolute top-1.5 bottom-1.5 left-0.5 w-[2.5px] rounded-full bg-primary transition-[transform,opacity] duration-(--duration-snappy) ease-(--spring-snappy) motion-reduce:transition-none",
+          selected ? "scale-y-100 opacity-100" : "scale-y-50 opacity-0",
+        )}
+      />
       <button
         type="button"
         aria-current={selected ? "true" : undefined}

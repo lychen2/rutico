@@ -116,6 +116,7 @@ export function PullRequestDetailTabBar<Tab extends string>({
   useEffect(() => () => clearTimeout(pointerIntent.current), []);
   return (
     <nav
+      data-slot="pr-detail-tab-bar"
       className="col-span-2 flex min-w-0 flex-wrap items-center gap-2 border-t border-border/60 px-4 py-2"
       aria-label={gt("Pull request tabs")}
       inert={inert}
