@@ -1181,3 +1181,88 @@
     transition: none;
   }
 }
+
+/* ==========================================================================
+   D11 / C038: System Divider Wings, Flow Arrows & Context-Compaction Squeeze Bar
+   ========================================================================== */
+
+@keyframes chat-divider-flow-nudge {
+  from {
+    opacity: 0.4;
+    transform: translate3d(-3px, 0, 0);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+@keyframes chat-compaction-squeeze {
+  from {
+    transform: scaleX(1);
+    opacity: 0.55;
+  }
+  to {
+    transform: scaleX(var(--compaction-ratio, 0.25));
+    opacity: 1;
+  }
+}
+
+[data-divider-wing="start"][data-divider-tone="neutral"] {
+  background-image: linear-gradient(
+    to right,
+    transparent 0%,
+    color-mix(in oklch, var(--border) 78%, transparent) 100%
+  );
+}
+
+[data-divider-wing="end"][data-divider-tone="neutral"] {
+  background-image: linear-gradient(
+    to left,
+    transparent 0%,
+    color-mix(in oklch, var(--border) 78%, transparent) 100%
+  );
+}
+
+[data-divider-wing="start"][data-divider-tone="danger"] {
+  background-image: linear-gradient(
+    to right,
+    transparent 0%,
+    color-mix(in oklch, var(--destructive) 36%, transparent) 100%
+  );
+}
+
+[data-divider-wing="end"][data-divider-tone="danger"] {
+  background-image: linear-gradient(
+    to left,
+    transparent 0%,
+    color-mix(in oklch, var(--destructive) 36%, transparent) 100%
+  );
+}
+
+[data-system-divider-capsule] {
+  box-shadow:
+    inset 0 1px 0 color-mix(in oklch, var(--contrast-foreground) 7%, transparent),
+    0 1px 2px rgb(0 0 0 / 0.04);
+}
+
+[data-compaction-squeeze-fill="true"] {
+  transform: scaleX(var(--compaction-ratio, 0.25));
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  [data-divider-flow-arrow="true"] {
+    animation: chat-divider-flow-nudge 260ms var(--spring-snappy) both;
+  }
+
+  [data-compaction-squeeze-fill="true"] {
+    animation: chat-compaction-squeeze 420ms var(--spring-spatial) both;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-divider-flow-arrow="true"],
+  [data-compaction-squeeze-fill="true"] {
+    animation: none;
+  }
+}

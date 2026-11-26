@@ -89,6 +89,7 @@ export function V2LifecycleRow(props: {
   if (item.type === "run_interrupt_result") {
     return (
       <TimelineSystemDivider
+        variant="milestone"
         label={gt("Run interrupted")}
         detail={item.message}
         icon={CircleStopIcon}
@@ -109,6 +110,7 @@ export function V2LifecycleRow(props: {
     const relatedThreadId = item.source.type === "run" ? item.source.threadId : item.targetThreadId;
     return (
       <TimelineSystemDivider
+        variant="action"
         label={
           item.source.type === "run" ? gt("Forked from conversation") : gt("Conversation fork")
         }
@@ -744,7 +746,7 @@ function EnvironmentHandoffRow({
 /** Marks where `/clear` or an automation started a new provider session in this thread. */
 export function FreshSessionRow() {
   const gt = useGT();
-  return <TimelineSystemDivider label={gt("New session")} icon={EraserIcon} />;
+  return <TimelineSystemDivider variant="milestone" label={gt("New session")} icon={EraserIcon} />;
 }
 
 /** A same-harness model or effort change. Shows only what changed. */
@@ -764,9 +766,22 @@ export function ModelSwitchRow(props: {
     return [change.modelChanged ? modelName : null, effort].filter(Boolean).join(" ");
   };
   const { from, to } = props.modelSwitch;
+  const fromLabel = describe(from, change.effort?.from);
+  const toLabel = describe(to, change.effort?.to);
   return (
     <TimelineSystemDivider
-      label={`${describe(from, change.effort?.from)} → ${describe(to, change.effort?.to)}`}
+      variant="milestone"
+      label={
+        <span className="inline-flex items-center gap-1.5">
+          <span className="text-muted-foreground">{fromLabel}</span>
+          <ArrowRightIcon
+            aria-hidden="true"
+            data-divider-flow-arrow="true"
+            className="size-3 shrink-0 text-muted-foreground/80"
+          />
+          <span className="text-foreground/90">{toLabel}</span>
+        </span>
+      }
     />
   );
 }
@@ -785,6 +800,7 @@ export function HandoffRow(props: {
   const entries = settings ? applyProviderInstanceSettings(derived, settings, null) : derived;
   return (
     <TimelineSystemDivider
+      variant={props.failed ? "danger" : "milestone"}
       label={props.pending ? gt("Context handoff pending") : gt("Context handoff")}
       icon={ArrowRightLeftIcon}
       showDetailSeparator={false}
@@ -809,7 +825,11 @@ export function HandoffRow(props: {
             </span>
           ))}
           {fromEndpoints.length > 0 ? (
-            <ArrowRightIcon aria-hidden="true" className="size-3 shrink-0" />
+            <ArrowRightIcon
+              aria-hidden="true"
+              data-divider-flow-arrow="true"
+              className="size-3 shrink-0"
+            />
           ) : null}
           <HandoffEndpoint entries={entries} instanceId={to.instanceId} model={to.model} />
         </span>

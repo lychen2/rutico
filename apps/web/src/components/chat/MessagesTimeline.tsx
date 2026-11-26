@@ -78,6 +78,7 @@ import {
   Minimize2Icon,
   WrenchIcon,
 } from "lucide-react";
+import { AnimatedNumber } from "../ui/animated-number";
 import { Skeleton } from "../ui/skeleton";
 import { ExpandedImagePreview } from "./ExpandedImagePreview";
 import {
@@ -118,7 +119,11 @@ import { useMediaQuery } from "~/hooks/useMediaQuery";
 import { cn } from "~/lib/utils";
 import { type TimestampFormat } from "@t3tools/contracts/settings";
 import { type HandoffTimelineRun } from "./V2LifecycleRow";
-import { TimelineSystemDivider } from "./TimelineSystemDivider";
+import {
+  TimelineSystemDivider,
+  parseCompactTokenMetric,
+  resolveCompactionRatio,
+} from "./TimelineSystemDivider";
 
 import { forwardWheelToTimeline } from "./timelineMinimapWheel";
 import { TimelineMinimap } from "./TimelineMinimap";
@@ -1942,28 +1947,74 @@ function ContextCompactionTimelineRow({
         ? gt("{title} {before} → {after} tokens", { title: row.title, ...row.tokenCounts })
         : row.title
       : row.label;
+  const compactionRatio =
+    row.tokenCounts !== null
+      ? resolveCompactionRatio(row.tokenCounts.before, row.tokenCounts.after)
+      : null;
+  const afterMetric =
+    row.tokenCounts !== null ? parseCompactTokenMetric(row.tokenCounts.after) : null;
+  const afterDisplay =
+    row.tokenCounts === null ? null : afterMetric !== null ? (
+      <span className="font-medium text-foreground/90 tabular-nums">
+        <AnimatedNumber
+          value={afterMetric.displayValue}
+          format={(value) =>
+            `${afterMetric.decimals > 0 ? value.toFixed(afterMetric.decimals) : Math.round(value)}${afterMetric.suffix}`
+          }
+        />
+      </span>
+    ) : (
+      <span className="font-medium text-foreground/90 tabular-nums">{row.tokenCounts.after}</span>
+    );
   const content = (
-    <span className="flex min-w-0 items-center gap-1.5">
+    <span className="flex min-w-0 items-center gap-1.5 tabular-nums">
       {row.failed ? (
         <CircleAlertIcon aria-hidden="true" className="size-3 shrink-0" />
       ) : (
-        <Minimize2Icon aria-hidden="true" className="size-3" />
+        <Minimize2Icon aria-hidden="true" className="size-3 shrink-0" />
       )}
       {row.tokenCounts ? (
         <>
           {row.title ? (
             <T>
-              <Var>{row.title}</Var> <Var>{row.tokenCounts.before}</Var>
-              <ArrowRightIcon aria-hidden="true" className="size-3" />
-              <Var>{row.tokenCounts.after}</Var> tokens
+              <Var>{row.title}</Var>{" "}
+              <span className="opacity-75">
+                <Var>{row.tokenCounts.before}</Var>
+              </span>
+              <ArrowRightIcon
+                aria-hidden="true"
+                data-divider-flow-arrow="true"
+                className="size-3 shrink-0"
+              />
+              <Var>{afterDisplay}</Var> tokens
             </T>
           ) : (
             <T>
-              Context compacted <Var>{row.tokenCounts.before}</Var>
-              <ArrowRightIcon aria-hidden="true" className="size-3" />
-              <Var>{row.tokenCounts.after}</Var> tokens
+              Context compacted{" "}
+              <span className="opacity-75">
+                <Var>{row.tokenCounts.before}</Var>
+              </span>
+              <ArrowRightIcon
+                aria-hidden="true"
+                data-divider-flow-arrow="true"
+                className="size-3 shrink-0"
+              />
+              <Var>{afterDisplay}</Var> tokens
             </T>
           )}
+          {compactionRatio !== null ? (
+            <span
+              aria-hidden="true"
+              data-compaction-squeeze-bar="true"
+              className="ms-0.5 inline-flex h-1.5 w-9 shrink-0 overflow-hidden rounded-full bg-border/65"
+            >
+              <span
+                data-compaction-squeeze-fill="true"
+                style={{ "--compaction-ratio": compactionRatio } as React.CSSProperties}
+                className="block h-full w-full origin-left rounded-full bg-primary/80"
+              />
+            </span>
+          ) : null}
         </>
       ) : (
         label
@@ -1978,20 +2029,35 @@ function ContextCompactionTimelineRow({
     <div
       role="separator"
       aria-label={row.failure ? `${label}: ${row.failure}` : label}
+      data-system-divider={row.failed ? "danger" : "milestone"}
       className={cn(
-        "mx-auto flex w-full max-w-(--chat-content-max-width) items-center gap-3 py-1 text-xs",
+        "mx-auto flex w-full max-w-(--chat-content-max-width) items-center gap-2.5 py-2 text-2xs",
         row.failed ? "text-destructive" : "text-muted-foreground",
       )}
     >
-      <span className={cn("h-px flex-1", row.failed ? "bg-destructive/30" : "bg-border/70")} />
+      <span
+        aria-hidden="true"
+        data-divider-wing="start"
+        data-divider-tone={row.failed ? "danger" : "neutral"}
+        className="h-px flex-1"
+      />
       <span
         ref={row.active ? observeVisibleAnimation : undefined}
-        className="relative min-w-0 overflow-hidden"
+        data-system-divider-capsule={row.failed ? "danger" : "milestone"}
+        className={cn(
+          "relative min-w-0 overflow-hidden rounded-full border px-2.5 py-1 shadow-xs",
+          row.failed ? "border-destructive/30 bg-destructive/6" : "border-border/65 bg-card/85",
+        )}
       >
         {content}
         {row.active ? <ActivityShimmerOverlay>{content}</ActivityShimmerOverlay> : null}
       </span>
-      <span className={cn("h-px flex-1", row.failed ? "bg-destructive/30" : "bg-border/70")} />
+      <span
+        aria-hidden="true"
+        data-divider-wing="end"
+        data-divider-tone={row.failed ? "danger" : "neutral"}
+        className="h-px flex-1"
+      />
     </div>
   );
 }
