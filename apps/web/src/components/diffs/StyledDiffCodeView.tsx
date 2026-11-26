@@ -264,9 +264,24 @@ export const DIFF_VIEW_UNSAFE_CSS = `${DIFF_SURFACE_THEME_UNSAFE_CSS}
   animation: diff-hunk-spotlight-wash 420ms ease-out both;
 }
 
+[data-line-annotation] {
+  transform-origin: top center;
+  transition:
+    opacity 180ms ease-out,
+    transform 200ms var(--spring-snappy, cubic-bezier(0.23, 1, 0.32, 1));
+}
+
+@starting-style {
+  [data-line-annotation] {
+    opacity: 0;
+    transform: translate3d(0, -4px, 0) scale(0.985);
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   [data-diff],
-  [data-file] {
+  [data-file],
+  [data-line-annotation] {
     transition: none;
   }
 

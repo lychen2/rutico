@@ -32,3 +32,59 @@
     transition: none;
   }
 }
+
+/* --------------------------------------------------------------------------
+   D17 / C055: Origin-Top Spring-Bloom Diff Review Composer & Commit Pulse
+   -------------------------------------------------------------------------- */
+
+.diff-comment-draft-bloom {
+  transform-origin: top center;
+  transition:
+    opacity 160ms ease-out,
+    transform 200ms var(--spring-snappy);
+}
+
+@starting-style {
+  .diff-comment-draft-bloom {
+    opacity: 0;
+    transform: translate3d(0, -6px, 0) scale(0.975);
+  }
+}
+
+@keyframes diff-comment-commit-beam {
+  0% {
+    opacity: 0.95;
+    transform: scaleY(0);
+  }
+  55% {
+    opacity: 0.95;
+    transform: scaleY(1);
+  }
+  100% {
+    opacity: 0;
+    transform: scaleY(1);
+  }
+}
+
+.diff-comment-card-settled::before {
+  content: "";
+  position: absolute;
+  inset-block: 0;
+  inset-inline-start: -2px;
+  width: 2.5px;
+  background: var(--primary);
+  pointer-events: none;
+  transform-origin: top center;
+  animation: diff-comment-commit-beam 260ms var(--spring-snappy) forwards;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .diff-comment-draft-bloom {
+    transition: none;
+  }
+
+  .diff-comment-card-settled::before {
+    animation: none;
+    opacity: 0;
+  }
+}

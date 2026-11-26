@@ -142,6 +142,7 @@ export function AnnotatableCodeView({
     annotation: DiffCommentLineAnnotation;
   } | null>(null);
   const [draftText, setDraftText] = useState("");
+  const [justCommittedId, setJustCommittedId] = useState<string | null>(null);
 
   const filesByKey = new Map(files.map((file) => [file.fileKey, file]));
   if (
@@ -221,7 +222,10 @@ export function AnnotatableCodeView({
       range: entry.range,
       text,
     });
-    if (comment) addReviewComment(composerDraftTarget, comment);
+    if (comment) {
+      addReviewComment(composerDraftTarget, comment);
+      setJustCommittedId(comment.id);
+    }
     setSelectedLines(null);
     setDraft(null);
     setDraftText("");
@@ -311,6 +315,10 @@ export function AnnotatableCodeView({
                 kind={entry.kind}
                 rangeLabel={entry.rangeLabel}
                 text={entry.kind === "draft" ? draftText : entry.text}
+                justCommitted={entry.kind === "comment" && justCommittedId === entry.id}
+                onCommitPulseEnd={() => {
+                  setJustCommittedId((current) => (current === entry.id ? null : current));
+                }}
                 onTextChange={setDraftText}
                 onCancel={() => removeEntry(entry.id)}
                 onComment={(text) => submitEntry(entry.id, text)}
