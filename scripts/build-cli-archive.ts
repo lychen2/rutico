@@ -336,7 +336,40 @@ export const bundleLinuxLibatomic = Effect.fn("bundleLinuxLibatomic")(function* 
   const path = yield* Path.Path;
   const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
   const isCi = yield* Config.Boolean("CI").pipe(Config.withDefault(false));
-  const ldd = yield* spawner.string(ChildProcess.make("ldd", [input.executablePath]));
+  const lddProbe = yield* Effect.scoped(
+    Effect.gen(function* () {
+      const child = yield* spawner.spawn(ChildProcess.make("ldd", [input.executablePath]));
+      const [stdout, stderr, exitCode] = yield* Effect.all(
+        [
+          child.stdout.pipe(
+            Stream.decodeText(),
+            Stream.runFold(
+              () => "",
+              (acc, chunk) => acc + chunk,
+            ),
+          ),
+          child.stderr.pipe(
+            Stream.decodeText(),
+            Stream.runFold(
+              () => "",
+              (acc, chunk) => acc + chunk,
+            ),
+          ),
+          child.exitCode.pipe(Effect.map(Number)),
+        ],
+        { concurrency: "unbounded" },
+      );
+      return { stdout, stderr, exitCode };
+    }),
+  );
+  if (lddProbe.exitCode !== 0) {
+    const detail = lddProbe.stderr.trim() || lddProbe.stdout.trim();
+    return yield* new CliArchiveInputMissingError({
+      inputPath: `ldd ${input.executablePath}`,
+      hint: `ldd exited with ${String(lddProbe.exitCode)} while checking dynamic libraries for ${input.executablePath}.${detail ? ` ${detail}` : ""}`,
+    });
+  }
+  const ldd = lddProbe.stdout;
   if (!/\blibatomic\.so\.1\b/.test(ldd)) {
     yield* Effect.log(
       "[cli-archive] Executable does not link libatomic.so.1; skipping libatomic bundle.",

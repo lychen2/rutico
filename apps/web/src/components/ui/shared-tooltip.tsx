@@ -244,6 +244,8 @@ export interface SharedTooltipTriggerProps {
   onPointerDown: (event: PointerEvent<HTMLElement>) => void;
 }
 
+const handledTooltipFocusEvents = new WeakSet<Event>();
+
 /**
  * Props that show `content` on the shared tooltip, or null outside a SharedTooltipProvider.
  * A disabled trigger opens nothing, and closes the tooltip if it was showing.
@@ -284,9 +286,13 @@ export function useSharedTooltip(
     onPointerLeave: (event) => api.leave(event.currentTarget, event.relatedTarget),
     // Keyboard focus shows it at once, as Base UI does.
     onFocus: (event) => {
+      // Only the innermost enabled trigger handles a bubbling focus event, so an outer row tooltip
+      // never overwrites an inner action button's tooltip.
+      if (handledTooltipFocusEvents.has(event.nativeEvent)) return;
       // A wrapper's handler sees focus bubble from the control inside it, so check the focused element.
       const focused = event.target instanceof Element ? event.target : event.currentTarget;
       if (enabled && focused.matches(":focus-visible")) {
+        handledTooltipFocusEvents.add(event.nativeEvent);
         anchorRef.current = event.currentTarget;
         api.show(event.currentTarget, content, true);
       }

@@ -30,7 +30,8 @@ import { Collapsible, CollapsiblePanel, CollapsibleTrigger } from "../ui/collaps
 import { Switch } from "../ui/switch";
 import { WorkLogRow } from "./WorkLog";
 
-const TITLE = msg("Local feedback report");
+const LOCAL_TITLE = msg("Local feedback report");
+const REMOTE_TITLE = msg("Feedback for the T3 team");
 
 export function FeedbackRequestCard(props: {
   readonly environmentId: EnvironmentId;
@@ -39,7 +40,10 @@ export function FeedbackRequestCard(props: {
 }) {
   const m = useMessages();
   const { item } = props;
-  const display = feedbackRequestDisplay(item, props.visibility, m);
+  const serverConfig = useAtomValue(serverEnvironment.configValueAtom(props.environmentId));
+  const localOnly = serverConfig?.environment.capabilities.agentFeedbackLocalOnly === true;
+  const title = localOnly ? LOCAL_TITLE : REMOTE_TITLE;
+  const display = feedbackRequestDisplay(item, props.visibility, m, { localOnly });
   if (display.kind !== "pending") {
     const Icon =
       display.kind === "pending-elsewhere"
@@ -55,7 +59,7 @@ export function FeedbackRequestCard(props: {
               icon={<Icon className="size-3.5 text-icon-muted" aria-hidden />}
               label={
                 <>
-                  {m(TITLE)} · {display.label}
+                  {m(title)} · {display.label}
                 </>
               }
               trailing={<ChevronDownIcon className="size-3.5 text-icon-muted" aria-hidden />}
@@ -70,12 +74,15 @@ export function FeedbackRequestCard(props: {
       </Collapsible>
     );
   }
-  return <PendingFeedbackRequest environmentId={props.environmentId} item={item} />;
+  return (
+    <PendingFeedbackRequest environmentId={props.environmentId} item={item} localOnly={localOnly} />
+  );
 }
 
 function PendingFeedbackRequest(props: {
   readonly environmentId: EnvironmentId;
   readonly item: FeedbackRequestItem;
+  readonly localOnly: boolean;
 }) {
   const m = useMessages();
   const answer = useAtomCommand(serverEnvironment.answerFeedbackRequest, {
@@ -117,22 +124,35 @@ function PendingFeedbackRequest(props: {
   };
   const disabled = submitting || !canAnswer;
 
+  const title = props.localOnly ? LOCAL_TITLE : REMOTE_TITLE;
+
   return (
     <section
       data-v2-item-type={props.item.type}
-      aria-label={m(TITLE)}
+      aria-label={m(title)}
       className="flex min-w-0 flex-col gap-3 rounded-xl border border-border/60 bg-card p-4"
     >
       <div className="flex min-w-0 flex-col gap-1">
         <h3 className="flex items-center gap-1.5 text-sm font-medium text-foreground">
           <MessageSquareIcon className="size-3.5 shrink-0 text-icon-muted" aria-hidden />
-          <T>Save this feedback report locally?</T>
+          {props.localOnly ? (
+            <T>Save this feedback report on this environment?</T>
+          ) : (
+            <T>Send this report to the T3 team?</T>
+          )}
         </h3>
         <p className="text-xs text-muted-foreground">
-          <T>
-            This report stays strictly on this machine and is never uploaded. Nothing is saved
-            unless you press Save locally.
-          </T>
+          {props.localOnly ? (
+            <T>
+              This preview is already stored in this thread on the environment host. Choosing Save
+              locally records a feedback report on this environment and never uploads it.
+            </T>
+          ) : (
+            <T>
+              This host may upload this report to the T3 team when you press Send. Nothing is sent
+              unless you confirm.
+            </T>
+          )}
         </p>
       </div>
       {props.item.conversationTrace !== undefined ? (
@@ -160,7 +180,11 @@ function PendingFeedbackRequest(props: {
         </p>
       ) : !canAnswer ? (
         <p className="text-xs text-muted-foreground">
-          <T>Only someone who can run agents on this machine can save or decline it.</T>
+          {props.localOnly ? (
+            <T>Only someone who can run agents on this environment can save or decline it.</T>
+          ) : (
+            <T>Only someone who can run agents on this machine can send or decline it.</T>
+          )}
         </p>
       ) : null}
       <div className="flex items-center justify-end gap-2">
@@ -171,10 +195,10 @@ function PendingFeedbackRequest(props: {
           disabled={disabled}
           onClick={() => void send("decline")}
         >
-          <T>Don't save</T>
+          {props.localOnly ? <T>Don't save</T> : <T>Don't send</T>}
         </Button>
         <Button type="button" size="sm" disabled={disabled} onClick={() => void send("send")}>
-          <T>Save locally</T>
+          {props.localOnly ? <T>Save locally</T> : <T>Send</T>}
         </Button>
       </div>
     </section>

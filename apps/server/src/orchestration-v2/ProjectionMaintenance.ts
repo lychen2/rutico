@@ -14,7 +14,6 @@ import {
   EVENT_LOG_PRUNED_THROUGH,
 } from "../persistence/OrchestrationEventStore.ts";
 import * as ProjectionStore from "./ProjectionStore.ts";
-import { purgeAllDeletedThreads } from "./purgeDeletedThreadHistory.ts";
 
 export class ProjectionMaintenanceError extends Schema.TaggedError<ProjectionMaintenanceError>()(
   "ProjectionMaintenanceError",
@@ -394,10 +393,105 @@ export const layer: Layer.Layer<ProjectionMaintenanceV2, never, SqlClient.SqlCli
         }
     `.pipe(NodeSqliteClient.readOnly);
 
+    // Guest share chats never belong to live run forks or merge-back consumers, so strip them
+    // from every deleted thread's projection and retained history events (including earlier
+    // `thread.guest-share-updated` snapshots) even while a fork keeps the thread's runs.
+    const scrubDeletedGuestShare = Effect.fnUntraced(function* (
+      deletedThreadId: ThreadId | undefined,
+    ) {
+      const targetIds = yield* (
+        deletedThreadId !== undefined
+          ? sql<{ readonly thread_id: string }>`
+              WITH RECURSIVE candidate(thread_id) AS (
+                SELECT ${deletedThreadId}
+                UNION
+                SELECT json_extract(fork.payload_json, '$.forkedFrom.threadId')
+                FROM candidate
+                JOIN orchestration_v2_projection_threads AS fork
+                  ON fork.thread_id = candidate.thread_id
+                WHERE json_extract(fork.payload_json, '$.forkedFrom.type') = 'run'
+              )
+              SELECT thread.thread_id
+              FROM candidate
+              JOIN orchestration_v2_projection_threads AS thread
+                ON thread.thread_id = candidate.thread_id
+              WHERE thread.deleted_at IS NOT NULL
+                AND (
+                  (json_valid(thread.payload_json) AND json_type(thread.payload_json, '$.guestShare') IS NOT NULL)
+                  OR EXISTS (
+                    SELECT 1 FROM orchestration_events
+                      INDEXED BY idx_orchestration_events_agent_stream_sequence
+                    WHERE application_event_version = 2
+                      AND aggregate_kind = 'thread'
+                      AND stream_id = thread.thread_id
+                      AND json_valid(payload_json)
+                      AND json_type(payload_json, '$.guestShare') IS NOT NULL
+                  )
+                  OR EXISTS (
+                    SELECT 1 FROM orchestration_v2_events
+                    WHERE thread_id = thread.thread_id
+                      AND json_valid(payload_json)
+                      AND json_type(payload_json, '$.guestShare') IS NOT NULL
+                  )
+                )
+            `
+          : sql<{ readonly thread_id: string }>`
+              SELECT thread.thread_id
+              FROM orchestration_v2_projection_threads AS thread
+              WHERE thread.deleted_at IS NOT NULL
+                AND (
+                  (json_valid(thread.payload_json) AND json_type(thread.payload_json, '$.guestShare') IS NOT NULL)
+                  OR EXISTS (
+                    SELECT 1 FROM orchestration_events
+                      INDEXED BY idx_orchestration_events_agent_stream_sequence
+                    WHERE application_event_version = 2
+                      AND aggregate_kind = 'thread'
+                      AND stream_id = thread.thread_id
+                      AND json_valid(payload_json)
+                      AND json_type(payload_json, '$.guestShare') IS NOT NULL
+                  )
+                  OR EXISTS (
+                    SELECT 1 FROM orchestration_v2_events
+                    WHERE thread_id = thread.thread_id
+                      AND json_valid(payload_json)
+                      AND json_type(payload_json, '$.guestShare') IS NOT NULL
+                  )
+                )
+            `
+      ).pipe(NodeSqliteClient.readOnly);
+
+      for (const { thread_id: threadId } of targetIds) {
+        yield* sql`
+          UPDATE orchestration_v2_projection_threads
+          SET payload_json = json_remove(payload_json, '$.guestShare')
+          WHERE thread_id = ${threadId}
+            AND json_valid(payload_json)
+            AND json_type(payload_json, '$.guestShare') IS NOT NULL
+        `;
+        yield* sql`
+          UPDATE orchestration_events
+          SET payload_json = json_remove(payload_json, '$.guestShare')
+          WHERE application_event_version = 2
+            AND aggregate_kind = 'thread'
+            AND stream_id = ${threadId}
+            AND json_valid(payload_json)
+            AND json_type(payload_json, '$.guestShare') IS NOT NULL
+        `;
+        yield* sql`
+          UPDATE orchestration_v2_events
+          SET payload_json = json_remove(payload_json, '$.guestShare')
+          WHERE thread_id = ${threadId}
+            AND json_valid(payload_json)
+            AND json_type(payload_json, '$.guestShare') IS NOT NULL
+        `;
+      }
+    });
+
     const purgeThreads = Effect.fnUntraced(function* (
       deletedThreadId: ThreadId | undefined,
       betweenPages: Effect.Effect<void>,
     ) {
+      yield* scrubDeletedGuestShare(deletedThreadId);
       const threads = yield* purgeableThreads(deletedThreadId);
       const now = DateTime.formatIso(yield* DateTime.now);
       let purged = 0;
@@ -501,6 +595,22 @@ export const layer: Layer.Layer<ProjectionMaintenanceV2, never, SqlClient.SqlCli
           SET transcript_imported_at = ${now}
           WHERE thread_id = ${threadId} AND transcript_imported_at IS NULL
         `;
+        yield* sql`DELETE FROM agent_feedback WHERE thread_id = ${threadId}`;
+        yield* sql`
+          DELETE FROM orchestration_v2_events
+          WHERE thread_id = ${threadId}
+            AND event_type NOT IN ('thread.created', 'thread.deleted')
+        `;
+        yield* sql`
+          UPDATE orchestration_v2_events
+          SET payload_json = json_remove(
+            json_set(payload_json, '$.title', ${DELETED_THREAD_TITLE}),
+            '$.guestShare'
+          )
+          WHERE thread_id = ${threadId}
+            AND event_type IN ('thread.created', 'thread.deleted')
+            AND json_valid(payload_json)
+        `;
         // Last, because the new title is what marks the purge as done.
         yield* sql`
           UPDATE projection_threads SET title = ${DELETED_THREAD_TITLE} WHERE thread_id = ${threadId}
@@ -546,7 +656,7 @@ export const layer: Layer.Layer<ProjectionMaintenanceV2, never, SqlClient.SqlCli
         `.pipe(NodeSqliteClient.readOnly);
         const head = bounds[0]?.sequence ?? 0;
 
-        let deletedEventCount = yield* purgeAllDeletedThreads(sql, betweenPages);
+        let deletedEventCount = 0;
         const markIsDue =
           mark !== undefined &&
           DateTime.toEpochMillis(now) - Date.parse(mark.updated_at) >=

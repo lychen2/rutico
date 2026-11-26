@@ -27,10 +27,12 @@ import { SymbolView, type AppSymbolName } from "../../components/ui/AppSymbol";
 import { AppText as Text } from "../../components/ui/AppText";
 import { Button } from "../../components/ui/Button";
 import { ThemedSwitch } from "../../components/ui/ThemedSwitch";
+import { useServerConfigs } from "../../state/entities";
 import { serverEnvironment } from "../../state/server";
 import { useAtomCommand } from "../../state/use-atom-command";
 
-const TITLE = msg("Local feedback report");
+const LOCAL_TITLE = msg("Local feedback report");
+const REMOTE_TITLE = msg("Feedback for the T3 team");
 const LOCK_SYMBOL: AppSymbolName = { ios: "lock", android: "lock" };
 
 export function FeedbackRequestCard(props: {
@@ -39,12 +41,23 @@ export function FeedbackRequestCard(props: {
   readonly iconColor: ColorValue;
 }) {
   const m = useMessages();
+  const serverConfigs = useServerConfigs();
   const { item, visibility } = props.projectedItem;
   const [open, setOpen] = useState(false);
   if (item.type !== "feedback_request") return null;
-  const display = feedbackRequestDisplay(item, visibility, m);
+  const localOnly =
+    serverConfigs.get(props.environmentId)?.environment.capabilities.agentFeedbackLocalOnly ===
+    true;
+  const title = localOnly ? LOCAL_TITLE : REMOTE_TITLE;
+  const display = feedbackRequestDisplay(item, visibility, m, { localOnly });
   if (display.kind === "pending") {
-    return <PendingFeedbackRequest environmentId={props.environmentId} item={item} />;
+    return (
+      <PendingFeedbackRequest
+        environmentId={props.environmentId}
+        item={item}
+        localOnly={localOnly}
+      />
+    );
   }
   const icon: AppSymbolName =
     display.kind === "pending-elsewhere"
@@ -62,7 +75,7 @@ export function FeedbackRequestCard(props: {
       >
         <SymbolView name={icon} size={13} tintColor={props.iconColor} type="monochrome" />
         <Text className="flex-1 font-sans text-sm text-foreground-muted" numberOfLines={2}>
-          {m(TITLE)} · {display.label}
+          {m(title)} · {display.label}
         </Text>
       </Pressable>
       {open ? <FeedbackPreview preview={item.preview} /> : null}
@@ -73,6 +86,7 @@ export function FeedbackRequestCard(props: {
 function PendingFeedbackRequest(props: {
   readonly environmentId: EnvironmentId;
   readonly item: FeedbackRequestItem;
+  readonly localOnly: boolean;
 }) {
   const m = useMessages();
   const gt = useGT();
@@ -118,13 +132,24 @@ function PendingFeedbackRequest(props: {
     <View className="mb-3 gap-3 rounded-[20px] border border-border bg-card-alt p-4">
       <View className="gap-1">
         <Text className="font-t3-bold text-base text-foreground">
-          <T>Save this feedback report locally?</T>
+          {props.localOnly ? (
+            <T>Save this feedback report on this environment?</T>
+          ) : (
+            <T>Send this report to the T3 team?</T>
+          )}
         </Text>
         <Text className="font-sans text-xs text-foreground-muted">
-          <T>
-            This report stays strictly on this machine and is never uploaded. Nothing is saved
-            unless you tap Save locally.
-          </T>
+          {props.localOnly ? (
+            <T>
+              This preview is already stored in this thread on the environment host. Choosing Save
+              locally records a feedback report on this environment and never uploads it.
+            </T>
+          ) : (
+            <T>
+              This host may upload this report to the T3 team when you tap Send. Nothing is sent
+              unless you confirm.
+            </T>
+          )}
         </Text>
       </View>
       {props.item.conversationTrace !== undefined ? (
@@ -152,18 +177,22 @@ function PendingFeedbackRequest(props: {
         </Text>
       ) : !canAnswer ? (
         <Text className="font-sans text-xs text-foreground-muted">
-          <T>Only someone who can run agents on this machine can save or decline it.</T>
+          {props.localOnly ? (
+            <T>Only someone who can run agents on this environment can save or decline it.</T>
+          ) : (
+            <T>Only someone who can run agents on this machine can send or decline it.</T>
+          )}
         </Text>
       ) : null}
       <Button
-        label={gt("Save locally")}
+        label={props.localOnly ? gt("Save locally") : gt("Send")}
         tone="primary"
         fullWidth
         disabled={submitting || !canAnswer}
         onPress={() => void send("send")}
       />
       <Button
-        label={gt("Don't save")}
+        label={props.localOnly ? gt("Don't save") : gt("Don't send")}
         tone="text"
         disabled={submitting || !canAnswer}
         onPress={() => void send("decline")}

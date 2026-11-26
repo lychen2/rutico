@@ -48,7 +48,7 @@ export function useActiveRowReveal(
   reveal: SidebarRouteReveal,
   routeKey: string | null,
   inPlace = false,
-  suppressReveal = false,
+  suppressReveal: boolean | ((rowKey: string) => boolean) = false,
 ) {
   const mountRevealOwed = useRef(true);
   pendingSidebarRouteReveal(reveal, routeKey, inPlace);
@@ -57,7 +57,9 @@ export function useActiveRowReveal(
     if (row === null) return undefined;
     if (reveal.pendingKey !== rowKey && !mountRevealOwed.current) return undefined;
     const revealInPlace = reveal.pendingKey === rowKey && reveal.pendingInPlace === true;
-    const keepInOverview = suppressReveal || reveal.overviewKey === rowKey;
+    const suppressed =
+      typeof suppressReveal === "function" ? suppressReveal(rowKey) : suppressReveal;
+    const keepInOverview = suppressed || reveal.overviewKey === rowKey;
     // A row under the pointer was just clicked, so it is in view. Both cases skip the scroll,
     // so settle them before measuring: this runs mid-commit, where a measure forces layout.
     if (revealInPlace || keepInOverview || row.matches(":hover")) {

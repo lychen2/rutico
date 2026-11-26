@@ -490,6 +490,21 @@ export function resolveWindowVibrancyOptions(input: {
   return {};
 }
 
+function resolveWindowBackgroundColor(
+  shouldUseDarkColors: boolean,
+  persistedTheme: string | null | undefined,
+  vibrancyOptions?: WindowVibrancyOptions,
+): string {
+  // Native vibrancy/mica requires a transparent window surface so OS backdrop material shows through.
+  if (
+    vibrancyOptions?.vibrancy !== undefined ||
+    vibrancyOptions?.backgroundMaterial !== undefined
+  ) {
+    return "#00000000";
+  }
+  return getInitialWindowBackgroundColor(shouldUseDarkColors, persistedTheme);
+}
+
 function readPrefersReducedTransparency(): boolean {
   try {
     return Electron.nativeTheme?.prefersReducedTransparency === true;
@@ -511,7 +526,9 @@ function syncWindowAppearance(
       return;
     }
 
-    window.setBackgroundColor(getInitialWindowBackgroundColor(shouldUseDarkColors, persistedTheme));
+    window.setBackgroundColor(
+      resolveWindowBackgroundColor(shouldUseDarkColors, persistedTheme, vibrancyOptions),
+    );
     const isFocused = typeof window.isFocused === "function" ? window.isFocused() : true;
     const { titleBarOverlay } = getWindowTitleBarOptions(shouldUseDarkColors, platform, isFocused);
     if (hasTitleBarOverlay && typeof titleBarOverlay === "object") {
@@ -712,7 +729,11 @@ export const make = Effect.gen(function* () {
       show: false,
       autoHideMenuBar: true,
       ...(environment.platform === "darwin" ? { disableAutoHideCursor: true } : {}),
-      backgroundColor: getInitialWindowBackgroundColor(shouldUseDarkColors, persistedTheme),
+      backgroundColor: resolveWindowBackgroundColor(
+        shouldUseDarkColors,
+        persistedTheme,
+        vibrancyOptions,
+      ),
       ...vibrancyOptions,
       ...iconOption,
       title: environment.displayName,

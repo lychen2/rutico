@@ -3,9 +3,9 @@ import { type KnownTerminalSession } from "@t3tools/client-runtime/state/termina
 import {
   AuthTerminalOperateScope,
   AuthTerminalReadScope,
-  chunkTerminalWrite,
   DEFAULT_TERMINAL_ID,
   type EnvironmentId,
+  type TerminalWriteInput,
   type ThreadId,
 } from "@t3tools/contracts";
 import * as Clipboard from "expo-clipboard";
@@ -30,6 +30,7 @@ import {
   useKnownTerminalSessions,
 } from "../../state/use-terminal-session";
 import { useConnectionsReady } from "../../state/workspace";
+import { useInspectorPaneVisible } from "../layout/inspector-panes";
 import { useAppearancePreferences } from "../settings/appearance/AppearancePreferencesProvider";
 import { TerminalSurface, type TerminalSurfaceHandle } from "../terminal/NativeTerminalSurface";
 import { supportsNativeTerminalOutput } from "../terminal/nativeTerminalModule";
@@ -58,6 +59,7 @@ export interface ThreadWorkbenchTerminalPaneProps {
   readonly threadId: ThreadId;
   readonly workspaceRoot: string | null;
   readonly worktreePath: string | null;
+  readonly active?: boolean;
   readonly onOpenFullTerminal: (terminalId: string) => void;
 }
 
@@ -85,6 +87,8 @@ function pickDefaultWorkbenchTerminalId(
 export function ThreadWorkbenchTerminalPane(props: ThreadWorkbenchTerminalPaneProps) {
   const gt = useGT();
   const messages = useMessages();
+  const isPaneVisible = useInspectorPaneVisible();
+  const isActive = props.active ?? isPaneVisible;
   const connectionsReady = useConnectionsReady();
   const environment = useEnvironmentPresentation(props.environmentId);
   const canReadTerminal = useEnvironmentScope(props.environmentId, AuthTerminalReadScope);
@@ -97,6 +101,23 @@ export function ThreadWorkbenchTerminalPane(props: ThreadWorkbenchTerminalPanePr
   const [selectedTerminalId, setSelectedTerminalId] = useState<string | null>(null);
   const [createdTerminalIds, setCreatedTerminalIds] = useState<ReadonlyArray<string>>([]);
   const [keyboardFocusNonce, setKeyboardFocusNonce] = useState(0);
+
+  // Lock the initial terminal once sessions load so another client opening `term-1` never
+  // hijacks input away from the terminal this pane is already attached to.
+  if (knownSessions !== null) {
+    const hasSelectedInKnown =
+      selectedTerminalId !== null &&
+      knownSessions.some((session) => session.target.terminalId === selectedTerminalId);
+    const hasSelectedLocally =
+      selectedTerminalId !== null && createdTerminalIds.includes(selectedTerminalId);
+    if (selectedTerminalId === null) {
+      if (canOperateTerminal || knownSessions.length > 0) {
+        setSelectedTerminalId(pickDefaultWorkbenchTerminalId(knownSessions, canOperateTerminal));
+      }
+    } else if (!hasSelectedInKnown && !hasSelectedLocally && knownSessions.length > 0) {
+      setSelectedTerminalId(pickDefaultWorkbenchTerminalId(knownSessions, canOperateTerminal));
+    }
+  }
 
   const activeTerminalId =
     selectedTerminalId ??
@@ -194,6 +215,24 @@ export function ThreadWorkbenchTerminalPane(props: ThreadWorkbenchTerminalPanePr
     );
   }
 
+  // Read-only clients cannot create a shell; wait for the session list and show an empty state
+  // instead of subscribing to a phantom `term-1`.
+  if (!canOperateTerminal) {
+    if (knownSessions === null) {
+      return <LoadingScreen message={gt("Loading terminals…")} />;
+    }
+    if (knownSessions.length === 0) {
+      return (
+        <View className="flex-1 justify-center bg-screen p-4">
+          <EmptyState
+            title={gt("No terminals running")}
+            detail={gt("There are no active terminal sessions to view for this thread.")}
+          />
+        </View>
+      );
+    }
+  }
+
   return (
     <View className="flex-1 bg-screen">
       <View className="flex-row items-center gap-1 border-b border-border px-2 py-1.5">
@@ -275,6 +314,7 @@ export function ThreadWorkbenchTerminalPane(props: ThreadWorkbenchTerminalPanePr
         hasExplicitTarget={createdTerminalIds.includes(activeTerminalId) || knownSessions !== null}
         canRead={canReadTerminal}
         canOperate={canOperateTerminal}
+        active={isActive}
         keyboardFocusNonce={keyboardFocusNonce}
       />
     </View>
@@ -291,6 +331,7 @@ function ThreadWorkbenchTerminalSession(props: {
   readonly hasExplicitTarget: boolean;
   readonly canRead: boolean;
   readonly canOperate: boolean;
+  readonly active: boolean;
   readonly keyboardFocusNonce: number;
 }) {
   const gt = useGT();
@@ -361,27 +402,31 @@ function ThreadWorkbenchTerminalSession(props: {
     ],
   );
 
-  const observing = !props.canOperate && props.canRead && props.hasExplicitTarget;
+  const observing = props.active && !props.canOperate && props.canRead && props.hasExplicitTarget;
   const streamingOutput = supportsNativeTerminalOutput();
   const terminal = useAttachedTerminalSession({
     materializeBuffer: !streamingOutput,
     environmentId: props.environmentId,
-    terminal: props.canOperate
-      ? attachInput
-      : observing
-        ? { threadId: props.threadId, terminalId: props.terminalId }
-        : null,
+    terminal: !props.active
+      ? null
+      : props.canOperate
+        ? attachInput
+        : observing
+          ? { threadId: props.threadId, terminalId: props.terminalId }
+          : null,
   });
 
   useAtomMount(
     sessionDriver.driver(
-      props.canOperate
-        ? attachInput === null
-          ? null
-          : { kind: "attached", input: attachInput }
-        : observing
-          ? { kind: "observing" }
-          : null,
+      !props.active
+        ? null
+        : props.canOperate
+          ? attachInput === null
+            ? null
+            : { kind: "attached", input: attachInput }
+          : observing
+            ? { kind: "observing" }
+            : null,
     ),
   );
 
@@ -389,24 +434,23 @@ function ThreadWorkbenchTerminalSession(props: {
   const hostOs = serverConfigs.get(props.environmentId)?.environment.platform.os ?? null;
   const hostPlatform: HostPlatform = hostPlatformFromOs(hostOs) ?? "unknown";
 
-  const writeInput = async (data: string): Promise<boolean> => {
+  const writeInput = async (
+    data: string,
+    plainWrite?: TerminalWriteInput["plainWrite"],
+  ): Promise<boolean> => {
     if (!isRunning || !readEnvironmentScope(props.environmentId, AuthTerminalOperateScope)) {
       return false;
     }
-    const isSameShell = pasteSession.liveness();
-    for (const chunk of chunkTerminalWrite(data)) {
-      if (!isSameShell()) return false;
-      const result = await writeTerminal({
-        environmentId: props.environmentId,
-        input: {
-          threadId: props.threadId,
-          terminalId: props.terminalId,
-          data: chunk,
-        },
-      });
-      if (result._tag !== "Success") return false;
-    }
-    return true;
+    const result = await writeTerminal({
+      environmentId: props.environmentId,
+      input: {
+        threadId: props.threadId,
+        terminalId: props.terminalId,
+        data,
+        ...(plainWrite ? { plainWrite } : {}),
+      },
+    });
+    return result._tag === "Success";
   };
 
   const pasteText = async (readText: () => Promise<string>) => {
@@ -420,7 +464,7 @@ function ThreadWorkbenchTerminalSession(props: {
   const handleInput = (data: string) => {
     if (data.length === 0) return;
     if (pendingModifier === null) {
-      void writeInput(data);
+      void pasteSession.write(data, writeInput);
       return;
     }
     const modifier = pendingModifier;
@@ -434,7 +478,7 @@ function ThreadWorkbenchTerminalSession(props: {
       void pasteText(Clipboard.getStringAsync);
       return;
     }
-    void writeInput(resolved.data);
+    void pasteSession.write(resolved.data, writeInput);
   };
 
   const handleResize = (size: { readonly cols: number; readonly rows: number }) => {
@@ -470,7 +514,7 @@ function ThreadWorkbenchTerminalSession(props: {
       accessibilityLabel: gt("Escape"),
       onPress: () => {
         setPendingModifier(null);
-        void writeInput("\u001b");
+        void pasteSession.write("\u001b", writeInput);
       },
     },
     {

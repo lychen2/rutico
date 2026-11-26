@@ -110,4 +110,23 @@ describe("createApprovalPromptQueue", () => {
     // A dropped host's request can be offered again once the host is back.
     expect(queue.known.has("b")).toBe(false);
   });
+
+  it("queues notices behind an active approval prompt so a second host never evicts or strands it", () => {
+    const shown: string[] = [];
+    const answers: Array<(outcome: "done" | "retry" | "later") => void> = [];
+    const queue = createApprovalPromptQueue<
+      | { readonly kind: "approval"; readonly pairingLinkId: string; readonly host: string }
+      | { readonly kind: "notice"; readonly pairingLinkId: string; readonly host: string }
+    >((item, answer) => {
+      shown.push(`${item.kind}:${item.pairingLinkId}`);
+      answers.push(answer);
+    });
+
+    queue.offer([{ kind: "approval", pairingLinkId: "approval:req-a", host: "host-a" }]);
+    queue.offer([{ kind: "notice", pairingLinkId: "notice:host-b:100", host: "host-b" }]);
+    expect(shown).toEqual(["approval:approval:req-a"]);
+
+    answers.at(-1)!("done");
+    expect(shown).toEqual(["approval:approval:req-a", "notice:notice:host-b:100"]);
+  });
 });

@@ -167,6 +167,11 @@ export const make = Effect.gen(function* () {
       const electronApp = yield* ElectronApp.ElectronApp;
       const electronWindow = yield* ElectronWindow.ElectronWindow;
       const webLinks = yield* DesktopWebLinks.DesktopWebLinks;
+      // Clerk registers the internal desktop scheme (`t3code`/`t3code-dev`); packaged Windows
+      // builds also register `rutico://` so browser pairing links open the installed app.
+      if (environment.platform === "win32" && !environment.isDevelopment) {
+        yield* electronApp.setAsDefaultProtocolClient("rutico").pipe(Effect.ignore);
+      }
       const context = yield* Effect.context<ElectronWindow.ElectronWindow>();
       const runPromise = Effect.runPromiseWith(context);
 

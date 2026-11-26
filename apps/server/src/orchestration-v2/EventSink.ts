@@ -38,7 +38,6 @@ import * as EffectOutbox from "./EffectOutbox.ts";
 import * as EventStore from "./EventStore.ts";
 import * as ProjectionStore from "./ProjectionStore.ts";
 import * as ProjectStore from "./ProjectStore.ts";
-import { purgeDeletedThreadHistory, reclaimFreedSqlitePages } from "./purgeDeletedThreadHistory.ts";
 import * as TurnItemPositionStore from "./TurnItemPositionStore.ts";
 
 export class EventSinkWriteError extends Schema.TaggedError<EventSinkWriteError>()(
@@ -345,21 +344,14 @@ const layerBase: Layer.Layer<
         // Cancellation may roll back the transaction's work. Once it commits,
         // every subscriber must hear about it before this writer can exit.
         // Otherwise a failed child run can leave its parent's task running.
-        return sql.withTransaction(Effect.tap(restore(transaction), () => takeLane)).pipe(
-          Effect.tap(publish),
-          Effect.tap((committed) =>
-            committed &&
-            typeof committed === "object" &&
-            "storedEvents" in committed &&
-            Array.isArray((committed as { readonly storedEvents?: unknown }).storedEvents) &&
-            (
-              committed as { readonly storedEvents: ReadonlyArray<OrchestrationV2StoredEvent> }
-            ).storedEvents.some((stored) => stored.event.type === "thread.deleted")
-              ? reclaimFreedSqlitePages(sql)
-              : Effect.void,
-          ),
-          Effect.ensuring(Effect.suspend(() => (holdsLane ? publishLane.release(1) : Effect.void))),
-        );
+        return sql
+          .withTransaction(Effect.tap(restore(transaction), () => takeLane))
+          .pipe(
+            Effect.tap(publish),
+            Effect.ensuring(
+              Effect.suspend(() => (holdsLane ? publishLane.release(1) : Effect.void)),
+            ),
+          );
       });
 
     // A user can answer after terminal normalization reads the pending request.
@@ -461,15 +453,6 @@ const layerBase: Layer.Layer<
         yield* Effect.forEach(storedEvents, (stored) => projectionStore.apply(stored.event), {
           concurrency: 1,
         });
-        const deletedThreadIds = new Set<ThreadId>();
-        for (const stored of storedEvents) {
-          if (stored.event.type === "thread.deleted") {
-            deletedThreadIds.add(stored.event.threadId);
-          }
-        }
-        for (const deletedThreadId of deletedThreadIds) {
-          yield* purgeDeletedThreadHistory(sql, deletedThreadId);
-        }
         const sequence = storedEvents.at(-1)?.sequence;
         if (sequence !== undefined) {
           const batch = yield* CurrentProviderBatch;

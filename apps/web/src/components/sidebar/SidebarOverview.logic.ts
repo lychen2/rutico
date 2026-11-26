@@ -10,7 +10,11 @@ import {
   resolveListedAncestorThreadRef,
 } from "@t3tools/client-runtime/state/threads";
 import { backgroundWorkHoldsCompletion } from "@t3tools/shared/orchestrationV2PendingBackgroundWork";
-import type { EnvironmentId, ScopedThreadRef } from "@t3tools/contracts";
+import {
+  isListedThreadLineage,
+  type EnvironmentId,
+  type ScopedThreadRef,
+} from "@t3tools/contracts";
 import * as DateTime from "effect/DateTime";
 import { hasUnseenCompletion, resolveThreadLastVisitedAt } from "../Sidebar.logic";
 
@@ -152,6 +156,7 @@ export function buildSidebarOverview(
   localVisits: Readonly<Record<string, string | undefined>>,
   acknowledgedErrors: Readonly<Record<string, string | undefined>> = {},
   disconnectedEnvironmentIds?: ReadonlySet<EnvironmentId>,
+  options?: { readonly includeTodayRows?: boolean },
 ) {
   const liveThreads = threads.filter((thread) => thread.deletedAt === null);
   const ancestorIndex = indexThreadsForAncestorLookup(liveThreads);
@@ -284,14 +289,16 @@ export function buildSidebarOverview(
 
   const nowMs = Date.parse(now);
   const todayStartMs = Number.isFinite(nowMs) ? logicalDayStartMs(nowMs) : null;
+  const includeTodayRows = options?.includeTodayRows !== false;
   const todayTasks: OverviewRow<TodayStatus>[] = [];
+  let todayTasksCount = 0;
   if (todayStartMs !== null) {
     for (const thread of liveThreads) {
       const ref = scopeThreadRef(thread.environmentId, thread.id);
       const key = scopedThreadKey(ref);
       if (
         thread.archivedAt !== null ||
-        thread.lineage.relationshipToParent === "subagent" ||
+        !isListedThreadLineage(thread.lineage) ||
         isDelegatedUnderListedParent(thread, ref, key, liveThreads, ancestorIndex) ||
         effectiveSnoozed(thread, { now })
       ) {
@@ -300,16 +307,21 @@ export function buildSidebarOverview(
       if (shownTopKeys.has(key)) continue;
       const timestamp = resolveTodayTaskTimestamp(thread);
       if (timestamp === null || timestamp < todayStartMs) continue;
-      const status: TodayStatus =
-        thread.settledOverride === "settled" || thread.settledAt !== null ? "done" : "today";
-      todayTasks.push({ key, ref, thread, status, timestamp });
+      todayTasksCount += 1;
+      if (includeTodayRows) {
+        const status: TodayStatus =
+          thread.settledOverride === "settled" || thread.settledAt !== null ? "done" : "today";
+        todayTasks.push({ key, ref, thread, status, timestamp });
+      }
     }
-    todayTasks.sort(
-      (a, b) => (b.timestamp ?? 0) - (a.timestamp ?? 0) || a.key.localeCompare(b.key),
-    );
+    if (includeTodayRows) {
+      todayTasks.sort(
+        (a, b) => (b.timestamp ?? 0) - (a.timestamp ?? 0) || a.key.localeCompare(b.key),
+      );
+    }
   }
 
-  return { active, activeKeys, attention, attentionCount, todayTasks };
+  return { active, activeKeys, attention, attentionCount, todayTasks, todayTasksCount };
 }
 
 export function collectActiveOverviewKeys(

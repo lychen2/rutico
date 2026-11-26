@@ -67,6 +67,18 @@ interface RegistryState {
   readonly changes: PubSub.PubSub<void>;
 }
 
+const isActiveAntigravityNativeOAuthInstance = (entry: ProviderInstanceConfig): boolean => {
+  if (entry.driver !== "antigravity") return false;
+  if (providerInstanceConfigEnabledFlag(entry) === false) return false;
+  const authMethod =
+    typeof entry.config === "object" && entry.config !== null && "authMethod" in entry.config
+      ? (entry.config as { readonly authMethod?: unknown }).authMethod
+      : undefined;
+  return (
+    authMethod === undefined || authMethod === "oauth-personal" || authMethod === "oauth-business"
+  );
+};
+
 const entryEqual = (a: ProviderInstanceConfig, b: ProviderInstanceConfig): boolean =>
   Equal.equals(a, b);
 
@@ -437,12 +449,23 @@ const makeReconcile = <R>(input: {
       const nextKeys = new Set<ProviderInstanceId>(
         nextRaw.map(([raw]) => ProviderInstanceId.make(raw)),
       );
+      const conflictingNativeOAuthIds = new Map<ProviderInstanceId, ProviderInstanceId>();
+      let primaryAntigravityNativeOAuthId: ProviderInstanceId | undefined;
+      for (const [rawInstanceId, entry] of nextRaw) {
+        if (!isActiveAntigravityNativeOAuthInstance(entry)) continue;
+        const instanceId = ProviderInstanceId.make(rawInstanceId);
+        if (primaryAntigravityNativeOAuthId === undefined) {
+          primaryAntigravityNativeOAuthId = instanceId;
+        } else {
+          conflictingNativeOAuthIds.set(instanceId, primaryAntigravityNativeOAuthId);
+        }
+      }
 
       // Close changed/removed scopes before replacements to preserve one live scope per id.
       const removedIds: Array<ProviderInstanceId> = [];
       const replacedIds = new Set<ProviderInstanceId>();
       for (const [instanceId, live] of previousEntries) {
-        if (!nextKeys.has(instanceId)) {
+        if (!nextKeys.has(instanceId) || conflictingNativeOAuthIds.has(instanceId)) {
           removedIds.push(instanceId);
           continue;
         }
@@ -481,6 +504,7 @@ const makeReconcile = <R>(input: {
           const kept = previousEntries.has(instanceId) && !replacedIds.has(instanceId);
           return kept ||
             carried.has(instanceId) ||
+            conflictingNativeOAuthIds.has(instanceId) ||
             parkedSnapshot(instanceId, entry) !== undefined ||
             !(yield* isEntryEnabled(driversById, entry))
             ? []
@@ -502,6 +526,21 @@ const makeReconcile = <R>(input: {
       for (const [rawInstanceId, entry] of nextRaw) {
         const instanceId = ProviderInstanceId.make(rawInstanceId);
         nextOrder.push(instanceId);
+
+        const conflictOwner = conflictingNativeOAuthIds.get(instanceId);
+        if (conflictOwner !== undefined) {
+          builtUnavailable.set(
+            instanceId,
+            yield* buildUnavailableProviderSnapshot({
+              driverKind: entry.driver,
+              instanceId,
+              displayName: entry.displayName,
+              accentColor: entry.accentColor,
+              reason: `Another active Antigravity instance ('${conflictOwner}') already uses this OS user's native ~/.gemini Google sign-in. Disable one instance or switch to an API key method.`,
+            }),
+          );
+          continue;
+        }
 
         const existing = previousEntries.get(instanceId);
         if (existing !== undefined && !replacedIds.has(instanceId)) {

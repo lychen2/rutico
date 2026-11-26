@@ -58,6 +58,55 @@ const runExecutable = Effect.fn("runExecutable")(function* (
   return { stdout, stderr, exitCode };
 });
 
+export const verifyLinuxBundledLibatomic = Effect.fn("verifyLinuxBundledLibatomic")(
+  function* (input: { readonly contentDir: string; readonly executable: string }) {
+    const fs = yield* FileSystem.FileSystem;
+    const path = yield* Path.Path;
+    const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
+    const lddProbe = yield* Effect.scoped(
+      Effect.gen(function* () {
+        const child = yield* spawner.spawn(ChildProcess.make("ldd", [input.executable]));
+        const [stdout, stderr, exitCode] = yield* Effect.all(
+          [collect(child.stdout), collect(child.stderr), child.exitCode.pipe(Effect.map(Number))],
+          { concurrency: "unbounded" },
+        );
+        return { stdout, stderr, exitCode };
+      }),
+    );
+    if (lddProbe.exitCode !== 0) {
+      return yield* new CliArchiveSmokeError({
+        step: "inspecting shared library dependencies",
+        detail: `ldd exited with ${String(lddProbe.exitCode)}\n${lddProbe.stdout}${lddProbe.stderr}`,
+      });
+    }
+    if (!/\blibatomic\.so\.1\b/.test(lddProbe.stdout)) {
+      return;
+    }
+
+    const bundledLibatomic = path.join(input.contentDir, "lib/libatomic.so.1");
+    for (const required of [bundledLibatomic, `${bundledLibatomic}.LICENSE`]) {
+      if (!(yield* fs.exists(required))) {
+        return yield* new CliArchiveSmokeError({
+          step: "checking the archive layout",
+          detail: `missing ${path.relative(input.contentDir, required)}`,
+        });
+      }
+    }
+
+    // Older glibc prints the path as given, newer prints it resolved; compare both resolved.
+    const loaded = /libatomic\.so\.1 => (\/.*) \(0x[0-9a-f]+\)/.exec(lddProbe.stdout)?.[1];
+    if (
+      loaded === undefined ||
+      (yield* fs.realPath(loaded)) !== (yield* fs.realPath(bundledLibatomic))
+    ) {
+      return yield* new CliArchiveSmokeError({
+        step: "checking that t3 loads the bundled libatomic",
+        detail: lddProbe.stdout,
+      });
+    }
+  },
+);
+
 const smokeCliArchive = Effect.fn("smokeCliArchive")(function* (input: {
   readonly archive: string;
   readonly expectVersion: string;
@@ -97,12 +146,10 @@ const smokeCliArchive = Effect.fn("smokeCliArchive")(function* (input: {
   }
   const contentDir = path.join(scratch, root);
   const executable = path.join(contentDir, platform === "win32" ? "t3.exe" : "t3");
-  const bundledLibatomic = path.join(contentDir, "lib/libatomic.so.1");
   for (const required of [
     executable,
     path.join(contentDir, "client/index.html"),
     path.join(contentDir, "client/.vite/manifest.json"),
-    ...(platform === "linux" ? [bundledLibatomic, `${bundledLibatomic}.LICENSE`] : []),
   ]) {
     if (!(yield* fs.exists(required))) {
       return yield* new CliArchiveSmokeError({
@@ -114,18 +161,7 @@ const smokeCliArchive = Effect.fn("smokeCliArchive")(function* (input: {
 
   // The runner has libatomic installed; fresh Ubuntu servers do not.
   if (platform === "linux") {
-    const ldd = yield* spawner.string(ChildProcess.make("ldd", [executable]));
-    // Older glibc prints the path as given, newer prints it resolved; compare both resolved.
-    const loaded = /libatomic\.so\.1 => (\/.*) \(0x[0-9a-f]+\)/.exec(ldd)?.[1];
-    if (
-      loaded === undefined ||
-      (yield* fs.realPath(loaded)) !== (yield* fs.realPath(bundledLibatomic))
-    ) {
-      return yield* new CliArchiveSmokeError({
-        step: "checking that t3 loads the bundled libatomic",
-        detail: ldd,
-      });
-    }
+    yield* verifyLinuxBundledLibatomic({ contentDir, executable });
   }
 
   const version = yield* runExecutable(executable, ["--version"], contentDir);

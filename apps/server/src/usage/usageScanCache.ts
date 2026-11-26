@@ -10,7 +10,7 @@ import { CLAUDE_SYNTHETIC_MODEL } from "../provider/Drivers/claudeUsage.ts";
 import { mergeUsageCopies } from "./usageAggregation.ts";
 import { GUARD_LENGTH, type TranscriptParsePosition } from "./usageTranscriptReader.ts";
 
-const USAGE_SCAN_CACHE_VERSION = 17 as const;
+const USAGE_SCAN_CACHE_VERSION = 18 as const;
 const SPEED_COMPATIBLE_SINCE_VERSION = 4;
 
 /**
@@ -18,8 +18,9 @@ const SPEED_COMPATIBLE_SINCE_VERSION = 4;
  * replace it, dropping saved usage for deleted transcripts. Separate files keep
  * the newer one; older files are removed once it is saved.
  */
-export const SCAN_CACHE_FILE_NAME = "usage-scan-cache-v17.json";
+export const SCAN_CACHE_FILE_NAME = "usage-scan-cache-v18.json";
 export const LEGACY_SCAN_CACHE_FILE_NAMES = [
+  "usage-scan-cache-v17.json",
   "usage-scan-cache-v16.json",
   "usage-scan-cache-v15.json",
   "usage-scan-cache-v14.json",
@@ -287,6 +288,8 @@ export function decodeScanCache(
     const entry = raw as Partial<SerializedFile>;
     if (typeof entry.s !== "number" || typeof entry.m !== "number") continue;
     if (entry.p === undefined) continue;
+    // v18 adds OMP `model_usage` records; drop older pi-family cache entries so OMP sessions re-scan once.
+    if (entry.p === "pi" && version < 18) continue;
     const format = formats.get(entry.p);
     if (format === undefined) continue;
     if (!isRecordArray(entry.r) || !isRecordArray(entry.t)) continue;

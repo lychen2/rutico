@@ -14,6 +14,7 @@ import {
   bundleLinuxLibatomic,
   signMacArchiveContents,
 } from "./build-cli-archive.ts";
+import { verifyLinuxBundledLibatomic } from "./smoke-cli-archive.ts";
 
 const signedEnv = {
   T3CODE_CLI_MAC_SIGN_IDENTITY: "Developer ID Application: Test (TEAM)",
@@ -374,6 +375,85 @@ it.layer(NodeServices.layer)("build-cli-archive linux libatomic", (it) => {
         {},
       ).pipe(Effect.flip);
       assert.equal(error._tag, "CliArchiveInputMissingError");
+    }).pipe(Effect.scoped),
+  );
+
+  it.effect("fails when ldd exits non-zero instead of treating it as no libatomic dependency", () =>
+    Effect.gen(function* () {
+      const content = yield* makeContent();
+      const stub = stubCommandSpawner((argv) =>
+        argv[0] === "ldd"
+          ? { exitCode: 1, stdout: "\tnot a dynamic executable\n" }
+          : { exitCode: 0 },
+      );
+
+      const error = yield* withStubs(
+        bundleLinuxLibatomic({
+          repoRoot: content.root,
+          contentDir: content.contentDir,
+          executablePath: content.executablePath,
+        }),
+        stub,
+        {},
+      ).pipe(Effect.flip);
+      assert.equal(error._tag, "CliArchiveInputMissingError");
+      assert.include(error.hint, "ldd exited with 1");
+    }).pipe(Effect.scoped),
+  );
+
+  it.effect("smoke check verifies bundled libatomic only when the executable links it", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+
+      // 1. Executable does not link libatomic -> passes without lib/libatomic.so.1.
+      const noLink = yield* makeContent();
+      yield* withStubs(
+        verifyLinuxBundledLibatomic({
+          contentDir: noLink.contentDir,
+          executable: noLink.executablePath,
+        }),
+        stubCommandSpawner(() => ({
+          exitCode: 0,
+          stdout: "\tlibc.so.6 => /lib/x86_64-linux-gnu/libc.so.6 (0x00007f0000000000)\n",
+        })),
+        {},
+      );
+
+      // 2. Executable links libatomic but archive is missing lib/libatomic.so.1 -> fails.
+      const missingLib = yield* makeContent();
+      const missingErr = yield* withStubs(
+        verifyLinuxBundledLibatomic({
+          contentDir: missingLib.contentDir,
+          executable: missingLib.executablePath,
+        }),
+        stubCommandSpawner(() => ({
+          exitCode: 0,
+          stdout: "\tlibatomic.so.1 => /usr/lib/libatomic.so.1 (0x00007f0000000000)\n",
+        })),
+        {},
+      ).pipe(Effect.flip);
+      assert.equal(missingErr._tag, "CliArchiveSmokeError");
+      assert.include(missingErr.detail, "lib/libatomic.so.1");
+
+      // 3. Executable links libatomic and resolves to bundled lib/libatomic.so.1 -> passes.
+      const bundled = yield* makeContent();
+      const libDir = path.join(bundled.contentDir, "lib");
+      const libPath = path.join(libDir, "libatomic.so.1");
+      yield* fs.makeDirectory(libDir, { recursive: true });
+      yield* fs.writeFileString(libPath, "elf");
+      yield* fs.writeFileString(`${libPath}.LICENSE`, "GPL");
+      yield* withStubs(
+        verifyLinuxBundledLibatomic({
+          contentDir: bundled.contentDir,
+          executable: bundled.executablePath,
+        }),
+        stubCommandSpawner(() => ({
+          exitCode: 0,
+          stdout: `\tlibatomic.so.1 => ${libPath} (0x00007f0000000000)\n`,
+        })),
+        {},
+      );
     }).pipe(Effect.scoped),
   );
 });

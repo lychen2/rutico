@@ -17,21 +17,31 @@ export function feedbackRequestDisplay(
   item: Pick<FeedbackRequestItem, "feedbackStatus">,
   visibility: "local" | "inherited" | "synthetic",
   resolve: MFunctionType = mFallback,
+  options?: { readonly localOnly?: boolean },
 ): FeedbackRequestDisplay {
+  const localOnly = options?.localOnly === true;
   switch (item.feedbackStatus) {
     case "pending":
       return visibility === "local"
         ? { kind: "pending" }
         : { kind: "pending-elsewhere", label: resolve(msg("Waiting in the original thread")) };
     case "sent":
-      return { kind: "answered", outcome: "sent", label: resolve(msg("Saved locally")) };
+      return {
+        kind: "answered",
+        outcome: "sent",
+        label: resolve(localOnly ? msg("Saved locally") : msg("Sent")),
+      };
     case "declined":
-      return { kind: "answered", outcome: "not-sent", label: resolve(msg("Not saved")) };
+      return {
+        kind: "answered",
+        outcome: "not-sent",
+        label: resolve(localOnly ? msg("Not saved") : msg("Not sent")),
+      };
     case "cancelled":
       return {
         kind: "answered",
         outcome: "not-sent",
-        label: resolve(msg("Closed without saving")),
+        label: resolve(localOnly ? msg("Closed without saving") : msg("Closed without sending")),
       };
   }
 }

@@ -14,6 +14,8 @@ import {
   type InspectorBarStore,
 } from "./inspector-bar-store";
 import {
+  InspectorPaneVisibleContext,
+  useInspectorPaneVisible,
   useMountedInspectorPanes,
   type InspectorContent,
   type InspectorPane,
@@ -74,6 +76,7 @@ export function InspectorColumnScreens(props: {
   /** Drawn over the active pane. */
   readonly overlay?: ReactNode;
 }) {
+  const hostVisible = useInspectorPaneVisible();
   const panes = useMountedInspectorPanes(props.content);
   return (
     <Split.Inspector>
@@ -86,11 +89,13 @@ export function InspectorColumnScreens(props: {
               screenKey={`inspector:${pane.key}`}
               activityMode={active ? "attached" : "detached"}
             >
-              <PaneScreenContent
-                pane={pane}
-                resetKeys={props.content?.resetKeys}
-                onClose={props.onClose}
-              />
+              <InspectorPaneVisibleContext value={hostVisible && active}>
+                <PaneScreenContent
+                  pane={pane}
+                  resetKeys={props.content?.resetKeys}
+                  onClose={props.onClose}
+                />
+              </InspectorPaneVisibleContext>
               {active ? props.overlay : null}
             </Stack.Screen>
           );
@@ -105,23 +110,29 @@ export function InspectorPanes(props: {
   readonly content: InspectorContent | undefined;
   readonly onClose: () => void;
 }) {
+  const hostVisible = useInspectorPaneVisible();
   const panes = useMountedInspectorPanes(props.content);
   if (panes.length === 0) return null;
   return (
     <Stack.Host>
-      {panes.map((pane) => (
-        <Stack.Screen
-          key={pane.key}
-          screenKey={`inspector:${pane.key}`}
-          activityMode={pane.key === props.content?.active ? "attached" : "detached"}
-        >
-          <PaneScreenContent
-            pane={pane}
-            resetKeys={props.content?.resetKeys}
-            onClose={props.onClose}
-          />
-        </Stack.Screen>
-      ))}
+      {panes.map((pane) => {
+        const active = pane.key === props.content?.active;
+        return (
+          <Stack.Screen
+            key={pane.key}
+            screenKey={`inspector:${pane.key}`}
+            activityMode={active ? "attached" : "detached"}
+          >
+            <InspectorPaneVisibleContext value={hostVisible && active}>
+              <PaneScreenContent
+                pane={pane}
+                resetKeys={props.content?.resetKeys}
+                onClose={props.onClose}
+              />
+            </InspectorPaneVisibleContext>
+          </Stack.Screen>
+        );
+      })}
     </Stack.Host>
   );
 }

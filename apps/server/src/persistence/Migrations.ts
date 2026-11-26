@@ -269,7 +269,50 @@ const makeMigrationLoader = (throughId?: number) =>
 
 const FIRST_V2_MIGRATION_ID = 55;
 const LEGACY_WAIT_WAKE_MIGRATION_ID = 104;
+const WAIT_WAKE_MIGRATION_ID = 106;
 const LEGACY_WAIT_WAKE_MIGRATION_NAME = "ThreadWaitWakeObligations";
+
+// Official upstream recorded these 14 migrations at 106..119 because it does not have
+// Rutico's 106_ThreadWaitWakeObligations. Recognize exact prefixes of this ledger so
+// upstream databases upgrade in place without losing data or weakening conflict checks.
+const UPSTREAM_SHIFTED_MIGRATIONS = [
+  [106, "WorktreePathKeyIndex"],
+  [107, "DeferredSlashCommandIndex"],
+  [108, "AgentFeedback"],
+  [109, "IssueTrackerAccounts"],
+  [110, "Workflows"],
+  [111, "SupersededRunAttemptIndex"],
+  [112, "LayoutCommandApprovals"],
+  [113, "WorkflowSkippedRuns"],
+  [114, "WorkflowRunIndexes"],
+  [115, "WorkflowRunTags"],
+  [116, "ForkHistoryMembership"],
+  [117, "WorkflowMailSender"],
+  [118, "WorkflowPools"],
+  [119, "WorkflowRunSubject"],
+] as const;
+
+const UPSTREAM_SHIFT_FIRST_ID = UPSTREAM_SHIFTED_MIGRATIONS[0][0];
+const UPSTREAM_SHIFT_LAST_ID =
+  UPSTREAM_SHIFTED_MIGRATIONS[UPSTREAM_SHIFTED_MIGRATIONS.length - 1]![0];
+const UPSTREAM_SHIFT_TEMP_OFFSET = 1_000_000;
+
+function isRecognizedUpstreamShiftedLedger(
+  recorded: ReadonlyArray<{ readonly id: number; readonly name: string }>,
+): boolean {
+  const latestRecordedId = Math.max(0, ...recorded.map((row) => row.id));
+  if (latestRecordedId < UPSTREAM_SHIFT_FIRST_ID || latestRecordedId > UPSTREAM_SHIFT_LAST_ID) {
+    return false;
+  }
+  const recordedNames = new Map(recorded.map((row) => [row.id, row.name]));
+  for (const [upstreamId, upstreamName] of UPSTREAM_SHIFTED_MIGRATIONS) {
+    if (upstreamId > latestRecordedId) break;
+    if (recordedNames.get(upstreamId) !== upstreamName) {
+      return false;
+    }
+  }
+  return true;
+}
 
 export function skippedV2Migrations(
   recorded: ReadonlyArray<{ readonly id: number; readonly name: string }>,
@@ -277,6 +320,7 @@ export function skippedV2Migrations(
 ): string[] {
   const latestRecordedId = Math.max(0, ...recorded.map((row) => row.id));
   const recordedNames = new Map(recorded.map((row) => [row.id, row.name]));
+  const recognizedUpstreamShift = isRecognizedUpstreamShiftedLedger(recorded);
   return migrationManifest.flatMap(([id, name]) => {
     if (
       id < FIRST_V2_MIGRATION_ID ||
@@ -292,6 +336,11 @@ export function skippedV2Migrations(
       recordedName === LEGACY_WAIT_WAKE_MIGRATION_NAME
     )
       return [];
+    // Official upstream recorded 106..119 without Rutico's 106_ThreadWaitWakeObligations.
+    // Startup installs 106 in place and shifts upstream 106..latestRecordedId to 107..latestRecordedId+1.
+    if (recognizedUpstreamShift && id >= UPSTREAM_SHIFT_FIRST_ID) {
+      return [];
+    }
     return recordedName === name ? [] : [`${id}_${name} (recorded: ${recordedName ?? "nothing"})`];
   });
 }

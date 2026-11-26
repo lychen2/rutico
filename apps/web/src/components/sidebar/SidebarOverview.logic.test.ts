@@ -421,4 +421,48 @@ it("classifies many finished delegated threads without duplicating them under to
   expect(overview.active).toEqual([]);
   expect(overview.attention).toEqual([]);
   expect(overview.todayTasks.map((row) => row.ref.threadId)).toEqual([root.id]);
+  expect(overview.todayTasksCount).toBe(1);
+});
+
+it("excludes sideChat and workflowStep threads from todayTasks and counts without building rows when collapsed", () => {
+  const normal = makeThreadFixture({
+    id: ThreadId.make("today-normal"),
+    createdAt: start,
+    updatedAt: end,
+    lastVisitedAt: end,
+  });
+  const sideChat = makeThreadFixture({
+    id: ThreadId.make("today-sidechat"),
+    createdAt: start,
+    updatedAt: end,
+    lastVisitedAt: end,
+    lineage: {
+      parentThreadId: normal.id,
+      rootThreadId: normal.id,
+      relationshipToParent: null,
+      sideChat: true,
+    },
+  });
+  const workflowStep = makeThreadFixture({
+    id: ThreadId.make("today-workflow"),
+    createdAt: start,
+    updatedAt: end,
+    lastVisitedAt: end,
+    lineage: {
+      parentThreadId: normal.id,
+      rootThreadId: normal.id,
+      relationshipToParent: null,
+      workflowStep: true,
+    },
+  });
+
+  const expanded = buildSidebarOverview([normal, sideChat, workflowStep], now, {});
+  expect(expanded.todayTasks.map((row) => row.ref.threadId)).toEqual([normal.id]);
+  expect(expanded.todayTasksCount).toBe(1);
+
+  const collapsed = buildSidebarOverview([normal, sideChat, workflowStep], now, {}, {}, undefined, {
+    includeTodayRows: false,
+  });
+  expect(collapsed.todayTasks).toEqual([]);
+  expect(collapsed.todayTasksCount).toBe(1);
 });

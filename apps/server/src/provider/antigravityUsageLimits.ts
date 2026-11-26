@@ -301,12 +301,25 @@ export const parseAntigravityCliUsageOutput = Effect.fn("parseAntigravityCliUsag
   },
 );
 
-function buildCliUsageEnvironment(baseEnv: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+const sharedBlockedBinaries = new Set<string>();
+
+function buildCliUsageEnvironment(
+  baseEnv: NodeJS.ProcessEnv,
+  authTarget?: {
+    readonly authMethod: AntigravitySettings["authMethod"];
+    readonly gcpProject?: string | undefined;
+    readonly gcpLocation?: string | undefined;
+  },
+): NodeJS.ProcessEnv {
   const environment: NodeJS.ProcessEnv = {};
   for (const [key, value] of Object.entries(baseEnv)) {
     if (!isSanitizedCliEnvKey(key)) {
       environment[key] = value;
     }
+  }
+  if (authTarget?.authMethod === "oauth-business") {
+    if (authTarget.gcpProject) environment.GOOGLE_CLOUD_PROJECT = authTarget.gcpProject;
+    if (authTarget.gcpLocation) environment.GOOGLE_CLOUD_LOCATION = authTarget.gcpLocation;
   }
   // `agy` checks `AGY_CLI_DISABLE_AUTO_UPDATE === "true"` to suppress self-updates.
   environment.AGY_CLI_DISABLE_AUTO_UPDATE = "true";
@@ -341,6 +354,9 @@ export const makeAntigravityUsageProbe = Effect.fn("makeAntigravityUsageProbe")(
   ProbeCwdError = never,
 >(input: {
   readonly authMethod: AntigravitySettings["authMethod"];
+  readonly gcpProject?: string | undefined;
+  readonly gcpLocation?: string | undefined;
+  readonly blockedBinaries?: Set<string>;
   readonly resolveExecutable: Effect.Effect<
     { readonly executablePath: string; readonly version?: string | null },
     ResolveError
@@ -364,7 +380,9 @@ export const makeAntigravityUsageProbe = Effect.fn("makeAntigravityUsageProbe")(
   const hostPlatformOption = yield* Effect.serviceOption(HostProcess.Platform);
   const gate = yield* Semaphore.make(1);
   const cooldownMs = input.cooldownMs ?? CLI_USAGE_DEFAULT_COOLDOWN_MS;
-  const blockedBinaries = new Set<string>();
+  // Share the spending circuit-breaker across driver rebuilds and instances in this host process
+  // so a binary that spent tokens on `/usage` cannot be re-invoked after a reload.
+  const blockedBinaries = input.blockedBinaries ?? sharedBlockedBinaries;
   const verifiedVersionCache = new Map<string, string>();
   let lastProbe:
     | {
@@ -427,12 +445,14 @@ export const makeAntigravityUsageProbe = Effect.fn("makeAntigravityUsageProbe")(
     cliEnv: NodeJS.ProcessEnv,
     probeCwd: string | undefined,
   ): Effect.fn.Return<{ readonly ok: true } | { readonly ok: false; readonly message: string }> {
-    if (verifiedVersionCache.has(identity)) {
+    const resolvedVersion = executable.version ? parseCliVersion(executable.version) : undefined;
+    // Only cache version verification when the launcher already resolved a concrete version.
+    // External shims (e.g. version managers) keep the same stat while switching underlying CLIs.
+    if (resolvedVersion !== undefined && verifiedVersionCache.has(identity)) {
       return { ok: true } as const;
     }
     const parsed =
-      (executable.version ? parseCliVersion(executable.version) : undefined) ??
-      (yield* probeCliVersion(executable.executablePath, cliEnv, probeCwd));
+      resolvedVersion ?? (yield* probeCliVersion(executable.executablePath, cliEnv, probeCwd));
     if (parsed === undefined) {
       return {
         ok: false,
@@ -455,10 +475,12 @@ export const makeAntigravityUsageProbe = Effect.fn("makeAntigravityUsageProbe")(
         } as const;
       }
     }
-    if (verifiedVersionCache.size >= MAX_VERIFIED_VERSION_CACHE) {
-      verifiedVersionCache.clear();
+    if (resolvedVersion !== undefined) {
+      if (verifiedVersionCache.size >= MAX_VERIFIED_VERSION_CACHE) {
+        verifiedVersionCache.clear();
+      }
+      verifiedVersionCache.set(identity, versionText);
     }
-    verifiedVersionCache.set(identity, versionText);
     return { ok: true } as const;
   });
 
@@ -467,7 +489,11 @@ export const makeAntigravityUsageProbe = Effect.fn("makeAntigravityUsageProbe")(
     if (input.authMethod !== "oauth-personal" && input.authMethod !== "oauth-business") {
       return makeUnavailableUsageLimits({ checkedAt, reason: "unsupported" });
     }
-    const cliEnv = buildCliUsageEnvironment(input.environment);
+    const cliEnv = buildCliUsageEnvironment(input.environment, {
+      authMethod: input.authMethod,
+      gcpProject: input.gcpProject,
+      gcpLocation: input.gcpLocation,
+    });
     if (Option.isSome(fsOption) && Option.isSome(pathOption)) {
       const userHome = input.userHome ?? cliEnv.HOME ?? "";
       const platform =

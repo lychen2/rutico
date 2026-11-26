@@ -2506,6 +2506,31 @@ export const layerWsRpc = (
                 : input.instanceId !== undefined
                   ? providerRegistry.refreshInstance(input.instanceId)
                   : providerRegistry.refresh();
+            if (input.refreshUsageLimits === true) {
+              const instances = yield* providerInstances.listInstances;
+              let refreshedAnyUsage = false;
+              for (const instance of instances) {
+                if (
+                  instance.driverKind !== "antigravity" ||
+                  !instance.snapshot.refreshUsage ||
+                  (input.instanceId !== undefined && input.instanceId !== instance.instanceId) ||
+                  !providers.some(
+                    (provider) =>
+                      provider.instanceId === instance.instanceId &&
+                      provider.enabled &&
+                      provider.installed &&
+                      provider.auth.status !== "unauthenticated",
+                  )
+                ) {
+                  continue;
+                }
+                yield* instance.snapshot.refreshUsage.pipe(Effect.ignoreCause({ log: true }));
+                refreshedAnyUsage = true;
+              }
+              if (refreshedAnyUsage) {
+                providers = yield* providerRegistry.getProviders;
+              }
+            }
             if (input.refreshModels) {
               const instances = yield* providerInstances.listInstances;
               for (const instance of instances) {

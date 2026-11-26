@@ -369,13 +369,15 @@ describe("antigravityUsageLimits", () => {
             "-p /usage --output-format json --print-timeout 20s",
           ]);
 
-          // Waiting past the 60s cooldown re-runs `/usage` without re-checking `--version`.
+          // Waiting past the 60s cooldown re-verifies `--version` for unknown-version external
+          // launchers (e.g. version-manager shims) before re-running `/usage`.
           yield* TestClock.adjust("61 seconds");
           const third = yield* usage.probe;
           expect(third.unavailable).toBeUndefined();
           expect((yield* fs.readFileString(logFile)).trim().split("\n")).toEqual([
             "--version",
             "-p /usage --output-format json --print-timeout 20s",
+            "--version",
             "-p /usage --output-format json --print-timeout 20s",
           ]);
 
@@ -386,9 +388,157 @@ describe("antigravityUsageLimits", () => {
           expect((yield* fs.readFileString(logFile)).trim().split("\n")).toEqual([
             "--version",
             "-p /usage --output-format json --print-timeout 20s",
+            "--version",
             "-p /usage --output-format json --print-timeout 20s",
+            "--version",
             "-p /usage --output-format json --print-timeout 20s",
           ]);
+        }),
+    );
+
+    it.effect(
+      "re-verifies an external shim whose underlying CLI switches to an unsupported version without changing shim stat",
+      () =>
+        Effect.gen(function* () {
+          const fs = yield* FileSystem.FileSystem;
+          const path = yield* Path.Path;
+          const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
+          const hostEnv = yield* HostProcess.Environment;
+          const dir = yield* fs.makeTempDirectoryScoped();
+          const shim = path.join(dir, "agy-shim");
+          const versionFile = path.join(dir, "active-version");
+          const logFile = path.join(dir, "shim.log");
+          yield* fs.writeFileString(versionFile, "1.5.18");
+          yield* fs.writeFileString(
+            shim,
+            [
+              "#!/bin/sh",
+              `printf '%s\\n' "$*" >> "${logFile}"`,
+              `if [ "$1" = "--version" ]; then cat "${versionFile}"; printf '\\n'; exit 0; fi`,
+              `printf '%s\\n' '${cliUsageJson}'`,
+              "",
+            ].join("\n"),
+          );
+          yield* fs.chmod(shim, 0o755);
+
+          const usage = yield* makeAntigravityUsageProbe({
+            authMethod: "oauth-personal",
+            resolveExecutable: Effect.succeed({ executablePath: shim }),
+            checkCompatibility: compatibilityCheck,
+            environment: { PATH: hostEnv.PATH ?? "" },
+            cwd: dir,
+            cooldownMs: 0,
+          }).pipe(Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner));
+
+          const first = yield* usage.probe;
+          expect(first.unavailable).toBeUndefined();
+
+          // Version manager switches the underlying target to unsupported 1.5.0 without touching shim stat.
+          yield* fs.writeFileString(versionFile, "1.5.0");
+          const second = yield* usage.probe;
+          expect(second.unavailable?.reason).toBe("probeFailed");
+          expect(second.unavailable?.message).toMatch(/1\.5\.0.*unsupported/i);
+          expect((yield* fs.readFileString(logFile)).trim().split("\n")).toEqual([
+            "--version",
+            "-p /usage --output-format json --print-timeout 20s",
+            "--version",
+          ]);
+        }),
+    );
+
+    it.effect(
+      "shares the spent-token circuit breaker across probe instances and driver rebuilds while isolating quota cache",
+      () =>
+        Effect.gen(function* () {
+          const fs = yield* FileSystem.FileSystem;
+          const path = yield* Path.Path;
+          const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
+          const hostEnv = yield* HostProcess.Environment;
+          const dir = yield* fs.makeTempDirectoryScoped();
+          const bin = path.join(dir, "agy-spending");
+          const logFile = path.join(dir, "spending.log");
+          const spentJson = JSON.stringify({
+            status: "SUCCESS",
+            num_turns: 1,
+            usage: { total_tokens: 42 },
+            response: "Chat reply",
+          });
+          yield* fs.writeFileString(
+            bin,
+            fakeAgyScript({ version: "1.5.18", outputJson: spentJson, logFile }),
+          );
+          yield* fs.chmod(bin, 0o755);
+
+          const probeA = yield* makeAntigravityUsageProbe({
+            authMethod: "oauth-personal",
+            resolveExecutable: Effect.succeed({ executablePath: bin }),
+            environment: { PATH: hostEnv.PATH ?? "" },
+            cwd: dir,
+          }).pipe(Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner));
+
+          const first = yield* probeA.probe;
+          expect(first.unavailable?.reason).toBe("probeFailed");
+          expect(first.unavailable?.message).toMatch(/paused/i);
+
+          // A rebuilt driver / second probe instance must still refuse the same binary.
+          const probeB = yield* makeAntigravityUsageProbe({
+            authMethod: "oauth-personal",
+            resolveExecutable: Effect.succeed({ executablePath: bin }),
+            environment: { PATH: hostEnv.PATH ?? "" },
+            cwd: dir,
+          }).pipe(Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner));
+
+          const second = yield* probeB.probe;
+          expect(second.unavailable?.reason).toBe("probeFailed");
+          expect(second.unavailable?.message).toMatch(/paused/i);
+          expect((yield* fs.readFileString(logFile)).trim().split("\n")).toEqual([
+            "--version",
+            "-p /usage --output-format json --print-timeout 20s",
+          ]);
+        }),
+    );
+
+    it.effect(
+      "passes configured GCP project and location to the /usage subprocess for oauth-business",
+      () =>
+        Effect.gen(function* () {
+          const fs = yield* FileSystem.FileSystem;
+          const path = yield* Path.Path;
+          const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
+          const hostEnv = yield* HostProcess.Environment;
+          const dir = yield* fs.makeTempDirectoryScoped();
+          const bin = path.join(dir, "agy-business");
+          const envFile = path.join(dir, "env.txt");
+          yield* fs.writeFileString(
+            bin,
+            [
+              "#!/bin/sh",
+              'if [ "$1" = "--version" ]; then printf \'1.5.18\\n\'; exit 0; fi',
+              `printf 'PROJECT=%s\\nLOCATION=%s\\n' "$GOOGLE_CLOUD_PROJECT" "$GOOGLE_CLOUD_LOCATION" > "${envFile}"`,
+              `printf '%s\\n' '${cliUsageJson}'`,
+              "",
+            ].join("\n"),
+          );
+          yield* fs.chmod(bin, 0o755);
+
+          const usage = yield* makeAntigravityUsageProbe({
+            authMethod: "oauth-business",
+            gcpProject: "enterprise-proj-1",
+            gcpLocation: "us-central1",
+            resolveExecutable: Effect.succeed({ executablePath: bin, version: "1.5.18" }),
+            environment: {
+              PATH: hostEnv.PATH ?? "",
+              GOOGLE_CLOUD_PROJECT: "ambient-wrong-project",
+              GOOGLE_CLOUD_LOCATION: "ambient-wrong-location",
+            },
+            cwd: dir,
+          }).pipe(Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner));
+
+          const limits = yield* usage.probe;
+          expect(limits.unavailable).toBeUndefined();
+          expect(yield* fs.readFileString(envFile)).toBe(
+            "PROJECT=enterprise-proj-1\nLOCATION=us-central1\n",
+          );
         }),
     );
 

@@ -864,7 +864,7 @@ const RootStackConfig = createWorkspaceStackNavigator({
     }),
     ConnectionsNew: createNativeStackScreen({
       screen: ConnectionsNewRouteScreen,
-      linking: "connections/new",
+      linking: { path: "connections/new", alias: ["pair"] },
       options: sheetRoute({ detent: 0.55, maxDetent: 0.7 }),
     }),
     NotFound: createNativeStackScreen({

@@ -6,6 +6,8 @@ import { PaneContext } from "../../components/ui/Pane";
 import { WorkspaceSlotOptionsContext } from "../../native/v5-workspace-context";
 import { InspectorCloseContext, useInspectorBarSlot } from "./inspector-bar-store";
 import {
+  InspectorPaneVisibleContext,
+  useInspectorPaneVisible,
   useMountedInspectorPanes,
   type InspectorContent,
   type InspectorPane,
@@ -37,6 +39,7 @@ export function InspectorPanes(props: {
   readonly content: InspectorContent | undefined;
   readonly onClose: () => void;
 }) {
+  const hostVisible = useInspectorPaneVisible();
   const panes = useMountedInspectorPanes(props.content);
   return (
     <InspectorCloseContext value={props.onClose}>
@@ -59,7 +62,9 @@ export function InspectorPanes(props: {
                   zIndex: visible ? 0 : 1,
                 }}
               >
-                <PaneContent pane={pane} resetKeys={props.content?.resetKeys} />
+                <InspectorPaneVisibleContext value={hostVisible && visible}>
+                  <PaneContent pane={pane} resetKeys={props.content?.resetKeys} />
+                </InspectorPaneVisibleContext>
               </View>
             );
           })}

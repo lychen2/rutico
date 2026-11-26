@@ -33,7 +33,7 @@ const Usage = Schema.Struct({
 });
 const Identity = { id: Schema.NonEmptyString, timestamp: Schema.String };
 const Model = { provider: Schema.NonEmptyString, model: Schema.NonEmptyString };
-const Entry = Schema.Union([
+const PiEntry = Schema.Union([
   Schema.Struct({ type: Schema.Literal("session"), id: Schema.NonEmptyString }),
   Schema.Struct({
     ...Identity,
@@ -55,11 +55,24 @@ const Entry = Schema.Union([
     usage: Usage,
   }),
 ]);
-const decodeEntry = Schema.decodeUnknownOption(Entry);
+// OMP records auxiliary model calls (e.g. watchdog/routing models) as top-level `model_usage`.
+const OmpEntry = Schema.Union([
+  PiEntry,
+  Schema.Struct({
+    ...Identity,
+    ...Model,
+    type: Schema.Literal("model_usage"),
+    responseModel: Schema.optional(Schema.NonEmptyString),
+    usage: Usage,
+  }),
+]);
+const decodePiEntry = Schema.decodeUnknownOption(PiEntry);
+const decodeOmpEntry = Schema.decodeUnknownOption(OmpEntry);
 
 function makeParseRecord(dedupePrefix: "pi" | "omp") {
+  const decode = dedupePrefix === "omp" ? decodeOmpEntry : decodePiEntry;
   return (parsed: unknown, state: typeof PiScanState.Type): readonly UsageRecord[] => {
-    const decoded = decodeEntry(parsed);
+    const decoded = decode(parsed);
     if (Option.isNone(decoded)) return [];
     const entry = decoded.value;
     if (entry.type === "session") {

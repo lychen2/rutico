@@ -36,6 +36,7 @@ import {
 } from "../../state/entities";
 import { useEnvironments } from "../../state/environments";
 import { useEnvironmentScope } from "../../state/session";
+import { threadTriagePermitted } from "../../state/use-orchestration-command";
 import { formatRelativeElapsed } from "../../timestampFormat";
 import { useUiStateStore } from "../../uiStateStore";
 import {
@@ -262,11 +263,13 @@ function OverviewRowQuickActions({
   const messages = useMessages();
   const [menuOpen, setMenuOpen] = useState(false);
   const canOperate = useEnvironmentScope(row.ref.environmentId, AuthOrchestrationOperateScope);
+  const canTriage = threadTriagePermitted(row.ref.environmentId);
   const errorToken = row.status === "failed" ? failedRunToken(row.thread) : null;
   const canArchive =
     canOperate && actions?.onArchive !== undefined && threadRuntimeCanArchive(row.thread.runtime);
   const canSnoozeRow =
-    canOperate && actions?.onSnooze !== undefined && canSnooze(row.thread, { now });
+    canTriage && actions?.onSnooze !== undefined && canSnooze(row.thread, { now });
+  const hasCompletedRun = row.thread.latestRun?.completedAt != null;
   const snoozePresets =
     menuOpen && canSnoozeRow
       ? // oxlint-disable-next-line react/purity -- Presets are resolved only while the menu is open, so each opening reads a fresh time.
@@ -276,7 +279,7 @@ function OverviewRowQuickActions({
   const dismissFailure =
     errorToken !== null ? () => onDismissError(row.key, errorToken) : undefined;
   const handleSettle =
-    canOperate && actions?.onSettle !== undefined
+    canTriage && actions?.onSettle !== undefined
       ? () => {
           if (errorToken !== null) onDismissError(row.key, errorToken);
           if (row.status === "unread") actions.onMarkRead?.(row.ref);
@@ -285,12 +288,11 @@ function OverviewRowQuickActions({
       : undefined;
   const handleArchive = canArchive
     ? () => {
-        if (errorToken !== null) onDismissError(row.key, errorToken);
         actions?.onArchive?.(row.ref);
       }
     : undefined;
   const handleUnsettle =
-    canOperate && actions?.onUnsettle !== undefined
+    canTriage && actions?.onUnsettle !== undefined
       ? () => actions.onUnsettle?.(row.ref)
       : undefined;
   const handleStop =
@@ -302,13 +304,12 @@ function OverviewRowQuickActions({
       ? () => actions.onMarkRead?.(row.ref)
       : undefined;
   const handleMarkUnread =
-    mode !== "attention" && actions?.onMarkUnread !== undefined
+    mode !== "attention" && hasCompletedRun && actions?.onMarkUnread !== undefined
       ? () => actions.onMarkUnread?.(row.ref)
       : undefined;
   const handleDelete =
     canOperate && actions?.onDelete !== undefined
       ? () => {
-          if (errorToken !== null) onDismissError(row.key, errorToken);
           actions.onDelete?.(row.ref);
         }
       : undefined;
@@ -601,6 +602,7 @@ function OverviewThreadButton({
               ref={buttonRef}
               type="button"
               data-overview-row={mode}
+              data-overview-thread-key={row.key}
               aria-current={active ? "page" : undefined}
               onClick={onOpen}
               onContextMenu={
@@ -697,17 +699,20 @@ export function SidebarOverview({
   const acknowledgedErrors = useUiStateStore((state) => state.acknowledgedErrorRunByThreadKey);
   const acknowledgeThreadError = useUiStateStore((state) => state.acknowledgeThreadError);
   const disconnectedEnvironmentIds = collectDisconnectedEnvironmentIds(isReady, environments);
-  const { active, activeKeys, attention, attentionCount, todayTasks } = buildSidebarOverview(
-    threads,
-    now,
-    localVisits,
-    acknowledgedErrors,
-    disconnectedEnvironmentIds,
-  );
   const [showAllAttention, setShowAllAttention] = useState(false);
   const [showAllRunning, setShowAllRunning] = useState(false);
   const [showTodayTasks, setShowTodayTasks] = useState(false);
+  const [todayVisibleCount, setTodayVisibleCount] = useState(25);
   const [collapsedGroups, setCollapsedGroups] = useState<ReadonlySet<string>>(() => new Set());
+  const { active, activeKeys, attention, attentionCount, todayTasks, todayTasksCount } =
+    buildSidebarOverview(
+      threads,
+      now,
+      localVisits,
+      acknowledgedErrors,
+      disconnectedEnvironmentIds,
+      { includeTodayRows: showTodayTasks },
+    );
   const activeRunningButtonRef = useActiveRunningOverviewButton(
     activeKey,
     activeKey !== null && activeKeys.has(activeKey),
@@ -913,12 +918,17 @@ export function SidebarOverview({
           ) : null}
         </section>
       ) : null}
-      {todayTasks.length > 0 ? (
+      {todayTasksCount > 0 ? (
         <section aria-label={todayTasksLabel} data-sidebar-motion-key="today-tasks">
           <button
             type="button"
             aria-expanded={showTodayTasks}
-            onClick={() => setShowTodayTasks((expanded) => !expanded)}
+            onClick={() =>
+              setShowTodayTasks((expanded) => {
+                if (expanded) setTodayVisibleCount(25);
+                return !expanded;
+              })
+            }
             className={cn(
               headingClass,
               "w-full cursor-pointer rounded-md text-start outline-none transition-colors duration-150 ease-out hover:text-sidebar-foreground focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring motion-reduce:transition-none",
@@ -926,7 +936,7 @@ export function SidebarOverview({
           >
             <span>{todayTasksLabel}</span>
             <span className="ms-auto inline-flex shrink-0 items-center gap-1 tabular-nums">
-              <OverviewCount count={todayTasks.length} className="tabular-nums" />
+              <OverviewCount count={todayTasksCount} className="tabular-nums" />
               <ChevronDownIcon
                 aria-hidden
                 className={cn(
@@ -937,17 +947,31 @@ export function SidebarOverview({
             </span>
           </button>
           {showTodayTasks ? (
-            <ul
-              ref={attachToday}
-              aria-label={todayTasksLabel}
-              className="relative flex flex-col gap-px"
-            >
-              {todayTasks.map((row) => (
-                <li key={row.key} data-sidebar-motion-key={row.key} className="flex min-w-0">
-                  {renderRow(row, "today")}
-                </li>
-              ))}
-            </ul>
+            <>
+              <ul
+                ref={attachToday}
+                aria-label={todayTasksLabel}
+                className="relative flex flex-col gap-px"
+              >
+                {todayTasks.slice(0, todayVisibleCount).map((row) => (
+                  <li key={row.key} data-sidebar-motion-key={row.key} className="flex min-w-0">
+                    {renderRow(row, "today")}
+                  </li>
+                ))}
+              </ul>
+              {todayTasks.length > todayVisibleCount ? (
+                <Button
+                  type="button"
+                  size="compact"
+                  variant="ghost"
+                  onClick={() => setTodayVisibleCount((count) => count + 25)}
+                >
+                  {gt("{count, plural, one {Show {count} more} other {Show {count} more}}", {
+                    count: todayTasks.length - todayVisibleCount,
+                  })}
+                </Button>
+              ) : null}
+            </>
           ) : null}
         </section>
       ) : null}

@@ -62,16 +62,34 @@ export function ConnectDeviceApprovalCoordinator() {
 }
 
 interface NewDeviceNotice {
-  /** Keys the queue; a later notice for the same host carries a newer watermark. */
+  readonly kind: "notice";
+  /** Keys the shared dialog queue; a later notice for the same host carries a newer watermark. */
   readonly pairingLinkId: string;
   readonly environmentId: EnvironmentId;
 }
+
+/** "gone": the request expired or was answered elsewhere before this answer arrived. */
+type ApprovalAnswer = "done" | "failed" | "gone";
+
+interface QueuedApprovalPrompt extends ConnectDeviceApprovalPrompt {
+  readonly kind: "approval";
+  readonly rawPairingLinkId: string;
+  readonly environmentId: EnvironmentId;
+  readonly approve: () => Promise<ApprovalAnswer>;
+  readonly deny: () => Promise<ApprovalAnswer>;
+}
+
+type QueuedConnectDialog = NewDeviceNotice | QueuedApprovalPrompt;
+
+const APPROVAL_QUEUE_KEY_PREFIX = "approval:";
 
 /** The latest device list per watched host, read when a notice shows so it names only unseen devices. */
 const announcedHosts = new Map<
   EnvironmentId,
   { readonly label: string; readonly devices: ReadonlyArray<AuthConnectDevice> }
 >();
+
+const watchedEnvironments = new Set<EnvironmentId>();
 
 const loadSeenThrough = async (environmentId: EnvironmentId) => {
   const preferences = await loadPreferences().catch(() => null);
@@ -88,42 +106,88 @@ const markConnectDevicesSeen = (environmentId: EnvironmentId, newest: number) =>
     },
   })).catch(() => undefined);
 
-const newDeviceNotices = createApprovalPromptQueue<NewDeviceNotice>((notice, answer) => {
-  void (async () => {
-    const host = announcedHosts.get(notice.environmentId);
-    const seen = host ? await loadSeenThrough(notice.environmentId) : null;
-    const current = announcedHosts.get(notice.environmentId);
-    if (!current || seen === null || seen.seenThrough === undefined) return answer("done");
-    const { unseen, newest } = unseenConnectDevices(current.devices, seen.seenThrough);
-    if (unseen.length === 0) return answer("done");
-    const [firstDevice = ""] = unseen.map(({ client: device }) => describeConnectDevice(device));
-    Dialog.alert(
-      m(msg("New device signed in to {environment}", { environment: current.label })),
-      unseen.length === 1
-        ? m(
-            msg(
-              "{device} connected through {product}. If this was not you, remove it in Settings → Access in T3 Code on that computer.",
-              { device: firstDevice, product: "T3 Connect" },
+// One shared queue for approvals and new-device notices across all hosts: on Android a second
+// Dialog.alert replaces the one on screen, so notices must wait behind active approval dialogs.
+const connectDeviceDialogQueue = createApprovalPromptQueue<QueuedConnectDialog>((item, answer) => {
+  if (item.kind === "notice") {
+    void (async () => {
+      const host = announcedHosts.get(item.environmentId);
+      const seen = host ? await loadSeenThrough(item.environmentId) : null;
+      const current = announcedHosts.get(item.environmentId);
+      if (!current || seen === null || seen.seenThrough === undefined) return answer("done");
+      const { unseen, newest } = unseenConnectDevices(current.devices, seen.seenThrough);
+      if (unseen.length === 0) return answer("done");
+      const [firstDevice = ""] = unseen.map(({ client: device }) => describeConnectDevice(device));
+      Dialog.alert(
+        m(msg("New device signed in to {environment}", { environment: current.label })),
+        unseen.length === 1
+          ? m(
+              msg(
+                "{device} connected through {product}. If this was not you, remove it in Settings → Access in T3 Code on that computer.",
+                { device: firstDevice, product: "T3 Connect" },
+              ),
+            )
+          : m(
+              msg(
+                "{count, plural, one {{count} device} other {{count} devices}} connected through {product}. If this was not you, remove them in Settings → Access in T3 Code on that computer.",
+                { count: unseen.length, product: "T3 Connect" },
+              ),
             ),
-          )
-        : m(
-            msg(
-              "{count, plural, one {{count} device} other {{count} devices}} connected through {product}. If this was not you, remove them in Settings → Access in T3 Code on that computer.",
-              { count: unseen.length, product: "T3 Connect" },
-            ),
-          ),
-      [
-        {
-          text: m(msg("OK")),
-          onPress: () => {
-            void markConnectDevicesSeen(notice.environmentId, newest).then(() => answer("done"));
+        [
+          {
+            text: m(msg("OK")),
+            onPress: () => {
+              void markConnectDevicesSeen(item.environmentId, newest).then(() => answer("done"));
+            },
           },
-        },
-      ],
-      // Another dialog took the screen; the notice shows again on the next update.
-      { onDismiss: () => answer("later") },
-    );
-  })();
+        ],
+        // Another dialog took the screen; the notice shows again on the next update.
+        { onDismiss: () => answer("later") },
+      );
+    })();
+    return;
+  }
+
+  const respond = (action: () => Promise<ApprovalAnswer>, failure: string) => () =>
+    void action().then((outcome) => {
+      // A host that went away or lost access cannot be retried; let the next prompt show.
+      if (outcome === "done" || !watchedEnvironments.has(item.environmentId)) {
+        return answer("done");
+      }
+      if (outcome === "gone") {
+        return Dialog.alert(
+          m(msg("Request no longer waiting")),
+          m(msg("It expired or was answered elsewhere.")),
+          [{ text: m(msg("OK")), onPress: () => answer("done") }],
+          { onDismiss: () => answer("done") },
+        );
+      }
+      const retryIfWatched = () =>
+        answer(watchedEnvironments.has(item.environmentId) ? "retry" : "done");
+      Dialog.alert(
+        failure,
+        m(msg("The request is still waiting. Try again.")),
+        [{ text: m(msg("OK")), onPress: retryIfWatched }],
+        // Another dialog took the screen; offer the request again on the next update.
+        { onDismiss: () => answer("later") },
+      );
+    });
+  Dialog.alert(
+    item.title,
+    item.message,
+    [
+      {
+        text: m(msg("Deny")),
+        onPress: respond(item.deny, m(msg("Could not deny the device"))),
+      },
+      {
+        text: m(msg("Approve")),
+        onPress: respond(item.approve, m(msg("Could not approve the device"))),
+      },
+    ],
+    // Another dialog took the screen; offer the request again on the next update.
+    { cancelable: false, onDismiss: () => answer("later") },
+  );
 });
 
 /** Devices approved by hand are already known, so only `announce` hosts that skip approval. */
@@ -148,8 +212,12 @@ function NewConnectDeviceWatcher(props: {
       if (seen.seenThrough !== newest) await markConnectDevicesSeen(props.environmentId, newest);
       return;
     }
-    newDeviceNotices.offer([
-      { pairingLinkId: `${props.environmentId}:${newest}`, environmentId: props.environmentId },
+    connectDeviceDialogQueue.offer([
+      {
+        kind: "notice",
+        pairingLinkId: `notice:${props.environmentId}:${newest}`,
+        environmentId: props.environmentId,
+      },
     ]);
   });
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- a device this phone has not announced opens a native alert
@@ -161,67 +229,14 @@ function NewConnectDeviceWatcher(props: {
     const environmentId = props.environmentId;
     return () => {
       announcedHosts.delete(environmentId);
-      newDeviceNotices.drop((notice) => notice.environmentId === environmentId);
+      connectDeviceDialogQueue.drop(
+        (item) => item.kind === "notice" && item.environmentId === environmentId,
+      );
     };
   }, [props.environmentId]);
 
   return null;
 }
-
-/** "gone": the request expired or was answered elsewhere before this answer arrived. */
-type ApprovalAnswer = "done" | "failed" | "gone";
-
-interface QueuedApprovalPrompt extends ConnectDeviceApprovalPrompt {
-  readonly environmentId: EnvironmentId;
-  readonly approve: () => Promise<ApprovalAnswer>;
-  readonly deny: () => Promise<ApprovalAnswer>;
-}
-
-const watchedEnvironments = new Set<EnvironmentId>();
-
-// One queue for every host: a second Android alert would replace an unanswered first one.
-const approvalPrompts = createApprovalPromptQueue<QueuedApprovalPrompt>((prompt, answer) => {
-  const respond = (action: () => Promise<ApprovalAnswer>, failure: string) => () =>
-    void action().then((outcome) => {
-      // A host that went away or lost access cannot be retried; let the next prompt show.
-      if (outcome === "done" || !watchedEnvironments.has(prompt.environmentId)) {
-        return answer("done");
-      }
-      if (outcome === "gone") {
-        return Dialog.alert(
-          m(msg("Request no longer waiting")),
-          m(msg("It expired or was answered elsewhere.")),
-          [{ text: m(msg("OK")), onPress: () => answer("done") }],
-          { onDismiss: () => answer("done") },
-        );
-      }
-      const retryIfWatched = () =>
-        answer(watchedEnvironments.has(prompt.environmentId) ? "retry" : "done");
-      Dialog.alert(
-        failure,
-        m(msg("The request is still waiting. Try again.")),
-        [{ text: m(msg("OK")), onPress: retryIfWatched }],
-        // Another dialog took the screen; offer the request again on the next update.
-        { onDismiss: () => answer("later") },
-      );
-    });
-  Dialog.alert(
-    prompt.title,
-    prompt.message,
-    [
-      {
-        text: m(msg("Deny")),
-        onPress: respond(prompt.deny, m(msg("Could not deny the device"))),
-      },
-      {
-        text: m(msg("Approve")),
-        onPress: respond(prompt.approve, m(msg("Could not approve the device"))),
-      },
-    ],
-    // Another dialog took the screen; offer the request again on the next update.
-    { cancelable: false, onDismiss: () => answer("later") },
-  );
-});
 
 function EnvironmentApprovalWatcher(props: {
   readonly environmentId: EnvironmentId;
@@ -236,14 +251,23 @@ function EnvironmentApprovalWatcher(props: {
     access.data?.type === "snapshot" ? access.data.payload.pairingLinks : undefined;
 
   const offerPrompts = useEffectEvent((links: ReadonlyArray<AuthPairingLink>) => {
+    const knownApprovalIds = new Set<string>();
+    for (const key of connectDeviceDialogQueue.known) {
+      if (key.startsWith(APPROVAL_QUEUE_KEY_PREFIX)) {
+        knownApprovalIds.add(key.slice(APPROVAL_QUEUE_KEY_PREFIX.length));
+      }
+    }
     const prompts = connectDeviceApprovalPrompts({
       environmentLabel: props.environmentLabel,
       pairingLinks: links,
-      shownIds: approvalPrompts.known,
+      shownIds: knownApprovalIds,
     });
-    approvalPrompts.offer(
+    connectDeviceDialogQueue.offer(
       prompts.map((prompt) => ({
         ...prompt,
+        kind: "approval" as const,
+        rawPairingLinkId: prompt.pairingLinkId,
+        pairingLinkId: `${APPROVAL_QUEUE_KEY_PREFIX}${prompt.pairingLinkId}`,
         environmentId: props.environmentId,
         approve: () =>
           approve({
@@ -266,7 +290,9 @@ function EnvironmentApprovalWatcher(props: {
     watchedEnvironments.add(environmentId);
     return () => {
       watchedEnvironments.delete(environmentId);
-      approvalPrompts.drop((prompt) => prompt.environmentId === environmentId);
+      connectDeviceDialogQueue.drop(
+        (item) => item.kind === "approval" && item.environmentId === environmentId,
+      );
     };
   }, [props.environmentId]);
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- a new request on the access stream opens a native alert

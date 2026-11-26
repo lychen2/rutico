@@ -248,6 +248,18 @@ function ensureSecretProviderWritesAllowed(
   return Effect.void;
 }
 
+function isActiveAntigravityNativeOAuthInstance(entry: ProviderInstanceConfig): boolean {
+  if (entry.driver !== "antigravity") return false;
+  if (!resolveProviderInstanceEnabled(entry)) return false;
+  const authMethod =
+    typeof entry.config === "object" && entry.config !== null && "authMethod" in entry.config
+      ? (entry.config as { readonly authMethod?: unknown }).authMethod
+      : undefined;
+  return (
+    authMethod === undefined || authMethod === "oauth-personal" || authMethod === "oauth-business"
+  );
+}
+
 function ensureProviderInstanceMutationAllowed(
   settings: ServerSettings,
   mutation: ProviderInstanceMutation,
@@ -264,6 +276,30 @@ function ensureProviderInstanceMutationAllowed(
         providerInstanceId: mutation.instanceId,
       }),
     );
+  }
+  if (
+    (mutation.operation === "create" || mutation.operation === "upsert") &&
+    isActiveAntigravityNativeOAuthInstance(mutation.instance)
+  ) {
+    const conflictingId = Object.entries(settings.providerInstances).find(
+      ([otherId, otherEntry]) =>
+        otherId !== mutation.instanceId && isActiveAntigravityNativeOAuthInstance(otherEntry),
+    )?.[0];
+    if (conflictingId !== undefined) {
+      return Effect.fail(
+        new ServerSettingsError({
+          settingsPath,
+          operation:
+            mutation.operation === "create"
+              ? "create-provider-instance"
+              : "upsert-provider-instance",
+          providerInstanceId: mutation.instanceId,
+          cause: new Error(
+            `Another active Antigravity instance ('${conflictingId}') already uses this OS user's native ~/.gemini Google sign-in. Disable it first or choose an API key sign-in method.`,
+          ),
+        }),
+      );
+    }
   }
   return Effect.void;
 }

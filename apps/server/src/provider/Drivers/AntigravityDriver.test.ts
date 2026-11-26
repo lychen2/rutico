@@ -500,21 +500,29 @@ it.layer(layerTest)("AntigravityDriver", (it) => {
           }),
         );
 
-        // Thin-client mode exposes T3's MCP server via standard ACP mcpServers, never shell fallback env vars.
+        // Thin-client mode exposes T3's MCP server via standard ACP mcpServers and sets
+        // T3CODE_THREAD_ID for port attribution without injecting shell fallback env vars.
         const agentLaunches = h.launches.filter(
           (launch) => launch.command === h.first.executablePath && launch.args[0] === "acp",
         );
         expect(agentLaunches).toHaveLength(2);
-        for (const launch of agentLaunches) {
-          expect(launch.args).toEqual(["acp"]);
-          expect(launch.environment).toMatchObject({
-            T3CODE_THREAD_ID: "thread-antigravity-ambient",
-            T3_ACP_MCP_ENDPOINT: "http://127.0.0.1:9/ambient",
-            T3_ACP_MCP_AUTHORIZATION: "Bearer ambient-token",
-            T3_ACP_MCP_NODE: "/ambient/node",
-            T3_ACP_MCP_ENTRYPOINT: "/ambient/entrypoint.mjs",
-          });
-        }
+        const [refreshLaunch, sessionLaunch] = agentLaunches;
+        expect(refreshLaunch!.args).toEqual(["acp"]);
+        expect(refreshLaunch!.environment).toMatchObject({
+          T3CODE_THREAD_ID: "thread-antigravity-ambient",
+          T3_ACP_MCP_ENDPOINT: "http://127.0.0.1:9/ambient",
+          T3_ACP_MCP_AUTHORIZATION: "Bearer ambient-token",
+          T3_ACP_MCP_NODE: "/ambient/node",
+          T3_ACP_MCP_ENTRYPOINT: "/ambient/entrypoint.mjs",
+        });
+        expect(sessionLaunch!.args).toEqual(["acp"]);
+        expect(sessionLaunch!.environment).toMatchObject({
+          T3CODE_THREAD_ID: "thread-antigravity-process-environment",
+          T3_ACP_MCP_ENDPOINT: "http://127.0.0.1:9/ambient",
+          T3_ACP_MCP_AUTHORIZATION: "Bearer ambient-token",
+          T3_ACP_MCP_NODE: "/ambient/node",
+          T3_ACP_MCP_ENTRYPOINT: "/ambient/entrypoint.mjs",
+        });
         expect(
           (yield* h.readRequests)
             .filter((request) => request.method === "session/new")

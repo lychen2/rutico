@@ -18,7 +18,7 @@ export function PanelTabCloseButton({
   const button = (
     <button
       type="button"
-      className="cursor-pointer group/close relative flex size-4 shrink-0 items-center justify-center rounded-sm outline-none transition-[background-color,color,scale] duration-150 ease-(--ease-spring-snappy) any-hover:bg-muted active:scale-90 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring pointer-coarse:after:absolute pointer-coarse:after:size-full pointer-coarse:after:min-h-11 pointer-coarse:after:min-w-11 motion-reduce:transition-none motion-reduce:active:scale-100"
+      className="cursor-pointer group/close relative flex size-4 shrink-0 items-center justify-center rounded-sm outline-none transition-[background-color,color,scale] duration-150 ease-(--ease-spring-snappy) any-hover:bg-muted active:scale-90 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring pointer-coarse:size-7 pointer-coarse:after:absolute pointer-coarse:after:inset-x-0 pointer-coarse:after:min-h-11 motion-reduce:transition-none motion-reduce:active:scale-100"
       aria-label={label}
       onClick={onClick}
     >

@@ -265,7 +265,7 @@ export const makeAntigravityProvider = Effect.fn("makeAntigravityProvider")(func
       },
     }),
     setup: { canAuthenticate: true, canInstall: true },
-    supportsConversationRollback: true,
+    supportsConversationRollback: false,
     supportsTextGeneration: false,
     workspaceSnapshots: [],
   } satisfies ServerProviderDraft;
@@ -638,21 +638,14 @@ export const makeAntigravityProvider = Effect.fn("makeAntigravityProvider")(func
       : { ...snapshot, skills: resolvedSkills };
   });
 
-  // Usage quota reads spawn `agy -p "/usage"`; run them only on explicit manual refresh or
-  // explicit usage-limit recovery, never during automatic startup or background health checks.
-  const refreshManual = Effect.fn("AntigravityProvider.refresh")(function* () {
-    const refreshed = yield* managed.refresh;
-    if (refreshed.installed && refreshed.auth.status !== "unauthenticated") {
-      yield* refreshUsage();
-    }
-    return refreshed;
-  });
-
+  // Usage quota reads spawn `agy -p "/usage"`; run them only via explicit `refreshUsage`
+  // (Usage → Limits refresh or usage-limit recovery), never during generic status refreshes
+  // such as WelcomePage mounts, PATH updates, or periodic health checks.
   return {
     snapshot: {
       ...managed,
       getSnapshot,
-      refresh: refreshManual(),
+      refresh: managed.refresh,
       refreshUsage: refreshUsage(),
     },
     onSessionStarted,

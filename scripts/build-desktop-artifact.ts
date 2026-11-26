@@ -3011,6 +3011,12 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
 
   if (platform === "win") {
     buildConfig.npmRebuild = false;
+    buildConfig.protocols = [
+      {
+        name: "Rutico",
+        schemes: ["rutico", "t3code", "t3code-dev"],
+      },
+    ];
     buildConfig.nsis = {
       differentialPackage: true,
       include: "apps/desktop/resources/installer.nsh",

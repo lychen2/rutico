@@ -39,6 +39,7 @@ import {
 import { AndroidPaseoPanelsContext } from "./android-paseo-panels-context";
 import type { AndroidPaseoPanelsProps } from "./AndroidPaseoPanels";
 import { InspectorPanes } from "./inspector-host";
+import { InspectorPaneVisibleContext } from "./inspector-panes";
 import { InspectorSheetContext } from "./workspace-inspector-sheet";
 import type { WorkspaceDetail, WorkspaceDetailSheet } from "./workspace/workspace-detail-selection";
 import { WorkspaceThreadSidebar } from "./workspace/WorkspaceThreadSidebar";
@@ -726,11 +727,13 @@ export function AndroidPaseoPanels(props: AndroidPaseoPanelsProps) {
                 />
               </View>
               <View className="flex-1" style={{ paddingBottom: insets.bottom }}>
-                <InspectorSheetContext value={(then) => closePanels(then)}>
-                  <PaneContext value="inspector">
-                    <InspectorPanes content={inspectorContent} onClose={() => closePanels()} />
-                  </PaneContext>
-                </InspectorSheetContext>
+                <InspectorPaneVisibleContext value={activePanel === 1}>
+                  <InspectorSheetContext value={(then) => closePanels(then)}>
+                    <PaneContext value="inspector">
+                      <InspectorPanes content={inspectorContent} onClose={() => closePanels()} />
+                    </PaneContext>
+                  </InspectorSheetContext>
+                </InspectorPaneVisibleContext>
               </View>
             </Animated.View>
           ) : null}

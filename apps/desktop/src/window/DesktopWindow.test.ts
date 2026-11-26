@@ -1516,7 +1516,11 @@ describe("DesktopWindow", () => {
       );
       assert.equal(darwinOptions[0]?.vibrancy, "under-window");
       assert.equal(darwinOptions[0]?.visualEffectState, "followWindow");
+      assert.equal(darwinOptions[0]?.backgroundColor, "#00000000");
       assert.deepEqual(darwinWindow.setVibrancy.mock.calls, [["under-window"]]);
+      assert.deepEqual(vi.mocked(darwinWindow.window.setBackgroundColor).mock.calls, [
+        ["#00000000"],
+      ]);
 
       const opaqueOptions: Electron.BrowserWindowConstructorOptions[] = [];
       const opaqueWindow = makeFakeBrowserWindow();
@@ -1537,7 +1541,12 @@ describe("DesktopWindow", () => {
         ),
       );
       assert.isUndefined(opaqueOptions[0]?.backgroundMaterial);
+      assert.notEqual(opaqueOptions[0]?.backgroundColor, "#00000000");
       assert.deepEqual(opaqueWindow.setBackgroundMaterial.mock.calls, [["none"]]);
+      assert.notEqual(
+        vi.mocked(opaqueWindow.window.setBackgroundColor).mock.calls[0]?.[0],
+        "#00000000",
+      );
     }),
   );
 

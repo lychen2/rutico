@@ -1,4 +1,11 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { createContext, use, useEffect, useState, type ReactNode } from "react";
+
+/** Whether the inspector pane subtree is currently visible on screen (false when hidden in a drawer or inactive tab). */
+export const InspectorPaneVisibleContext = createContext(true);
+
+export function useInspectorPaneVisible(): boolean {
+  return use(InspectorPaneVisibleContext);
+}
 
 export interface InspectorPane {
   readonly key: string;

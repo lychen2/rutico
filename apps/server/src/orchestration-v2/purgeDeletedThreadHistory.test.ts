@@ -242,10 +242,11 @@ function makeConversationEvents(input: {
   ];
 }
 
-it.effect("hard-deletes thread history, search index, and events when thread.deleted commits", () =>
+it.effect("purges thread history, search index, and events through ProjectionMaintenance", () =>
   Effect.gen(function* () {
     const now = yield* DateTime.now;
     const sink = yield* EventSink.EventSinkV2;
+    const maintenance = yield* ProjectionMaintenance.ProjectionMaintenanceV2;
     const sql = yield* SqlClient.SqlClient;
     const threadId = ThreadId.make("thread:purge-single");
     const secret = "TOP_SECRET_CREDENTIAL_987654";
@@ -285,6 +286,8 @@ it.effect("hard-deletes thread history, search index, and events when thread.del
       ],
     });
 
+    assert.isAbove(yield* maintenance.purgeDeletedThread(threadId), 0);
+
     const hits = yield* sql<{ readonly count: number }>`
       SELECT
         (SELECT COUNT(*) FROM orchestration_v2_projection_messages WHERE thread_id = ${threadId}) +
@@ -308,16 +311,16 @@ it.effect("hard-deletes thread history, search index, and events when thread.del
 );
 
 it.effect(
-  "retains pre-fork runs for a live fork, purges post-fork runs, then purges everything when the fork is deleted",
+  "retains fork source runs while a live fork exists and purges both once the last fork is deleted",
   () =>
     Effect.gen(function* () {
       const now = yield* DateTime.now;
       const sink = yield* EventSink.EventSinkV2;
+      const maintenance = yield* ProjectionMaintenance.ProjectionMaintenanceV2;
       const sql = yield* SqlClient.SqlClient;
       const sourceId = ThreadId.make("thread:purge-source");
       const forkId = ThreadId.make("thread:purge-fork");
       const run1Id = RunId.make("run:purge-source:1");
-      const run2Id = RunId.make("run:purge-source:2");
       const sourceThread = makeThread(sourceId, "Source thread", now);
       const forkThread = makeThread(forkId, "Live fork", now, {
         forkedFrom: { type: "run", threadId: sourceId, runId: run1Id },
@@ -340,13 +343,6 @@ it.effect(
             secretToken: "KEEP_FORK_ANCESTOR_111",
             now,
           }),
-          ...makeConversationEvents({
-            threadId: sourceId,
-            runId: run2Id,
-            ordinal: 2,
-            secretToken: "PURGE_POST_FORK_222",
-            now,
-          }),
           {
             id: EventId.make("event:fork:created"),
             type: "thread.created",
@@ -355,35 +351,9 @@ it.effect(
             occurredAt: now,
             payload: forkThread,
           },
-          {
-            id: EventId.make("event:fork:transfer"),
-            type: "context-transfer.created",
-            threadId: forkId,
-            providerInstanceId,
-            occurredAt: now,
-            payload: {
-              id: ContextTransferId.make("transfer:source-to-fork"),
-              type: "fork",
-              sourceThreadId: sourceId,
-              targetThreadId: forkId,
-              sourcePoint: { threadId: sourceId, runId: run1Id },
-              basePoint: null,
-              sourceProviderInstanceId: providerInstanceId,
-              targetProviderInstanceId: providerInstanceId,
-              targetRunId: null,
-              status: "consumed",
-              resolution: null,
-              createdBy: "user",
-              error: null,
-              createdAt: now,
-              updatedAt: now,
-              consumedAt: now,
-            },
-          },
         ],
       });
 
-      // Deleting source while live fork exists must purge run 2 immediately while preserving run 1.
       yield* sink.write({
         commandId: CommandId.make("cmd:delete-source"),
         events: [
@@ -398,21 +368,14 @@ it.effect(
         ],
       });
 
-      const postForkRemaining = yield* sql<{ readonly count: number }>`
-      SELECT COUNT(*) AS count
-      FROM orchestration_events
-      WHERE stream_id = ${sourceId} AND payload_json LIKE '%PURGE_POST_FORK_222%'
-    `;
-      assert.equal(postForkRemaining[0]?.count, 0);
-
+      assert.equal(yield* maintenance.purgeDeletedThread(sourceId), 0);
       const preForkRemaining = yield* sql<{ readonly count: number }>`
-      SELECT COUNT(*) AS count
-      FROM orchestration_v2_projection_messages
-      WHERE thread_id = ${sourceId} AND run_id = ${run1Id}
-    `;
+        SELECT COUNT(*) AS count
+        FROM orchestration_v2_projection_messages
+        WHERE thread_id = ${sourceId} AND run_id = ${run1Id}
+      `;
       assert.equal(preForkRemaining[0]?.count, 2);
 
-      // Deleting the last live fork must cascade-purge run 1 from the already-deleted source too.
       yield* sink.write({
         commandId: CommandId.make("cmd:delete-fork"),
         events: [
@@ -427,19 +390,20 @@ it.effect(
         ],
       });
 
+      assert.isAbove(yield* maintenance.purgeDeletedThread(forkId), 0);
       const allSourceLeftovers = yield* sql<{ readonly count: number }>`
-      SELECT
-        (SELECT COUNT(*) FROM orchestration_v2_projection_messages WHERE thread_id IN (${sourceId}, ${forkId})) +
-        (SELECT COUNT(*) FROM orchestration_v2_projection_turn_items WHERE thread_id IN (${sourceId}, ${forkId})) +
-        (SELECT COUNT(*) FROM orchestration_v2_projection_runs WHERE thread_id IN (${sourceId}, ${forkId})) +
-        (SELECT COUNT(*) FROM orchestration_events WHERE stream_id IN (${sourceId}, ${forkId}) AND event_type <> 'thread.deleted')
-      AS count
-    `;
+        SELECT
+          (SELECT COUNT(*) FROM orchestration_v2_projection_messages WHERE thread_id IN (${sourceId}, ${forkId})) +
+          (SELECT COUNT(*) FROM orchestration_v2_projection_turn_items WHERE thread_id IN (${sourceId}, ${forkId})) +
+          (SELECT COUNT(*) FROM orchestration_v2_projection_runs WHERE thread_id IN (${sourceId}, ${forkId})) +
+          (SELECT COUNT(*) FROM orchestration_events WHERE stream_id IN (${sourceId}, ${forkId}) AND event_type NOT IN ('thread.created', 'thread.deleted'))
+        AS count
+      `;
       assert.equal(allSourceLeftovers[0]?.count, 0);
     }).pipe(Effect.provide(layerTest)),
 );
 
-it.effect("ProjectionMaintenance.pruneEventStore purges previously soft-deleted threads", () =>
+it.effect("ProjectionMaintenance.pruneEventStore purges previously soft-deleted threads once", () =>
   Effect.gen(function* () {
     const now = yield* DateTime.now;
     const sql = yield* SqlClient.SqlClient;
@@ -473,19 +437,13 @@ it.effect("ProjectionMaintenance.pruneEventStore purges previously soft-deleted 
         payload: { ...thread, deletedAt: now, updatedAt: now },
       },
     ];
-    // Simulate historical state left behind by earlier soft-delete versions without calling EventSink.
     const stored = yield* eventStore.append({ events });
     for (const s of stored) {
       yield* projectionStore.apply(s.event);
     }
 
-    const before = yield* sql<{ readonly count: number }>`
-      SELECT COUNT(*) AS count FROM orchestration_v2_projection_messages WHERE thread_id = ${threadId}
-    `;
-    assert.equal(before[0]?.count, 2);
-
     const summary = yield* maintenance.pruneEventStore();
-    assert.isAbove(summary.deletedEventCount, 0);
+    assert.isAbove(summary.purgedRowCount, 0);
 
     const after = yield* sql<{ readonly count: number }>`
       SELECT
@@ -496,163 +454,120 @@ it.effect("ProjectionMaintenance.pruneEventStore purges previously soft-deleted 
     `;
     assert.equal(after[0]?.count, 0);
 
-    // Running maintenance a second time must skip already-clean tombstones without rewriting rows.
     const beforeChanges = yield* sql<{ readonly count: number }>`SELECT total_changes() AS count`;
     const yieldCount = yield* Ref.make(0);
     const secondSummary = yield* maintenance.pruneEventStore(
       Ref.update(yieldCount, (value) => value + 1),
     );
     const afterChanges = yield* sql<{ readonly count: number }>`SELECT total_changes() AS count`;
-    assert.equal(secondSummary.deletedEventCount, 0);
+    assert.equal(secondSummary.purgedRowCount, 0);
     assert.isAbove(yield* Ref.get(yieldCount), 0);
-    // No thread-table rewrite on an already-purged tombstone.
     assert.equal(afterChanges[0]?.count, beforeChanges[0]?.count);
   }).pipe(Effect.provide(layerTest)),
 );
 
-it.effect(
-  "preserves a shared Codex provider session while another bound thread lives, then removes it on the last delete",
-  () =>
-    Effect.gen(function* () {
-      const now = yield* DateTime.now;
-      const sink = yield* EventSink.EventSinkV2;
-      const projectionStore = yield* ProjectionStore.ProjectionStoreV2;
-      const sql = yield* SqlClient.SqlClient;
-      const threadA = ThreadId.make("thread:shared-codex-a");
-      const threadB = ThreadId.make("thread:shared-codex-b");
-      const sessionId = ProviderSessionId.make("session:shared-codex:1");
-      const driver = ProviderDriverKind.make("codex");
-      const session = {
-        id: sessionId,
-        driver,
-        providerInstanceId,
-        status: "running" as const,
-        cwd: "/workspace/shared",
-        model: "gpt-5.4",
-        capabilities: CodexProviderCapabilitiesV2,
-        createdAt: now,
-        updatedAt: now,
-        lastError: null,
-      };
-      const payloadA = makeThread(threadA, "Thread A", now);
-      const payloadB = makeThread(threadB, "Thread B", now);
+it.effect("preserves a shared Codex provider session while another bound thread lives", () =>
+  Effect.gen(function* () {
+    const now = yield* DateTime.now;
+    const sink = yield* EventSink.EventSinkV2;
+    const maintenance = yield* ProjectionMaintenance.ProjectionMaintenanceV2;
+    const projectionStore = yield* ProjectionStore.ProjectionStoreV2;
+    const threadA = ThreadId.make("thread:shared-codex-a");
+    const threadB = ThreadId.make("thread:shared-codex-b");
+    const sessionId = ProviderSessionId.make("session:shared-codex:1");
+    const driver = ProviderDriverKind.make("codex");
+    const session = {
+      id: sessionId,
+      driver,
+      providerInstanceId,
+      status: "running" as const,
+      cwd: "/workspace/shared",
+      model: "gpt-5.4",
+      capabilities: CodexProviderCapabilitiesV2,
+      createdAt: now,
+      updatedAt: now,
+      lastError: null,
+    };
+    const payloadA = makeThread(threadA, "Thread A", now);
+    const payloadB = makeThread(threadB, "Thread B", now);
 
-      yield* sink.write({
-        events: [
-          {
-            id: EventId.make("event:shared-a:created"),
-            type: "thread.created",
-            threadId: threadA,
-            providerInstanceId,
-            occurredAt: now,
-            payload: payloadA,
-          },
-          {
-            id: EventId.make("event:shared-b:created"),
-            type: "thread.created",
-            threadId: threadB,
-            providerInstanceId,
-            occurredAt: now,
-            payload: payloadB,
-          },
-          {
-            id: EventId.make("event:shared-a:attached"),
-            type: "provider-session.attached",
-            threadId: threadA,
-            driver,
-            providerInstanceId,
-            occurredAt: now,
-            payload: session,
-          },
-          // B attaches second so provider_sessions.thread_id is overwritten with threadB.
-          {
-            id: EventId.make("event:shared-b:attached"),
-            type: "provider-session.attached",
-            threadId: threadB,
-            driver,
-            providerInstanceId,
-            occurredAt: now,
-            payload: session,
-          },
-        ],
-      });
+    yield* sink.write({
+      events: [
+        {
+          id: EventId.make("event:shared-a:created"),
+          type: "thread.created",
+          threadId: threadA,
+          providerInstanceId,
+          occurredAt: now,
+          payload: payloadA,
+        },
+        {
+          id: EventId.make("event:shared-b:created"),
+          type: "thread.created",
+          threadId: threadB,
+          providerInstanceId,
+          occurredAt: now,
+          payload: payloadB,
+        },
+        {
+          id: EventId.make("event:shared-a:attached"),
+          type: "provider-session.attached",
+          threadId: threadA,
+          driver,
+          providerInstanceId,
+          occurredAt: now,
+          payload: session,
+        },
+        {
+          id: EventId.make("event:shared-b:attached"),
+          type: "provider-session.attached",
+          threadId: threadB,
+          driver,
+          providerInstanceId,
+          occurredAt: now,
+          payload: session,
+        },
+      ],
+    });
 
-      assert.equal(
-        (yield* projectionStore.getThreadRecords(threadA, ["providerSessions"])).providerSessions
-          .length,
-        1,
-      );
+    yield* sink.write({
+      commandId: CommandId.make("cmd:delete-shared-b"),
+      events: [
+        {
+          id: EventId.make("event:shared-b:detached"),
+          type: "provider-session.detached",
+          threadId: threadB,
+          driver,
+          providerInstanceId,
+          occurredAt: now,
+          payload: { providerSessionId: sessionId, detachedAt: now, reason: "Thread deleted." },
+        },
+        {
+          id: EventId.make("event:shared-b:deleted"),
+          type: "thread.deleted",
+          threadId: threadB,
+          providerInstanceId,
+          occurredAt: now,
+          payload: { ...payloadB, deletedAt: now, updatedAt: now },
+        },
+      ],
+    });
 
-      yield* sink.write({
-        commandId: CommandId.make("cmd:delete-shared-b"),
-        events: [
-          {
-            id: EventId.make("event:shared-b:detached"),
-            type: "provider-session.detached",
-            threadId: threadB,
-            driver,
-            providerInstanceId,
-            occurredAt: now,
-            payload: { providerSessionId: sessionId, detachedAt: now, reason: "Thread deleted." },
-          },
-          {
-            id: EventId.make("event:shared-b:deleted"),
-            type: "thread.deleted",
-            threadId: threadB,
-            providerInstanceId,
-            occurredAt: now,
-            payload: { ...payloadB, deletedAt: now, updatedAt: now },
-          },
-        ],
-      });
+    yield* maintenance.purgeDeletedThread(threadB);
 
-      const afterDeleteB = yield* projectionStore.getThreadRecords(threadA, ["providerSessions"]);
-      assert.equal(afterDeleteB.providerSessions.length, 1);
-      assert.equal(afterDeleteB.providerSessions[0]?.id, sessionId);
-      const ownerRow = yield* sql<{ readonly thread_id: string | null }>`
-        SELECT thread_id FROM orchestration_v2_projection_provider_sessions
-        WHERE provider_session_id = ${sessionId}
-      `;
-      assert.equal(ownerRow[0]?.thread_id, threadA);
-
-      // Deleting the last remaining bound thread removes the main session row too.
-      yield* sink.write({
-        commandId: CommandId.make("cmd:delete-shared-a"),
-        events: [
-          {
-            id: EventId.make("event:shared-a:detached"),
-            type: "provider-session.detached",
-            threadId: threadA,
-            driver,
-            providerInstanceId,
-            occurredAt: now,
-            payload: { providerSessionId: sessionId, detachedAt: now, reason: "Thread deleted." },
-          },
-          {
-            id: EventId.make("event:shared-a:deleted"),
-            type: "thread.deleted",
-            threadId: threadA,
-            providerInstanceId,
-            occurredAt: now,
-            payload: { ...payloadA, deletedAt: now, updatedAt: now },
-          },
-        ],
-      });
-
-      const remainingSessions = yield* sql<{ readonly count: number }>`
-        SELECT COUNT(*) AS count FROM orchestration_v2_projection_provider_sessions
-        WHERE provider_session_id = ${sessionId}
-      `;
-      assert.equal(remainingSessions[0]?.count, 0);
-    }).pipe(Effect.provide(layerTest)),
+    const afterDeleteB = yield* projectionStore.getThreadRecords(threadA, ["providerSessions"]);
+    assert.equal(afterDeleteB.providerSessions.length, 1);
+    assert.equal(afterDeleteB.providerSessions[0]?.id, sessionId);
+  }).pipe(Effect.provide(layerTest)),
 );
 
 it.effect(
-  "redacts settled runtime-request.respond user feedback and answers from outbox while keeping cleanup effects",
+  "redacts failed and deletes succeeded runtime-request.respond outbox rows after cleanup completes",
   () =>
     Effect.gen(function* () {
       const now = yield* DateTime.now;
       const sink = yield* EventSink.EventSinkV2;
+      const maintenance = yield* ProjectionMaintenance.ProjectionMaintenanceV2;
       const outbox = yield* EffectOutbox.EffectOutboxV2;
       const sql = yield* SqlClient.SqlClient;
       const threadId = ThreadId.make("thread:purge-outbox");
@@ -733,14 +648,18 @@ it.effect(
             threadId,
             request: { type: "terminal.cleanup" },
           },
-          {
-            id: "effect:delete-outbox:attachment",
-            commandId: CommandId.make("cmd:delete-outbox-thread"),
-            threadId,
-            request: { type: "attachment.cleanup", attachmentIds: ["att-1"] },
-          },
         ],
       });
+
+      // Pending terminal.cleanup defers destructive purge until cleanup settles.
+      assert.equal(yield* maintenance.purgeDeletedThread(threadId), 0);
+      yield* sql`
+        UPDATE orchestration_v2_effect_outbox
+        SET status = 'succeeded', completed_at = ${DateTime.formatIso(now)}
+        WHERE effect_id = 'effect:delete-outbox:terminal'
+      `;
+
+      yield* maintenance.purgeDeletedThread(threadId);
 
       const leaked = yield* sql<{ readonly count: number }>`
         SELECT COUNT(*) AS count
@@ -750,7 +669,6 @@ it.effect(
       `;
       assert.equal(leaked[0]?.count, 0);
 
-      // Failed row stays present with status='failed' for StorageCleanup's guard, and cleanup effects stay pending.
       const statuses = yield* sql<{ readonly effect_id: string; readonly status: string }>`
         SELECT effect_id, status
         FROM orchestration_v2_effect_outbox
@@ -759,29 +677,27 @@ it.effect(
       `;
       assert.deepEqual(
         statuses.map((row) => [row.effect_id, row.status]),
-        [
-          ["effect:delete-outbox:attachment", "pending"],
-          ["effect:delete-outbox:terminal", "pending"],
-          ["effect:outbox:respond-fail", "failed"],
-          ["effect:outbox:respond-ok", "succeeded"],
-        ],
+        [["effect:outbox:respond-fail", "failed"]],
       );
     }).pipe(Effect.provide(layerTest)),
 );
 
 it.effect(
-  "strips guestShare from a deleted source thread even when a live run fork retains its only run",
+  "strips guestShare from projection and all history events including thread.guest-share-updated even while a live run fork retains the source thread",
   () =>
     Effect.gen(function* () {
       const now = yield* DateTime.now;
       const isoNow = DateTime.formatIso(now);
       const sink = yield* EventSink.EventSinkV2;
+      const maintenance = yield* ProjectionMaintenance.ProjectionMaintenanceV2;
       const sql = yield* SqlClient.SqlClient;
       const sourceId = ThreadId.make("thread:guest-source");
       const forkId = ThreadId.make("thread:guest-fork");
       const run1Id = RunId.make("run:guest-source:1");
       const guestSecret = "GUEST_PRIVATE_MESSAGE_999";
-      const sourceThread = makeThread(sourceId, "Guest source", now, {
+      const baseSourceThread = makeThread(sourceId, "Guest source", now);
+      const sourceWithGuest: OrchestrationV2AppThread = {
+        ...baseSourceThread,
         guestShare: {
           id: GuestShareId.make("guest-share:1"),
           host: "example.t3.codes",
@@ -797,7 +713,7 @@ it.effect(
             },
           ],
         },
-      });
+      };
       const forkThread = makeThread(forkId, "Guest live fork", now, {
         forkedFrom: { type: "run", threadId: sourceId, runId: run1Id },
       });
@@ -810,7 +726,15 @@ it.effect(
             threadId: sourceId,
             providerInstanceId,
             occurredAt: now,
-            payload: sourceThread,
+            payload: baseSourceThread,
+          },
+          {
+            id: EventId.make("event:guest-source:guest-updated"),
+            type: "thread.guest-share-updated",
+            threadId: sourceId,
+            providerInstanceId,
+            occurredAt: now,
+            payload: sourceWithGuest,
           },
           ...makeConversationEvents({
             threadId: sourceId,
@@ -855,7 +779,6 @@ it.effect(
         ],
       });
 
-      // Source has only run 1, and fork inherits run 1 (so purgedRuns.length === 0).
       yield* sink.write({
         commandId: CommandId.make("cmd:delete-guest-source"),
         events: [
@@ -865,10 +788,13 @@ it.effect(
             threadId: sourceId,
             providerInstanceId,
             occurredAt: now,
-            payload: { ...sourceThread, deletedAt: now, updatedAt: now },
+            payload: { ...sourceWithGuest, deletedAt: now, updatedAt: now },
           },
         ],
       });
+
+      // Live fork still retains run 1, so destructive content purge returns 0, while guestShare is scrubbed everywhere.
+      assert.equal(yield* maintenance.purgeDeletedThread(sourceId), 0);
 
       const retainedMessages = yield* sql<{ readonly count: number }>`
         SELECT COUNT(*) AS count
@@ -877,11 +803,12 @@ it.effect(
       `;
       assert.equal(retainedMessages[0]?.count, 2);
 
+      // Search ALL event types (including thread.guest-share-updated) without filtering by event_type.
       const guestLeaks = yield* sql<{ readonly count: number }>`
         SELECT
           (SELECT COUNT(*) FROM orchestration_v2_projection_threads WHERE thread_id = ${sourceId} AND payload_json LIKE ${`%${guestSecret}%`}) +
-          (SELECT COUNT(*) FROM orchestration_events WHERE stream_id = ${sourceId} AND event_type = 'thread.deleted' AND payload_json LIKE ${`%${guestSecret}%`}) +
-          (SELECT COUNT(*) FROM orchestration_v2_events WHERE thread_id = ${sourceId} AND event_type = 'thread.deleted' AND payload_json LIKE ${`%${guestSecret}%`})
+          (SELECT COUNT(*) FROM orchestration_events WHERE stream_id = ${sourceId} AND payload_json LIKE ${`%${guestSecret}%`}) +
+          (SELECT COUNT(*) FROM orchestration_v2_events WHERE thread_id = ${sourceId} AND payload_json LIKE ${`%${guestSecret}%`})
         AS count
       `;
       assert.equal(guestLeaks[0]?.count, 0);

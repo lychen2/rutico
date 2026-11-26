@@ -11,8 +11,8 @@ which models and account access are available through this agent.
 3. Click **Sign in** and complete browser sign-in. Wait for T3 Code to confirm access and load models. (Once installed, you can also sign in from mobile.)
 
 - **Remote sign-in**: Paste the temporary code (or full URL) from Google's completion page into T3 Code's code field.
-- **Manual binary**: Install [Antigravity CLI](https://antigravity.google/docs/getting-started) and set **Binary path** to `agy`. Leave blank to use the managed runtime (or `PATH`).
-- **Updates**: Click **Update Antigravity** in provider settings. T3 Code requires Antigravity **1.5+** (1.5.12+ recommended); running threads finish on their original runtime.
+- **Manual binary**: Install [Antigravity CLI](https://antigravity.google/docs/getting-started) and set **Binary path** to `agy`. Leave blank to prefer a compatible `agy` on `PATH` before falling back to the managed runtime.
+- **Updates**: Click **Update Antigravity** in provider settings. T3 Code requires Antigravity **1.5.1+** (1.5.12+ recommended); running threads finish on their original runtime.
 
 ### Sign-in methods
 
@@ -43,9 +43,9 @@ API keys are stored outside `settings.json`, and ambient `GEMINI_API_KEY` / Goog
 - **Global skills**: Loaded from `~/.gemini/config/skills` or `~/.gemini/antigravity-cli/skills` (list `~/.agents/skills` in `~/.gemini/config/skills.json` or `.agents/skills.json` to include it).
 - **Attachments**: Images and audio go directly to the model; PDFs and text files load as documents; videos and other files pass a saved file path (supported videos go natively to Gemini models).
 
-## Multiple accounts and removal
+## Sign-out and removal
 
-Add a separate Antigravity instance in **Settings → Providers** for each Google account (runtimes are shared on disk).
+Antigravity native OAuth instances on the same OS user share the `~/.gemini` CLI configuration and Google sign-in, so only one active native OAuth Antigravity instance is supported per host user (runtimes are shared on disk).
 
 | Action                              | Effect                                                                  |
 | ----------------------------------- | ----------------------------------------------------------------------- |

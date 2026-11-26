@@ -48,6 +48,7 @@ import {
 import { syncBrowserChromeTheme } from "./hooks/useTheme";
 import { startThreadVisitedMigration } from "./hooks/useThreadVisitedMigration";
 import { installDesktopPasteAsText } from "./lib/desktopPasteAsText";
+import { isMacPlatform, isWindowsPlatform } from "./lib/utils";
 import {
   syncDocumentElectronPlatformClasses,
   syncDocumentWindowControlsOverlayClass,
@@ -71,12 +72,25 @@ import { resolveActiveThreadRouteRef, resolveThreadRouteTarget } from "./threadR
 /** Writes appearance settings onto the document, touching only the groups that changed. */
 function startClientAppearance(): void {
   const root = document.documentElement;
+  const nativeGlassCapable =
+    isElectron && (isMacPlatform(navigator.platform) || isWindowsPlatform(navigator.platform));
+  const reducedTransparencyQuery =
+    nativeGlassCapable && typeof window.matchMedia === "function"
+      ? window.matchMedia("(prefers-reduced-transparency: reduce)")
+      : null;
   let applied: ClientSettings | null = null;
   let appliedSeparateFonts: boolean | null = null;
+  let appliedNativeGlass: boolean | null = null;
   const apply = () => {
     const settings = getClientSettings();
     const previous = applied;
     applied = settings;
+    const nativeGlassActive =
+      nativeGlassCapable && !reducedTransparencyQuery?.matches && settings.glassOpacity < 100;
+    if (appliedNativeGlass !== nativeGlassActive) {
+      appliedNativeGlass = nativeGlassActive;
+      root.dataset.nativeGlass = nativeGlassActive ? "true" : "false";
+    }
     const separateFonts = readLocalStorageValue(
       TYPOGRAPHY_ADVANCED_STORAGE_KEY,
       false,
@@ -128,6 +142,7 @@ function startClientAppearance(): void {
   };
   subscribeClientSettings(apply);
   subscribeLocalStorageKey(TYPOGRAPHY_ADVANCED_STORAGE_KEY, apply);
+  reducedTransparencyQuery?.addEventListener("change", apply);
   apply();
 }
 

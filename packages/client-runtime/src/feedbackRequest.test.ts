@@ -21,6 +21,15 @@ describe("feedbackRequestDisplay", () => {
         feedbackRequestDisplay({ feedbackStatus }, "local"),
       ),
     ).toEqual([
+      { kind: "answered", outcome: "sent", label: "Sent" },
+      { kind: "answered", outcome: "not-sent", label: "Not sent" },
+      { kind: "answered", outcome: "not-sent", label: "Closed without sending" },
+    ]);
+    expect(
+      (["sent", "declined", "cancelled"] as const).map((feedbackStatus) =>
+        feedbackRequestDisplay({ feedbackStatus }, "local", undefined, { localOnly: true }),
+      ),
+    ).toEqual([
       { kind: "answered", outcome: "sent", label: "Saved locally" },
       { kind: "answered", outcome: "not-sent", label: "Not saved" },
       { kind: "answered", outcome: "not-sent", label: "Closed without saving" },

@@ -1063,7 +1063,7 @@ function RightPanelTab(
               onDoubleClick={() => {
                 if (surface.kind === "device" && props.canRename) onStartRename(surface.id);
               }}
-              className="cursor-pointer flex min-w-0 items-center"
+              className="cursor-pointer flex min-w-0 items-center pointer-coarse:min-w-6 pointer-coarse:justify-center pointer-coarse:px-1"
               aria-label={
                 sideChatState === null
                   ? undefined
@@ -1103,7 +1103,7 @@ function RightPanelTab(
       ref={setNodeRef}
       style={{ transform: CSS.Translate.toString(transform), transition }}
       className={cn(
-        "t3-panel-tab-enter cursor-pointer group/tab flex h-6 max-w-36 shrink-0 items-center gap-0.5 rounded-md pr-2 pl-1.5 text-xs motion-reduce:transition-none",
+        "t3-panel-tab-enter cursor-pointer group/tab flex h-6 max-w-36 shrink-0 items-center gap-0.5 rounded-md pr-2 pl-1.5 text-xs pointer-coarse:h-8 pointer-coarse:gap-1 motion-reduce:transition-none",
         props.ownsDesktopTitleBar && "[-webkit-app-region:no-drag]",
         props.active
           ? "bg-accent text-foreground shadow-xs/5 ring-1 ring-inset ring-border/60 dark:ring-white/10"

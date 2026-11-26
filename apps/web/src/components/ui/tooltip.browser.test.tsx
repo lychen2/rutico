@@ -332,3 +332,30 @@ it("closes a nested tooltip when exiting both nested and enclosing triggers dire
   await userEvent.hover(screen.getByRole("button", { name: "Outside" }));
   await expect.element(page.getByText("Settle thread")).not.toBeInTheDocument();
 });
+
+it("shows the inner button tooltip instead of the outer row tooltip on keyboard focus", async () => {
+  await using screen = await render(
+    <SharedTooltipProvider>
+      <SharedTooltipTrigger
+        label="Thread details"
+        side="right"
+        render={<div tabIndex={0} className="flex w-60 items-center justify-between p-2" />}
+      >
+        <span>Thread title</span>
+        <SharedTooltipTrigger label="Settle thread" render={<button type="button" />}>
+          Settle
+        </SharedTooltipTrigger>
+      </SharedTooltipTrigger>
+    </SharedTooltipProvider>,
+  );
+
+  await userEvent.tab();
+  await expect.element(page.getByText("Thread details")).toBeVisible();
+
+  await userEvent.tab();
+  const settleButton = screen.getByRole("button", { name: "Settle" });
+  await expect.element(settleButton).toHaveFocus();
+  await expect.element(page.getByText("Settle thread")).toBeVisible();
+  await expect.element(page.getByText("Thread details")).not.toBeInTheDocument();
+  expect(settleButton.element().getAttribute("aria-describedby")).toBeTruthy();
+});

@@ -502,7 +502,8 @@ export const AntigravityDriver: ProviderDriver<
     const authFlow: AntigravityAuth = yield* makeAntigravityAuth({
       instanceId,
       makeRuntime: makeDisposableRuntime,
-      onAuthenticated: publishCatalog,
+      onAuthenticated: (started, runtime) =>
+        provider.onSignedIn.pipe(Effect.andThen(publishCatalog(started, runtime))),
       onSignedOut: Effect.suspend(() => provider.onSignedOut),
       usesBrowser: antigravityAuthUsesBrowser(auth.authMethod),
       codeLogin,
@@ -549,6 +550,8 @@ export const AntigravityDriver: ProviderDriver<
 
     const usage = yield* makeAntigravityUsageProbe({
       authMethod: auth.authMethod,
+      ...(auth.gcpProject ? { gcpProject: auth.gcpProject } : {}),
+      ...(auth.gcpLocation ? { gcpLocation: auth.gcpLocation } : {}),
       resolveExecutable: installation.resolve(settings.binaryPath, processEnvironment),
       checkCompatibility: installation.compatibility,
       environment: processEnvironment,

@@ -1199,8 +1199,18 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
     environmentsState.environments,
   );
   const activeOverviewKeys = collectActiveOverviewKeys(listedThreads, disconnectedEnvironmentIds);
-  const isRouteRunningInOverview =
-    routeRowThreadKey !== null && activeOverviewKeys.has(routeRowThreadKey);
+  const isRouteRunningInOverview = (rowKey: string) => {
+    if (routeRowThreadKey !== rowKey || !activeOverviewKeys.has(rowKey)) return false;
+    const sidebar = document.querySelector('[data-slot="sidebar"]');
+    const overviewButtons = sidebar?.querySelectorAll<HTMLElement>(
+      '[data-overview-row="running"][data-overview-thread-key]',
+    );
+    if (!overviewButtons) return false;
+    for (const button of overviewButtons) {
+      if (button.dataset.overviewThreadKey === rowKey) return true;
+    }
+    return false;
+  };
   const revealActiveRow = useActiveRowReveal(
     routeReveal,
     routeRowThreadKey,
@@ -1514,7 +1524,10 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
   };
 
   const attemptOverviewMarkRead = (threadRef: ScopedThreadRef) => {
-    const visitedAt = new Date().toISOString();
+    const thread = readThreadShell(threadRef);
+    // Use the server's latest completion timestamp as watermark so cross-machine clock skew
+    // neither leaves this completion unread nor hides a newer completion from a slower host.
+    const visitedAt = thread?.latestRun?.completedAt ?? new Date().toISOString();
     markThreadVisited(scopedThreadKey(threadRef), visitedAt);
     void visitThread({
       environmentId: threadRef.environmentId,
@@ -2765,10 +2778,11 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
           await handleMultiSelectContextMenu(position, source);
           return;
         }
-        // Search results also reach threads in collapsed shelves, which are not rendered rows.
+        // Search results and global overview rows also reach threads outside the filtered regular list.
         const thread =
           threadByKeyRef.current.get(threadKey) ??
-          searchableThreads.find((candidate) => threadShellKey(candidate) === threadKey);
+          searchableThreads.find((candidate) => threadShellKey(candidate) === threadKey) ??
+          readThreadShell(threadRef);
         if (!thread) return;
         const threadWorkspacePath =
           thread.worktreePath ??
