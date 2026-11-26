@@ -1796,3 +1796,100 @@
     transition: none;
   }
 }
+
+/* ==========================================================================
+   D14 / C047: Thumbnail Decode Reveal, Radial Upload Rings & Fanned Stack
+   ========================================================================== */
+
+[data-upload-ring-arc="true"] {
+  transition: stroke-dashoffset 140ms ease-out;
+}
+
+@keyframes chat-upload-ring-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes chat-upload-complete-pop {
+  0% {
+    opacity: 0;
+    transform: scale(0.5);
+  }
+  22% {
+    opacity: 1;
+    transform: scale(1.1);
+  }
+  38% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  78% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(0.82);
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  [data-thumbnail-decoded="true"] {
+    transition:
+      opacity 180ms ease-out,
+      transform 220ms var(--spring-snappy);
+    @starting-style {
+      opacity: 0;
+      transform: scale(1.03);
+    }
+  }
+
+  [data-upload-ring-svg="spinning"] {
+    animation: chat-upload-ring-spin 1.05s linear infinite;
+    animation-play-state: var(--visible-animation-state, paused);
+    will-change: var(--visible-animation-will-change, auto);
+  }
+
+  [data-upload-complete="true"] {
+    animation: chat-upload-complete-pop 1.15s var(--spring-bouncy) forwards;
+  }
+
+  @media (any-hover: hover) {
+    [data-resting-fan="true"] [data-resting-fan-card="true"] {
+      transform: rotate(var(--fan-angle, 0deg));
+      transition:
+        transform 220ms var(--spring-snappy),
+        margin-inline-start 220ms var(--spring-snappy),
+        box-shadow 180ms ease-out;
+      box-shadow: 0 1px 3px rgb(0 0 0 / 0.14);
+    }
+
+    [data-resting-fan="true"] [data-resting-fan-card="true"] + [data-resting-fan-card="true"] {
+      margin-inline-start: -0.35rem;
+    }
+
+    [data-resting-fan="true"]:is(:hover, :focus-within) [data-resting-fan-card="true"] {
+      transform: rotate(0deg);
+      margin-inline-start: 0;
+    }
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-thumbnail-decoded="true"],
+  [data-upload-ring-arc="true"],
+  [data-resting-fan="true"] [data-resting-fan-card="true"] {
+    transition: none;
+    animation: none;
+    transform: none;
+  }
+
+  [data-upload-ring-svg="spinning"] {
+    animation: none;
+  }
+
+  [data-upload-complete="true"] {
+    display: none;
+  }
+}

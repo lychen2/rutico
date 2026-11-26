@@ -7,8 +7,26 @@ import type {
 } from "@t3tools/contracts";
 import { formatAttachmentSize } from "@t3tools/client-runtime/state/attachments";
 import { T, useGT, useMessages } from "gt-react";
-import { CircleAlertIcon, ImageIcon, PaperclipIcon, PlayIcon, XIcon } from "lucide-react";
-import { type ComponentProps, type Ref, useLayoutEffect, useRef } from "react";
+import {
+  CheckIcon,
+  CircleAlertIcon,
+  ImageIcon,
+  PaperclipIcon,
+  PlayIcon,
+  XIcon,
+} from "lucide-react";
+import {
+  type ComponentProps,
+  type CSSProperties,
+  type Ref,
+  type RefObject,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from "react";
+
+import { captureFlipSnapshot, playFlipBatch, type FlipRect } from "~/lib/motion/flip";
+import { observeVisibleAnimation } from "~/lib/visibleAnimation";
 
 import {
   type ComposerFileAttachment,
@@ -51,6 +69,139 @@ import {
 } from "./SnapShotAttachmentDetails";
 import { prepareVideoFirstFrame } from "../../lib/videoFirstFrame";
 import { SharedTooltipTrigger } from "../ui/shared-tooltip";
+
+const UPLOAD_RING_RADIUS = 8;
+const UPLOAD_RING_CIRCUMFERENCE = 2 * Math.PI * UPLOAD_RING_RADIUS;
+// Tip 014 lively underdamped neighbor refill spring when an attachment slot vacates.
+const ATTACHMENT_REFILL_SPRING = { duration: 0.34, bounce: 0.22 } as const;
+
+function useAttachmentDeckFlip(
+  containerRef: RefObject<HTMLDivElement | null>,
+  itemSignature: string,
+): void {
+  const prevRectsRef = useRef<Map<string, FlipRect>>(new Map());
+
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- batches read/write FLIP spring reflow on surviving attachment tiles when siblings enter or exit
+  useLayoutEffect(() => {
+    const container = containerRef.current;
+    if (!container || itemSignature.length === 0) {
+      prevRectsRef.current = new Map();
+      return;
+    }
+
+    const nodes = Array.from(container.querySelectorAll<HTMLElement>("[data-attachment-flip-key]"));
+    const nextRects = new Map<string, FlipRect>();
+    const entries: Array<{
+      readonly element: HTMLElement;
+      readonly first: FlipRect;
+      readonly options: { readonly preset: typeof ATTACHMENT_REFILL_SPRING };
+    }> = [];
+
+    // Batched read pass before any animation writes (Astra P1-2).
+    for (const node of nodes) {
+      const key = node.dataset.attachmentFlipKey;
+      if (!key) continue;
+      const rect = captureFlipSnapshot(node);
+      nextRects.set(key, rect);
+      const previous = prevRectsRef.current.get(key);
+      if (
+        previous &&
+        !node.hasAttribute("data-snapshot-pending") &&
+        (Math.abs(previous.left - rect.left) >= 1 || Math.abs(previous.top - rect.top) >= 1)
+      ) {
+        entries.push({
+          element: node,
+          first: previous,
+          options: { preset: ATTACHMENT_REFILL_SPRING },
+        });
+      }
+    }
+
+    prevRectsRef.current = nextRects;
+    if (entries.length > 0) {
+      playFlipBatch(entries);
+    }
+  }, [containerRef, itemSignature]);
+}
+
+function AttachmentUploadRing({
+  preparing,
+  upload,
+}: {
+  readonly preparing: boolean;
+  readonly upload: AttachmentUploadState | undefined;
+}) {
+  const uploading = upload?.status === "uploading";
+  const progress = uploading
+    ? Math.max(0.06, Math.min(1, Number.isFinite(upload.progress) ? upload.progress : 0))
+    : 0.28;
+  const dashOffset = UPLOAD_RING_CIRCUMFERENCE * (1 - progress);
+
+  if (!preparing && !uploading) return null;
+
+  return (
+    <span
+      aria-hidden="true"
+      data-upload-ring={preparing ? "preparing" : "uploading"}
+      className="pointer-events-none absolute inset-0 flex items-center justify-center bg-background/35"
+    >
+      <svg
+        ref={preparing ? observeVisibleAnimation : undefined}
+        width="22"
+        height="22"
+        viewBox="0 0 22 22"
+        data-upload-ring-svg={preparing ? "spinning" : "progress"}
+        className="size-5.5 drop-shadow-xs"
+      >
+        <circle
+          cx="11"
+          cy="11"
+          r={UPLOAD_RING_RADIUS}
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2.2"
+          className="text-foreground/20"
+        />
+        <circle
+          cx="11"
+          cy="11"
+          r={UPLOAD_RING_RADIUS}
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2.2"
+          strokeLinecap="round"
+          strokeDasharray={UPLOAD_RING_CIRCUMFERENCE}
+          strokeDashoffset={dashOffset}
+          transform="rotate(-90 11 11)"
+          data-upload-ring-arc="true"
+          className="text-primary"
+        />
+      </svg>
+    </span>
+  );
+}
+
+function AttachmentUploadCompleteBadge({
+  upload,
+}: {
+  readonly upload: AttachmentUploadState | undefined;
+}) {
+  const [sawUploading, setSawUploading] = useState(upload?.status === "uploading");
+  if (upload?.status === "uploading" && !sawUploading) {
+    setSawUploading(true);
+  }
+  if (!sawUploading || upload?.status !== "ready") return null;
+
+  return (
+    <span
+      aria-hidden="true"
+      data-upload-complete="true"
+      className="pointer-events-none absolute bottom-1 right-1 inline-flex size-4 items-center justify-center rounded-full bg-success text-white shadow-xs"
+    >
+      <CheckIcon className="size-2.5 stroke-3" />
+    </span>
+  );
+}
 
 function ComposerAttachmentUploadProgress({
   id,
@@ -181,11 +332,20 @@ export function ComposerAttachmentMediaRow({
 }) {
   const gt = useGT();
   const messages = useMessages();
+  const rowRef = useRef<HTMLDivElement>(null);
   const uploadsByImageId = useAttachmentUploadStore((state) => state.uploadsByImageId);
   const pendingSnapShotIdSet = new Set(pendingSnapShotIds);
   const nonPersistedImageIdSet = new Set(nonPersistedImageIds);
+  const deckSignature = [
+    ...expandedImages.map((image) => image.id),
+    ...preparingImages.map((image) => image.id),
+    ...videos.map((video) => video.id),
+  ].join("|");
+  useAttachmentDeckFlip(rowRef, deckSignature);
   return (
     <div
+      ref={rowRef}
+      data-attachment-media-deck="true"
       className={cn(
         "mb-3 flex max-w-full gap-2",
         pendingSnapShotIds.length > 0 ||
@@ -211,6 +371,8 @@ export function ComposerAttachmentMediaRow({
           return (
             <SnapShotAttachmentFrame
               key={image.id}
+              data-attachment-flip-key={image.id}
+              data-snapshot-pending={snapShotAnimationPending ? "true" : undefined}
               data-chat-composer-expanded-image="true"
               aria-hidden={snapShotAnimationPending || undefined}
               inert={snapShotAnimationPending || undefined}
@@ -295,16 +457,20 @@ export function ComposerAttachmentMediaRow({
                 />
               )}
               {(!ready || upload?.status === "uploading") && (
-                <span className="pointer-events-none absolute inset-x-0 bottom-0 bg-background/85 px-1 text-center text-3xs text-foreground tabular-nums">
-                  {upload?.status === "uploading" ? (
-                    <ComposerAttachmentUploadProgress id={image.id} upload={upload} />
-                  ) : (
-                    gt("Preparing", {
-                      $context: "attachment status while an image is being processed",
-                    })
-                  )}
-                </span>
+                <>
+                  <AttachmentUploadRing preparing={!ready} upload={upload} />
+                  <span className="pointer-events-none absolute inset-x-0 bottom-0 bg-background/85 px-1 text-center text-3xs text-foreground tabular-nums">
+                    {upload?.status === "uploading" ? (
+                      <ComposerAttachmentUploadProgress id={image.id} upload={upload} />
+                    ) : (
+                      gt("Preparing", {
+                        $context: "attachment status while an image is being processed",
+                      })
+                    )}
+                  </span>
+                </>
               )}
+              {ready ? <AttachmentUploadCompleteBadge upload={upload} /> : null}
               {ready && upload?.status === "failed" && (
                 <SharedTooltipTrigger
                   render={
@@ -366,6 +532,7 @@ export function ComposerAttachmentMediaRow({
         return (
           <div
             key={file.id}
+            data-attachment-flip-key={file.id}
             className="group/attachment relative h-16 w-16 shrink-0 origin-center snap-start overflow-hidden rounded-lg border border-border/80 bg-black transition-[opacity,scale,border-color] duration-180 ease-(--ease-spring-gentle) starting:scale-95 starting:opacity-0 any-hover:border-foreground/22 motion-reduce:transition-none motion-reduce:starting:scale-100 motion-reduce:starting:opacity-100"
           >
             <button
@@ -391,10 +558,14 @@ export function ComposerAttachmentMediaRow({
               <PlayIcon className="relative z-10 size-4 fill-current drop-shadow-md" />
             </button>
             {upload?.status === "uploading" && (
-              <span className="pointer-events-none absolute inset-x-0 bottom-0 bg-background/85 px-1 text-center text-3xs text-foreground tabular-nums">
-                <ComposerAttachmentUploadProgress id={file.id} upload={upload} />
-              </span>
+              <>
+                <AttachmentUploadRing preparing={false} upload={upload} />
+                <span className="pointer-events-none absolute inset-x-0 bottom-0 bg-background/85 px-1 text-center text-3xs text-foreground tabular-nums">
+                  <ComposerAttachmentUploadProgress id={file.id} upload={upload} />
+                </span>
+              </>
             )}
+            <AttachmentUploadCompleteBadge upload={upload} />
             {upload?.status === "failed" && (
               <SharedTooltipTrigger
                 render={
@@ -609,54 +780,65 @@ export function ComposerRestingImagePreviews({
   const gt = useGT();
   const counts = getRestingComposerImagePreviewCounts(images.length);
   const visibleImages = images.slice(0, counts.visibleCount);
+  const fanStack = visibleImages.length > 1;
   return (
-    <div data-chat-composer-resting-images="true" className="flex shrink-0 items-center gap-1 ps-1">
-      {visibleImages.map((image) => (
-        <button
-          key={image.id}
-          type="button"
-          className="relative size-7 shrink-0 cursor-zoom-in overflow-hidden rounded-md border border-border/70 bg-muted/60"
-          aria-label={gt("Preview {name}", { name: image.name })}
-          onPointerDown={(event) => event.preventDefault()}
-          onClick={() => {
-            const preview = buildExpandedImagePreview(allImages, image.id, onCopySnapshot);
-            if (preview) onExpandImage(preview);
-          }}
-        >
-          {image.previewUrl ? (
-            <ComposerImageThumbnail
-              file={image.file}
-              alt=""
-              className="size-full object-cover"
-              fallback={
-                isHeicImageFile({ name: image.name, type: image.mimeType }) ? (
-                  <AttachmentImage
-                    name={image.name}
-                    mimeType={image.mimeType}
-                    src={image.previewUrl}
-                    alt=""
-                    className="size-full object-cover"
-                  />
-                ) : (
-                  <PierreEntryIcon
-                    pathValue={image.name}
-                    kind="file"
-                    theme={resolvedTheme}
-                    className="m-auto size-3.5"
-                  />
-                )
-              }
-            />
-          ) : (
-            <PierreEntryIcon
-              pathValue={image.name}
-              kind="file"
-              theme={resolvedTheme}
-              className="m-auto size-3.5"
-            />
-          )}
-        </button>
-      ))}
+    <div
+      data-chat-composer-resting-images="true"
+      data-resting-fan={fanStack ? "true" : undefined}
+      className="flex shrink-0 items-center gap-1 ps-1"
+    >
+      {visibleImages.map((image, index) => {
+        const midpoint = (visibleImages.length - 1) / 2;
+        const fanAngle = fanStack ? (index - midpoint) * 4 : 0;
+        return (
+          <button
+            key={image.id}
+            type="button"
+            data-resting-fan-card={fanStack ? "true" : undefined}
+            style={fanStack ? ({ "--fan-angle": `${fanAngle}deg` } as CSSProperties) : undefined}
+            className="relative size-7 shrink-0 cursor-zoom-in overflow-hidden rounded-md border border-border/70 bg-muted/60"
+            aria-label={gt("Preview {name}", { name: image.name })}
+            onPointerDown={(event) => event.preventDefault()}
+            onClick={() => {
+              const preview = buildExpandedImagePreview(allImages, image.id, onCopySnapshot);
+              if (preview) onExpandImage(preview);
+            }}
+          >
+            {image.previewUrl ? (
+              <ComposerImageThumbnail
+                file={image.file}
+                alt=""
+                className="size-full object-cover"
+                fallback={
+                  isHeicImageFile({ name: image.name, type: image.mimeType }) ? (
+                    <AttachmentImage
+                      name={image.name}
+                      mimeType={image.mimeType}
+                      src={image.previewUrl}
+                      alt=""
+                      className="size-full object-cover"
+                    />
+                  ) : (
+                    <PierreEntryIcon
+                      pathValue={image.name}
+                      kind="file"
+                      theme={resolvedTheme}
+                      className="m-auto size-3.5"
+                    />
+                  )
+                }
+              />
+            ) : (
+              <PierreEntryIcon
+                pathValue={image.name}
+                kind="file"
+                theme={resolvedTheme}
+                className="m-auto size-3.5"
+              />
+            )}
+          </button>
+        );
+      })}
       {counts.overflowCount > 0 ? (
         <button
           type="button"
@@ -689,11 +871,15 @@ export function ComposerQueuedAttachmentRow({
   readonly onRemove: (attachmentId: string) => void;
 }) {
   const gt = useGT();
+  const rowRef = useRef<HTMLDivElement>(null);
+  const signature = attachments.map(({ attachment }) => attachment.id).join("|");
+  useAttachmentDeckFlip(rowRef, signature);
   return (
-    <div className="mb-3 flex flex-wrap gap-2">
+    <div ref={rowRef} className="mb-3 flex flex-wrap gap-2">
       {attachments.map(({ attachment, url }) => (
         <div
           key={attachment.id}
+          data-attachment-flip-key={attachment.id}
           className="group/attachment relative h-16 w-16 origin-center overflow-hidden rounded-lg border border-border/80 bg-background transition-[opacity,scale,border-color] duration-180 ease-(--ease-spring-gentle) starting:scale-95 starting:opacity-0 any-hover:border-foreground/22 motion-reduce:transition-none motion-reduce:starting:scale-100 motion-reduce:starting:opacity-100"
         >
           {attachment.type === "image" && url ? (
