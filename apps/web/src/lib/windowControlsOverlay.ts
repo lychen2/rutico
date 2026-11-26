@@ -98,3 +98,29 @@ export function syncDocumentElectronPlatformClasses(platform: string): () => voi
     document.documentElement.classList.remove(...classNames);
   };
 }
+
+/**
+ * Flags fractional device pixel ratios (common on Linux 1.25x / 1.5x / 1.75x HiDPI displays)
+ * on `documentElement` so CSS can apply fractional-DPR optical stroke & hairline refinements.
+ */
+export function syncDocumentFractionalDprClass(): () => void {
+  if (typeof window === "undefined" || typeof document === "undefined") {
+    return () => {};
+  }
+  const root = document.documentElement;
+  const update = () => {
+    const dpr = window.devicePixelRatio || 1;
+    const fractional = Math.abs(dpr - Math.round(dpr)) > 0.01;
+    if (fractional) {
+      root.dataset.fractionalDpr = "true";
+    } else {
+      delete root.dataset.fractionalDpr;
+    }
+  };
+  update();
+  window.addEventListener("resize", update, { passive: true });
+  return () => {
+    window.removeEventListener("resize", update);
+    delete root.dataset.fractionalDpr;
+  };
+}

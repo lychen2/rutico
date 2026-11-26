@@ -61,6 +61,8 @@ import { readProject } from "../state/entities";
 import { getDesktopSnapShotBridge } from "../lib/desktopSnapShot";
 import { isChunkLoadError } from "../lib/chunkReloadGuard";
 import { shouldResumeSnapShotSetupOnStartup } from "../lib/snapShotSetupResume";
+import { syncDocumentFractionalDprClass } from "../lib/windowControlsOverlay";
+import { startSoftwareKeyboardInsetSync } from "../hooks/useSoftwareKeyboardOpen";
 
 export const Route = createRootRoute({
   beforeLoad: async ({ location }) => {
@@ -137,6 +139,16 @@ function RootRouteNotFoundView() {
 }
 
 function RootRouteView() {
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- synchronizes document-level keyboard inset and fractional HiDPI attributes
+  useEffect(() => {
+    const stopKeyboard = startSoftwareKeyboardInsetSync();
+    const stopFractionalDpr = syncDocumentFractionalDprClass();
+    return () => {
+      stopKeyboard();
+      stopFractionalDpr();
+    };
+  }, []);
+
   // Above every branch: app services raise toasts for the whole page, so the surface they write to
   // must not unmount when the root switches branches (for example /welcome to the app shell).
   return (

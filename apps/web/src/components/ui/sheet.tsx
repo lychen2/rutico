@@ -41,8 +41,8 @@ function SheetViewport({
   return (
     <SheetPrimitive.Viewport
       className={cn(
-        "fixed inset-0 z-(--z-sheet) grid [-webkit-app-region:no-drag]",
-        side === "bottom" && "grid grid-rows-[1fr_auto] pt-12",
+        "fixed inset-0 z-(--z-sheet) grid overscroll-contain [-webkit-app-region:no-drag]",
+        side === "bottom" && "grid grid-rows-[1fr_auto] pt-12 pb-(--software-keyboard-inset,0px)",
         side === "top" && "grid grid-rows-[auto_1fr] pb-12",
         side === "left" && "flex justify-start",
         side === "right" && "flex justify-end",

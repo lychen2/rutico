@@ -607,3 +607,57 @@
     }
   }
 }
+
+/* ==========================================================================
+   D02 / C008: Android Chrome/PWA Viewport & Keyboard Stability, Touch Hover
+   Isolation (Kubai087 Tip 023), and Linux Fractional-HiDPI Optical Precision
+   ========================================================================== */
+
+:root {
+  --software-keyboard-inset: 0px;
+}
+
+/* Keep closed fullscreen backdrops non-rendering & non-blocking on touch viewports. */
+[data-slot="dialog-backdrop"][data-closed],
+[data-slot="alert-dialog-backdrop"][data-closed],
+[data-slot="sheet-backdrop"][data-closed],
+[data-slot="command-dialog-backdrop"][data-closed] {
+  visibility: hidden;
+  pointer-events: none;
+}
+
+/* Whole-SVG opacity prevents overlapping strokes inside Lucide icons from darkening at joints. */
+@layer base {
+  svg.lucide {
+    shape-rendering: geometricPrecision;
+  }
+
+  svg.lucide :is(path, line, circle, rect, polyline, polygon) {
+    opacity: 1;
+  }
+}
+
+/* Linux 1.25x / 1.5x / 1.75x fractional HiDPI sharpening: slightly crisper stroke
+   and asymmetric optical inline padding on icon+label buttons. */
+html[data-fractional-dpr="true"] {
+  --app-scrollbar-width: 6px;
+}
+
+html[data-fractional-dpr="true"] :where(svg.lucide[stroke-width="2"]) {
+  stroke-width: 1.8;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  [data-slot="button"]:has(> svg:first-child):has(> :not(svg)) > svg:first-child {
+    margin-inline-start: -0.1875rem;
+  }
+}
+
+/* Prevent sticky hover artifacts on touch-primary Android & Linux touch laptops. */
+@media (hover: none), (pointer: coarse) {
+  [data-slot="menu-item"]:hover:not([data-highlighted]),
+  [data-slot="select-item"]:hover:not([data-highlighted]),
+  [data-slot="combobox-item"]:hover:not([data-highlighted]) {
+    background-color: transparent;
+  }
+}
