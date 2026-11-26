@@ -1,5 +1,12 @@
+import * as Haptics from "expo-haptics";
 import { useGT } from "gt-react-native";
 import { Pressable, View } from "react-native";
+import Animated, {
+  ReduceMotion,
+  useAnimatedStyle,
+  useSharedValue,
+  withSpring,
+} from "react-native-reanimated";
 
 import { NativeStackScreenOptions } from "../../native/StackHeader";
 import { AppActivityIndicator } from "./AppActivityIndicator";
@@ -115,40 +122,68 @@ function NativeSheetHeader(props: SheetHeaderProps) {
   );
 }
 
+const CONFIRM_PRESS_SPRING = {
+  damping: 20,
+  stiffness: 420,
+  mass: 0.6,
+  reduceMotion: ReduceMotion.System,
+} as const;
+
 function InlineConfirmation({
   confirmation,
 }: {
   readonly confirmation: NonNullable<SheetHeaderProps["confirm"]>;
 }) {
-  const confirmDisabled = confirmation.disabled || confirmation.loading;
+  const confirmDisabled = Boolean(confirmation.disabled || confirmation.loading);
+  const pressScale = useSharedValue(1);
+  const animatedScaleStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: pressScale.get() }],
+  }));
+
+  const handlePress = () => {
+    if (confirmDisabled) return;
+    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => undefined);
+    confirmation.onPress();
+  };
+
   return (
-    <Pressable
-      accessibilityRole="button"
-      accessibilityLabel={confirmation.label}
-      accessibilityState={{
-        disabled: Boolean(confirmDisabled),
-        busy: Boolean(confirmation.loading),
-      }}
-      disabled={confirmDisabled}
-      onPress={confirmation.onPress}
-      className={
-        confirmDisabled
-          ? "size-11 items-center justify-center rounded-full bg-subtle-strong"
-          : "size-11 items-center justify-center rounded-full bg-prominent-action"
-      }
-    >
-      {confirmation.loading ? (
-        <AppActivityIndicator colorClassName="accent-icon-subtle" />
-      ) : (
-        <SymbolView
-          name="checkmark"
-          size={20}
-          tintColorClassName={
-            confirmDisabled ? "accent-icon-subtle" : "accent-prominent-action-foreground"
+    <Animated.View style={animatedScaleStyle}>
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel={confirmation.label}
+        accessibilityState={{
+          disabled: confirmDisabled,
+          busy: Boolean(confirmation.loading),
+        }}
+        disabled={confirmDisabled}
+        onPress={handlePress}
+        onPressIn={() => {
+          if (!confirmDisabled) {
+            pressScale.set(withSpring(0.93, CONFIRM_PRESS_SPRING));
           }
-        />
-      )}
-    </Pressable>
+        }}
+        onPressOut={() => {
+          pressScale.set(withSpring(1, CONFIRM_PRESS_SPRING));
+        }}
+        className={
+          confirmDisabled
+            ? "size-11 items-center justify-center rounded-full bg-subtle-strong"
+            : "size-11 items-center justify-center rounded-full bg-prominent-action active:opacity-70"
+        }
+      >
+        {confirmation.loading ? (
+          <AppActivityIndicator colorClassName="accent-icon-subtle" />
+        ) : (
+          <SymbolView
+            name="checkmark"
+            size={20}
+            tintColorClassName={
+              confirmDisabled ? "accent-icon-subtle" : "accent-prominent-action-foreground"
+            }
+          />
+        )}
+      </Pressable>
+    </Animated.View>
   );
 }
 
