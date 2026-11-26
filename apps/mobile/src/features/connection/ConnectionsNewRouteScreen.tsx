@@ -14,15 +14,26 @@ import {
 } from "@react-navigation/native";
 import type { EnvironmentId } from "@t3tools/contracts";
 import { useAtomValue } from "@effect/atom-react";
-import { useState } from "react";
-import { Linking, Pressable, StyleSheet, View } from "react-native";
+import { useEffect, useRef, useState, type ComponentRef, type Ref } from "react";
+import {
+  Animated as RNAnimated,
+  Easing as RNEasing,
+  Linking,
+  Pressable,
+  StyleSheet,
+  useAnimatedValue,
+  View,
+} from "react-native";
+import { useReducedMotion } from "react-native-reanimated";
 import Svg, { Defs, RadialGradient, Rect, Stop } from "react-native-svg";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { useAppActive } from "../../lib/appState";
 import { cn } from "../../lib/cn";
 import { useUniwindTheme } from "../../lib/useUniwindTheme";
 import { useAppearancePreferences } from "../settings/appearance/AppearancePreferencesProvider";
 import { SettingsScreen } from "../settings/components/SettingsScreen";
 import { AppText as Text, AppTextInput, type AppTextInputProps } from "../../components/ui/AppText";
+import { Button } from "../../components/ui/Button";
 import { FrostedCutout } from "../../components/ui/FrostedCutout";
 import { buildPairingUrl, extractPairingUrlFromQrPayload, parsePairingUrl } from "./pairing";
 import { useRemoteConnections } from "../../state/use-remote-environment-registry";
@@ -97,6 +108,7 @@ function PairingForm({
   const [scannerLocked, setScannerLocked] = useState(false);
   // A good scan parks the camera so it can't re-read the code over later edits.
   const [scanComplete, setScanComplete] = useState(false);
+  const codeInputRef = useRef<ComponentRef<typeof AppTextInput>>(null);
 
   const headerIconColor = useUniwindTheme()["--color-icon"];
 
@@ -155,6 +167,9 @@ function PairingForm({
       onChangeConnectionPairingUrl(pairingUrl);
       setScanComplete(true);
       setScannerLocked(false);
+      void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(
+        () => undefined,
+      );
     } catch (error) {
       void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
       Dialog.alert(
@@ -231,6 +246,7 @@ function PairingForm({
         <View collapsable={false} className="gap-6.5">
           <PairingScanCard
             cameraActive={cameraPermission?.granted === true && screenFocused && !scanComplete}
+            scanComplete={scanComplete}
             onScan={handleQrScan}
             onScanPress={() => {
               void handleScanPress();
@@ -252,11 +268,15 @@ function PairingForm({
                 label={gt("Address")}
                 keyboardType="url"
                 placeholder="192.168.1.100:3773"
+                returnKeyType="next"
+                submitBehavior="submit"
                 value={hostInput}
                 onChangeText={handleHostChange}
+                onSubmitEditing={() => codeInputRef.current?.focus()}
               />
               <View className="ml-4 border-t border-border-subtle" />
               <PairingInputRow
+                inputRef={codeInputRef}
                 label={gt("Code", { $context: "pairing code field" })}
                 placeholder={gt("Pairing code")}
                 returnKeyType="go"
@@ -284,6 +304,20 @@ function PairingForm({
                       "For machines on your local network or tailnet. The machine keeps its own provider credentials.",
                     ))}
             </Text>
+            <View className="pt-2">
+              <Button
+                label={
+                  connecting ? gt("Connecting", { $context: "connection status" }) : gt("Connect")
+                }
+                tone="primary"
+                fullWidth
+                loading={connecting}
+                disabled={connectDisabled}
+                onPress={() => {
+                  void handleSubmit();
+                }}
+              />
+            </View>
           </View>
 
           {hasCloudPublicConfig() ? <T3ConnectSection /> : null}
@@ -298,8 +332,58 @@ const SCAN_RETICLE_SIZE = 150;
 const SCAN_RETICLE_TOP = 36;
 const SCAN_RETICLE_RADIUS = 28;
 
+function ReticleScanLine() {
+  const appActive = useAppActive();
+  const reducedMotion = useReducedMotion();
+  const animate = appActive && !reducedMotion;
+  const progress = useAnimatedValue(0, { useNativeDriver: true });
+
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- animates a subtle native-driver scan line inside the active QR viewfinder
+  useEffect(() => {
+    progress.setValue(0);
+    if (!animate) return;
+    const loop = RNAnimated.loop(
+      RNAnimated.sequence([
+        RNAnimated.timing(progress, {
+          toValue: 1,
+          duration: 1800,
+          easing: RNEasing.inOut(RNEasing.sin),
+          useNativeDriver: true,
+        }),
+        RNAnimated.timing(progress, {
+          toValue: 0,
+          duration: 1800,
+          easing: RNEasing.inOut(RNEasing.sin),
+          useNativeDriver: true,
+        }),
+      ]),
+    );
+    loop.start();
+    return () => {
+      loop.stop();
+      progress.setValue(0);
+    };
+  }, [animate, progress]);
+
+  if (!animate) return null;
+
+  const translateY = progress.interpolate({
+    inputRange: [0, 1],
+    outputRange: [-(SCAN_RETICLE_SIZE / 2 - 18), SCAN_RETICLE_SIZE / 2 - 18],
+  });
+
+  return (
+    <RNAnimated.View
+      pointerEvents="none"
+      className="h-0.5 w-[72%] rounded-full bg-primary/80"
+      style={{ transform: [{ translateY }] }}
+    />
+  );
+}
+
 function PairingScanCard(props: {
   readonly cameraActive: boolean;
+  readonly scanComplete: boolean;
   readonly onScan: (result: { readonly data: string }) => void;
   readonly onScanPress: () => void;
 }) {
@@ -352,8 +436,12 @@ function PairingScanCard(props: {
       >
         <View
           className={cn(
-            "items-center justify-center gap-2 border-continuous border-[3px]",
-            light ? "border-black/70" : "border-white/80",
+            "items-center justify-center gap-2 overflow-hidden border-continuous border-[3px]",
+            props.scanComplete && !props.cameraActive
+              ? "border-adaptive-emerald-600-400"
+              : light
+                ? "border-black/70"
+                : "border-white/80",
           )}
           style={{
             borderRadius: SCAN_RETICLE_RADIUS,
@@ -361,7 +449,21 @@ function PairingScanCard(props: {
             width: SCAN_RETICLE_SIZE,
           }}
         >
-          {props.cameraActive ? null : (
+          {props.cameraActive ? (
+            <ReticleScanLine />
+          ) : props.scanComplete ? (
+            <>
+              <SymbolView
+                name="checkmark.circle.fill"
+                size={42}
+                tintColorClassName="accent-adaptive-emerald-600-400"
+                type="monochrome"
+              />
+              <Text className="font-t3-medium text-sm text-adaptive-emerald-700-300">
+                <T>Scanned</T>
+              </Text>
+            </>
+          ) : (
             <>
               <SymbolView
                 name="qrcode.viewfinder"
@@ -378,10 +480,21 @@ function PairingScanCard(props: {
             </>
           )}
         </View>
-        <Text className={cn("text-center text-sm", light ? "text-black/70" : "text-white/80")}>
-          {gt("Scan the code from {command} or desktop Connections settings", {
-            command: "t3 pair",
-          })}
+        <Text
+          className={cn(
+            "text-center text-sm",
+            props.scanComplete && !props.cameraActive
+              ? "font-t3-medium text-adaptive-emerald-700-300"
+              : light
+                ? "text-black/70"
+                : "text-white/80",
+          )}
+        >
+          {props.scanComplete && !props.cameraActive
+            ? gt("QR scanned. Ready to connect.")
+            : gt("Scan the code from {command} or desktop Connections settings", {
+                command: "t3 pair",
+              })}
         </Text>
       </View>
     </Pressable>
@@ -425,9 +538,11 @@ function T3ConnectSection() {
 
 function PairingInputRow({
   label,
+  inputRef,
   ...inputProps
 }: Omit<AppTextInputProps, "accessibilityLabel" | "className"> & {
   readonly label: string;
+  readonly inputRef?: Ref<ComponentRef<typeof AppTextInput>>;
 }) {
   return (
     <View collapsable={false} className="min-h-[48px] flex-row items-center gap-3 px-4">
@@ -440,6 +555,7 @@ function PairingInputRow({
       </Text>
       <AppTextInput
         {...inputProps}
+        ref={inputRef}
         accessibilityLabel={label}
         autoCapitalize="none"
         autoCorrect={false}

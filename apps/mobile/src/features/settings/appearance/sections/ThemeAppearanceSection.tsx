@@ -1,3 +1,4 @@
+import * as Haptics from "expo-haptics";
 import { msg, useGT, useMessages } from "gt-react-native";
 import { memo, useId } from "react";
 import { Pressable, View } from "react-native";
@@ -140,6 +141,7 @@ function ThemeCard(props: {
   readonly themeId: MobileThemeId;
 }) {
   const gt = useGT();
+  const bothSelected = props.lightSelected && props.darkSelected;
   const choice = (appearance: MobileThemeAppearance, selected: boolean) => (
     <Pressable
       accessibilityHint={
@@ -159,7 +161,10 @@ function ThemeCard(props: {
         selected ? "border-primary" : "border-transparent",
       )}
       disabled={props.disabled}
-      onPress={() => props.onSelect(appearance)}
+      onPress={() => {
+        void Haptics.selectionAsync().catch(() => undefined);
+        props.onSelect(appearance);
+      }}
     >
       <PreviewOrb appearance={appearance} compact themeId={props.themeId} />
       {selected ? (
@@ -177,18 +182,26 @@ function ThemeCard(props: {
   );
 
   return (
-    <View className="min-w-36 flex-1 basis-[47%] gap-3 rounded-[24px] border border-border bg-grouped-card px-2 py-4">
+    <View
+      className={cn(
+        "min-w-36 flex-1 basis-[47%] gap-3 rounded-[24px] border-2 bg-grouped-card px-2 py-4",
+        bothSelected ? "border-primary" : "border-border",
+      )}
+    >
       <Pressable
         accessibilityHint={gt("Sets both light and dark appearances")}
         accessibilityLabel={gt("{theme} theme", { theme: props.label })}
         accessibilityRole="button"
         accessibilityState={{
           disabled: props.disabled,
-          selected: props.lightSelected && props.darkSelected,
+          selected: bothSelected,
         }}
         className="absolute inset-0 rounded-[24px] active:bg-subtle"
         disabled={props.disabled}
-        onPress={props.onSelectBoth}
+        onPress={() => {
+          void Haptics.selectionAsync().catch(() => undefined);
+          props.onSelectBoth();
+        }}
       />
       <View className="flex-row items-center justify-center gap-2 py-1" pointerEvents="box-none">
         {choice("light", props.lightSelected)}
@@ -285,13 +298,14 @@ function ModeCard(props: {
       accessibilityRole="radio"
       accessibilityState={{ checked: props.selected, disabled: props.disabled }}
       className={cn(
-        "min-w-0 flex-1 gap-2 rounded-[24px] p-2 active:scale-[0.97]",
-        props.selected
-          ? "border-2 border-primary bg-subtle"
-          : "border border-border bg-grouped-card",
+        "min-w-0 flex-1 gap-2 rounded-[24px] border-2 p-2 active:scale-[0.97]",
+        props.selected ? "border-primary bg-subtle" : "border-border bg-grouped-card",
       )}
       disabled={props.disabled}
-      onPress={props.onPress}
+      onPress={() => {
+        void Haptics.selectionAsync().catch(() => undefined);
+        props.onPress();
+      }}
     >
       <ModePreview mode={props.mode} themeIds={props.themeIds} />
       <Text
