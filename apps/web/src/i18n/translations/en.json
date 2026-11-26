@@ -2414,7 +2414,6 @@
   "404941d325a2755b": "Press {shortcut} again to quit",
   "48ef9d3971c97e7d": "Could not reopen view",
   "158a785cabe10dda": "Workspace panel",
-  "9371d8cc390a8a1b": "Browser previews are only available in the T3 Code desktop app.",
   "05037ca1666fd421": "Terminal surfaces are only available from a project thread.",
   "a3aa1e49af278d41": "Files are only available when a project is open.",
   "87ea6995ea1e7aa4": "Diff is only available for server threads in Git repositories.",
@@ -3754,7 +3753,6 @@
     "…"
   ],
   "c3e8cd9bf44e2f43": "Showing what was read before.",
-  "eb6e0584cf4a2a1d": "Language: {language}",
   "d76c606a3c519b78": "Disable line wrap",
   "2b683498cee8c8a7": "Wrap lines",
   "7c1923203049d602": "Copy code",
@@ -12037,7 +12035,6 @@
   "effe26aaf2941c69": "This computer's server is not connected yet",
   "27e0c22322e66145": "Try again when it connects.",
   "a46244a71021244a": "Could not add \"{name}\"",
-  "cc07974b25287234": "T3 Code could not read the folder's path.",
   "27727bda79d97ffa": "Only folders can be added as projects",
   "eb9f51eb8bd8a43c": "Drop files on a thread to attach them.",
   "671a8b8ab44e83e2": "Drop folders to add projects",
@@ -12647,7 +12644,6 @@
   "c512071143a5ba32": "This thread is no longer there.",
   "ed169d23683fb6ac": "Loading the thread…",
   "290e0ab40b87dc17": "Workflows breadcrumb",
-  "683dd9831e54edc0": "Environment",
   "34ad53646f06ed80": "Workflows are off",
   "8f6589c9e0ac5d4e": "No environment connected",
   "744127f8dfad7d22": "Connect an environment to see its workflow runs.",
@@ -12952,5 +12948,10 @@
   "d54cd153f6e13f09": "More actions",
   "b8736743b1ab48f3": "Mark as read",
   "da49b8271b9dffa0": "Delete",
-  "01ee3b13eba94b09": "Today's tasks"
+  "01ee3b13eba94b09": "Today's tasks",
+  "47f955009afbb793": "Browser previews are only available in the Rutico desktop app.",
+  "17f70beed8a184f6": "Sent by Rutico",
+  "bf59b7e005e2104c": "Rutico could not read the folder's path.",
+  "3dc150ba37e2c907": "Drag to resize · Double-click to reset",
+  "5dc214fdd64c13f6": "Environment"
 }

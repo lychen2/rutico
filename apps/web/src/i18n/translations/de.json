@@ -2414,7 +2414,6 @@
   "404941d325a2755b": "Drücke {shortcut} erneut zum Beenden",
   "48ef9d3971c97e7d": "Ansicht konnte nicht wieder geöffnet werden",
   "158a785cabe10dda": "Arbeitsbereichspanel",
-  "9371d8cc390a8a1b": "Browservorschauen sind nur in der T3-Code-Desktop-App verfügbar.",
   "05037ca1666fd421": "Terminals sind nur aus einem Projekt-Thread verfügbar.",
   "a3aa1e49af278d41": "Dateien sind nur verfügbar, wenn ein Projekt geöffnet ist.",
   "87ea6995ea1e7aa4": "Diffs sind nur für Server-Threads in Git-Repositorys verfügbar.",
@@ -3755,7 +3754,6 @@
     " gelesen …"
   ],
   "c3e8cd9bf44e2f43": "Angezeigt wird, was zuvor gelesen wurde.",
-  "eb6e0584cf4a2a1d": "Sprache: {language}",
   "d76c606a3c519b78": "Zeilenumbruch deaktivieren",
   "2b683498cee8c8a7": "Zeilen umbrechen",
   "7c1923203049d602": "Code kopieren",
@@ -12029,7 +12027,6 @@
   "effe26aaf2941c69": "Der Server dieses Computers ist noch nicht verbunden",
   "27e0c22322e66145": "Versuch es erneut, wenn er verbunden ist.",
   "a46244a71021244a": "„{name}“ konnte nicht hinzugefügt werden",
-  "cc07974b25287234": "T3 Code konnte den Pfad des Ordners nicht lesen.",
   "27727bda79d97ffa": "Nur Ordner können als Projekte hinzugefügt werden",
   "eb9f51eb8bd8a43c": "Lege Dateien auf einem Thread ab, um sie anzuhängen.",
   "671a8b8ab44e83e2": "Ordner ablegen, um Projekte hinzuzufügen",
@@ -12639,7 +12636,6 @@
   "c512071143a5ba32": "Diesen Thread gibt es nicht mehr.",
   "ed169d23683fb6ac": "Thread wird geladen…",
   "290e0ab40b87dc17": "Workflows-Breadcrumb",
-  "683dd9831e54edc0": "Umgebung",
   "34ad53646f06ed80": "Workflows sind aus",
   "8f6589c9e0ac5d4e": "Keine Umgebung verbunden",
   "744127f8dfad7d22": "Verbinde eine Umgebung, um ihre Workflow-Ausführungen zu sehen.",
@@ -12962,5 +12958,10 @@
   "d54cd153f6e13f09": "Weitere Aktionen",
   "b8736743b1ab48f3": "Als gelesen markieren",
   "da49b8271b9dffa0": "Löschen",
-  "01ee3b13eba94b09": "Heutige Aufgaben"
+  "01ee3b13eba94b09": "Heutige Aufgaben",
+  "47f955009afbb793": "Browservorschauen sind nur in der Rutico-Desktop-App verfügbar.",
+  "17f70beed8a184f6": "Von Rutico gesendet",
+  "bf59b7e005e2104c": "Rutico konnte den Pfad des Ordners nicht lesen.",
+  "3dc150ba37e2c907": "Zum Ändern der Größe ziehen · Doppelklicken zum Zurücksetzen",
+  "5dc214fdd64c13f6": "Umgebung"
 }

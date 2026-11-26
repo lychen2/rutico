@@ -2414,7 +2414,6 @@
   "404941d325a2755b": "Tryck på {shortcut} igen för att avsluta",
   "48ef9d3971c97e7d": "Kunde inte öppna vyn igen",
   "158a785cabe10dda": "Arbetsytepanel",
-  "9371d8cc390a8a1b": "Webbläsarförhandsvisningar finns bara i skrivbordsappen T3 Code.",
   "05037ca1666fd421": "Terminalytor finns bara i en projekttråd.",
   "a3aa1e49af278d41": "Filer är bara tillgängliga när ett projekt är öppet.",
   "87ea6995ea1e7aa4": "Diff är bara tillgänglig för servertrådar i Git-repon.",
@@ -3754,7 +3753,6 @@
     "…"
   ],
   "c3e8cd9bf44e2f43": "Visar det som lästes tidigare.",
-  "eb6e0584cf4a2a1d": "Språk: {language}",
   "d76c606a3c519b78": "Inaktivera radbrytning",
   "2b683498cee8c8a7": "Bryt rader",
   "7c1923203049d602": "Kopiera kod",
@@ -12035,7 +12033,6 @@
   "effe26aaf2941c69": "Datorns server är inte ansluten än",
   "27e0c22322e66145": "Försök igen när den har anslutit.",
   "a46244a71021244a": "Kunde inte lägga till ”{name}”",
-  "cc07974b25287234": "T3 Code kunde inte läsa mappens sökväg.",
   "27727bda79d97ffa": "Endast mappar kan läggas till som projekt",
   "eb9f51eb8bd8a43c": "Släpp filer på en tråd för att bifoga dem.",
   "671a8b8ab44e83e2": "Släpp mappar för att lägga till projekt",
@@ -12645,7 +12642,6 @@
   "c512071143a5ba32": "Den här tråden finns inte längre.",
   "ed169d23683fb6ac": "Läser in tråden…",
   "290e0ab40b87dc17": "Brödsmulor för arbetsflöden",
-  "683dd9831e54edc0": "Miljö",
   "34ad53646f06ed80": "Arbetsflöden är avstängda",
   "8f6589c9e0ac5d4e": "Ingen miljö ansluten",
   "744127f8dfad7d22": "Anslut en miljö för att se dess arbetsflödeskörningar.",
@@ -12969,5 +12965,10 @@
   "d54cd153f6e13f09": "Fler åtgärder",
   "b8736743b1ab48f3": "Markera som läst",
   "da49b8271b9dffa0": "Radera",
-  "01ee3b13eba94b09": "Dagens uppgifter"
+  "01ee3b13eba94b09": "Dagens uppgifter",
+  "47f955009afbb793": "Webbläsarförhandsvisningar finns bara i skrivbordsappen Rutico.",
+  "17f70beed8a184f6": "Skickat av Rutico",
+  "bf59b7e005e2104c": "Rutico kunde inte läsa mappens sökväg.",
+  "3dc150ba37e2c907": "Dra för att ändra storlek · Dubbelklicka för att återställa",
+  "5dc214fdd64c13f6": "Miljö"
 }

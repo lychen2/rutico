@@ -2414,7 +2414,6 @@
   "404941d325a2755b": "Pressione {shortcut} de novo para sair",
   "48ef9d3971c97e7d": "Não foi possível reabrir a visualização",
   "158a785cabe10dda": "Painel do workspace",
-  "9371d8cc390a8a1b": "As pré-visualizações no navegador só estão disponíveis no app para desktop do T3 Code.",
   "05037ca1666fd421": "Os terminais só estão disponíveis a partir de uma thread de projeto.",
   "a3aa1e49af278d41": "Os arquivos só estão disponíveis com um projeto aberto.",
   "87ea6995ea1e7aa4": "O diff só está disponível para threads do servidor em repositórios Git.",
@@ -3754,7 +3753,6 @@
     "…"
   ],
   "c3e8cd9bf44e2f43": "Mostrando o que foi lido antes.",
-  "eb6e0584cf4a2a1d": "Linguagem: {language}",
   "d76c606a3c519b78": "Desativar quebra de linha",
   "2b683498cee8c8a7": "Quebrar linhas",
   "7c1923203049d602": "Copiar código",
@@ -12027,7 +12025,6 @@
   "effe26aaf2941c69": "O servidor deste computador ainda não está conectado",
   "27e0c22322e66145": "Tente novamente quando ele se conectar.",
   "a46244a71021244a": "Não foi possível adicionar \"{name}\"",
-  "cc07974b25287234": "O T3 Code não conseguiu ler o caminho da pasta.",
   "27727bda79d97ffa": "Só pastas podem ser adicionadas como projetos",
   "eb9f51eb8bd8a43c": "Solte arquivos em uma thread para anexá-los.",
   "671a8b8ab44e83e2": "Solte pastas para adicionar projetos",
@@ -12637,7 +12634,6 @@
   "c512071143a5ba32": "Esta thread não existe mais.",
   "ed169d23683fb6ac": "Carregando a thread…",
   "290e0ab40b87dc17": "Trilha de navegação de workflows",
-  "683dd9831e54edc0": "Ambiente",
   "34ad53646f06ed80": "Os workflows estão desativados",
   "8f6589c9e0ac5d4e": "Nenhum ambiente conectado",
   "744127f8dfad7d22": "Conecte um ambiente para ver as execuções de workflow dele.",
@@ -12962,5 +12958,10 @@
   "d54cd153f6e13f09": "Mais ações",
   "b8736743b1ab48f3": "Marcar como lida",
   "da49b8271b9dffa0": "Excluir",
-  "01ee3b13eba94b09": "Tarefas de hoje"
+  "01ee3b13eba94b09": "Tarefas de hoje",
+  "47f955009afbb793": "As pré-visualizações no navegador só estão disponíveis no app para desktop do Rutico.",
+  "17f70beed8a184f6": "Enviado pelo Rutico",
+  "bf59b7e005e2104c": "O Rutico não conseguiu ler o caminho da pasta.",
+  "3dc150ba37e2c907": "Arraste para redimensionar · Clique duas vezes para redefinir",
+  "5dc214fdd64c13f6": "Ambiente"
 }
