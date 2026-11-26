@@ -870,6 +870,88 @@ const ConversationTimeline = memo(function ConversationTimeline({
   const [timelineViewportElement, setTimelineViewportElement] = useState<HTMLDivElement | null>(
     null,
   );
+  const timelineViewportRef = useRef<HTMLDivElement | null>(null);
+  const hasTimelineViewport = timelineViewportElement !== null;
+  const hasParentThread = parentThreadLink !== null;
+  const lastSettledIdentityRef = useRef<string | null>(null);
+  const lastSettledHasParentRef = useRef<boolean>(false);
+  const pendingThreadSwitchRef = useRef<{
+    readonly targetIdentity: string;
+    readonly fromHasParent: boolean;
+  } | null>(null);
+  const threadSwitchAnimationRef = useRef<Animation | null>(null);
+
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- plays a single directional WAAPI transition on the outer timeline viewport once scroll-position restore lands
+  useLayoutEffect(() => {
+    if (!hasTimelineViewport) return;
+    const viewport = timelineViewportRef.current;
+    if (!viewport) return;
+    if (lastSettledIdentityRef.current === null) {
+      lastSettledIdentityRef.current = listIdentityKey;
+      lastSettledHasParentRef.current = hasParentThread;
+      delete viewport.dataset.timelineSwitchPending;
+      return;
+    }
+
+    if (lastSettledIdentityRef.current !== listIdentityKey) {
+      if (pendingThreadSwitchRef.current?.targetIdentity !== listIdentityKey) {
+        pendingThreadSwitchRef.current = {
+          targetIdentity: listIdentityKey,
+          fromHasParent: lastSettledHasParentRef.current,
+        };
+      }
+      if (restoreReady && !prefersReducedMotionSetting()) {
+        viewport.dataset.timelineSwitchPending = "true";
+        return;
+      }
+    }
+
+    delete viewport.dataset.timelineSwitchPending;
+    const pendingSwitch = pendingThreadSwitchRef.current;
+    if (pendingSwitch === null || pendingSwitch.targetIdentity !== listIdentityKey) {
+      lastSettledIdentityRef.current = listIdentityKey;
+      lastSettledHasParentRef.current = hasParentThread;
+      return;
+    }
+
+    pendingThreadSwitchRef.current = null;
+    lastSettledIdentityRef.current = listIdentityKey;
+    lastSettledHasParentRef.current = hasParentThread;
+
+    threadSwitchAnimationRef.current?.cancel();
+    threadSwitchAnimationRef.current = null;
+    if (prefersReducedMotionSetting() || typeof viewport.animate !== "function") return;
+
+    const isRtl =
+      typeof window !== "undefined" && window.getComputedStyle(viewport).direction === "rtl";
+    const horizontalSign = isRtl ? -1 : 1;
+    const enteringChild = !pendingSwitch.fromHasParent && hasParentThread;
+    const returningToParent = pendingSwitch.fromHasParent && !hasParentThread;
+    const fromTransform = enteringChild
+      ? `translate3d(${horizontalSign * 10}px, 0, 0)`
+      : returningToParent
+        ? `translate3d(${-horizontalSign * 10}px, 0, 0)`
+        : "translate3d(0, 5px, 0)";
+    const timing = getSpringWaapiTiming("snappy");
+    const animation = viewport.animate(
+      [
+        { opacity: 0.01, transform: fromTransform },
+        { opacity: 1, transform: "translate3d(0, 0, 0)" },
+      ],
+      {
+        duration: 150,
+        easing: timing.easing,
+      },
+    );
+    threadSwitchAnimationRef.current = animation;
+    void animation.finished
+      .catch(() => undefined)
+      .then(() => {
+        if (threadSwitchAnimationRef.current === animation) {
+          threadSwitchAnimationRef.current = null;
+        }
+      });
+  }, [hasParentThread, hasTimelineViewport, listIdentityKey, restoreReady]);
   const {
     target: readyCitationRequest,
     positioning: citationPositioning,
@@ -1120,6 +1202,7 @@ const ConversationTimeline = memo(function ConversationTimeline({
     });
   };
   const attachTimelineViewportElement = (viewportElement: HTMLDivElement | null) => {
+    timelineViewportRef.current = viewportElement;
     setTimelineViewportElement(viewportElement);
     if (!viewportElement) return;
     const stopObserving = observeResize(viewportElement, () => {
@@ -1128,6 +1211,7 @@ const ConversationTimeline = memo(function ConversationTimeline({
     });
     return () => {
       stopObserving();
+      timelineViewportRef.current = null;
       setTimelineViewportElement(null);
     };
   };

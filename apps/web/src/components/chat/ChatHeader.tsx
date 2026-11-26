@@ -16,11 +16,13 @@ import { ChevronDownIcon } from "lucide-react";
 import {
   memo,
   useEffect,
+  useLayoutEffect,
   useRef,
   useState,
   type KeyboardEvent as ReactKeyboardEvent,
   type MouseEvent as ReactMouseEvent,
 } from "react";
+import { getSpringWaapiTiming, prefersReducedMotion } from "~/lib/motion/springs";
 import { isTrailingDoubleClick } from "../Sidebar.logic";
 import { Badge } from "../ui/badge";
 import { MiddleTruncate } from "../ui/middle-truncate";
@@ -90,7 +92,57 @@ export const ChatHeader = memo(function ChatHeader({
   const activeProjectCwd = activeProject?.workspaceRoot ?? null;
   const interfaceFont = useClientSettings((settings) => settings.fontFamilySans);
   const breadcrumbContainerRef = useRef<HTMLDivElement>(null);
+  const previousBreadcrumbThreadRef = useRef<{
+    readonly threadId: ThreadId;
+    readonly hasParent: boolean;
+  } | null>(null);
+  const breadcrumbAnimationRef = useRef<Animation | null>(null);
+  const hasParentThread = parentThreadLink !== null;
   const [collapseParentTitle, setCollapseParentTitle] = useState(false);
+
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- slides the active breadcrumb item directionally on thread switches to stay synchronized with the timeline viewport transition
+  useLayoutEffect(() => {
+    const previous = previousBreadcrumbThreadRef.current;
+    previousBreadcrumbThreadRef.current = { threadId: activeThreadId, hasParent: hasParentThread };
+    if (previous === null || previous.threadId === activeThreadId) return;
+    breadcrumbAnimationRef.current?.cancel();
+    breadcrumbAnimationRef.current = null;
+    if (prefersReducedMotion()) return;
+    const container = breadcrumbContainerRef.current;
+    const target =
+      container?.querySelector<HTMLElement>('[aria-current="page"]') ??
+      container?.querySelector<HTMLElement>("ol");
+    if (!target || typeof target.animate !== "function") return;
+    const isRtl =
+      typeof window !== "undefined" && window.getComputedStyle(target).direction === "rtl";
+    const horizontalSign = isRtl ? -1 : 1;
+    const enteringChild = !previous.hasParent && hasParentThread;
+    const returningToParent = previous.hasParent && !hasParentThread;
+    const fromTransform = enteringChild
+      ? `translate3d(${horizontalSign * 8}px, 0, 0)`
+      : returningToParent
+        ? `translate3d(${-horizontalSign * 8}px, 0, 0)`
+        : "translate3d(0, 4px, 0)";
+    const timing = getSpringWaapiTiming("snappy");
+    const animation = target.animate(
+      [
+        { opacity: 0.01, transform: fromTransform },
+        { opacity: 1, transform: "translate3d(0, 0, 0)" },
+      ],
+      {
+        duration: 150,
+        easing: timing.easing,
+      },
+    );
+    breadcrumbAnimationRef.current = animation;
+    void animation.finished
+      .catch(() => undefined)
+      .then(() => {
+        if (breadcrumbAnimationRef.current === animation) {
+          breadcrumbAnimationRef.current = null;
+        }
+      });
+  }, [activeThreadId, hasParentThread]);
   const activeThreadRef = scopeThreadRef(activeThreadEnvironmentId, activeThreadId);
   const canOperateThread = useEnvironmentScope(
     activeThreadEnvironmentId,

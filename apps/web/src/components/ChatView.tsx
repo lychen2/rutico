@@ -3624,7 +3624,7 @@ export default function ChatView(props: ChatViewProps) {
       ref={setWorkspaceLayoutElement}
       className={cn(
         "relative flex min-h-0 min-w-0 flex-1 overflow-hidden",
-        embedded ? "bg-background/88 backdrop-blur-md" : "bg-transparent",
+        embedded ? "surface-optical-chrome" : "bg-transparent",
       )}
     >
       {embedded ? null : (
@@ -3650,7 +3650,7 @@ export default function ChatView(props: ChatViewProps) {
             ref={threadPanelPopoverAnchorRef}
             data-chat-header
             className={cn(
-              "relative bg-background/68 backdrop-blur-md [[data-panel-animations=true]_&]:motion-safe:transition-[padding-left] [[data-panel-animations=true]_&]:motion-safe:duration-(--panel-animation-duration) [[data-panel-animations=true]_&]:motion-safe:ease-(--ease-spring-gentle)",
+              "surface-optical-chrome relative [[data-panel-animations=true]_&]:motion-safe:transition-[padding-left] [[data-panel-animations=true]_&]:motion-safe:duration-(--panel-animation-duration) [[data-panel-animations=true]_&]:motion-safe:ease-(--ease-spring-gentle)",
               isElectron
                 ? cn(
                     "drag-region flex h-[var(--workspace-topbar-height)] min-h-[var(--workspace-topbar-height)] shrink-0 items-center px-3 sm:px-5",

@@ -471,3 +471,17 @@
     transform: none;
   }
 }
+
+/* ==========================================================================
+   D07 / C024: Zero-Flash Thread-Switch Viewport Gate
+   ========================================================================== */
+
+[data-assistant-citation-viewport="true"][data-timeline-switch-pending="true"] {
+  opacity: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-assistant-citation-viewport="true"][data-timeline-switch-pending="true"] {
+    opacity: 1;
+  }
+}
