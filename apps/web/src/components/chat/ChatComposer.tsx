@@ -3918,6 +3918,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                   resolvedTheme={resolvedTheme}
                   isLoading={isComposerMenuLoading}
                   triggerKind={composerTriggerKind}
+                  query={composerTrigger?.query ?? ""}
                   emptyStateText={composerMenuEmptyState}
                   activeItemId={activeComposerMenuItem?.id ?? null}
                   onHighlightedItemChange={onComposerMenuItemHighlightedStable}

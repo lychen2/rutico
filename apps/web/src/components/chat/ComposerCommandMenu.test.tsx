@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vite-plus/test";
 
-import { composerSuggestionOptionId } from "./ComposerCommandMenu";
+import { composerSuggestionOptionId, splitQueryMatchSegments } from "./ComposerCommandMenu";
 
 describe("composerSuggestionOptionId", () => {
   it("keeps whitespace, escape-like paths, and malformed UTF-16 distinct", () => {
@@ -23,5 +23,23 @@ describe("composerSuggestionOptionId", () => {
     expect(composerSuggestionOptionId("other-composer", paths[0]!)).not.toBe(
       composerSuggestionOptionId("suggestions", paths[0]!),
     );
+  });
+});
+
+describe("splitQueryMatchSegments", () => {
+  it("highlights contiguous substring matches and ordered subsequence fuzzy matches", () => {
+    expect(splitQueryMatchSegments("ComposerCommandMenu.tsx", "command")).toEqual([
+      { text: "Composer", matched: false },
+      { text: "Command", matched: true },
+      { text: "Menu.tsx", matched: false },
+    ]);
+    expect(splitQueryMatchSegments("ComposerCommandMenu", "ccm")).toEqual([
+      { text: "C", matched: true },
+      { text: "omposer", matched: false },
+      { text: "C", matched: true },
+      { text: "ommand", matched: false },
+      { text: "M", matched: true },
+      { text: "enu", matched: false },
+    ]);
   });
 });

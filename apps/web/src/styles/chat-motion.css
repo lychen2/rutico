@@ -1918,3 +1918,31 @@
     transform: none;
   }
 }
+
+/* ==========================================================================
+   D15 / C049: Magnetic Command & Stash Highlight Rail + Fuzzy Match Marks
+   ========================================================================== */
+
+[data-command-menu-track="true"]:has(
+    > [data-shared-indicator="command-menu"][data-indicator-ready="true"]
+  )
+  [data-composer-item-id][data-active="true"] {
+  background-color: transparent !important;
+}
+
+[data-stash-menu-track="true"]:has(
+    > [data-shared-indicator="stash-menu"][data-indicator-ready="true"]
+  )
+  [data-stash-entry][data-highlighted] {
+  background-color: transparent !important;
+}
+
+[data-fuzzy-match="true"] {
+  background-color: transparent;
+  color: var(--foreground);
+  font-weight: 600;
+  text-decoration: underline;
+  text-decoration-color: color-mix(in oklch, var(--primary) 55%, transparent);
+  text-decoration-thickness: 1.5px;
+  text-underline-offset: 2px;
+}

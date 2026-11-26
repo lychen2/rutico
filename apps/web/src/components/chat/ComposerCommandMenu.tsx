@@ -28,6 +28,7 @@ import { msg, useGT, useMessages } from "gt-react";
 import { memo, useLayoutEffect, useRef, useState } from "react";
 
 import { type ComposerSlashCommand, type ComposerTriggerKind } from "../../composer-logic";
+import { useSharedIndicator } from "~/lib/motion/useSharedIndicator";
 import { cn } from "~/lib/utils";
 import { Badge } from "../ui/badge";
 import { Command, CommandGroup, CommandItem, CommandList } from "../ui/command";
@@ -108,12 +109,102 @@ export type ComposerCommandItem =
       description: string;
     };
 
+export function splitQueryMatchSegments(
+  text: string,
+  rawQuery: string,
+): Array<{ readonly text: string; readonly matched: boolean }> {
+  const query = rawQuery.trim().toLowerCase();
+  if (!query || !text) return [{ text, matched: false }];
+
+  const lower = text.toLowerCase();
+  const directIndex = lower.indexOf(query);
+  if (directIndex >= 0) {
+    const segments: Array<{ readonly text: string; readonly matched: boolean }> = [];
+    if (directIndex > 0) segments.push({ text: text.slice(0, directIndex), matched: false });
+    segments.push({ text: text.slice(directIndex, directIndex + query.length), matched: true });
+    if (directIndex + query.length < text.length) {
+      segments.push({ text: text.slice(directIndex + query.length), matched: false });
+    }
+    return segments;
+  }
+
+  // Ordered subsequence fuzzy match: prefer word/camelCase boundaries, fall back to greedy match.
+  const needle = query.replace(/\s+/g, "");
+  if (!needle) return [{ text, matched: false }];
+  const isBoundary = (index: number) => {
+    if (index === 0) return true;
+    const prev = text[index - 1] ?? "";
+    const curr = text[index] ?? "";
+    if (/[/\\._\-\s]/.test(prev)) return true;
+    return curr >= "A" && curr <= "Z" && prev >= "a" && prev <= "z";
+  };
+  const boundaryIndices: number[] = [];
+  let cursor = 0;
+  for (let i = 0; i < lower.length && cursor < needle.length; i += 1) {
+    if (lower[i] === needle[cursor] && isBoundary(i)) {
+      boundaryIndices.push(i);
+      cursor += 1;
+    }
+  }
+  const matchedIndices =
+    cursor === needle.length
+      ? boundaryIndices
+      : (() => {
+          const fallback: number[] = [];
+          let pos = 0;
+          for (let i = 0; i < lower.length && pos < needle.length; i += 1) {
+            if (lower[i] === needle[pos]) {
+              fallback.push(i);
+              pos += 1;
+            }
+          }
+          return pos === needle.length ? fallback : null;
+        })();
+  if (!matchedIndices) return [{ text, matched: false }];
+
+  const matchedSet = new Set(matchedIndices);
+  const segments: Array<{ readonly text: string; readonly matched: boolean }> = [];
+  let runStart = 0;
+  let runMatched = matchedSet.has(0);
+  for (let i = 1; i <= text.length; i += 1) {
+    const isMatched = i < text.length ? matchedSet.has(i) : !runMatched;
+    if (i === text.length || isMatched !== runMatched) {
+      segments.push({ text: text.slice(runStart, i), matched: runMatched });
+      runStart = i;
+      runMatched = isMatched;
+    }
+  }
+  return segments;
+}
+
+function HighlightedQueryLabel(props: { readonly text: string; readonly query: string }) {
+  const segments = splitQueryMatchSegments(props.text, props.query);
+  if (segments.length === 1 && !segments[0]?.matched) {
+    return props.text;
+  }
+  return (
+    <>
+      {segments.map((segment, index) => {
+        const key = `${index}:${segment.matched ? "m" : "p"}:${segment.text}`;
+        return segment.matched ? (
+          <mark key={key} data-fuzzy-match="true">
+            {segment.text}
+          </mark>
+        ) : (
+          <span key={key}>{segment.text}</span>
+        );
+      })}
+    </>
+  );
+}
+
 export const ComposerCommandMenu = memo(function ComposerCommandMenu(props: {
   listId: string;
   items: ComposerCommandItem[];
   resolvedTheme: "light" | "dark";
   isLoading: boolean;
   triggerKind: ComposerTriggerKind | null;
+  query?: string;
   emptyStateText?: string;
   activeItemId: string | null;
   onHighlightedItemChange: (itemId: string | null) => void;
@@ -122,6 +213,19 @@ export const ComposerCommandMenu = memo(function ComposerCommandMenu(props: {
   const gt = useGT();
   const m = useMessages();
   const listRef = useRef<HTMLDivElement>(null);
+  const trackRef = useRef<HTMLDivElement>(null);
+  const indicatorRef = useRef<HTMLSpanElement>(null);
+  const query = props.query ?? "";
+
+  useSharedIndicator({
+    containerRef: trackRef,
+    indicatorRef,
+    activeSelector: '[data-composer-item-id][data-active="true"]',
+    activeKey: props.activeItemId,
+    preset: "fluid",
+    maxSquash: 0.15,
+    axis: "y",
+  });
 
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- scrolls the highlighted menu item's DOM node into view
   useLayoutEffect(() => {
@@ -158,18 +262,27 @@ export const ComposerCommandMenu = memo(function ComposerCommandMenu(props: {
               scrollAreaClassName="max-h-72"
             >
               <CommandGroup>
-                {props.items.map((item) => (
-                  <ComposerCommandMenuItem
-                    key={item.id}
-                    optionId={composerSuggestionOptionId(props.listId, item.id)}
-                    item={item}
-                    triggerKind={props.triggerKind}
-                    resolvedTheme={props.resolvedTheme}
-                    isActive={props.activeItemId === item.id}
-                    onHighlight={props.onHighlightedItemChange}
-                    onSelect={props.onSelect}
+                <div ref={trackRef} data-command-menu-track="true" className="relative">
+                  <span
+                    ref={indicatorRef}
+                    aria-hidden="true"
+                    data-shared-indicator="command-menu"
+                    className="pointer-events-none absolute top-0 left-0 z-0 rounded-lg bg-accent opacity-0 will-change-transform"
                   />
-                ))}
+                  {props.items.map((item) => (
+                    <ComposerCommandMenuItem
+                      key={item.id}
+                      optionId={composerSuggestionOptionId(props.listId, item.id)}
+                      item={item}
+                      triggerKind={props.triggerKind}
+                      query={query}
+                      resolvedTheme={props.resolvedTheme}
+                      isActive={props.activeItemId === item.id}
+                      onHighlight={props.onHighlightedItemChange}
+                      onSelect={props.onSelect}
+                    />
+                  ))}
+                </div>
               </CommandGroup>
             </CommandList>
             <div
@@ -222,6 +335,7 @@ const ComposerCommandMenuItem = memo(function ComposerCommandMenuItem(props: {
   optionId: string;
   item: ComposerCommandItem;
   triggerKind: ComposerTriggerKind | null;
+  query: string;
   resolvedTheme: "light" | "dark";
   isActive: boolean;
   onHighlight: (itemId: string | null) => void;
@@ -251,6 +365,7 @@ const ComposerCommandMenuItem = memo(function ComposerCommandMenuItem(props: {
       value={props.item.id}
       data-composer-item-id={props.item.id}
       active={props.isActive}
+      className="relative z-10"
       onMouseMove={() => {
         if (!props.isActive) props.onHighlight(props.item.id);
       }}
@@ -300,10 +415,13 @@ const ComposerCommandMenuItem = memo(function ComposerCommandMenuItem(props: {
           {isSlashSkill ? (
             <>
               <span className="text-secondary-label">/skill:</span>
-              {formatProviderSkillDisplayName(isSlashSkill)}
+              <HighlightedQueryLabel
+                text={formatProviderSkillDisplayName(isSlashSkill)}
+                query={props.query}
+              />
             </>
           ) : (
-            props.item.label
+            <HighlightedQueryLabel text={props.item.label} query={props.query} />
           )}
         </span>
         <Tooltip open={descriptionTruncated}>

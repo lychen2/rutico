@@ -7,6 +7,7 @@ import { composerFileLinksToPlainText } from "@t3tools/shared/composerInlineToke
 
 import { RelativeTime } from "../RelativeTime";
 import { m, type MessageResolver } from "~/i18n/messages";
+import { useSharedIndicator } from "~/lib/motion/useSharedIndicator";
 import { cn } from "~/lib/utils";
 import { type PromptStashEntry } from "../../promptStashStore";
 import { ComposerBanner } from "./ComposerBanner";
@@ -74,6 +75,18 @@ export const ComposerStashMenu = memo(function ComposerStashMenu(props: {
 
   const highlightedEntry = entries.find((entry) => entry.id === highlightedId) ?? entries[0];
   const drawerRef = useRef<HTMLDivElement>(null);
+  const stashListRef = useRef<HTMLUListElement>(null);
+  const stashIndicatorRef = useRef<HTMLLIElement>(null);
+
+  useSharedIndicator({
+    containerRef: stashListRef,
+    indicatorRef: stashIndicatorRef,
+    activeSelector: "[data-stash-entry][data-highlighted]",
+    activeKey: highlightedEntry?.id ?? null,
+    preset: "fluid",
+    maxSquash: 0.15,
+    axis: "y",
+  });
 
   // Both listeners read entries, highlight and callbacks at event time, so they subscribe
   // once for the menu's lifetime instead of on every highlight change.
@@ -181,7 +194,21 @@ export const ComposerStashMenu = memo(function ComposerStashMenu(props: {
         </ComposerBanner.Actions>
       </ComposerBanner.Row>
       <ComposerBanner.Scroll className="flex flex-col">
-        <ComposerBanner.Children render={<ul role="list" />} aria-label={gt("Stashed prompts")}>
+        <ComposerBanner.Children
+          render={<ul ref={stashListRef} role="list" />}
+          data-stash-menu-track="true"
+          className="relative"
+          aria-label={gt("Stashed prompts")}
+        >
+          {entries.length > 0 ? (
+            <li
+              ref={stashIndicatorRef}
+              aria-hidden="true"
+              role="presentation"
+              data-shared-indicator="stash-menu"
+              className="pointer-events-none absolute top-0 left-0 z-0 rounded-sm bg-accent opacity-0 will-change-transform"
+            />
+          ) : null}
           {entries.length === 0 ? (
             <ComposerBanner.Row render={<li />}>
               <ComposerBanner.Icon />
@@ -206,7 +233,7 @@ export const ComposerStashMenu = memo(function ComposerStashMenu(props: {
                 data-stash-entry={entry.id}
                 data-highlighted={highlightedEntry?.id === entry.id || undefined}
                 className={cn(
-                  "relative rounded-sm",
+                  "relative z-10 rounded-sm",
                   highlightedEntry?.id === entry.id && "bg-accent text-accent-foreground",
                 )}
                 onMouseMove={() => {
