@@ -2,13 +2,15 @@ import "~/index.css";
 
 import { EnvironmentId } from "@t3tools/contracts";
 import { DEFAULT_RESOLVED_KEYBINDINGS } from "@t3tools/shared/keybindings";
+import { useState } from "react";
 import { describe, expect, it, vi } from "vite-plus/test";
-import { page, userEvent } from "vite-plus/test/browser";
+import { commands, page, userEvent } from "vite-plus/test/browser";
 
 import { InputGroup, InputGroupAddon, InputGroupInput } from "~/components/ui/input-group";
 import type { RightPanelSurface } from "~/rightPanelStore";
 import { act, render, stubGlobal } from "../../test/render";
 import { HistorySwipeNavigation } from "./HistorySwipeNavigation";
+import { RightPanelSheet } from "./RightPanelSheet";
 import { RightPanelTabs, type RightPanelTabsProps } from "./RightPanelTabs";
 import { subscribePreviewAction } from "./preview/previewActionBus";
 
@@ -428,5 +430,118 @@ describe("add surface launcher", () => {
     expect(menuListeners.size).toBe(0);
     expect(await pressModT()).toBe(false);
     expect(page.getByRole("menu").query()).toBeNull();
+  });
+});
+
+const FILES_SURFACE: RightPanelSurface = { id: "files", kind: "files" };
+
+describe("narrow-screen sheet tab reorder vs swipe-to-dismiss", () => {
+  async function withViewport(width: number, height: number): Promise<AsyncDisposable> {
+    const previous = { width: window.innerWidth, height: window.innerHeight };
+    await page.viewport(width, height);
+    return {
+      async [Symbol.asyncDispose]() {
+        await page.viewport(previous.width, previous.height);
+      },
+    };
+  }
+
+  function SheetHarness(props: { readonly onClose: () => void }) {
+    const [open, setOpen] = useState(true);
+    const [orderedSurfaces, setOrderedSurfaces] = useState<readonly RightPanelSurface[]>([
+      BROWSER_SURFACE,
+      DIFF_SURFACE,
+      FILES_SURFACE,
+    ]);
+    const baseProps = panel(BROWSER_SURFACE).props as RightPanelTabsProps;
+    const handleMove = (surfaceId: string, toIndex: number) => {
+      setOrderedSurfaces((current) => {
+        const fromIndex = current.findIndex((surface) => surface.id === surfaceId);
+        if (fromIndex < 0 || fromIndex === toIndex) return current;
+        const next = [...current];
+        const [moved] = next.splice(fromIndex, 1);
+        if (!moved) return current;
+        next.splice(toIndex, 0, moved);
+        return next;
+      });
+    };
+    return (
+      <RightPanelSheet
+        animationDurationMs={0}
+        open={open}
+        onClose={() => {
+          props.onClose();
+          setOpen(false);
+        }}
+      >
+        <RightPanelTabs
+          {...baseProps}
+          mode="sheet"
+          open={open}
+          surfaces={orderedSurfaces}
+          activeSurfaceId={orderedSurfaces[0]?.id ?? null}
+          onMoveSurface={handleMove}
+        >
+          <div data-testid="sheet-blank-body" className="h-full w-full" />
+        </RightPanelTabs>
+      </RightPanelSheet>
+    );
+  }
+
+  it("reorders tabs horizontally without dismissing the sheet, while dragging blank area still dismisses it", async () => {
+    await using _viewport = await withViewport(390, 844);
+    const onClose = vi.fn();
+    await using _screen = await render(<SheetHarness onClose={onClose} />);
+
+    const sheetPopup = document.querySelector<HTMLElement>('[data-slot="sheet-popup"]')!;
+    await expect.element(page.elementLocator(sheetPopup)).toBeVisible();
+
+    const readTabOrder = () =>
+      [...sheetPopup.querySelectorAll<HTMLElement>("[data-active-tab]")].map((tab) =>
+        tab.textContent?.trim(),
+      );
+    expect(readTabOrder()).toEqual(["Browser", "Diff", "Files"]);
+
+    const browserTab = sheetPopup.querySelectorAll<HTMLElement>("[data-active-tab]")[0]!;
+    const filesTab = sheetPopup.querySelectorAll<HTMLElement>("[data-active-tab]")[2]!;
+    const popupRect = sheetPopup.getBoundingClientRect();
+    const browserRect = browserTab.getBoundingClientRect();
+    const filesRect = filesTab.getBoundingClientRect();
+    const popupLocator = page.elementLocator(sheetPopup);
+
+    // Drag the first tab horizontally past the third tab (a long rightward drag on a right sheet).
+    const startX = Math.round(browserRect.left - popupRect.left + browserRect.width / 2);
+    const tabY = Math.round(browserRect.top - popupRect.top + browserRect.height / 2);
+    const targetX = Math.round(filesRect.right - popupRect.left - 4);
+    await userEvent.hover(popupLocator, { position: { x: startX, y: tabY } });
+    await commands.pointerDown();
+    await userEvent.hover(popupLocator, { position: { x: startX + 16, y: tabY } });
+    await userEvent.hover(popupLocator, {
+      position: { x: Math.round((startX + targetX) / 2), y: tabY },
+    });
+    await userEvent.hover(popupLocator, { position: { x: targetX, y: tabY } });
+    await commands.pointerUp();
+
+    await vi.waitFor(() => {
+      expect(readTabOrder()).toEqual(["Diff", "Files", "Browser"]);
+    });
+    expect(onClose).not.toHaveBeenCalled();
+    await expect.element(page.elementLocator(sheetPopup)).toBeVisible();
+
+    // Dragging blank area inside the sheet still dismisses it.
+    const blankBody = page.getByTestId("sheet-blank-body");
+    const bodyRect = blankBody.element().getBoundingClientRect();
+    const bodyY = Math.round(bodyRect.height / 2);
+    await userEvent.hover(blankBody, { position: { x: 24, y: bodyY } });
+    await commands.pointerDown();
+    await userEvent.hover(blankBody, { position: { x: 80, y: bodyY } });
+    await userEvent.hover(blankBody, {
+      position: { x: Math.round(bodyRect.width * 0.7), y: bodyY },
+    });
+    await commands.pointerUp();
+
+    await vi.waitFor(() => {
+      expect(onClose).toHaveBeenCalledOnce();
+    });
   });
 });
