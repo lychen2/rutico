@@ -3,6 +3,7 @@ import type { DesktopBridge } from "@t3tools/contracts";
 import { safeErrorLogAttributes } from "@t3tools/client-runtime/errors";
 import * as Schema from "effect/Schema";
 import { useSyncExternalStore } from "react";
+import { runThemeViewTransition } from "../lib/motion/themeTransition";
 import {
   applyThemePalette,
   CUSTOM_THEMES_STORAGE_KEY,
@@ -303,7 +304,10 @@ export function syncBrowserChromeTheme() {
   }
 }
 
-function applyTheme(theme: Theme, { suppressTransitions = false, preservePreview = true } = {}) {
+function applyTheme(
+  theme: Theme,
+  { suppressTransitions = false, preservePreview = true, animateTransition = false } = {},
+) {
   if (typeof document === "undefined" || typeof window === "undefined") return;
   if (preservePreview && document.documentElement.dataset?.themeId === THEME_PREVIEW_ID) {
     return;
@@ -323,9 +327,6 @@ function applyTheme(theme: Theme, { suppressTransitions = false, preservePreview
     return;
   }
 
-  if (suppressTransitions) {
-    document.documentElement.classList.add("no-transitions");
-  }
   const resolvedAppearance = resolveThemeAppearance(
     theme,
     systemDark,
@@ -333,11 +334,24 @@ function applyTheme(theme: Theme, { suppressTransitions = false, preservePreview
     appearanceMode,
     themeHalves,
   );
-  applyThemePalette(resolveThemeHalf(theme, themeHalves, resolvedAppearance), resolvedAppearance);
-  document.documentElement.classList.toggle("dark", resolvedAppearance === "dark");
+  const commitThemeDom = () => {
+    applyThemePalette(resolveThemeHalf(theme, themeHalves, resolvedAppearance), resolvedAppearance);
+    document.documentElement.classList.toggle("dark", resolvedAppearance === "dark");
+    syncBrowserChromeTheme();
+  };
+
   lastAppliedTheme = { theme, systemDark, followSystem, appearanceMode, themeHalves };
-  syncBrowserChromeTheme();
   syncDesktopTheme(theme, followSystem, appearanceMode);
+
+  if (animateTransition) {
+    runThemeViewTransition(commitThemeDom);
+    return;
+  }
+
+  if (suppressTransitions) {
+    document.documentElement.classList.add("no-transitions");
+  }
+  commitThemeDom();
   if (suppressTransitions) {
     // Force a reflow so the no-transitions class takes effect before removal
     void document.documentElement.offsetHeight;
@@ -550,7 +564,7 @@ export function setTheme(next: Theme): boolean {
     });
     return false;
   }
-  applyTheme(next, { suppressTransitions: true });
+  applyTheme(next, { suppressTransitions: true, animateTransition: true });
   emitChange();
   return true;
 }
@@ -575,7 +589,7 @@ export function setAppearanceMode(nextAppearanceMode: ThemePreferenceMode): bool
     return false;
   }
   themeStorageReadFailure = null;
-  applyTheme(getStored(), { suppressTransitions: true });
+  applyTheme(getStored(), { suppressTransitions: true, animateTransition: true });
   emitChange();
   return true;
 }
@@ -605,7 +619,7 @@ function setThemeHalf(appearance: ThemeAppearance, themeId: string | null): bool
     });
     return false;
   }
-  applyTheme(getStored(), { suppressTransitions: true });
+  applyTheme(getStored(), { suppressTransitions: true, animateTransition: true });
   emitChange();
   return true;
 }
@@ -627,7 +641,7 @@ function clearThemeHalves(): boolean {
     });
     return false;
   }
-  applyTheme(getStored(), { suppressTransitions: true });
+  applyTheme(getStored(), { suppressTransitions: true, animateTransition: true });
   emitChange();
   return true;
 }

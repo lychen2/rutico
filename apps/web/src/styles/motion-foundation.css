@@ -661,3 +661,21 @@ html[data-fractional-dpr="true"] :where(svg.lucide[stroke-width="2"]) {
     background-color: transparent;
   }
 }
+
+/* ==========================================================================
+   D03 / C009: Origin-Expanding View Transition Iris Ripple for Theme Switching
+   ========================================================================== */
+
+html[data-theme-transition="iris"]::view-transition-old(root),
+html[data-theme-transition="iris"]::view-transition-new(root) {
+  animation: none;
+  mix-blend-mode: normal;
+}
+
+html[data-theme-transition="iris"]::view-transition-old(root) {
+  z-index: 1;
+}
+
+html[data-theme-transition="iris"]::view-transition-new(root) {
+  z-index: 2;
+}
