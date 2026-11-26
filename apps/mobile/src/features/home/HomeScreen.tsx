@@ -20,6 +20,7 @@ import { type EnvironmentId, type SidebarProjectGroupingMode } from "@t3tools/co
 import { useAtomValue } from "@effect/atom-react";
 import {
   use,
+  useCallback,
   useEffect,
   useLayoutEffect,
   useMemo,
@@ -38,11 +39,39 @@ import {
   type NativeSyntheticEvent,
 } from "react-native";
 import { NativeScrollViewMarker as ScrollViewMarker } from "../../native/NativeScrollViewMarker";
-import { GestureDetector, useNativeGesture } from "react-native-gesture-handler";
+import {
+  GestureDetector,
+  useNativeGesture,
+  usePanGesture,
+  useSimultaneousGestures,
+} from "react-native-gesture-handler";
 import type { SwipeableMethods } from "react-native-gesture-handler/ReanimatedSwipeable";
+import Animated, {
+  Extrapolation,
+  interpolate,
+  runOnJS,
+  useAnimatedProps,
+  useAnimatedStyle,
+  useSharedValue,
+  withSpring,
+  type SharedValue,
+} from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import Svg, { Circle } from "react-native-svg";
 
+import { SymbolView } from "../../components/ui/AppSymbol";
+import { AppText as Text } from "../../components/ui/AppText";
 import { cn } from "../../lib/cn";
+import { triggerSemanticHaptic } from "../../lib/hapticChoreography";
+import { SPRING_SPATIAL_SNAPPY } from "../../lib/mobileMotion";
+import { useAppearancePreferences } from "../settings/appearance/AppearancePreferencesProvider";
+import {
+  computePullToCreateDistance,
+  PULL_CREATE_DETENT_DP,
+  PULL_REFRESH_DETENT_DP,
+  resolvePullToCreateStage,
+  type PullToCreateStage,
+} from "./pullToCreateOverscroll";
 import {
   ANDROID_READING_MAX_WIDTH,
   deriveCenteredContentHorizontalPadding,
@@ -160,6 +189,123 @@ const ESTIMATED_THREAD_LIST_V2_ROW_HEIGHT = 72;
 // swipe-row-activation), so render further ahead: a fast fling then reaches
 // rows that are already built instead of rows still being rebuilt.
 const THREAD_LIST_V2_DRAW_DISTANCE = 1_000;
+const PULL_RING_SIZE = 24;
+const PULL_RING_STROKE = 2.2;
+const PULL_RING_RADIUS = (PULL_RING_SIZE - PULL_RING_STROKE) / 2;
+const PULL_RING_CIRCUMFERENCE = 2 * Math.PI * PULL_RING_RADIUS;
+const AnimatedCircle = Animated.createAnimatedComponent(Circle);
+
+function AndroidPullToCreateHeader(props: { readonly pullDistance: SharedValue<number> }) {
+  const { pullDistance } = props;
+  const gt = useGT();
+  const { themeVariables: theme } = useAppearancePreferences();
+
+  const containerStyle = useAnimatedStyle(() => {
+    const distance = pullDistance.get();
+    return {
+      height: distance,
+      opacity: interpolate(distance, [8, 28], [0, 1], Extrapolation.CLAMP),
+    };
+  });
+
+  const ringWrapperStyle = useAnimatedStyle(() => {
+    const distance = pullDistance.get();
+    const createArmed = interpolate(
+      distance,
+      [PULL_CREATE_DETENT_DP - 16, PULL_CREATE_DETENT_DP],
+      [0, 1],
+      Extrapolation.CLAMP,
+    );
+    return {
+      opacity: 1 - createArmed,
+      transform: [
+        {
+          scale: interpolate(distance, [0, PULL_REFRESH_DETENT_DP], [0.75, 1], Extrapolation.CLAMP),
+        },
+      ],
+    };
+  });
+
+  const ringAnimatedProps = useAnimatedProps(() => {
+    const progress = interpolate(
+      pullDistance.get(),
+      [8, PULL_REFRESH_DETENT_DP],
+      [0, 1],
+      Extrapolation.CLAMP,
+    );
+    return {
+      strokeDashoffset: PULL_RING_CIRCUMFERENCE * (1 - progress),
+    };
+  });
+
+  const pillStyle = useAnimatedStyle(() => {
+    const distance = pullDistance.get();
+    const armed = interpolate(
+      distance,
+      [PULL_CREATE_DETENT_DP - 18, PULL_CREATE_DETENT_DP],
+      [0, 1],
+      Extrapolation.CLAMP,
+    );
+    return {
+      opacity: armed,
+      transform: [{ scale: interpolate(armed, [0, 1], [0.86, 1], Extrapolation.CLAMP) }],
+    };
+  });
+
+  return (
+    <Animated.View
+      pointerEvents="none"
+      accessible={false}
+      style={containerStyle}
+      className="items-center justify-center overflow-hidden"
+    >
+      <Animated.View style={ringWrapperStyle} className="absolute flex-row items-center gap-2">
+        <Svg width={PULL_RING_SIZE} height={PULL_RING_SIZE}>
+          <Circle
+            cx={PULL_RING_SIZE / 2}
+            cy={PULL_RING_SIZE / 2}
+            r={PULL_RING_RADIUS}
+            stroke={theme["--color-border"]}
+            strokeWidth={PULL_RING_STROKE}
+            fill="none"
+          />
+          <AnimatedCircle
+            cx={PULL_RING_SIZE / 2}
+            cy={PULL_RING_SIZE / 2}
+            r={PULL_RING_RADIUS}
+            stroke={theme["--color-primary"]}
+            strokeWidth={PULL_RING_STROKE}
+            strokeLinecap="round"
+            strokeDasharray={PULL_RING_CIRCUMFERENCE}
+            animatedProps={ringAnimatedProps}
+            fill="none"
+            rotation={-90}
+            originX={PULL_RING_SIZE / 2}
+            originY={PULL_RING_SIZE / 2}
+          />
+        </Svg>
+        <Text className="font-t3-medium text-xs text-foreground-muted">
+          {gt("Keep pulling to create task")}
+        </Text>
+      </Animated.View>
+      <Animated.View
+        style={pillStyle}
+        className="flex-row items-center gap-1.5 rounded-full bg-primary px-3.5 py-1.5"
+      >
+        <SymbolView
+          name="plus"
+          size={13}
+          weight="semibold"
+          tintColorClassName="accent-primary-foreground"
+          type="monochrome"
+        />
+        <Text className="font-t3-bold text-xs text-primary-foreground">
+          {gt("Release to create task")}
+        </Text>
+      </Animated.View>
+    </Animated.View>
+  );
+}
 
 function HomeTopContentSpacer() {
   return <View className="h-4" />;
@@ -214,6 +360,66 @@ export function HomeScreen(props: HomeScreenProps) {
   const queuedThreadKeys = useQueuedThreadKeys();
   const openSwipeableRef = useRef<SwipeableMethods | null>(null);
   const homeScrollGesture = useNativeGesture();
+  const isAtTop = useSharedValue(true);
+  const pullDistance = useSharedValue(0);
+  const pullDetentStage = useSharedValue<PullToCreateStage>(0);
+  const { onStartNewTask } = props;
+  const triggerPullDetentHaptic = useCallback((stage: 1 | 2) => {
+    triggerSemanticHaptic(stage === 2 ? "confirm" : "segmentTick");
+  }, []);
+  const triggerPullCreateTask = useCallback(() => {
+    onStartNewTask();
+  }, [onStartNewTask]);
+  const pullToCreateEnabled =
+    Platform.OS === "android" &&
+    props.visible &&
+    props.catalogState.hasConnections &&
+    props.searchQuery.trim().length === 0;
+  const pullToCreateGesture = usePanGesture({
+    enabled: pullToCreateEnabled,
+    activeOffsetY: 10,
+    failOffsetY: -6,
+    failOffsetX: [-16, 16],
+    onUpdate: (event) => {
+      "worklet";
+      if (!isAtTop.get() || event.translationY <= 0) {
+        if (pullDistance.get() !== 0) {
+          pullDistance.set(0);
+          pullDetentStage.set(0);
+        }
+        return;
+      }
+      const damped = computePullToCreateDistance(event.translationY);
+      pullDistance.set(damped);
+      const nextStage = resolvePullToCreateStage(damped);
+      if (nextStage !== pullDetentStage.get()) {
+        pullDetentStage.set(nextStage);
+        if (nextStage === 1 || nextStage === 2) {
+          runOnJS(triggerPullDetentHaptic)(nextStage);
+        }
+      }
+    },
+    onDeactivate: (event) => {
+      "worklet";
+      const shouldCreate = !event.canceled && pullDistance.get() >= PULL_CREATE_DETENT_DP;
+      pullDetentStage.set(0);
+      pullDistance.set(withSpring(0, SPRING_SPATIAL_SNAPPY));
+      if (shouldCreate) {
+        runOnJS(triggerPullCreateTask)();
+      }
+    },
+    onFinalize: () => {
+      "worklet";
+      if (pullDistance.get() !== 0) {
+        pullDetentStage.set(0);
+        pullDistance.set(withSpring(0, SPRING_SPATIAL_SNAPPY));
+      }
+    },
+  });
+  const androidPullAndScrollGesture = useSimultaneousGestures(
+    homeScrollGesture,
+    pullToCreateGesture,
+  );
   const insets = useSafeAreaInsets();
   const contentTopInset = useContentTopInset();
   const emptyTopInset = useWorkspaceListEmptyTopInset();
@@ -297,6 +503,7 @@ export function HomeScreen(props: HomeScreenProps) {
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- clears the row activation timer on unmount
   useEffect(() => () => clearTimeout(activationTimerRef.current), []);
   const handleListScroll = (event: NativeSyntheticEvent<NativeScrollEvent>) => {
+    isAtTop.set(event.nativeEvent.contentOffset.y <= 2);
     onFabScroll?.(event);
     if (workspace)
       workspace.recordScrollOffset(
@@ -781,78 +988,85 @@ export function HomeScreen(props: HomeScreenProps) {
     );
   }
 
+  const listContent = (
+    <AnimatedLegendList
+      itemLayoutAnimation={THREAD_LIST_ROW_LAYOUT}
+      ref={listRef}
+      onLoad={() => {
+        settleLaunchSplashHomeRows();
+        activateVisibleRows(threadListV2Items);
+      }}
+      onTouchStart={(event) => trackListTouches(event, true)}
+      onTouchEnd={(event) => trackListTouches(event, false)}
+      onTouchCancel={(event) => trackListTouches(event, false)}
+      renderScrollComponent={Platform.OS === "ios" ? renderHomeScrollView : undefined}
+      data={threadListV2Items}
+      renderItem={renderV2Item}
+      keyExtractor={v2KeyExtractor}
+      getItemType={(item) => item.type}
+      itemsAreEqual={threadListV2ListItemsAreEqual}
+      estimatedItemSize={ESTIMATED_THREAD_LIST_V2_ROW_HEIGHT}
+      drawDistance={THREAD_LIST_V2_DRAW_DISTANCE}
+      recycleItems
+      extraData={v2ExtraData}
+      ListHeaderComponent={v2ListHeader}
+      // Lifted above the rows so an iOS filter menu's dismissal morph is not covered.
+      ListHeaderComponentStyle={{ zIndex: 1 }}
+      ListFooterComponent={
+        settledShelfExpanded && threadListV2Layout.hiddenSettledCount > 0 ? (
+          <ThreadListV2ShowMoreRow
+            hiddenCount={threadListV2Layout.hiddenSettledCount}
+            {...(olderSettledShelf.loading
+              ? { state: "loading" as const }
+              : olderSettledShelf.failed
+                ? { state: "failed" as const }
+                : {})}
+            onPress={() => {
+              olderSettledShelf.retry();
+              showMoreSettled();
+            }}
+          />
+        ) : null
+      }
+      ListEmptyComponent={v2ListEmpty}
+      style={{ flex: 1 }}
+      automaticallyAdjustsScrollIndicatorInsets={Platform.OS === "ios"}
+      contentInsetAdjustmentBehavior="never"
+      contentInset={Platform.OS === "ios" ? { top: contentTopInset } : undefined}
+      initialScrollOffset={
+        initialScrollOffset > 0 ? initialScrollOffset - contentTopInset : undefined
+      }
+      showsVerticalScrollIndicator={false}
+      keyboardDismissMode="on-drag"
+      keyboardShouldPersistTaps="handled"
+      {...scrollGateHandlers}
+      scrollEventThrottle={16}
+      contentContainerStyle={{
+        paddingLeft: (contentSideInsets?.left ?? 0) + (sidebarSurface ? 8 : 0) + androidListGutter,
+        paddingRight:
+          (contentSideInsets?.right ?? 0) + (sidebarSurface ? 8 : 0) + androidListGutter,
+        paddingBottom:
+          Platform.OS === "ios"
+            ? iosBottomClearance
+            : (workspace?.bottomClearance ??
+              Math.max(insets.bottom, 16) + (Platform.OS === "android" ? fabClearance : 88)),
+      }}
+    />
+  );
+
   return (
     <View className={containerClassName}>
       <ScreenContent surface="screen" backdrop={Platform.OS === "android" ? "canvas" : undefined}>
         <View className={cn("flex-1", Platform.OS !== "android" && contentBackground)}>
           <SwipeableScrollGateProvider enabled={swipeEnabled} activation={swipeRowActivation}>
-            <GestureDetector gesture={homeScrollGesture}>
-              <AnimatedLegendList
-                itemLayoutAnimation={THREAD_LIST_ROW_LAYOUT}
-                ref={listRef}
-                onLoad={() => {
-                  settleLaunchSplashHomeRows();
-                  activateVisibleRows(threadListV2Items);
-                }}
-                onTouchStart={(event) => trackListTouches(event, true)}
-                onTouchEnd={(event) => trackListTouches(event, false)}
-                onTouchCancel={(event) => trackListTouches(event, false)}
-                renderScrollComponent={Platform.OS === "ios" ? renderHomeScrollView : undefined}
-                data={threadListV2Items}
-                renderItem={renderV2Item}
-                keyExtractor={v2KeyExtractor}
-                getItemType={(item) => item.type}
-                itemsAreEqual={threadListV2ListItemsAreEqual}
-                estimatedItemSize={ESTIMATED_THREAD_LIST_V2_ROW_HEIGHT}
-                drawDistance={THREAD_LIST_V2_DRAW_DISTANCE}
-                recycleItems
-                extraData={v2ExtraData}
-                ListHeaderComponent={v2ListHeader}
-                // Lifted above the rows so an iOS filter menu's dismissal morph is not covered.
-                ListHeaderComponentStyle={{ zIndex: 1 }}
-                ListFooterComponent={
-                  settledShelfExpanded && threadListV2Layout.hiddenSettledCount > 0 ? (
-                    <ThreadListV2ShowMoreRow
-                      hiddenCount={threadListV2Layout.hiddenSettledCount}
-                      {...(olderSettledShelf.loading
-                        ? { state: "loading" as const }
-                        : olderSettledShelf.failed
-                          ? { state: "failed" as const }
-                          : {})}
-                      onPress={() => {
-                        olderSettledShelf.retry();
-                        showMoreSettled();
-                      }}
-                    />
-                  ) : null
-                }
-                ListEmptyComponent={v2ListEmpty}
-                style={{ flex: 1 }}
-                automaticallyAdjustsScrollIndicatorInsets={Platform.OS === "ios"}
-                contentInsetAdjustmentBehavior="never"
-                contentInset={Platform.OS === "ios" ? { top: contentTopInset } : undefined}
-                initialScrollOffset={
-                  initialScrollOffset > 0 ? initialScrollOffset - contentTopInset : undefined
-                }
-                showsVerticalScrollIndicator={false}
-                keyboardDismissMode="on-drag"
-                keyboardShouldPersistTaps="handled"
-                {...scrollGateHandlers}
-                scrollEventThrottle={16}
-                contentContainerStyle={{
-                  paddingLeft:
-                    (contentSideInsets?.left ?? 0) + (sidebarSurface ? 8 : 0) + androidListGutter,
-                  paddingRight:
-                    (contentSideInsets?.right ?? 0) + (sidebarSurface ? 8 : 0) + androidListGutter,
-                  paddingBottom:
-                    Platform.OS === "ios"
-                      ? iosBottomClearance
-                      : (workspace?.bottomClearance ??
-                        Math.max(insets.bottom, 16) +
-                          (Platform.OS === "android" ? fabClearance : 88)),
-                }}
-              />
-            </GestureDetector>
+            {Platform.OS === "android" ? (
+              <AndroidPullToCreateHeader pullDistance={pullDistance} />
+            ) : null}
+            {Platform.OS === "android" ? (
+              <GestureDetector gesture={androidPullAndScrollGesture}>{listContent}</GestureDetector>
+            ) : (
+              <GestureDetector gesture={homeScrollGesture}>{listContent}</GestureDetector>
+            )}
           </SwipeableScrollGateProvider>
         </View>
       </ScreenContent>

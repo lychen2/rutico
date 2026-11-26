@@ -2,8 +2,10 @@ import { useNavigation } from "@react-navigation/native";
 import { useGT } from "gt-react-native";
 import { useEffect } from "react";
 import { BackHandler, Keyboard } from "react-native";
+import Animated, { FadeIn, LinearTransition, ReduceMotion } from "react-native-reanimated";
 import { AppBar } from "../../../components/ui/AppBar";
 import { appBarMenuItemsFromActions } from "../../../components/ui/menuActionItems";
+import { triggerSemanticHaptic } from "../../../lib/hapticChoreography";
 import { useHardwareKeyboardCommand } from "../../keyboard/hardwareKeyboardCommands";
 import { WorkspaceConnectionTitle } from "../../home/WorkspaceConnectionTitle";
 import type { SharedSlotTab } from "./navigation-tab-order";
@@ -11,6 +13,13 @@ import { SharedSlotTitle } from "./SharedSlotTitle";
 import { useWorkspaceTabs } from "./WorkspaceTabsContext";
 import type { PullRequestFilterMenu } from "../../pull-requests/PullRequestListFilters";
 import { openSettings } from "../../settings/settings-navigation";
+
+const TOOLBAR_ENTERING = FadeIn.duration(160).reduceMotion(ReduceMotion.System);
+const TOOLBAR_LAYOUT = LinearTransition.springify()
+  .damping(28)
+  .stiffness(360)
+  .mass(0.75)
+  .reduceMotion(ReduceMotion.System);
 
 /** Pull request and issue search share the thread list's Android header. */
 export function ListSearchToolbar(props: {
@@ -27,6 +36,7 @@ export function ListSearchToolbar(props: {
   const tab = workspace.state.tabs[section];
   const searching = tab.searchMode !== "resting";
   const openSearch = () => {
+    triggerSemanticHaptic("contextClick");
     onRequestVisibility?.();
     dispatch({
       type: "scroll",
@@ -38,6 +48,7 @@ export function ListSearchToolbar(props: {
   };
   useHardwareKeyboardCommand("focusSearch", openSearch);
   const closeSearch = () => {
+    triggerSemanticHaptic("toggleOff");
     Keyboard.dismiss();
     recordScrollOffset(section, tab.searchEntryOffset);
     dispatch({ type: "cancel", tab: section });
@@ -58,36 +69,38 @@ export function ListSearchToolbar(props: {
     return () => subscription.remove();
   }, [searching, closeSearch, navigation, isTabActive, section]);
   return (
-    <AppBar
-      title="T3 Code"
-      titleContent={
-        <WorkspaceConnectionTitle
-          grow
-          onPress={() => openSettings(navigation, "SettingsEnvironments")}
-          brand={<SharedSlotTitle tab={section} />}
-        />
-      }
-      search={{
-        value: tab.query,
-        onChangeText: (query) => dispatch({ type: "query", tab: section, query }),
-        placeholder: section === "issues" ? gt("Search issues") : gt("Search pull requests"),
-        active: searching,
-        onOpen: openSearch,
-        onClose: closeSearch,
-      }}
-      menus={
-        filters
-          ? [
-              {
-                title: section === "issues" ? gt("Filter issues") : gt("Filter pull requests"),
-                icon: filters.customized
-                  ? "line.3.horizontal.decrease.circle.fill"
-                  : "line.3.horizontal.decrease.circle",
-                items: appBarMenuItemsFromActions(filters.actions, filters.onSelect),
-              },
-            ]
-          : undefined
-      }
-    />
+    <Animated.View entering={TOOLBAR_ENTERING} layout={TOOLBAR_LAYOUT}>
+      <AppBar
+        title="T3 Code"
+        titleContent={
+          <WorkspaceConnectionTitle
+            grow
+            onPress={() => openSettings(navigation, "SettingsEnvironments")}
+            brand={<SharedSlotTitle tab={section} />}
+          />
+        }
+        search={{
+          value: tab.query,
+          onChangeText: (query) => dispatch({ type: "query", tab: section, query }),
+          placeholder: section === "issues" ? gt("Search issues") : gt("Search pull requests"),
+          active: searching,
+          onOpen: openSearch,
+          onClose: closeSearch,
+        }}
+        menus={
+          filters
+            ? [
+                {
+                  title: section === "issues" ? gt("Filter issues") : gt("Filter pull requests"),
+                  icon: filters.customized
+                    ? "line.3.horizontal.decrease.circle.fill"
+                    : "line.3.horizontal.decrease.circle",
+                  items: appBarMenuItemsFromActions(filters.actions, filters.onSelect),
+                },
+              ]
+            : undefined
+        }
+      />
+    </Animated.View>
   );
 }
