@@ -7,13 +7,23 @@ import {
   squashAtomCommandFailure,
 } from "@t3tools/client-runtime/state/runtime";
 import { T, useGT, useMessages, Var } from "gt-react";
+import { ShieldIcon } from "lucide-react";
 import { useState } from "react";
 import { useEnvironmentScope } from "../../state/session";
 import { childThreadApprovalsAtom, threadEnvironment } from "../../state/threads";
 import { useAtomCommand } from "../../state/use-atom-command";
+import { Badge } from "../ui/badge";
 import { ComposerPendingApprovalActions } from "./ComposerPendingApprovalActions";
 
-function ChildApproval({ entry }: { entry: ChildThreadApproval }) {
+function ChildApproval({
+  entry,
+  stackIndex,
+  stackTotal,
+}: {
+  entry: ChildThreadApproval;
+  stackIndex: number;
+  stackTotal: number;
+}) {
   const canRespond = useEnvironmentScope(entry.thread.environmentId, AuthOrchestrationOperateScope);
   const respond = useAtomCommand(threadEnvironment.respondToApproval, { reportFailure: false });
   const gt = useGT();
@@ -24,14 +34,28 @@ function ChildApproval({ entry }: { entry: ChildThreadApproval }) {
   return (
     <section
       aria-label={gt("Approval from {title}", { title: entry.title })}
-      className="rounded-lg border border-border bg-background p-3 text-xs"
+      data-approval-decision-card="true"
+      data-approval-stack-index={stackIndex}
+      className="rounded-xl border border-warning/30 bg-card p-3.5 text-xs shadow-xs"
     >
-      <p className="mb-2 font-medium">
-        <T>
-          Approval needed from <Var>{entry.title}</Var>
-        </T>
-      </p>
-      <pre className="max-h-40 overflow-auto whitespace-pre-wrap break-words font-mono">
+      <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+        <p className="flex min-w-0 items-center gap-1.5 font-medium text-foreground">
+          <ShieldIcon aria-hidden="true" className="size-3.5 shrink-0 text-warning" />
+          <span className="truncate">
+            <T>
+              Approval needed from <Var>{entry.title}</Var>
+            </T>
+          </span>
+        </p>
+        {stackTotal > 1 ? (
+          <Badge variant="warning" size="sm">
+            <span className="tabular-nums">
+              {stackIndex + 1}/{stackTotal}
+            </span>
+          </Badge>
+        ) : null}
+      </div>
+      <pre className="max-h-40 overflow-auto rounded-lg border border-border/75 bg-code/70 px-3 py-2 whitespace-pre-wrap break-words font-mono text-foreground [scrollbar-width:thin]">
         {approval.detail || approval.requestKind}
       </pre>
       {approval.appName ? <p className="mt-2 text-muted-foreground">{approval.appName}</p> : null}
@@ -46,9 +70,9 @@ function ChildApproval({ entry }: { entry: ChildThreadApproval }) {
           {fullAccessOverrideExplanation(approval.fullAccessOverride, messages)}
         </p>
       ) : null}
-      <div className="mt-2 flex flex-wrap gap-2">
+      <div className="mt-2.5 flex flex-wrap items-center justify-end gap-1.5">
         <ComposerPendingApprovalActions
-          presentation="inline"
+          presentation="composer"
           requestId={approval.requestId}
           isResponding={responding}
           canRespond={approval.responseCapability === "live"}
@@ -87,18 +111,37 @@ function ChildApproval({ entry }: { entry: ChildThreadApproval }) {
 export function ChildThreadApprovals({ threadRef }: { threadRef: ScopedThreadRef | null }) {
   const approvals = useAtomValue(childThreadApprovalsAtom(threadRef));
   if (approvals.length === 0) return null;
+  const stackedDepth = Math.min(3, approvals.length);
   return (
-    <div className="mb-2 flex max-h-80 flex-col gap-2 overflow-auto">
-      {approvals.map((entry) => (
-        <ChildApproval
-          key={JSON.stringify([
-            entry.thread.environmentId,
-            entry.thread.threadId,
-            entry.approval.requestId,
-          ])}
-          entry={entry}
+    <div data-approval-stack-depth={stackedDepth} className="relative mb-2">
+      {stackedDepth >= 3 ? (
+        <div
+          aria-hidden="true"
+          data-approval-stack-layer="3"
+          className="pointer-events-none absolute inset-x-4 -bottom-2 h-3 rounded-b-xl border border-warning/18 bg-card/75"
         />
-      ))}
+      ) : null}
+      {stackedDepth >= 2 ? (
+        <div
+          aria-hidden="true"
+          data-approval-stack-layer="2"
+          className="pointer-events-none absolute inset-x-2 -bottom-1 h-3 rounded-b-xl border border-warning/24 bg-card/90"
+        />
+      ) : null}
+      <div className="relative z-10 flex max-h-80 flex-col gap-2 overflow-auto">
+        {approvals.map((entry, index) => (
+          <ChildApproval
+            key={JSON.stringify([
+              entry.thread.environmentId,
+              entry.thread.threadId,
+              entry.approval.requestId,
+            ])}
+            entry={entry}
+            stackIndex={index}
+            stackTotal={approvals.length}
+          />
+        ))}
+      </div>
     </div>
   );
 }
