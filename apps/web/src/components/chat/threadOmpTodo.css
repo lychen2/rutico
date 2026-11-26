@@ -85,6 +85,10 @@
   display: grid;
   place-items: center;
   background: var(--card);
+  transition:
+    background-color 200ms ease-out,
+    border-color 200ms ease-out,
+    color 200ms ease-out;
 }
 [data-omp-todo-mark] svg {
   width: 14px;
@@ -98,6 +102,21 @@
 [data-omp-todo-mark][data-mode="done"] svg {
   width: 10px;
   height: 10px;
+}
+@keyframes t3-check-draw {
+  from {
+    stroke-dashoffset: 24;
+  }
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+@media (prefers-reduced-motion: no-preference) {
+  [data-omp-todo-list] li[data-just-completed="true"] [data-omp-todo-mark] svg path,
+  [data-omp-todo-mark] svg[data-check-draw] path {
+    stroke-dasharray: 24;
+    animation: t3-check-draw 220ms var(--ease-spring-gentle) both;
+  }
 }
 [data-omp-todo-mark][data-mode="run"] {
   color: var(--info, var(--primary));
@@ -140,6 +159,9 @@
   height: 4px;
   border-radius: 2px;
   background: var(--border);
+  transition:
+    background-color 240ms var(--ease-drawer),
+    opacity 240ms var(--ease-drawer);
 }
 [data-omp-todo-segments] i[data-mode="done"] {
   background: var(--foreground);
@@ -224,12 +246,24 @@
   flex: 1;
   min-width: 0;
   overflow-wrap: anywhere;
+  text-decoration-line: line-through;
+  text-decoration-color: transparent;
+  transition:
+    color 200ms ease-out,
+    opacity 200ms ease-out,
+    text-decoration-color 200ms ease-out;
+}
+[data-omp-todo-list] li[data-completed="true"] [data-omp-todo-step-title] {
+  color: var(--muted-foreground);
+  opacity: 0.72;
+  text-decoration-color: color-mix(in srgb, currentColor 55%, transparent);
 }
 [data-omp-todo-status] {
   flex: none;
   font-size: 11px;
   font-variant-numeric: tabular-nums;
   color: var(--muted-foreground);
+  transition: color 200ms ease-out;
 }
 @media (max-width: 480px) {
   [data-omp-todo-bar] {
@@ -292,7 +326,11 @@
 @media (prefers-reduced-motion: reduce) {
   [data-omp-todo-bar],
   [data-omp-todo-body],
-  [data-omp-todo-chevron] {
+  [data-omp-todo-chevron],
+  [data-omp-todo-mark],
+  [data-omp-todo-segments] i,
+  [data-omp-todo-step-title],
+  [data-omp-todo-status] {
     transition: none;
   }
   [data-omp-todo-bar]:active {
