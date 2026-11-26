@@ -395,8 +395,27 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
   background: color-mix(in srgb, var(--background) var(--glass-opacity), transparent);
   -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturation));
   backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturation));
+  --tw-inset-shadow: inset 0 1px 0 rgb(255 255 255 / 70%);
+  box-shadow:
+    var(--tw-inset-shadow),
+    0 1px 2px rgb(0 0 0 / 5%),
+    0 4px 12px -4px rgb(0 0 0 / 6%);
+
+  @variant dark {
+    --tw-inset-shadow: inset 0 1px 0 rgb(255 255 255 / 8%);
+    box-shadow:
+      var(--tw-inset-shadow),
+      0 1px 2px rgb(0 0 0 / 32%),
+      0 8px 20px -8px rgb(0 0 0 / 50%);
+  }
 
   @supports not ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
+    background: var(--background) !important;
+  }
+
+  @media (prefers-reduced-transparency: reduce) {
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
     background: var(--background) !important;
   }
 }
@@ -411,6 +430,19 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
     color-mix(in srgb, var(--background) var(--glass-opacity), transparent) !important;
   -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturation));
   backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturation));
+  --tw-inset-shadow: inset 0 1px 0 rgb(255 255 255 / 70%);
+  box-shadow:
+    var(--tw-inset-shadow),
+    0 1px 2px rgb(0 0 0 / 6%),
+    0 8px 20px -8px rgb(0 0 0 / 10%);
+
+  @variant dark {
+    --tw-inset-shadow: inset 0 1px 0 rgb(255 255 255 / 8%);
+    box-shadow:
+      var(--tw-inset-shadow),
+      0 1px 2px rgb(0 0 0 / 40%),
+      0 10px 24px -8px rgb(0 0 0 / 65%);
+  }
 
   &[data-variant="error"] {
     --alert-glass-tint: var(--destructive);
@@ -430,6 +462,12 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
 
   @supports not ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
     background: var(--background) !important;
+  }
+
+  @media (prefers-reduced-transparency: reduce) {
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+    background: color-mix(in srgb, var(--alert-glass-tint) 6%, var(--background)) !important;
   }
 }
 
@@ -457,16 +495,30 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
   -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturation));
   backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturation));
   border-color: color-mix(in srgb, var(--contrast-foreground) 10%, transparent);
-  box-shadow: 0 24px 64px -24px rgb(0 0 0 / 65%);
+  --tw-inset-shadow: inset 0 1px 0 rgb(255 255 255 / 70%);
+  box-shadow:
+    var(--tw-inset-shadow),
+    0 2px 6px rgb(0 0 0 / 6%),
+    0 12px 28px -8px rgb(0 0 0 / 14%),
+    0 24px 64px -24px rgb(0 0 0 / 42%);
 
   @variant dark {
     border-color: color-mix(in srgb, var(--color-white) 8%, transparent);
+    --tw-inset-shadow: inset 0 1px 0 rgb(255 255 255 / 8%);
     box-shadow:
-      inset 0 1px rgb(255 255 255 / 4%),
-      0 24px 72px -20px rgb(0 0 0 / 90%);
+      var(--tw-inset-shadow),
+      0 2px 8px rgb(0 0 0 / 45%),
+      0 16px 40px -12px rgb(0 0 0 / 65%),
+      0 24px 72px -20px rgb(0 0 0 / 88%);
   }
 
   @supports not ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
+    background: var(--popover) !important;
+  }
+
+  @media (prefers-reduced-transparency: reduce) {
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
     background: var(--popover) !important;
   }
 }
@@ -490,8 +542,30 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
   -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturation));
   backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturation));
   border: 1px solid color-mix(in srgb, var(--contrast-foreground) 10%, transparent);
+  --tw-inset-shadow: inset 0 1px 0 rgb(255 255 255 / 70%);
+  box-shadow:
+    var(--tw-inset-shadow),
+    0 1px 2px rgb(0 0 0 / 6%),
+    0 8px 24px -8px rgb(0 0 0 / 16%),
+    0 16px 40px -18px rgb(0 0 0 / 28%);
+
+  @variant dark {
+    border-color: color-mix(in srgb, var(--color-white) 9%, transparent);
+    --tw-inset-shadow: inset 0 1px 0 rgb(255 255 255 / 8%);
+    box-shadow:
+      var(--tw-inset-shadow),
+      0 2px 6px rgb(0 0 0 / 40%),
+      0 12px 32px -12px rgb(0 0 0 / 60%),
+      0 18px 44px -18px rgb(0 0 0 / 78%);
+  }
 
   @supports not ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
+    background: var(--popover) !important;
+  }
+
+  @media (prefers-reduced-transparency: reduce) {
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
     background: var(--popover) !important;
   }
 }
