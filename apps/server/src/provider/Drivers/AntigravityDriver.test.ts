@@ -104,7 +104,8 @@ const makeHarness = Effect.fn("makeAntigravityDriverHarness")(function* (
       executablePath,
       [
         "#!/bin/sh",
-        'if [ "$1" = "-p" ] && [ "$2" = "/usage" ]; then printf \'%s\\n\' \'{"status":"SUCCESS","command":{"name":"usage","data":{"groups":[{"name":"Gemini Models","buckets":[{"id":"gemini-5h","window":"5h","remaining_fraction":0.9}]}]}}}\'; exit 0; fi',
+        `if [ "$1" = "--version" ]; then printf '%s\\n' ${shellQuote(options.agentVersion ?? "1.5.12")}; exit 0; fi`,
+        'if [ "$1" = "-p" ] && [ "$2" = "/usage" ]; then printf \'%s\\n\' \'{"status":"SUCCESS","num_turns":0,"usage":{"input_tokens":0,"output_tokens":0,"thinking_tokens":0,"cache_read_tokens":0,"total_tokens":0},"command":{"name":"usage","data":{"groups":[{"name":"Gemini Models","buckets":[{"id":"gemini-5h","window":"5h","remaining_fraction":0.9}]}]}}}\'; exit 0; fi',
         ...(options.loginRequired
           ? [`printf '%s\\n' ${shellQuote(ANTIGRAVITY_AUTH_STDOUT_PREFIX + authorizationUrl)}`]
           : []),
@@ -452,11 +453,12 @@ it.layer(layerTest)("AntigravityDriver", (it) => {
   );
 
   it.effect.skipIf(windowsHost)(
-    "keeps thread sessions as a thin client without injecting T3 MCP servers or env overrides",
+    "passes standard ACP MCP servers for thread sessions without injecting shell fallback env vars",
     () =>
       Effect.gen(function* () {
         const h = yield* makeHarness({
           environment: [
+            { name: "T3_ACP_MCP_HTTP", value: "1" },
             { name: "T3CODE_THREAD_ID", value: "thread-antigravity-ambient" },
             { name: "T3_ACP_MCP_ENDPOINT", value: "http://127.0.0.1:9/ambient" },
             { name: "T3_ACP_MCP_AUTHORIZATION", value: "Bearer ambient-token" },
@@ -497,7 +499,7 @@ it.layer(layerTest)("AntigravityDriver", (it) => {
           }),
         );
 
-        // Thin-client mode never injects T3's MCP server or thread MCP env vars into agy acp.
+        // Thin-client mode exposes T3's MCP server via standard ACP mcpServers, never shell fallback env vars.
         const agentLaunches = h.launches.filter(
           (launch) => launch.command === h.first.executablePath && launch.args[0] === "acp",
         );
@@ -516,7 +518,17 @@ it.layer(layerTest)("AntigravityDriver", (it) => {
           (yield* h.readRequests)
             .filter((request) => request.method === "session/new")
             .map((request) => request.params?.mcpServers),
-        ).toEqual([[], []]);
+        ).toEqual([
+          [],
+          [
+            {
+              type: "http",
+              name: "t3-code",
+              url: endpoint,
+              headers: [{ name: "Authorization", value: "Bearer antigravity-thread-token" }],
+            },
+          ],
+        ]);
         yield* h.assertClosed;
       }),
   );

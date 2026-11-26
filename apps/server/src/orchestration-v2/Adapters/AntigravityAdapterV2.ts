@@ -64,7 +64,7 @@ const AntigravityProviderCapabilitiesV2 = {
   },
   tools: {
     ...AcpProviderCapabilitiesV2.tools,
-    supportsMcpTools: false,
+    supportsMcpTools: true,
   },
   context: {
     ...AcpProviderCapabilitiesV2.context,
@@ -223,8 +223,11 @@ export function makeAntigravityAcpAdapterFlavor(
     runtimeHarness: "Antigravity",
     capabilities: AntigravityProviderCapabilitiesV2,
     supportsNativeGoals: options.supportsNativeGoals ?? Effect.succeed(false),
-    // Thin-client editor mode: Antigravity remains the primary agent with its own prompt,
-    // tools, and session state; Rutico does not inject outer MCP tools or harness prompts.
+    // Agents that advertise HTTP MCP skip the stdio bridge process; others keep stdio.
+    mcpOverHttp: true,
+    // Thin-client editor mode: Antigravity remains the primary agent with its own prompt
+    // and session state; Rutico exposes its MCP server via standard ACP `mcpServers`
+    // without wrapping prompts in outer harness instructions or shell fallback env vars.
     thinClientMode: true,
     makeRuntime,
     buildAttachmentPrompt: ({ text, attachments, resolveAttachmentPath, promptCapabilities }) =>

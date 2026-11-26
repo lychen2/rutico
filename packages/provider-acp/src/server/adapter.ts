@@ -463,9 +463,10 @@ export interface AcpAdapterV2Flavor {
   /** The agent has no tool search of its own, so T3 lists optional tools on demand. */
   readonly deferMcpTools?: boolean;
   /**
-   * Direct thin-client editor mode: do not inject T3's MCP server or `T3_ACP_MCP_*` shell env,
-   * and send user prompts and attachments directly without wrapping them in outer harness
-   * system/runtime/appContext instructions.
+   * Direct thin-client editor mode: send user prompts and attachments directly without
+   * wrapping them in outer harness system/runtime/appContext instructions, and omit
+   * `T3_ACP_MCP_*` shell fallback env vars. Standard ACP `mcpServers` are still passed
+   * when `capabilities.tools.supportsMcpTools` is true.
    */
   readonly thinClientMode?: boolean;
   readonly normalizeSessionUpdate?: (
@@ -1106,6 +1107,7 @@ function acpMcpContext(
   mcpOverHttp: boolean | undefined,
   deferMcpTools: boolean | undefined,
   callLauncher: string | undefined,
+  omitShellFallbackEnvironment?: boolean,
 ): AcpMcpContext {
   if (session === undefined) {
     return { servers: [], acpServers: [], httpServers: [] };
@@ -1143,18 +1145,22 @@ function acpMcpContext(
         : [],
     endpoint: session.endpoint,
     authorization: session.authorizationHeader,
-    processEnvironment: {
-      // The thread id every process the agent starts inherits, so a tool run
-      // from its shell can find its T3 thread. Claude and Codex sessions set
-      // the same variable (PortScanner.AGENT_THREAD_ENV; a string literal here
-      // because this package cannot reach apps/server).
-      T3CODE_THREAD_ID: session.threadId,
-      T3_ACP_MCP_ENDPOINT: session.endpoint,
-      T3_ACP_MCP_AUTHORIZATION: session.authorizationHeader,
-      T3_ACP_MCP_NODE: self.command,
-      ...(self.entrypoint === undefined ? {} : { T3_ACP_MCP_ENTRYPOINT: self.entrypoint }),
-      ...(callLauncher === undefined ? {} : { T3_ACP_MCP_CALL: callLauncher }),
-    },
+    ...(omitShellFallbackEnvironment === true
+      ? {}
+      : {
+          processEnvironment: {
+            // The thread id every process the agent starts inherits, so a tool run
+            // from its shell can find its T3 thread. Claude and Codex sessions set
+            // the same variable (PortScanner.AGENT_THREAD_ENV; a string literal here
+            // because this package cannot reach apps/server).
+            T3CODE_THREAD_ID: session.threadId,
+            T3_ACP_MCP_ENDPOINT: session.endpoint,
+            T3_ACP_MCP_AUTHORIZATION: session.authorizationHeader,
+            T3_ACP_MCP_NODE: self.command,
+            ...(self.entrypoint === undefined ? {} : { T3_ACP_MCP_ENTRYPOINT: self.entrypoint }),
+            ...(callLauncher === undefined ? {} : { T3_ACP_MCP_CALL: callLauncher }),
+          },
+        }),
   };
 }
 
@@ -2102,16 +2108,32 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
   const mcpSessions = yield* McpProviderSessions.McpProviderSessions;
   const { flavor, selfInvocation: self } = options;
   const callLauncher = yield* writeAcpMcpCallLauncher(host.paths.stateDir);
+  const omitMcp =
+    flavor.thinClientMode === true && flavor.capabilities.tools.supportsMcpTools !== true;
   const readMcpContext = (threadId: ThreadId | null) =>
-    flavor.thinClientMode === true || threadId === null
+    omitMcp || threadId === null
       ? Effect.succeed(
-          acpMcpContext(undefined, self, flavor.mcpOverHttp, flavor.deferMcpTools, callLauncher),
+          acpMcpContext(
+            undefined,
+            self,
+            flavor.mcpOverHttp,
+            flavor.deferMcpTools,
+            callLauncher,
+            flavor.thinClientMode,
+          ),
         )
       : mcpSessions
           .read(threadId)
           .pipe(
             Effect.map((session) =>
-              acpMcpContext(session, self, flavor.mcpOverHttp, flavor.deferMcpTools, callLauncher),
+              acpMcpContext(
+                session,
+                self,
+                flavor.mcpOverHttp,
+                flavor.deferMcpTools,
+                callLauncher,
+                flavor.thinClientMode,
+              ),
             ),
           );
   const driver = flavor.driver;
