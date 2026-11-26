@@ -8,6 +8,7 @@ import {
   type TextDirection,
 } from "@t3tools/shared/textDirection";
 import { useNavigation } from "@react-navigation/native";
+import * as Haptics from "expo-haptics";
 import { Plural, T, useGT, Var } from "gt-react-native";
 import { useRef } from "react";
 import { Platform, Pressable, ScrollView, View, type LayoutChangeEvent } from "react-native";
@@ -178,7 +179,7 @@ export function PendingUserInputCard(props: PendingUserInputCardProps) {
       accessibilityLabel={gt("Stop", { $context: "verb, stops the thread" })}
       icon="stop.fill"
       variant="danger"
-      className="h-9 w-9"
+      className="h-11 w-11 android:h-12 android:w-12"
       disabled={!props.canOperateThread}
       onPress={props.onStopThread}
     />
@@ -244,8 +245,11 @@ export function PendingUserInputCard(props: PendingUserInputCardProps) {
         <Pressable
           accessibilityRole="button"
           accessibilityLabel={gt("Collapse user input")}
-          onPress={props.onToggleCollapsed}
-          className="flex-1 flex-row items-start gap-2"
+          onPress={() => {
+            void Haptics.selectionAsync().catch(() => undefined);
+            props.onToggleCollapsed();
+          }}
+          className="flex-1 flex-row items-start gap-2 active:opacity-70"
         >
           <View className="flex-1 gap-2.5">
             <Text className="font-t3-bold text-2xs uppercase tracking-[1.1px] text-foreground-secondary">
@@ -314,17 +318,44 @@ export function PendingUserInputCard(props: PendingUserInputCardProps) {
                         accessibilityState={{ checked: selected, disabled: responseDisabled }}
                         disabled={responseDisabled}
                         className={cn(
-                          "min-h-12 w-full rounded-2xl border px-3.5 py-3",
+                          "min-h-12 w-full flex-row items-start gap-3 rounded-2xl border px-3.5 py-3 active:opacity-75",
                           selected ? "border-primary bg-primary/10" : "border-border bg-input",
                         )}
-                        onPress={() =>
+                        onPress={() => {
+                          void Haptics.selectionAsync().catch(() => undefined);
                           props.onSelectOption(
                             props.pendingUserInput.requestId,
                             question,
                             optionValue,
-                          )
-                        }
+                          );
+                        }}
                       >
+                        <View
+                          pointerEvents="none"
+                          className={cn(
+                            "mt-0.5 size-5 shrink-0 items-center justify-center",
+                            question.multiSelect ? "rounded-md border" : "rounded-full border-2",
+                            selected
+                              ? question.multiSelect
+                                ? "border-primary bg-primary"
+                                : "border-primary"
+                              : "border-foreground-muted/50 bg-transparent",
+                          )}
+                        >
+                          {selected ? (
+                            question.multiSelect ? (
+                              <SymbolView
+                                name="checkmark"
+                                size={11}
+                                weight="bold"
+                                tintColorClassName="accent-primary-foreground"
+                                type="monochrome"
+                              />
+                            ) : (
+                              <View className="size-2.5 rounded-full bg-primary" />
+                            )
+                          ) : null}
+                        </View>
                         <View className="min-w-0 flex-1 gap-0.5">
                           <Text
                             className={cn(
@@ -383,6 +414,7 @@ export function PendingUserInputCard(props: PendingUserInputCardProps) {
         label={gt("Submit answers")}
         fullWidth
         tone={props.answers ? "primary" : "secondary"}
+        loading={isResponding}
         disabled={!props.canOperateThread || responseDisabled || props.answers === null}
         onPress={() => void props.onSubmit()}
       />

@@ -6,17 +6,25 @@ import {
 } from "@t3tools/client-runtime/state/runtime";
 import type { EnvironmentId } from "@t3tools/contracts";
 import { proposedPlanTitle, stripDisplayedPlanMarkdown } from "@t3tools/shared/proposedPlanText";
+import * as Haptics from "expo-haptics";
 import { useGT } from "gt-react-native";
 import { m } from "../../i18n/messages";
 import { useRef, useState, type ReactNode } from "react";
 import { View } from "react-native";
+import Animated, { FadeIn, FadeOut, ReduceMotion } from "react-native-reanimated";
 
+import { SymbolView } from "../../components/ui/AppSymbol";
 import { AppText as Text } from "../../components/ui/AppText";
 import { Button } from "../../components/ui/Button";
 import * as Dialog from "../../components/ui/Dialog";
+import { useDeadlinePassed } from "../../lib/clock";
 import { projectEnvironment } from "../../state/projects";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { CopyTextButton } from "./CopyTextButton";
+
+const SAVED_FEEDBACK_DURATION_MS = 2400;
+const SAVED_BADGE_ENTERING = FadeIn.duration(160).reduceMotion(ReduceMotion.System);
+const SAVED_BADGE_EXITING = FadeOut.duration(120).reduceMotion(ReduceMotion.System);
 
 export function ProposedPlanCard(props: {
   readonly environmentId: EnvironmentId;
@@ -29,6 +37,11 @@ export function ProposedPlanCard(props: {
   const writeFile = useAtomCommand(projectEnvironment.writeFile, { reportFailure: false });
   const inFlight = useRef(false);
   const [saving, setSaving] = useState(false);
+  const [savedAtMs, setSavedAtMs] = useState<number | null>(null);
+  const savedFeedbackEnded = useDeadlinePassed(
+    savedAtMs === null ? null : savedAtMs + SAVED_FEEDBACK_DURATION_MS,
+  );
+  const recentlySaved = savedAtMs !== null && !savedFeedbackEnded;
   const [lastPath, setLastPath] = useState("plan.md");
   const contents = `${props.markdown.trimEnd()}\n`;
 
@@ -50,7 +63,10 @@ export function ProposedPlanCard(props: {
       setSaving(false);
     });
     if (result._tag === "Success") {
-      Dialog.alert(gt("Plan saved to workspace"), result.value.relativePath);
+      setSavedAtMs(Date.now());
+      void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(
+        () => undefined,
+      );
     } else if (!isAtomCommandInterrupted(result)) {
       const error = squashAtomCommandFailure(result);
       Dialog.alert(gt("Could not save plan"), errorDisplayMessage(error, m) ?? String(error));
@@ -66,10 +82,11 @@ export function ProposedPlanCard(props: {
         <CopyTextButton accessibilityLabel={gt("Copy plan")} text={contents} />
       </View>
       {props.renderMarkdown(stripDisplayedPlanMarkdown(props.markdown))}
-      <View className="flex-row">
+      <View className="flex-row items-center gap-3">
         <Button
           label={saving ? gt("Saving...") : gt("Save to workspace")}
           tone="secondary"
+          loading={saving}
           disabled={!canWrite || !props.workspaceRoot || saving}
           onPress={() =>
             Dialog.prompt({
@@ -84,6 +101,24 @@ export function ProposedPlanCard(props: {
             })
           }
         />
+        {recentlySaved ? (
+          <Animated.View
+            entering={SAVED_BADGE_ENTERING}
+            exiting={SAVED_BADGE_EXITING}
+            accessibilityLiveRegion="polite"
+            className="flex-row items-center gap-1.5"
+          >
+            <SymbolView
+              name="checkmark.circle.fill"
+              size={15}
+              tintColorClassName="accent-adaptive-emerald-600-400"
+              type="monochrome"
+            />
+            <Text className="font-t3-medium text-xs text-adaptive-emerald-700-300">
+              {gt("Saved")}
+            </Text>
+          </Animated.View>
+        ) : null}
       </View>
     </View>
   );
