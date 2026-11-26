@@ -2,6 +2,7 @@ import { uiText } from "../../i18n";
 import { useEffect, useState, type ComponentProps } from "react";
 import { CheckIcon, RefreshCwIcon } from "lucide-react";
 import { cn } from "../../lib/utils";
+import { observeVisibleAnimation } from "../../lib/visibleAnimation";
 
 export function UsageRefreshButton({
   busy,
@@ -40,9 +41,13 @@ export function UsageRefreshButton({
       onClick={onClick}
     >
       {updated ? (
-        <CheckIcon size={16} />
+        <CheckIcon size={16} className="t3-icon-pop text-success" />
       ) : (
-        <RefreshCwIcon size={16} data-usage-refresh={busy || undefined} />
+        <RefreshCwIcon
+          size={16}
+          ref={busy ? observeVisibleAnimation : undefined}
+          data-usage-refresh={busy || undefined}
+        />
       )}
       <span className={iconOnly ? "sr-only" : undefined}>
         {busy ? uiText("Reading") : updated ? uiText("Updated") : label}

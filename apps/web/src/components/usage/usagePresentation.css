@@ -89,7 +89,9 @@ html.dark:root {
 }
 [data-usage-refresh] {
   display: inline-flex;
-  animation: usage-refresh 0.7s cubic-bezier(0.3, 0.7, 0.2, 1) 1;
+  animation: usage-refresh 0.85s linear infinite;
+  animation-play-state: var(--visible-animation-state, paused);
+  will-change: var(--visible-animation-will-change, auto);
 }
 @keyframes usage-refresh {
   to {
@@ -99,6 +101,7 @@ html.dark:root {
 @media (prefers-reduced-motion: reduce) {
   [data-usage-refresh] {
     animation: none;
+    will-change: auto;
   }
 }
 /* Selection motion belongs to the shared sliding surface, not the label color. */
@@ -556,6 +559,7 @@ html:root {
   width: 80px;
   border-radius: 16px;
   background: var(--muted);
+  cursor: pointer;
   font-size: 12px;
   transition:
     width 400ms cubic-bezier(0.32, 0.72, 0, 1),
