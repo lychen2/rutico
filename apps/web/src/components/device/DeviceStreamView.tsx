@@ -173,6 +173,7 @@ export function DeviceStreamView(props: {
     !phoneUnavailable &&
     !mjpegUrl &&
     !props.axOverlay &&
+    !props.axInspect &&
     (!isDuo || screen?.supportsHingeAngle === true);
   const controlsInset = props.renderControls && !showPhone ? CONTROLS_RAIL_WIDTH : 0;
 
@@ -211,20 +212,23 @@ export function DeviceStreamView(props: {
       };
 
   const axResult = useAtomValue(
-    props.axOverlay && access && props.visible
+    (props.axOverlay || props.axInspect) && access && props.visible
       ? deviceAxElementsAtom({ access, platform: props.platform, deviceId: props.deviceId })
       : NO_AX_ATOM,
   );
   const axElements = AsyncResult.getOrElse(axResult, () => NO_AX_ELEMENTS);
 
   const activePointer = useRef<{ id: number; x: number; y: number } | null>(null);
-  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- clears pointer ownership when its device input connection disconnects or is replaced
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- clears pointer ownership when its device input connection disconnects, is replaced, or enters element inspect mode
   useEffect(() => {
-    if (!client || !inputState.connected) return;
+    if (!client || !inputState.connected || props.axInspect) {
+      activePointer.current = null;
+      return;
+    }
     return () => {
       activePointer.current = null;
     };
-  }, [client, inputState.connected]);
+  }, [client, inputState.connected, props.axInspect]);
   const normalizedPoint = (event: React.PointerEvent<HTMLElement>) => {
     const rect = event.currentTarget.getBoundingClientRect();
     const x = (event.clientX - rect.left) / rect.width;
@@ -236,8 +240,26 @@ export function DeviceStreamView(props: {
     const pointer = activePointer.current;
     if (pointer?.id !== event.pointerId) return;
     activePointer.current = null;
+    if (props.axInspect) return;
     const { x, y } = event.type === "lostpointercapture" ? pointer : normalizedPoint(event);
     client?.sendTouch("end", x, y);
+  };
+
+  const copyAxElementLocator = (element: DeviceAxElement) => {
+    const text = formatDeviceAxLocator(element, screen).clipboardText;
+    void writeTextToClipboard(text).then(
+      () => {
+        setCopiedAxId(element.id);
+        if (copiedAxTimerRef.current !== null) {
+          window.clearTimeout(copiedAxTimerRef.current);
+        }
+        copiedAxTimerRef.current = window.setTimeout(() => {
+          setCopiedAxId(null);
+          copiedAxTimerRef.current = null;
+        }, 1000);
+      },
+      () => undefined,
+    );
   };
 
   const phoneUnavailableReason =
@@ -368,7 +390,12 @@ export function DeviceStreamView(props: {
           className={cn("relative select-none", showPhone && "invisible pointer-events-none")}
           style={{ width: frame.width, height: frame.height }}
           onPointerDown={(event) => {
-            if (event.button !== 0 || !inputState.connected || activePointer.current !== null)
+            if (
+              props.axInspect ||
+              event.button !== 0 ||
+              !inputState.connected ||
+              activePointer.current !== null
+            )
               return;
             event.currentTarget.setPointerCapture(event.pointerId);
             (event.currentTarget.parentElement as HTMLElement | null)?.focus();
@@ -377,7 +404,7 @@ export function DeviceStreamView(props: {
             client?.sendTouch("begin", x, y);
           }}
           onPointerMove={(event) => {
-            if (activePointer.current?.id !== event.pointerId) return;
+            if (props.axInspect || activePointer.current?.id !== event.pointerId) return;
             const { x, y } = normalizedPoint(event);
             activePointer.current = { id: event.pointerId, x, y };
             client?.sendTouch("move", x, y);
@@ -401,16 +428,46 @@ export function DeviceStreamView(props: {
               style={mediaStyle}
             />
           ) : null}
-          {axElements.length > 0 ? (
+          {axElements.length > 0 || props.axInspect ? (
             <div
               data-slot="device-ax-overlay"
               data-inspecting={props.axInspect ? "true" : undefined}
               className={cn(
                 "absolute inset-0",
-                props.axInspect ? "pointer-events-auto z-20" : "pointer-events-none",
+                props.axInspect
+                  ? "pointer-events-auto z-20 cursor-crosshair"
+                  : "pointer-events-none",
               )}
               aria-hidden={!props.axInspect}
               onPointerLeave={() => setHoveredAxId(null)}
+              onPointerDown={
+                props.axInspect
+                  ? (event) => {
+                      event.stopPropagation();
+                    }
+                  : undefined
+              }
+              onPointerMove={
+                props.axInspect
+                  ? (event) => {
+                      event.stopPropagation();
+                    }
+                  : undefined
+              }
+              onPointerUp={
+                props.axInspect
+                  ? (event) => {
+                      event.stopPropagation();
+                    }
+                  : undefined
+              }
+              onPointerCancel={
+                props.axInspect
+                  ? (event) => {
+                      event.stopPropagation();
+                    }
+                  : undefined
+              }
             >
               {axElements.map((element) => {
                 const isInspect = props.axInspect === true;
@@ -419,72 +476,62 @@ export function DeviceStreamView(props: {
                 const isCopied = isInspect && copiedAxId === element.id;
                 const locator =
                   isHovered || isCopied ? formatDeviceAxLocator(element, screen) : null;
+                const boxClassName = cn(
+                  "absolute border p-0 text-left transition-[opacity,border-color,background-color] duration-120 ease-out motion-reduce:transition-none",
+                  isInspect
+                    ? "cursor-crosshair focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+                    : "pointer-events-none",
+                  isHovered
+                    ? "z-20 border-primary bg-primary/15 ring-1 ring-inset ring-primary/60"
+                    : "border-info/80 bg-info/10",
+                  isDimmed && "opacity-25",
+                );
+                const boxStyle: React.CSSProperties = {
+                  left: `${element.x * 100}%`,
+                  top: `${element.y * 100}%`,
+                  width: `${element.width * 100}%`,
+                  height: `${element.height * 100}%`,
+                };
+                const badge = locator ? (
+                  <span className="surface-optical-chrome surface-elevated-rim pointer-events-none absolute -top-6 left-0 z-30 max-w-64 truncate rounded-md px-1.5 py-0.5 font-mono text-3xs tabular-nums text-foreground">
+                    {isCopied ? gt("Copied locator") : locator.summary}
+                  </span>
+                ) : element.label ? (
+                  <span className="absolute -top-3.5 left-0 max-w-full truncate rounded-sm bg-info px-1 text-3xs leading-3.5 text-white">
+                    {element.label}
+                  </span>
+                ) : null;
+                if (!isInspect) {
+                  return (
+                    <div key={element.id} className={boxClassName} style={boxStyle}>
+                      {badge}
+                    </div>
+                  );
+                }
                 return (
-                  <div
+                  <button
                     key={element.id}
-                    role={isInspect ? "button" : undefined}
-                    tabIndex={isInspect ? 0 : undefined}
-                    aria-label={
-                      isInspect
-                        ? gt("Copy locator for {label}", {
-                            label: element.label || element.role || element.id,
-                          })
-                        : undefined
+                    type="button"
+                    aria-label={gt("Copy locator for {label}", {
+                      label: element.label || element.role || element.id,
+                    })}
+                    className={boxClassName}
+                    style={boxStyle}
+                    onPointerEnter={() => setHoveredAxId(element.id)}
+                    onFocus={() => setHoveredAxId(element.id)}
+                    onBlur={() =>
+                      setHoveredAxId((current) => (current === element.id ? null : current))
                     }
-                    className={cn(
-                      "absolute border transition-[opacity,border-color,background-color] duration-120 ease-out motion-reduce:transition-none",
-                      isInspect ? "cursor-crosshair" : "pointer-events-none",
-                      isHovered
-                        ? "z-20 border-primary bg-primary/15 ring-1 ring-inset ring-primary/60"
-                        : "border-info/80 bg-info/10",
-                      isDimmed && "opacity-25",
-                    )}
-                    style={{
-                      left: `${element.x * 100}%`,
-                      top: `${element.y * 100}%`,
-                      width: `${element.width * 100}%`,
-                      height: `${element.height * 100}%`,
+                    onPointerDown={(event) => {
+                      event.stopPropagation();
                     }}
-                    onPointerEnter={isInspect ? () => setHoveredAxId(element.id) : undefined}
-                    onPointerDown={
-                      isInspect
-                        ? (event) => {
-                            event.stopPropagation();
-                          }
-                        : undefined
-                    }
-                    onClick={
-                      isInspect
-                        ? (event) => {
-                            event.stopPropagation();
-                            const text = formatDeviceAxLocator(element, screen).clipboardText;
-                            void writeTextToClipboard(text).then(
-                              () => {
-                                setCopiedAxId(element.id);
-                                if (copiedAxTimerRef.current !== null) {
-                                  window.clearTimeout(copiedAxTimerRef.current);
-                                }
-                                copiedAxTimerRef.current = window.setTimeout(() => {
-                                  setCopiedAxId(null);
-                                  copiedAxTimerRef.current = null;
-                                }, 1000);
-                              },
-                              () => undefined,
-                            );
-                          }
-                        : undefined
-                    }
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      copyAxElementLocator(element);
+                    }}
                   >
-                    {locator ? (
-                      <span className="surface-optical-chrome surface-elevated-rim pointer-events-none absolute -top-6 left-0 z-30 max-w-64 truncate rounded-md px-1.5 py-0.5 font-mono text-3xs tabular-nums text-foreground">
-                        {isCopied ? gt("Copied locator") : locator.summary}
-                      </span>
-                    ) : element.label ? (
-                      <span className="absolute -top-3.5 left-0 max-w-full truncate rounded-sm bg-info px-1 text-3xs leading-3.5 text-white">
-                        {element.label}
-                      </span>
-                    ) : null}
-                  </div>
+                    {badge}
+                  </button>
                 );
               })}
             </div>
