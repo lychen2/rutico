@@ -1,6 +1,7 @@
 import type { DeviceHostSummary, DevicePlatform } from "@t3tools/contracts";
 import {
   Camera,
+  Check,
   ChevronLeft,
   Home,
   Keyboard,
@@ -19,8 +20,9 @@ import {
   SunIcon,
 } from "lucide-react";
 import { T, useGT, useMessages, msg } from "gt-react";
-import type { ReactNode } from "react";
+import { type ReactNode, useEffect, useRef, useState } from "react";
 import { Button } from "~/components/ui/button";
+import { ContextualIconSwap } from "~/components/ui/morphing-icon";
 import {
   Menu,
   MenuItem,
@@ -32,6 +34,8 @@ import {
   MenuRadioItemIndicator,
 } from "~/components/ui/menu";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "~/components/ui/tooltip";
+import { useSharedIndicator } from "~/lib/motion/useSharedIndicator";
+import { cn } from "~/lib/utils";
 import type { DeviceStreamHandle, DeviceViewControls } from "./DeviceStreamView";
 import type { DeviceControls } from "./useDeviceControls";
 
@@ -42,6 +46,7 @@ export function DeviceControlsRail(props: {
   view: DeviceViewControls;
   controls: DeviceControls;
   screenshotPending: boolean;
+  screenshotConfirmed?: boolean;
   onScreenshot: () => void;
   toolsOpen: boolean;
   onTools: () => void;
@@ -57,18 +62,52 @@ export function DeviceControlsRail(props: {
   const nextAppearance = settings?.appearance === "dark" ? "light" : "dark";
   const gt = useGT();
   const m = useMessages();
+  const [pulsedNav, setPulsedNav] = useState<"home" | "back" | "recents" | null>(null);
+  const pulseTimerRef = useRef<number | null>(null);
+  const viewSwitchRef = useRef<HTMLDivElement | null>(null);
+  const viewIndicatorRef = useRef<HTMLDivElement | null>(null);
+
+  useSharedIndicator({
+    containerRef: viewSwitchRef,
+    indicatorRef: viewIndicatorRef,
+    activeSelector: "[data-device-view-active='true']",
+    activeKey: view.streaming ? (view.phone ? "phone" : "flat") : null,
+    preset: "fluid",
+    maxSquash: 0.14,
+    axis: "y",
+  });
+
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- clears Android hardware nav pulse timer on unmount
+  useEffect(
+    () => () => {
+      if (pulseTimerRef.current !== null) window.clearTimeout(pulseTimerRef.current);
+    },
+    [],
+  );
+
+  const pressHardwareNav = (button: "home" | "back" | "recents") => {
+    handle?.pressButton(button);
+    setPulsedNav(button);
+    if (pulseTimerRef.current !== null) window.clearTimeout(pulseTimerRef.current);
+    pulseTimerRef.current = window.setTimeout(() => {
+      setPulsedNav(null);
+      pulseTimerRef.current = null;
+    }, 180);
+  };
+
   return (
     <aside
       aria-label={gt("Device controls")}
       data-layout="rail"
       className="pointer-events-none absolute inset-y-0 right-0 z-10 flex w-14 flex-col items-center gap-2 overflow-y-auto [justify-content:safe_center] py-3 pr-2 [scrollbar-width:none]"
     >
-      <div className="pointer-events-auto flex shrink-0 flex-col items-center gap-1 overflow-y-auto rounded-full border border-border/50 bg-background/80 p-2 shadow-sm [scrollbar-width:none]">
+      <div className="surface-optical-chrome surface-elevated-rim pointer-events-auto flex shrink-0 flex-col items-center gap-1 overflow-y-auto rounded-full p-2 [scrollbar-width:none]">
         <RailButton
           tooltipSide={popupSide}
           label={gt("Home", { $context: "device home button" })}
           disabled={inputDisabled}
-          onClick={() => handle?.pressButton("home")}
+          pulsing={pulsedNav === "home"}
+          onClick={() => pressHardwareNav("home")}
         >
           <Home />
         </RailButton>
@@ -78,7 +117,8 @@ export function DeviceControlsRail(props: {
               tooltipSide={popupSide}
               label={gt("Back", { $context: "device back button" })}
               disabled={inputDisabled}
-              onClick={() => handle?.pressButton("back")}
+              pulsing={pulsedNav === "back"}
+              onClick={() => pressHardwareNav("back")}
             >
               <ChevronLeft />
             </RailButton>
@@ -86,7 +126,8 @@ export function DeviceControlsRail(props: {
               tooltipSide={popupSide}
               label={gt("Recents", { $context: "Android recent apps button" })}
               disabled={inputDisabled}
-              onClick={() => handle?.pressButton("recents")}
+              pulsing={pulsedNav === "recents"}
+              onClick={() => pressHardwareNav("recents")}
             >
               <Square />
             </RailButton>
@@ -144,7 +185,13 @@ export function DeviceControlsRail(props: {
               disabled={controls.disabled || !settings?.appearance}
               onClick={() => void controls.act({ type: "setAppearance", value: nextAppearance })}
             >
-              {settings?.appearance === "dark" ? <SunIcon /> : <MoonIcon />}
+              <ContextualIconSwap
+                activeKey={settings?.appearance === "dark" ? "sun" : "moon"}
+                items={[
+                  { key: "sun", icon: <SunIcon className="size-4" /> },
+                  { key: "moon", icon: <MoonIcon className="size-4" /> },
+                ]}
+              />
             </RailButton>
             <Menu>
               <MenuTrigger
@@ -208,7 +255,13 @@ export function DeviceControlsRail(props: {
             disabled={!view.streaming || props.screenshotPending}
             onClick={props.onScreenshot}
           >
-            <Camera />
+            <ContextualIconSwap
+              activeKey={props.screenshotConfirmed ? "confirmed" : "camera"}
+              items={[
+                { key: "camera", icon: <Camera className="size-4" /> },
+                { key: "confirmed", icon: <Check className="size-4 text-success" /> },
+              ]}
+            />
           </RailButton>
         )}
         <Menu>
@@ -243,25 +296,40 @@ export function DeviceControlsRail(props: {
           </MenuPopup>
         </Menu>
         <RailDivider />
-        <RailButton
-          tooltipSide={popupSide}
-          label={gt("3D view")}
-          pressed={view.phone}
-          disabled={!view.streaming || !!view.phoneUnavailableReason}
-          description={view.phoneUnavailableReason ?? undefined}
-          onClick={view.showPhone}
+        <div
+          ref={viewSwitchRef}
+          data-slot="device-view-mode-switch"
+          className="relative flex flex-col items-center gap-1"
         >
-          <Box />
-        </RailButton>
-        <RailButton
-          tooltipSide={popupSide}
-          label={gt("Flat view")}
-          pressed={!view.phone}
-          disabled={!view.streaming}
-          onClick={view.showFlat}
-        >
-          <Smartphone />
-        </RailButton>
+          <div
+            ref={viewIndicatorRef}
+            aria-hidden="true"
+            className="pointer-events-none absolute top-0 left-0 z-0 rounded-md bg-secondary opacity-0 shadow-xs/5 ring-1 ring-inset ring-border/70 will-change-transform"
+          />
+          <RailButton
+            tooltipSide={popupSide}
+            label={gt("3D view")}
+            pressed={view.phone}
+            indicatorManaged
+            viewActive={view.phone}
+            disabled={!view.streaming || !!view.phoneUnavailableReason}
+            description={view.phoneUnavailableReason ?? undefined}
+            onClick={view.showPhone}
+          >
+            <Box />
+          </RailButton>
+          <RailButton
+            tooltipSide={popupSide}
+            label={gt("Flat view")}
+            pressed={!view.phone}
+            indicatorManaged
+            viewActive={!view.phone}
+            disabled={!view.streaming}
+            onClick={view.showFlat}
+          >
+            <Smartphone />
+          </RailButton>
+        </div>
         {view.keyboard ? (
           <RailButton
             tooltipSide={popupSide}
@@ -299,19 +367,32 @@ function RailButton(props: {
   description?: string | undefined;
   disabled?: boolean;
   pressed?: boolean;
+  pulsing?: boolean;
+  indicatorManaged?: boolean;
+  viewActive?: boolean;
   onClick: () => void;
   children: ReactNode;
 }) {
   const button = (
     <Button
       size="icon-sm"
-      variant={props.pressed ? "secondary" : "ghost"}
+      variant={props.pressed && !props.indicatorManaged ? "secondary" : "ghost"}
       aria-label={props.label}
       aria-pressed={props.pressed}
       disabled={props.disabled}
+      data-device-view-active={props.viewActive ? "true" : undefined}
+      data-nav-pulsing={props.pulsing ? "true" : undefined}
+      className={cn(props.indicatorManaged && "relative z-1")}
       onClick={props.onClick}
     >
-      {props.children}
+      <span
+        className={cn(
+          "inline-flex items-center justify-center",
+          props.pulsing && "device-rail-nav-pulse",
+        )}
+      >
+        {props.children}
+      </span>
     </Button>
   );
   return (

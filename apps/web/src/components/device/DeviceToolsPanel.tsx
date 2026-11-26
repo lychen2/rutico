@@ -615,23 +615,6 @@ function PermissionsSection(props: {
         disabled={props.disabled}
         onChange={(event) => setAppId(event.target.value)}
       />
-      <div className="flex flex-wrap gap-1">
-        {LOCATION_PRESETS.map((preset) => (
-          <button
-            key={preset.label}
-            type="button"
-            disabled={props.disabled}
-            onClick={() => {
-              setLatitude(String(preset.latitude));
-              setLongitude(String(preset.longitude));
-              void props.onSet(preset.latitude, preset.longitude);
-            }}
-            className="cursor-pointer rounded-md border border-border/60 bg-muted/35 px-1.5 py-0.5 text-2xs text-muted-foreground transition-colors duration-120 hover:border-border hover:bg-accent hover:text-foreground disabled:pointer-events-none disabled:opacity-50"
-          >
-            {m(preset.label)}
-          </button>
-        ))}
-      </div>
       <div className="flex flex-wrap items-center gap-1.5">
         <ChoiceSelect
           ariaLabel={gt("Permission")}
