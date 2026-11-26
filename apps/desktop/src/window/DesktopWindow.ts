@@ -105,6 +105,13 @@ type WindowTitleBarOptions = Pick<
   "titleBarOverlay" | "titleBarStyle" | "trafficLightPosition"
 >;
 
+type WindowVibrancyOptions = Pick<
+  Electron.BrowserWindowConstructorOptions,
+  "visualEffectState" | "backgroundMaterial"
+> & {
+  readonly vibrancy?: NonNullable<Parameters<Electron.BrowserWindow["setVibrancy"]>[0]>;
+};
+
 type DesktopWindowRuntimeServices =
   | DesktopEnvironment.DesktopEnvironment
   | DesktopState.DesktopState
@@ -405,12 +412,43 @@ function getWindowTitleBarOptions(
   };
 }
 
+export function resolveWindowVibrancyOptions(input: {
+  readonly platform: NodeJS.Platform;
+  readonly glassOpacity: number;
+  readonly prefersReducedTransparency: boolean;
+}): WindowVibrancyOptions {
+  if (input.glassOpacity >= 100 || input.prefersReducedTransparency) {
+    return {};
+  }
+  if (input.platform === "darwin") {
+    return {
+      vibrancy: "under-window",
+      visualEffectState: "followWindow",
+    };
+  }
+  if (input.platform === "win32") {
+    return {
+      backgroundMaterial: "mica",
+    };
+  }
+  return {};
+}
+
+function readPrefersReducedTransparency(): boolean {
+  try {
+    return Electron.nativeTheme?.prefersReducedTransparency === true;
+  } catch {
+    return false;
+  }
+}
+
 function syncWindowAppearance(
   window: Electron.BrowserWindow,
   hasTitleBarOverlay: boolean,
   shouldUseDarkColors: boolean,
   platform: NodeJS.Platform,
   persistedTheme?: string | null,
+  vibrancyOptions?: WindowVibrancyOptions,
 ): Effect.Effect<void> {
   return Effect.sync(() => {
     if (window.isDestroyed()) {
@@ -421,6 +459,15 @@ function syncWindowAppearance(
     const { titleBarOverlay } = getWindowTitleBarOptions(shouldUseDarkColors, platform);
     if (hasTitleBarOverlay && typeof titleBarOverlay === "object") {
       window.setTitleBarOverlay(titleBarOverlay);
+    }
+    if (platform === "darwin" && typeof window.setVibrancy === "function") {
+      try {
+        window.setVibrancy(vibrancyOptions?.vibrancy ?? null);
+      } catch {}
+    } else if (platform === "win32" && typeof window.setBackgroundMaterial === "function") {
+      try {
+        window.setBackgroundMaterial(vibrancyOptions?.backgroundMaterial ?? "none");
+      } catch {}
     }
   });
 }
@@ -477,6 +524,16 @@ export const make = Effect.gen(function* () {
     }
     return activeThemePreference;
   });
+
+  const readGlassOpacity = clientSettings.get.pipe(
+    Effect.map(
+      Option.match({
+        onNone: () => DEFAULT_CLIENT_SETTINGS.glassOpacity,
+        onSome: (settings) => settings.glassOpacity,
+      }),
+    ),
+    Effect.orElseSucceed(() => DEFAULT_CLIENT_SETTINGS.glassOpacity),
+  );
   const context = yield* Effect.context<DesktopWindowRuntimeServices>();
   const runFork = Effect.runForkWith(context);
   const runPromise = Effect.runPromiseWith(context);
@@ -561,6 +618,12 @@ export const make = Effect.gen(function* () {
     const iconOption = getIconOption(iconPaths, environment.platform);
     const shouldUseDarkColors = yield* electronTheme.shouldUseDarkColors;
     const persistedTheme = yield* readPersistedTheme;
+    const glassOpacity = yield* readGlassOpacity;
+    const vibrancyOptions = resolveWindowVibrancyOptions({
+      platform: environment.platform,
+      glassOpacity,
+      prefersReducedTransparency: readPrefersReducedTransparency(),
+    });
     const persistedSettings = yield* desktopSettings.get;
     const persistedBounds = persistedSettings.mainWindowBounds;
     const displayBoundsResult = yield* Effect.sync(() => {
@@ -593,6 +656,7 @@ export const make = Effect.gen(function* () {
       autoHideMenuBar: true,
       ...(environment.platform === "darwin" ? { disableAutoHideCursor: true } : {}),
       backgroundColor: getInitialWindowBackgroundColor(shouldUseDarkColors, persistedTheme),
+      ...vibrancyOptions,
       ...iconOption,
       title: environment.displayName,
       ...getWindowTitleBarOptions(shouldUseDarkColors, environment.platform),
@@ -1385,6 +1449,12 @@ export const make = Effect.gen(function* () {
     syncAppearance: Effect.gen(function* () {
       const shouldUseDarkColors = yield* electronTheme.shouldUseDarkColors;
       const persistedTheme = yield* readPersistedTheme;
+      const glassOpacity = yield* readGlassOpacity;
+      const vibrancyOptions = resolveWindowVibrancyOptions({
+        platform: environment.platform,
+        glassOpacity,
+        prefersReducedTransparency: readPrefersReducedTransparency(),
+      });
       yield* electronWindow.syncAllAppearance((window, { titleBarOverlay }) =>
         syncWindowAppearance(
           window,
@@ -1392,6 +1462,7 @@ export const make = Effect.gen(function* () {
           shouldUseDarkColors,
           environment.platform,
           persistedTheme,
+          vibrancyOptions,
         ),
       );
     }).pipe(Effect.withSpan("desktop.window.syncAppearance")),

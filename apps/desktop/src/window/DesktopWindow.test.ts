@@ -1,7 +1,11 @@
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, describe, it } from "@effect/vitest";
 import * as Deferred from "effect/Deferred";
-import { DesktopSnapShotId } from "@t3tools/contracts";
+import {
+  DEFAULT_CLIENT_SETTINGS,
+  DesktopSnapShotId,
+  type ClientSettings,
+} from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import * as Fiber from "effect/Fiber";
@@ -132,11 +136,13 @@ function makeFakeBrowserWindow() {
     }),
     restore: vi.fn(),
     setBackgroundColor: vi.fn(),
+    setBackgroundMaterial: vi.fn(),
     setAutoHideCursor: vi.fn(),
     setFullScreen: vi.fn(),
     setOpacity: vi.fn(),
     setTitle: vi.fn(),
     setTitleBarOverlay: vi.fn(),
+    setVibrancy: vi.fn(),
     setWindowButtonPosition: vi.fn(),
     show: vi.fn(),
     webContents,
@@ -162,9 +168,11 @@ function makeFakeBrowserWindow() {
     setZoomLevel: webContents.setZoomLevel,
     setWindowButtonPosition: window.setWindowButtonPosition,
     setBackgroundThrottling: webContents.setBackgroundThrottling,
+    setBackgroundMaterial: window.setBackgroundMaterial,
     setAutoHideCursor: window.setAutoHideCursor,
     setFullScreen: window.setFullScreen,
     setOpacity: window.setOpacity,
+    setVibrancy: window.setVibrancy,
     webContentsListeners,
     webContentsOnce: webContents.once,
     windowListeners,
@@ -240,6 +248,7 @@ function layerTest(input: {
   readonly createCount: Ref.Ref<number>;
   readonly mainWindow: Ref.Ref<Option.Option<Electron.BrowserWindow>>;
   readonly createdWindowOptions?: Electron.BrowserWindowConstructorOptions[];
+  readonly clientSettings?: Option.Option<ClientSettings>;
   readonly desktopSettings?: DesktopAppSettings.DesktopSettings;
   readonly mainWindowBoundsUpdates?: DesktopAppSettings.DesktopWindowBounds[];
   readonly mainWindowMaximizedUpdates?: boolean[];
@@ -345,7 +354,11 @@ function layerTest(input: {
           ? layerDesktopEnvironment
           : layerDesktopEnvironmentFor(input.platform),
         layerDesktopAppSettings,
-        layerDesktopClientSettings,
+        input.clientSettings === undefined
+          ? layerDesktopClientSettings
+          : Layer.mock(DesktopClientSettings.DesktopClientSettings)({
+              get: Effect.succeed(input.clientSettings),
+            }),
         layerDesktopServerExposure,
         DesktopState.layer,
         layerElectronApp,
@@ -1428,6 +1441,96 @@ describe("DesktopWindow", () => {
         );
         assert.equal(vi.mocked(splash.window.close).mock.calls.length, 1);
       }).pipe(Effect.provide(scenario.layer));
+    }),
+  );
+
+  it("enables native platform vibrancy only when glass transparency is active", () => {
+    assert.deepEqual(
+      DesktopWindow.resolveWindowVibrancyOptions({
+        platform: "darwin",
+        glassOpacity: 80,
+        prefersReducedTransparency: false,
+      }),
+      { vibrancy: "under-window", visualEffectState: "followWindow" },
+    );
+    assert.deepEqual(
+      DesktopWindow.resolveWindowVibrancyOptions({
+        platform: "win32",
+        glassOpacity: 80,
+        prefersReducedTransparency: false,
+      }),
+      { backgroundMaterial: "mica" },
+    );
+    assert.deepEqual(
+      DesktopWindow.resolveWindowVibrancyOptions({
+        platform: "linux",
+        glassOpacity: 80,
+        prefersReducedTransparency: false,
+      }),
+      {},
+    );
+    assert.deepEqual(
+      DesktopWindow.resolveWindowVibrancyOptions({
+        platform: "darwin",
+        glassOpacity: 100,
+        prefersReducedTransparency: false,
+      }),
+      {},
+    );
+    assert.deepEqual(
+      DesktopWindow.resolveWindowVibrancyOptions({
+        platform: "win32",
+        glassOpacity: 80,
+        prefersReducedTransparency: true,
+      }),
+      {},
+    );
+  });
+
+  it.effect("applies platform vibrancy on window creation and respects opaque glass fallback", () =>
+    Effect.gen(function* () {
+      const darwinOptions: Electron.BrowserWindowConstructorOptions[] = [];
+      const darwinWindow = makeFakeBrowserWindow();
+      yield* Effect.gen(function* () {
+        const desktopWindow = yield* DesktopWindow.DesktopWindow;
+        yield* desktopWindow.ensureMain;
+        yield* desktopWindow.syncAppearance;
+      }).pipe(
+        Effect.provide(
+          layerTest({
+            window: darwinWindow.window,
+            createCount: yield* Ref.make(0),
+            mainWindow: yield* Ref.make<Option.Option<Electron.BrowserWindow>>(Option.none()),
+            createdWindowOptions: darwinOptions,
+            platform: "darwin",
+            clientSettings: Option.some({ ...DEFAULT_CLIENT_SETTINGS, glassOpacity: 80 }),
+          }),
+        ),
+      );
+      assert.equal(darwinOptions[0]?.vibrancy, "under-window");
+      assert.equal(darwinOptions[0]?.visualEffectState, "followWindow");
+      assert.deepEqual(darwinWindow.setVibrancy.mock.calls, [["under-window"]]);
+
+      const opaqueOptions: Electron.BrowserWindowConstructorOptions[] = [];
+      const opaqueWindow = makeFakeBrowserWindow();
+      yield* Effect.gen(function* () {
+        const desktopWindow = yield* DesktopWindow.DesktopWindow;
+        yield* desktopWindow.ensureMain;
+        yield* desktopWindow.syncAppearance;
+      }).pipe(
+        Effect.provide(
+          layerTest({
+            window: opaqueWindow.window,
+            createCount: yield* Ref.make(0),
+            mainWindow: yield* Ref.make<Option.Option<Electron.BrowserWindow>>(Option.none()),
+            createdWindowOptions: opaqueOptions,
+            platform: "win32",
+            clientSettings: Option.some({ ...DEFAULT_CLIENT_SETTINGS, glassOpacity: 100 }),
+          }),
+        ),
+      );
+      assert.isUndefined(opaqueOptions[0]?.backgroundMaterial);
+      assert.deepEqual(opaqueWindow.setBackgroundMaterial.mock.calls, [["none"]]);
     }),
   );
 
