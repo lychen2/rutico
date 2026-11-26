@@ -46,6 +46,9 @@ export function MarkdownCodeBlockFrame({
   fenceTitle,
   theme,
   wrapped = true,
+  streaming = false,
+  justSettled = false,
+  onSettleEnd,
   title,
   actions,
   headerProps,
@@ -56,6 +59,9 @@ export function MarkdownCodeBlockFrame({
   fenceTitle: string | null;
   theme: "light" | "dark";
   wrapped?: boolean;
+  streaming?: boolean;
+  justSettled?: boolean;
+  onSettleEnd?: (() => void) | undefined;
   title?: React.ReactNode;
   actions?: React.ReactNode;
   headerProps?: React.HTMLAttributes<HTMLDivElement>;
@@ -64,10 +70,23 @@ export function MarkdownCodeBlockFrame({
   return (
     <Wrapper
       dir="ltr"
-      className="chat-markdown-codeblock my-[0.65rem] text-start overflow-clip rounded-lg border border-border/70 bg-secondary leading-snug dark:border-white/[0.08] dark:bg-input/32"
+      className="chat-markdown-codeblock relative my-[0.65rem] text-start overflow-clip rounded-lg border border-border/70 bg-secondary leading-snug dark:border-white/[0.08] dark:bg-input/32"
       data-language={language}
       data-wrap={wrapped ? "true" : "false"}
+      data-code-streaming={streaming ? "true" : undefined}
+      data-code-settled={justSettled ? "true" : undefined}
     >
+      {justSettled ? (
+        <span
+          aria-hidden="true"
+          className="chat-codeblock-settle-sheen pointer-events-none absolute inset-x-0 top-0 z-20 h-px overflow-hidden"
+        >
+          <span
+            className="chat-codeblock-settle-beam block h-full w-1/2"
+            onAnimationEnd={onSettleEnd}
+          />
+        </span>
+      ) : null}
       <div
         {...headerProps}
         className={cn(
@@ -164,6 +183,16 @@ export function MarkdownCodeBlock({
   });
   const defaultWrapped = useClientSettings((settings) => settings.wordWrap);
   const [wrapOverride, setWrapOverride] = useState<boolean | null>(null);
+  const [previousStreaming, setPreviousStreaming] = useState(isStreaming);
+  const [justSettled, setJustSettled] = useState(false);
+  if (previousStreaming !== isStreaming) {
+    setPreviousStreaming(isStreaming);
+    if (previousStreaming && !isStreaming) {
+      setJustSettled(true);
+    } else if (isStreaming) {
+      setJustSettled(false);
+    }
+  }
   const wrapped = wrapOverride ?? defaultWrapped;
   const wrapLabel = wrapped ? gt("Disable line wrap") : gt("Wrap lines");
   const copyLabel = copied ? gt("Copied") : gt("Copy code");
@@ -222,6 +251,9 @@ export function MarkdownCodeBlock({
       fenceTitle={fenceTitle}
       theme={theme}
       wrapped={wrapped}
+      streaming={isStreaming}
+      justSettled={justSettled}
+      onSettleEnd={() => setJustSettled(false)}
       headerProps={THREAD_FIND_IGNORE_PROPS}
       actions={
         <span
@@ -254,6 +286,7 @@ export function MarkdownCodeBlock({
                   type="button"
                   variant="ghost-muted"
                   size="icon-xs"
+                  data-code-run-unlock={justSettled ? "true" : undefined}
                   onClick={() => onRunShellCommand(command)}
                   aria-label={gt("Run in terminal")}
                 />
@@ -370,8 +403,8 @@ function UncachedShikiCodeBlock({
   return typeof highlighted === "string" ? (
     <div className="chat-markdown-shiki" dangerouslySetInnerHTML={{ __html: highlighted }} />
   ) : (
-    <div className="chat-markdown-shiki">
-      <HighlightedCodeLines root={highlighted} />
+    <div className="chat-markdown-shiki" data-code-streaming={isStreaming ? "true" : undefined}>
+      <HighlightedCodeLines root={highlighted} streaming={isStreaming} />
     </div>
   );
 }

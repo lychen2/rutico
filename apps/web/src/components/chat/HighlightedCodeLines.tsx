@@ -17,19 +17,44 @@ function elementShell(node: Extract<HighlightedNode, { type: "element" }>) {
   return element;
 }
 
-const HighlightedLine = memo(function HighlightedLine({ node }: { node: HighlightedNode }) {
+const HighlightedLine = memo(function HighlightedLine({
+  node,
+  streamingLine = false,
+  activeTailLine = false,
+}: {
+  node: HighlightedNode;
+  streamingLine?: boolean;
+  activeTailLine?: boolean;
+}) {
   if (node.type !== "element") return toJsxRuntime(node, runtime);
   return cloneElement(elementShell(node), {
+    ...(streamingLine ? { "data-code-line-enter": "true" } : {}),
+    ...(activeTailLine ? { "data-code-active-line": "true" } : {}),
     dangerouslySetInnerHTML: { __html: toHtml({ type: "root", children: node.children }) },
-  });
+  } as DOMAttributes<HTMLElement>);
 });
 
 /** Preserve completed lines' DOM to avoid reparsing unchanged tokens. */
-export function HighlightedCodeLines({ root }: { root: HighlightedRoot }) {
+export function HighlightedCodeLines({
+  root,
+  streaming = false,
+}: {
+  root: HighlightedRoot;
+  streaming?: boolean;
+}) {
   const pre = root.children[0];
   if (pre?.type !== "element" || pre.tagName !== "pre") return toJsxRuntime(root, runtime);
   const code = pre.children[0];
   if (code?.type !== "element" || code.tagName !== "code") return toJsxRuntime(root, runtime);
+  let lastElementIndex = -1;
+  if (streaming) {
+    for (let index = code.children.length - 1; index >= 0; index -= 1) {
+      if (code.children[index]?.type === "element") {
+        lastElementIndex = index;
+        break;
+      }
+    }
+  }
   return cloneElement(
     elementShell(pre),
     undefined,
@@ -37,9 +62,14 @@ export function HighlightedCodeLines({ root }: { root: HighlightedRoot }) {
       elementShell(code),
       undefined,
       code.children.map((node, index) => (
-        // Appending tokens and lines preserves line positions.
-        // oxlint-disable-next-line react/no-array-index-key
-        <HighlightedLine key={index} node={node} />
+        <HighlightedLine
+          // Appending tokens and lines preserves line positions.
+          // oxlint-disable-next-line react/no-array-index-key
+          key={index}
+          node={node}
+          streamingLine={streaming}
+          activeTailLine={streaming && index === lastElementIndex}
+        />
       )),
     ),
   );
