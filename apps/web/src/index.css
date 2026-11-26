@@ -3053,6 +3053,10 @@ code {
     animation: t3-draft-hero-enter 380ms var(--ease-spring-gentle) 55ms both;
   }
 
+  .t3-draft-hero-actions {
+    animation: t3-draft-hero-enter 400ms var(--ease-spring-gentle) 95ms both;
+  }
+
   .t3-command-view-enter {
     animation: t3-command-view-enter 180ms var(--ease-spring-gentle) both;
   }

@@ -1,3 +1,4 @@
+import { useAtomValue } from "@effect/atom-react";
 import { workspaceAreaProps } from "../lib/workspaceFocus";
 import { T, useGT } from "gt-react";
 import { MessageSquareDashedIcon, PlusIcon } from "lucide-react";
@@ -5,9 +6,12 @@ import { MessageSquareDashedIcon, PlusIcon } from "lucide-react";
 import { openCommandPalette } from "../commandPaletteBus";
 import { isElectron } from "../env";
 import { useScratchProject } from "../hooks/useScratchProject";
+import { shortcutLabelForCommand } from "../keybindings";
 import { usePrimaryEnvironmentId } from "../state/environments";
+import { primaryServerKeybindingsAtom } from "../state/server";
 import { Button } from "./ui/button";
 import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "./ui/empty";
+import { Kbd } from "./ui/kbd";
 import { SidebarInset } from "./ui/sidebar";
 import { WorkspacePageHeader } from "./WorkspacePageHeader";
 
@@ -17,6 +21,8 @@ export function NoProjectsHero() {
   const primaryEnvironmentId = usePrimaryEnvironmentId();
   const { scratchEnvironmentId, startScratchThread } = useScratchProject();
   const scratchTargetEnvironmentId = scratchEnvironmentId(primaryEnvironmentId);
+  const keybindings = useAtomValue(primaryServerKeybindingsAtom);
+  const commandPaletteShortcut = shortcutLabelForCommand(keybindings, "commandPalette.toggle");
 
   return (
     <SidebarInset
@@ -29,17 +35,21 @@ export function NoProjectsHero() {
         <div className="relative z-10 flex min-h-0 flex-1 flex-col">
           {isElectron ? <WorkspacePageHeader electron /> : null}
           <Empty size="hero" className="flex-1">
-            <div className="w-full max-w-lg px-8 py-12">
+            <div className="surface-glass w-full max-w-lg rounded-2xl border border-border/50 px-8 py-10 dark:border-white/8">
               <EmptyHeader className="max-w-none">
-                <EmptyTitle>
-                  <T>What should we work on?</T>
-                </EmptyTitle>
-                <EmptyDescription>
-                  {scratchTargetEnvironmentId === null
-                    ? gt("Add a project to start your first thread.")
-                    : gt("Add a project, or start without one.")}
-                </EmptyDescription>
-                <div className="mt-6 flex justify-center gap-2">
+                <div className="t3-draft-hero-title">
+                  <EmptyTitle>
+                    <T>What should we work on?</T>
+                  </EmptyTitle>
+                </div>
+                <div className="t3-draft-hero-subtitle mt-1.5">
+                  <EmptyDescription>
+                    {scratchTargetEnvironmentId === null
+                      ? gt("Add a project to start your first thread.")
+                      : gt("Add a project, or start without one.")}
+                  </EmptyDescription>
+                </div>
+                <div className="t3-draft-hero-actions mt-6 flex flex-wrap justify-center gap-2">
                   <Button size="sm" onClick={() => openCommandPalette({ open: "add-project" })}>
                     <PlusIcon className="size-4" />
                     <T>Add project</T>
@@ -55,6 +65,12 @@ export function NoProjectsHero() {
                     </Button>
                   )}
                 </div>
+                {commandPaletteShortcut ? (
+                  <div className="t3-draft-hero-actions mt-5 flex items-center justify-center gap-1.5 text-xs text-muted-foreground">
+                    <span>{gt("Command palette")}</span>
+                    <Kbd variant="outline">{commandPaletteShortcut}</Kbd>
+                  </div>
+                ) : null}
               </EmptyHeader>
             </div>
           </Empty>
