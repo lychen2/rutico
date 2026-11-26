@@ -156,3 +156,32 @@
     transition: none;
   }
 }
+
+/* --------------------------------------------------------------------------
+   D18 / C060: Search Context Radar Peek Pane & Target Amber Lock Band
+   -------------------------------------------------------------------------- */
+
+.search-context-target-band {
+  background-color: color-mix(in oklch, var(--warning, #d97706) 11%, transparent);
+  border-inline-start-color: color-mix(in oklch, var(--warning, #d97706) 80%, transparent);
+}
+
+.search-context-target-num {
+  color: var(--warning-foreground, var(--warning, #b45309));
+}
+
+.search-context-pane-body {
+  transition: opacity var(--duration-micro) ease-out;
+}
+
+@starting-style {
+  .search-context-pane-body {
+    opacity: 0.45;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .search-context-pane-body {
+    transition: none;
+  }
+}

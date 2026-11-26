@@ -4,6 +4,7 @@ import { memo, Suspense, use, type CSSProperties } from "react";
 
 import { resolveDiffThemeName } from "~/lib/diffRendering";
 import { getSyntaxHighlighterPromise } from "~/lib/syntaxHighlighting";
+import { cn } from "~/lib/utils";
 
 import { RenderErrorBoundary } from "../RenderErrorBoundary";
 
@@ -180,6 +181,114 @@ export const HighlightedSearchLine = memo(function HighlightedSearchLine(props: 
           line={props.match.lineContent}
           language={getFiletypeFromFileName(props.path)}
           ranges={ranges}
+          theme={props.theme}
+        />
+      </Suspense>
+    </RenderErrorBoundary>
+  );
+});
+
+export interface SearchContextLine {
+  readonly lineNumber: number;
+  readonly content: string;
+  readonly isTarget: boolean;
+}
+
+function multiLineTokens(
+  highlighter: Awaited<ReturnType<typeof getSyntaxHighlighterPromise>>,
+  lines: ReadonlyArray<SearchContextLine>,
+  language: string,
+  theme: "light" | "dark",
+): ReadonlyArray<ReadonlyArray<CodeToken>> | undefined {
+  try {
+    return highlighter.codeToTokens(lines.map((line) => line.content).join("\n"), {
+      lang: language,
+      theme: resolveDiffThemeName(theme),
+    }).tokens;
+  } catch {
+    return undefined;
+  }
+}
+
+function ContextLinesList(props: {
+  readonly lines: ReadonlyArray<SearchContextLine>;
+  readonly targetRanges: ReadonlyArray<Range>;
+  readonly tokenizedLines?: ReadonlyArray<ReadonlyArray<CodeToken>> | undefined;
+}) {
+  return (
+    <div className="font-mono text-xs leading-5">
+      {props.lines.map((line, index) => {
+        const tokens = props.tokenizedLines?.[index] ?? [{ content: line.content, offset: 0 }];
+        return (
+          <div
+            key={line.lineNumber}
+            data-search-context-target={line.isTarget ? "true" : undefined}
+            className={cn(
+              "flex min-w-0 items-baseline gap-3 border-l-2 border-transparent px-3 py-0.5",
+              line.isTarget && "search-context-target-band",
+            )}
+          >
+            <span
+              className={cn(
+                "w-10 shrink-0 select-none text-right tabular-nums",
+                line.isTarget
+                  ? "search-context-target-num font-medium"
+                  : "text-muted-foreground/60",
+              )}
+            >
+              {line.lineNumber}
+            </span>
+            <span className="min-w-0 flex-1 whitespace-pre-wrap break-all">
+              {line.content.length === 0 ? (
+                " "
+              ) : (
+                <HighlightedTokens
+                  line={line.content}
+                  ranges={line.isTarget ? props.targetRanges : []}
+                  tokens={tokens}
+                />
+              )}
+            </span>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function SyntaxHighlightedContextLines(props: {
+  readonly lines: ReadonlyArray<SearchContextLine>;
+  readonly language: string;
+  readonly targetRanges: ReadonlyArray<Range>;
+  readonly theme: "light" | "dark";
+}) {
+  const highlighter = use(getSyntaxHighlighterPromise(props.language));
+  const tokenizedLines = multiLineTokens(highlighter, props.lines, props.language, props.theme);
+  return (
+    <ContextLinesList
+      lines={props.lines}
+      targetRanges={props.targetRanges}
+      tokenizedLines={tokenizedLines}
+    />
+  );
+}
+
+export const HighlightedSearchContext = memo(function HighlightedSearchContext(props: {
+  readonly lines: ReadonlyArray<SearchContextLine>;
+  readonly match: ProjectContentMatch;
+  readonly path: string;
+  readonly theme: "light" | "dark";
+}) {
+  const targetRanges = normalizeRanges(props.match);
+  const fallback = <ContextLinesList lines={props.lines} targetRanges={targetRanges} />;
+
+  return (
+    <RenderErrorBoundary fallback={fallback}>
+      <Suspense fallback={fallback}>
+        <SyntaxHighlightedContextLines
+          lines={props.lines}
+          language={getFiletypeFromFileName(props.path)}
+          targetRanges={targetRanges}
           theme={props.theme}
         />
       </Suspense>
