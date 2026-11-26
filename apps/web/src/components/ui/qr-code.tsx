@@ -1,15 +1,21 @@
 import { memo } from "react";
 import { QrCode } from "@t3tools/shared/qrCode";
 
-type QRCodeSvgProps = {
+export type QRCodeErrorCorrectionLevel = "L" | "M" | "Q" | "H";
+export type QRCodeVariant = "classic" | "branded";
+
+export type QRCodeSvgProps = {
   value: string;
   size?: number;
-  level?: "L" | "M" | "Q" | "H";
+  level?: QRCodeErrorCorrectionLevel;
   marginSize?: number;
   title?: string;
   className?: string;
   foregroundColor?: string;
   backgroundColor?: string;
+  variant?: QRCodeVariant;
+  /** Render the subtle centered brand mark on `variant="branded"` when ECC >= Q. */
+  showCenterMark?: boolean;
 };
 
 const ERROR_CORRECTION_LEVELS = {
@@ -18,6 +24,119 @@ const ERROR_CORRECTION_LEVELS = {
   Q: QrCode.Ecc.QUARTILE,
   H: QrCode.Ecc.HIGH,
 } as const;
+
+export interface QrMatrix {
+  readonly size: number;
+  readonly version: number;
+  readonly modules: ReadonlyArray<ReadonlyArray<boolean>>;
+}
+
+export interface QrFinderEyeOrigin {
+  readonly x: number;
+  readonly y: number;
+}
+
+export interface QrCenterMarkAperture {
+  /** Inclusive starting module index in `[0, size)`. */
+  readonly start: number;
+  /** Exclusive ending module index in `(start, size]`. */
+  readonly end: number;
+  /** Number of modules along one side of the square aperture. */
+  readonly span: number;
+}
+
+export interface BrandedQrGeometry {
+  readonly size: number;
+  readonly finderEyes: ReadonlyArray<QrFinderEyeOrigin>;
+  readonly dataModules: ReadonlyArray<readonly [x: number, y: number]>;
+  readonly centerMark: QrCenterMarkAperture | null;
+}
+
+/** Encodes `value` directly via `@t3tools/shared/qrCode` with zero protocol mutation. */
+export function encodeQrMatrix(value: string, level: QRCodeErrorCorrectionLevel = "L"): QrMatrix {
+  const qrCode = QrCode.encodeText(value, ERROR_CORRECTION_LEVELS[level]);
+  const modules: Array<Array<boolean>> = [];
+  for (let y = 0; y < qrCode.size; y += 1) {
+    const row: Array<boolean> = [];
+    for (let x = 0; x < qrCode.size; x += 1) {
+      row.push(qrCode.getModule(x, y));
+    }
+    modules.push(row);
+  }
+  return {
+    size: qrCode.size,
+    version: qrCode.version,
+    modules,
+  };
+}
+
+/** Returns true when `(x, y)` lies inside one of the three canonical 7x7 finder patterns. */
+export function isQrFinderModule(x: number, y: number, size: number): boolean {
+  const inTop = y >= 0 && y < 7;
+  const inBottom = y >= size - 7 && y < size;
+  const inLeft = x >= 0 && x < 7;
+  const inRight = x >= size - 7 && x < size;
+  return (inTop && inLeft) || (inTop && inRight) || (inBottom && inLeft);
+}
+
+/**
+ * Computes a compact centered aperture for the branded emblem. Only enabled at Q/H ECC
+ * and QR sizes >= 25 so obscured modules stay well below Reed-Solomon recovery capacity
+ * (< 6% of total modules) and never touch finder, timing, or format-info patterns.
+ */
+export function getQrCenterMarkAperture(
+  size: number,
+  level: QRCodeErrorCorrectionLevel,
+): QrCenterMarkAperture | null {
+  if ((level !== "Q" && level !== "H") || size < 25) {
+    return null;
+  }
+  // Keep span odd (matching odd QR dimensions) and capped at <= 7 modules for fast CameraX lock.
+  const span = size >= 41 ? 7 : 5;
+  const start = Math.floor((size - span) / 2);
+  const end = start + span;
+  // Never encroach on timing patterns (index 6) or finder/format guard zones (index <= 8).
+  if (start <= 8 || end >= size - 8) {
+    return null;
+  }
+  return { start, end, span };
+}
+
+function isInsideCenterMark(x: number, y: number, aperture: QrCenterMarkAperture | null): boolean {
+  if (aperture === null) return false;
+  return x >= aperture.start && x < aperture.end && y >= aperture.start && y < aperture.end;
+}
+
+/**
+ * Splits a `QrCode` into canonical 7x7 finder eyes and non-finder dark data modules
+ * so `variant="branded"` renders rounded eyes + modules while remaining matrix-equivalent.
+ */
+export function buildBrandedQrGeometry(
+  qrCode: Pick<ReturnType<typeof QrCode.encodeText>, "size" | "getModule">,
+  level: QRCodeErrorCorrectionLevel,
+  options?: { readonly includeCenterMark?: boolean },
+): BrandedQrGeometry {
+  const size = qrCode.size;
+  const centerMark =
+    options?.includeCenterMark === false ? null : getQrCenterMarkAperture(size, level);
+  const finderEyes: ReadonlyArray<QrFinderEyeOrigin> = [
+    { x: 0, y: 0 },
+    { x: size - 7, y: 0 },
+    { x: 0, y: size - 7 },
+  ];
+  const dataModules: Array<readonly [number, number]> = [];
+
+  for (let y = 0; y < size; y += 1) {
+    for (let x = 0; x < size; x += 1) {
+      if (!qrCode.getModule(x, y)) continue;
+      if (isQrFinderModule(x, y, size)) continue;
+      if (isInsideCenterMark(x, y, centerMark)) continue;
+      dataModules.push([x, y]);
+    }
+  }
+
+  return { size, finderEyes, dataModules, centerMark };
+}
 
 function buildQrPathData(qrCode: ReturnType<typeof QrCode.encodeText>, marginSize: number): string {
   const commands: Array<string> = [];
@@ -49,6 +168,36 @@ function buildQrPathData(qrCode: ReturnType<typeof QrCode.encodeText>, marginSiz
   return commands.join("");
 }
 
+/** Builds a single SVG path of softly rounded data dots for `variant="branded"`. */
+function buildRoundedModulesPathData(
+  dataModules: ReadonlyArray<readonly [x: number, y: number]>,
+  marginSize: number,
+): string {
+  const inset = 0.07;
+  const side = 1 - inset * 2;
+  const radius = 0.3;
+  const straight = side - radius * 2;
+  const parts: Array<string> = [];
+
+  for (const [x, y] of dataModules) {
+    const left = (x + marginSize + inset).toFixed(2);
+    const top = (y + marginSize + inset).toFixed(2);
+    parts.push(
+      `M${(Number(left) + radius).toFixed(2)} ${top}` +
+        `h${straight.toFixed(2)}` +
+        `a${radius} ${radius} 0 0 1 ${radius} ${radius}` +
+        `v${straight.toFixed(2)}` +
+        `a${radius} ${radius} 0 0 1 -${radius} ${radius}` +
+        `h-${straight.toFixed(2)}` +
+        `a${radius} ${radius} 0 0 1 -${radius} -${radius}` +
+        `v-${straight.toFixed(2)}` +
+        `a${radius} ${radius} 0 0 1 ${radius} -${radius}z`,
+    );
+  }
+
+  return parts.join("");
+}
+
 export const QRCodeSvg = memo(function QRCodeSvg({
   value,
   size = 128,
@@ -58,9 +207,91 @@ export const QRCodeSvg = memo(function QRCodeSvg({
   className,
   foregroundColor = "#000",
   backgroundColor = "#fff",
+  variant = "classic",
+  showCenterMark = true,
 }: QRCodeSvgProps) {
   const qrCode = QrCode.encodeText(value, ERROR_CORRECTION_LEVELS[level]);
   const viewBoxSize = qrCode.size + marginSize * 2;
+
+  if (variant === "branded") {
+    const geometry = buildBrandedQrGeometry(qrCode, level, {
+      includeCenterMark: showCenterMark,
+    });
+    const modulesPath = buildRoundedModulesPathData(geometry.dataModules, marginSize);
+
+    return (
+      <svg
+        xmlns="http://www.w3.org/2000/svg"
+        viewBox={`0 0 ${viewBoxSize} ${viewBoxSize}`}
+        width={size}
+        height={size}
+        shapeRendering="geometricPrecision"
+        role={title ? "img" : undefined}
+        aria-label={title}
+        data-qr-variant="branded"
+        className={className}
+      >
+        {title ? <title>{title}</title> : null}
+        <rect width={viewBoxSize} height={viewBoxSize} fill={backgroundColor} />
+        <path d={modulesPath} fill={foregroundColor} data-slot="qr-branded-modules" />
+        <g data-slot="qr-finder-eyes">
+          {geometry.finderEyes.map((eye) => {
+            const ox = eye.x + marginSize;
+            const oy = eye.y + marginSize;
+            return (
+              <g key={`${eye.x}:${eye.y}`}>
+                {/* Dual-ring rounded finder eye preserving canonical 1:1:3:1:1 scan ratio */}
+                <rect
+                  x={ox + 0.5}
+                  y={oy + 0.5}
+                  width={6}
+                  height={6}
+                  rx={1.85}
+                  fill="none"
+                  stroke={foregroundColor}
+                  strokeWidth={1}
+                />
+                <rect x={ox + 2} y={oy + 2} width={3} height={3} rx={0.95} fill={foregroundColor} />
+              </g>
+            );
+          })}
+        </g>
+        {geometry.centerMark ? (
+          <g data-slot="qr-center-mark">
+            <rect
+              x={geometry.centerMark.start + marginSize - 0.15}
+              y={geometry.centerMark.start + marginSize - 0.15}
+              width={geometry.centerMark.span + 0.3}
+              height={geometry.centerMark.span + 0.3}
+              rx={1.25}
+              fill={backgroundColor}
+            />
+            <rect
+              x={geometry.centerMark.start + marginSize + 0.35}
+              y={geometry.centerMark.start + marginSize + 0.35}
+              width={geometry.centerMark.span - 0.7}
+              height={geometry.centerMark.span - 0.7}
+              rx={0.95}
+              fill={foregroundColor}
+              fillOpacity={0.08}
+              stroke={foregroundColor}
+              strokeOpacity={0.22}
+              strokeWidth={0.24}
+            />
+            {/* Minimal geometric spark emblem centered inside the high-ECC aperture */}
+            {(() => {
+              const cx = geometry.centerMark.start + marginSize + geometry.centerMark.span / 2;
+              const cy = cx;
+              const arm = geometry.centerMark.span * 0.27;
+              const waist = arm * 0.36;
+              const spark = `M${cx} ${cy - arm}L${cx + waist} ${cy - waist}L${cx + arm} ${cy}L${cx + waist} ${cy + waist}L${cx} ${cy + arm}L${cx - waist} ${cy + waist}L${cx - arm} ${cy}L${cx - waist} ${cy - waist}Z`;
+              return <path d={spark} fill={foregroundColor} />;
+            })()}
+          </g>
+        ) : null}
+      </svg>
+    );
+  }
 
   return (
     <svg
@@ -71,6 +302,7 @@ export const QRCodeSvg = memo(function QRCodeSvg({
       shapeRendering="crispEdges"
       role={title ? "img" : undefined}
       aria-label={title}
+      data-qr-variant="classic"
       className={className}
     >
       {title ? <title>{title}</title> : null}

@@ -1,0 +1,115 @@
+/* ==========================================================================
+   Stage 3P · Cross-Device Pairing & Guest Collaboration Motion Stylesheet
+   Dedicated stylesheet imported directly by pairing/guest components so
+   apps/web/src/index.css stays completely untouched (0 cross-lane conflicts).
+   Zero hot-path backdrop-filter: blur() rules.
+   ========================================================================== */
+
+/* --------------------------------------------------------------------------
+   C133: Branded QR Plate, Radial Expiry Ring & Emerald Paired Bloom
+   -------------------------------------------------------------------------- */
+
+@keyframes pairing-qr-plate-enter {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 6px, 0) scale(0.975);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+}
+
+@keyframes pairing-emerald-bloom-ring {
+  0% {
+    opacity: 0.72;
+    transform: scale(0.68);
+  }
+  65% {
+    opacity: 0.28;
+    transform: scale(1.24);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(1.42);
+  }
+}
+
+@keyframes pairing-emerald-badge-pop {
+  0% {
+    opacity: 0;
+    transform: scale(0.74);
+  }
+  60% {
+    opacity: 1;
+    transform: scale(1.06);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes pairing-check-draw {
+  from {
+    stroke-dashoffset: 24;
+  }
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+@keyframes pairing-client-row-enter {
+  from {
+    opacity: 0;
+    transform: translate3d(0, -8px, 0) scale(0.99);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  [data-slot="pairing-qr-stage"] {
+    animation: pairing-qr-plate-enter var(--duration-spring-snappy, 340ms)
+      var(--spring-snappy, cubic-bezier(0.23, 1, 0.32, 1)) both;
+  }
+
+  [data-slot="pairing-expiry-ring-arc"] {
+    transition:
+      stroke-dashoffset 480ms cubic-bezier(0.23, 1, 0.32, 1),
+      stroke 280ms ease-out;
+  }
+
+  [data-slot="pairing-emerald-bloom-ring"] {
+    animation: pairing-emerald-bloom-ring 920ms cubic-bezier(0.22, 1, 0.36, 1) forwards;
+  }
+
+  [data-slot="pairing-emerald-bloom-badge"] {
+    animation: pairing-emerald-badge-pop 420ms
+      var(--spring-bouncy, cubic-bezier(0.22, 1.24, 0.36, 1)) both;
+  }
+
+  [data-slot="pairing-emerald-check-path"] {
+    stroke-dasharray: 24;
+    stroke-dashoffset: 24;
+    animation: pairing-check-draw 340ms cubic-bezier(0.23, 1, 0.32, 1) 120ms forwards;
+  }
+
+  [data-slot="pairing-client-row"][data-newly-paired="true"] {
+    animation: pairing-client-row-enter var(--duration-spring-fluid, 420ms)
+      var(--spring-fluid, cubic-bezier(0.23, 1, 0.32, 1)) both;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-slot="pairing-expiry-ring-arc"] {
+    transition: none;
+  }
+
+  [data-slot="pairing-emerald-check-path"] {
+    stroke-dasharray: none;
+    stroke-dashoffset: 0;
+  }
+}

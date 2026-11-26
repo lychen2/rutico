@@ -5,7 +5,7 @@ import { SessionPermissions } from "./SessionPermissions";
 import { useSearch } from "@tanstack/react-router";
 import { ChevronRightIcon, EllipsisIcon } from "lucide-react";
 import { useAtom, useAtomValue } from "@effect/atom-react";
-import { type ReactNode, useState } from "react";
+import { type ReactNode, useEffect, useState } from "react";
 import { T, useGT, useMessages, Var } from "gt-react";
 import {
   AuthAccessReadScope,
@@ -492,6 +492,64 @@ function ConnectionsSettingsContent({
       ),
     );
   })();
+  // Track freshly-paired clients arriving after initial snapshot load so the QR area can bloom emerald.
+  const [pairedBloomState, setPairedBloomState] = useState<{
+    readonly initialized: boolean;
+    readonly knownSessionIds: ReadonlySet<string>;
+    readonly newlyPairedSessionIds: ReadonlySet<string>;
+    readonly recentPairedSession: ServerClientSessionRecord | null;
+  }>(() => ({
+    initialized: false,
+    knownSessionIds: new Set(),
+    newlyPairedSessionIds: new Set(),
+    recentPairedSession: null,
+  }));
+  if (authAccessChanges.data?.type === "snapshot") {
+    if (!pairedBloomState.initialized) {
+      setPairedBloomState({
+        initialized: true,
+        knownSessionIds: new Set(desktopClientSessions.map((session) => session.sessionId)),
+        newlyPairedSessionIds: new Set(),
+        recentPairedSession: null,
+      });
+    } else {
+      const arrived = desktopClientSessions.filter(
+        (session) => !pairedBloomState.knownSessionIds.has(session.sessionId),
+      );
+      if (arrived.length > 0) {
+        const nextKnown = new Set(pairedBloomState.knownSessionIds);
+        const nextNewlyPaired = new Set(pairedBloomState.newlyPairedSessionIds);
+        let newestNonCurrent: ServerClientSessionRecord | null =
+          pairedBloomState.recentPairedSession;
+        for (const session of arrived) {
+          nextKnown.add(session.sessionId);
+          if (!session.current) {
+            nextNewlyPaired.add(session.sessionId);
+            newestNonCurrent = session;
+          }
+        }
+        setPairedBloomState({
+          initialized: true,
+          knownSessionIds: nextKnown,
+          newlyPairedSessionIds: nextNewlyPaired,
+          recentPairedSession: newestNonCurrent,
+        });
+      }
+    }
+  }
+  const recentPairedSessionId = pairedBloomState.recentPairedSession?.sessionId ?? null;
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- clears the transient emerald paired bloom after its reveal completes
+  useEffect(() => {
+    if (recentPairedSessionId === null) return;
+    const timer = window.setTimeout(() => {
+      setPairedBloomState((current) =>
+        current.recentPairedSession?.sessionId === recentPairedSessionId
+          ? { ...current, newlyPairedSessionIds: new Set(), recentPairedSession: null }
+          : current,
+      );
+    }, 4500);
+    return () => window.clearTimeout(timer);
+  }, [recentPairedSessionId]);
   const isLocalBackendNetworkAccessible = desktopBridge
     ? desktopServerExposureState?.mode === "network-accessible"
     : isServerNetworkAccessible({
@@ -1188,6 +1246,8 @@ function ConnectionsSettingsContent({
       createdPairingCredentials={createdPairingCredentials}
       sharedPairingLinkId={newestPairingLinkId}
       clientSessions={clientSessions}
+      recentPairedSession={pairedBloomState.recentPairedSession}
+      newlyPairedSessionIds={pairedBloomState.newlyPairedSessionIds}
       revokingPairingLinkId={revokingDesktopPairingLinkId}
       revokingClientSessionId={revokingDesktopClientSessionId}
       onRevokePairingLink={handleRevokeDesktopPairingLink}
@@ -1453,8 +1513,13 @@ function ConnectionsSettingsContent({
               id="authorized-clients"
               title={gt("Authorized clients")}
               collapsedContent={
-                canReadAccess && newestPairingLink
-                  ? renderPairingClientsList([newestPairingLink], [])
+                canReadAccess && (newestPairingLink || pairedBloomState.recentPairedSession)
+                  ? renderPairingClientsList(
+                      newestPairingLink ? [newestPairingLink] : [],
+                      pairedBloomState.recentPairedSession
+                        ? [pairedBloomState.recentPairedSession]
+                        : [],
+                    )
                   : undefined
               }
               summary={summarizeAuthorizedClients(
