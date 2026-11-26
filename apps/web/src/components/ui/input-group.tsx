@@ -75,7 +75,7 @@ const inputGroupAddonVariants = cva(
         "inline-end":
           "has-[>:last-child[data-slot=badge]]:-me-1.5 has-[>button]:-me-2 order-last pe-[calc(--spacing(3)-1px)] has-[>kbd:last-child]:me-[-0.35rem] [[data-size=sm]+&]:pe-[calc(--spacing(2.5)-1px)]",
         "inline-start":
-          "has-[>:last-child[data-slot=badge]]:-ms-1.5 has-[>button]:-ms-2 order-first ps-[calc(--spacing(3)-1px)] has-[>kbd:last-child]:ms-[-0.35rem] [[data-size=sm]+&]:ps-[calc(--spacing(2.5)-1px)]",
+          "has-[>:last-child[data-slot=badge]]:-ms-1.5 has-[>button]:-ms-2 order-first ps-[calc(--spacing(3)-1px)] has-[>kbd:last-child]:ms-[-0.35rem] [[data-size=sm]+&]:ps-[calc(--spacing(2.5)-1px)] not-has-[button]:text-muted-foreground not-has-[button]:transition-colors not-has-[button]:duration-150 not-has-[button]:ease-out not-has-[button]:**:[svg]:transition-[color,opacity] not-has-[button]:**:[svg]:duration-150 not-has-[button]:**:[svg]:ease-out motion-reduce:transition-none motion-reduce:**:[svg]:transition-none not-has-[button]:in-[[data-slot=input-group]:has(input:focus-visible,textarea:focus-visible)]:text-foreground not-has-[button]:in-[[data-slot=input-group]:has(input:focus-visible,textarea:focus-visible)]:**:[svg:not([class*='opacity-'])]:opacity-100",
       },
     },
   },
