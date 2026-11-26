@@ -40,6 +40,7 @@ export function FileExplorerPane({
     minWidth,
     maxWidth,
     edge: "left",
+    magneticSnap: true,
   });
 
   return (

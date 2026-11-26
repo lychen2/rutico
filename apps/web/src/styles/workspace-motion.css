@@ -185,3 +185,44 @@
     transition: none;
   }
 }
+
+/* --------------------------------------------------------------------------
+   D19 / C061: Magnetic Split Dividers & Cursor-Tracked Optical Ratio HUD
+   -------------------------------------------------------------------------- */
+
+.resize-divider-handle[data-resizing="true"] .resize-divider-rail {
+  background-color: color-mix(in oklch, var(--primary) 70%, transparent);
+}
+
+.resize-divider-handle[data-snapped="true"] .resize-divider-rail {
+  width: 2px;
+  background-color: var(--primary);
+}
+
+.resize-divider-handle[data-snapped="true"] .resize-divider-pill {
+  opacity: 1;
+  background-color: var(--primary);
+  transform: translate(-50%, -50%) scaleY(1.45);
+}
+
+.resize-ratio-hud {
+  transition:
+    opacity var(--duration-micro) ease-out,
+    border-color var(--duration-micro) ease-out,
+    color var(--duration-micro) ease-out;
+}
+
+.resize-ratio-hud[data-visible="true"] {
+  opacity: 1;
+}
+
+.resize-ratio-hud[data-snapped="true"] {
+  border-color: color-mix(in oklch, var(--primary) 65%, var(--border));
+  color: var(--primary);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .resize-ratio-hud {
+    transition: none;
+  }
+}

@@ -79,27 +79,29 @@ function PreviewPanelShellFrame(
   const returnedFocus = useRef(false);
   const focusOrigin = useRef<HTMLElement | null>(null);
   const lastBlurred = useRef<EventTarget | null>(null);
-  const { width, handlers, observeRow } = props.inlineSize;
-  // Width animates only for an open or close. Any other width change disables
-  // the transition in the same commit that changes the width, so the browser
-  // never starts one; the next open or close re-enables it in its own commit,
-  // so nothing waits for a paint.
+  const { width, resetVersion, handlers, observeRow } = props.inlineSize;
+  // Width animates for open/close or a double-click spring reset. Any other width
+  // change disables the transition in the same commit that changes the width, so
+  // drags stay 1:1 with the pointer without lag.
   const [widthTransition, setWidthTransition] = useState(() => ({
     open,
     width,
     maximized,
+    resetVersion,
     enabled: true,
   }));
   if (
     widthTransition.open !== open ||
     widthTransition.width !== width ||
-    widthTransition.maximized !== maximized
+    widthTransition.maximized !== maximized ||
+    widthTransition.resetVersion !== resetVersion
   ) {
     setWidthTransition({
       open,
       width,
       maximized,
-      enabled: widthTransition.open !== open,
+      resetVersion,
+      enabled: widthTransition.open !== open || widthTransition.resetVersion !== resetVersion,
     });
   }
   const suppressWidthTransition = collapsible && !widthTransition.enabled;

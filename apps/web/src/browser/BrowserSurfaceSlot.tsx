@@ -3,6 +3,20 @@ import { useLayoutEffect, useRef } from "react";
 import { acquireBrowserSurface } from "./browserSurfaceStore";
 import { observeResize } from "../lib/observeResize";
 
+const geometrySyncListeners = new Set<(durationMs: number) => void>();
+
+/**
+ * Coordinates `<webview>` / `BrowserSurfaceSlot` geometry commits across animated
+ * layout transitions (double-click reset, maximize/restore, device morph, PiP throw)
+ * so guest hit-testing and visual bounds stay locked on every frame (`P1-1`).
+ */
+export function pulseBrowserSurfaceGeometrySync(durationMs = 280): void {
+  const safeDuration = Math.max(32, Math.min(1200, Math.round(durationMs)));
+  for (const listener of geometrySyncListeners) {
+    listener(safeDuration);
+  }
+}
+
 export function BrowserSurfaceSlot(props: {
   readonly tabId: string;
   readonly visible: boolean;
@@ -27,6 +41,9 @@ export function BrowserSurfaceSlot(props: {
   // The lease lives as long as this element for one tab, so the ref callback owns it.
   const attachSurface = (element: HTMLDivElement) => {
     let lease = acquireBrowserSurface(tabId, fitSourceContent);
+    let syncFrameId: number | null = null;
+    let syncUntil = 0;
+
     const update = () => {
       const rect = element.getBoundingClientRect();
       const presentation = presentationRef.current;
@@ -57,8 +74,37 @@ export function BrowserSurfaceSlot(props: {
         );
       }
     };
+
+    const tickSync = () => {
+      syncFrameId = null;
+      update();
+      if (performance.now() < syncUntil) {
+        syncFrameId = window.requestAnimationFrame(tickSync);
+      }
+    };
+
+    const startSyncWindow = (durationMs: number) => {
+      const nextUntil = performance.now() + durationMs;
+      if (nextUntil > syncUntil) syncUntil = nextUntil;
+      if (syncFrameId === null) {
+        syncFrameId = window.requestAnimationFrame(tickSync);
+      }
+    };
+
+    const onTransitionRun = () => startSyncWindow(340);
+    const onTransitionDone = () => {
+      syncUntil = 0;
+      if (syncFrameId !== null) {
+        window.cancelAnimationFrame(syncFrameId);
+        syncFrameId = null;
+      }
+      update();
+    };
+
     updateRef.current = update;
     update();
+    geometrySyncListeners.add(startSyncWindow);
+
     const observed: Element[] = [element];
     // Inline shells animate without resizing the slot, so observe the shell too.
     const panel = element.closest('[data-preview-panel-mode="inline"]');
@@ -68,10 +114,24 @@ export function BrowserSurfaceSlot(props: {
     const stopObserving = observeResize(observed, update);
     window.addEventListener("resize", update);
     window.addEventListener("scroll", update, true);
+    element.addEventListener("transitionrun", onTransitionRun);
+    element.addEventListener("transitionend", onTransitionDone);
+    element.addEventListener("transitioncancel", onTransitionDone);
+    panel?.addEventListener("transitionrun", onTransitionRun);
+    panel?.addEventListener("transitionend", onTransitionDone);
+    panel?.addEventListener("transitioncancel", onTransitionDone);
     return () => {
+      geometrySyncListeners.delete(startSyncWindow);
+      if (syncFrameId !== null) window.cancelAnimationFrame(syncFrameId);
       stopObserving();
       window.removeEventListener("resize", update);
       window.removeEventListener("scroll", update, true);
+      element.removeEventListener("transitionrun", onTransitionRun);
+      element.removeEventListener("transitionend", onTransitionDone);
+      element.removeEventListener("transitioncancel", onTransitionDone);
+      panel?.removeEventListener("transitionrun", onTransitionRun);
+      panel?.removeEventListener("transitionend", onTransitionDone);
+      panel?.removeEventListener("transitioncancel", onTransitionDone);
       if (updateRef.current === update) updateRef.current = null;
       lease.release();
     };
