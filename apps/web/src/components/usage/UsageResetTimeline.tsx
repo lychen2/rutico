@@ -2,6 +2,7 @@ import { useId, useState } from "react";
 import { limitPoolId, type LimitPool } from "@t3tools/shared/usageLimits";
 import { readUiLocale } from "~/i18n";
 import { useUiText } from "~/i18n/useUiText";
+import { observeVisibleAnimation } from "~/lib/visibleAnimation";
 import { limitPoolTitles } from "./limitPoolTitle";
 import {
   quotaForecast,
@@ -109,6 +110,22 @@ export function UsageResetTimeline({
 
   const activeId = active ?? highlighted;
   const selected = lanes.find((lane) => limitPoolId(lane.pool) === activeId);
+  const nearestResetAt = lanes.reduce<number | null>((soonest, lane) => {
+    const firstAt = lane.events[0]?.at;
+    if (firstAt === undefined) return soonest;
+    return soonest === null || firstAt < soonest ? firstAt : soonest;
+  }, null);
+  const nextResetCountdown = (() => {
+    if (nearestResetAt === null) return null;
+    const remainingMs = Math.max(0, nearestResetAt - now);
+    const totalMinutes = Math.max(1, Math.round(remainingMs / 60_000));
+    const daysLeft = Math.floor(totalMinutes / (24 * 60));
+    const hoursLeft = Math.floor((totalMinutes % (24 * 60)) / 60);
+    const minutesLeft = totalMinutes % 60;
+    if (daysLeft > 0) return `${daysLeft}d ${hoursLeft}h`;
+    if (hoursLeft > 0) return `${hoursLeft}h ${minutesLeft}m`;
+    return `${minutesLeft}m`;
+  })();
 
   if (v9) {
     const L = left;
@@ -124,6 +141,11 @@ export function UsageResetTimeline({
         <div data-lv9="card-title">
           <span>{text("Resets this week")}</span>
           <span data-lv9="sub">{text("Dots show resets. Stripes show time without quota.")}</span>
+          {nextResetCountdown !== null ? (
+            <span data-lv9="badge ac num" className="ml-auto">
+              {text("Next reset in {duration}", { duration: nextResetCountdown })}
+            </span>
+          ) : null}
         </div>
         <div data-lv9="gantt-readout" role="status" data-usage-readout>
           {selected ? (
@@ -146,6 +168,7 @@ export function UsageResetTimeline({
           )}
         </div>
         <svg
+          ref={observeVisibleAnimation}
           data-lv9="gantt-svg"
           viewBox={`0 0 1040 ${height}`}
           role="img"
@@ -214,6 +237,15 @@ export function UsageResetTimeline({
             strokeWidth="1.5"
             strokeDasharray="3 3"
           />
+          <circle
+            data-timeline-now-beacon
+            cx={nowX}
+            cy={lanes.length * rowH + 36}
+            r={5}
+            fill="var(--ac)"
+            fillOpacity={0.28}
+          />
+          <circle cx={nowX} cy={lanes.length * rowH + 36} r={2.5} fill="var(--ac)" />
           <rect x={nowX - 16} y={22} width={32} height={15} rx={7} fill="var(--ac)" />
           <text
             x={nowX}
@@ -449,6 +481,7 @@ export function UsageResetTimeline({
           )}
         </div>
         <svg
+          ref={observeVisibleAnimation}
           viewBox={`0 0 1080 ${height}`}
           role="img"
           aria-label={text("Quota resets over the next seven days")}
@@ -506,13 +539,23 @@ export function UsageResetTimeline({
             stroke="var(--primary)"
             strokeWidth={1.5}
           />
-          <text x={x(now) + 6} y={32} fill="var(--primary)">
+          <circle
+            data-timeline-now-beacon
+            cx={x(now)}
+            cy={28}
+            r={5.5}
+            fill="var(--primary)"
+            fillOpacity={0.25}
+          />
+          <circle cx={x(now)} cy={28} r={2.75} fill="var(--primary)" />
+          <text x={x(now) + 8} y={32} fill="var(--primary)">
             {text("Now")}{" "}
             {new Date(now).toLocaleTimeString(readUiLocale(), {
               hour: "2-digit",
               minute: "2-digit",
               hourCycle: "h23",
             })}
+            {nextResetCountdown !== null ? ` · ${nextResetCountdown}` : ""}
           </text>
           {lanes.map((lane, i) => {
             const laneId = limitPoolId(lane.pool);

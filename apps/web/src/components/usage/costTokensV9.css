@@ -863,19 +863,51 @@
   padding-right: 4px;
 }
 
+[data-ctv9-root] [data-ctv9="hm-axis-lbl"][data-active-axis="true"],
+[data-ctv9-root] [data-ctv9="hm-lbl"][data-active-axis="true"] {
+  color: var(--fg);
+  font-weight: 650;
+}
+
 [data-ctv9-root] [data-ctv9="hm-dot"] {
   width: 100%;
   aspect-ratio: 1;
   max-width: 13px;
   margin: 0 auto;
   border-radius: 50%;
-  transition: transform calc(180ms * var(--motion-scale)) var(--spring);
+  transition:
+    transform calc(180ms * var(--motion-scale)) var(--spring),
+    opacity calc(150ms * var(--motion-scale)) ease-out,
+    box-shadow calc(150ms * var(--motion-scale)) ease-out;
   cursor: pointer;
 }
 
-[data-ctv9-root] [data-ctv9="hm-dot"]:hover {
+[data-ctv9-root] [data-ctv9="hm-grid"][data-scrubbing="true"] [data-ctv9="hm-dot"] {
+  opacity: 0.45;
+}
+
+[data-ctv9-root]
+  [data-ctv9="hm-grid"][data-scrubbing="true"]
+  [data-ctv9="hm-dot"][data-crosshair="true"] {
+  opacity: 0.88;
+  transform: scale(1.08);
+}
+
+[data-ctv9-root] [data-ctv9="hm-dot"]:hover,
+[data-ctv9-root] [data-ctv9="hm-dot"][data-active="true"] {
+  opacity: 1 !important;
   transform: scale(1.45);
   z-index: 3;
+  box-shadow:
+    0 0 0 1.5px var(--surface),
+    0 0 0 3px var(--ac);
+}
+
+[data-ctv9-root] [data-ctv9="hm-dot"]:focus-visible {
+  outline: none;
+  box-shadow:
+    0 0 0 1.5px var(--surface),
+    0 0 0 3px var(--ac);
 }
 
 [data-ctv9-root] [data-ctv9="hm-dot"][data-hm-state="missing"] {

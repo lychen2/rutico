@@ -251,6 +251,10 @@ export function UsageActivityHeatmap({
   const text = useUiText();
   const [view, setView] = useState("grid");
   const [hovered, setHovered] = useState<{ label: string; value: number } | null>(null);
+  const heatGridRef = useRef<HTMLDivElement>(null);
+  const heatReadoutRef = useRef<HTMLSpanElement>(null);
+  const heatActiveNodesRef = useRef<HTMLElement[]>([]);
+  const heatLastKeyRef = useRef<string | null>(null);
   const merged = mergeUsageEnvironments(
     scopeUsageEnvironments(usage.selectedEnvironments, hiddenProviders, selectedProvider ?? null),
   );
@@ -302,24 +306,128 @@ export function UsageActivityHeatmap({
     value: grid.reduce((sum, row) => sum + (row[hour] ?? 0), 0),
   }));
   const format = metric === "cost" ? formatUsd : formatTokens;
+  const defaultFootText = pending ? copy("Loading….") : heatSummary(grid, weekdayOf);
+  const openCellInSheet = (row: number, hour: number) => {
+    const day = days[row];
+    const value = grid[row]?.[hour] ?? 0;
+    if (day !== undefined) {
+      setView("grid");
+      setHovered({ label: `${day} ${String(hour).padStart(2, "0")}:00`, value });
+    }
+    setOpen(true);
+  };
+  // Single-delegation zero-setState scrubbing: toggle data attributes and readout directly on DOM refs.
+  const clearInlineHeatDom = () => {
+    const gridEl = heatGridRef.current;
+    if (gridEl) delete gridEl.dataset.scrubbing;
+    for (const node of heatActiveNodesRef.current) {
+      delete node.dataset.active;
+      delete node.dataset.crosshair;
+      delete node.dataset.activeRow;
+    }
+    heatActiveNodesRef.current = [];
+    heatLastKeyRef.current = null;
+    if (heatReadoutRef.current) {
+      heatReadoutRef.current.textContent = defaultFootText;
+    }
+  };
+  const syncInlineHeatDom = (cell: HTMLElement | null) => {
+    if (cell === null) {
+      if (heatLastKeyRef.current !== null) clearInlineHeatDom();
+      return;
+    }
+    const row = cell.dataset.row;
+    const hour = cell.dataset.hour;
+    if (row === undefined || hour === undefined) return;
+    const nextKey = `${row}:${hour}`;
+    if (heatLastKeyRef.current === nextKey) return;
+    clearInlineHeatDom();
+    const gridEl = heatGridRef.current;
+    if (!gridEl) return;
+    gridEl.dataset.scrubbing = "true";
+    const touched: HTMLElement[] = [cell];
+    cell.dataset.active = "true";
+    const rowEl = cell.parentElement;
+    if (rowEl) {
+      rowEl.dataset.activeRow = "true";
+      touched.push(rowEl);
+    }
+    const crosshairNodes = gridEl.querySelectorAll<HTMLElement>(
+      `[data-row="${row}"],[data-hour="${hour}"]`,
+    );
+    for (const node of crosshairNodes) {
+      if (node === cell) continue;
+      node.dataset.crosshair = "true";
+      touched.push(node);
+    }
+    heatActiveNodesRef.current = touched;
+    heatLastKeyRef.current = nextKey;
+    if (heatReadoutRef.current) {
+      heatReadoutRef.current.textContent = cell.dataset.readout ?? defaultFootText;
+    }
+  };
+  const openDelegatedCell = (target: EventTarget | null) => {
+    const cell = (target as HTMLElement | null)?.closest<HTMLElement>("[data-row]");
+    if (!cell) return;
+    const row = Number(cell.dataset.row);
+    const hour = Number(cell.dataset.hour);
+    if (Number.isInteger(row) && Number.isInteger(hour)) {
+      openCellInSheet(row, hour);
+    }
+  };
   const heatGrid = (
     <div
+      ref={heatGridRef}
       className="usage-heat-grid"
       role="img"
       aria-label={copy("Hourly usage over the last 7 days")}
+      onPointerOver={(event) => {
+        const cell = (event.target as HTMLElement | null)?.closest<HTMLElement>("[data-row]");
+        if (cell) syncInlineHeatDom(cell);
+      }}
+      onPointerLeave={() => syncInlineHeatDom(null)}
+      onFocus={(event) => {
+        const cell = (event.target as HTMLElement | null)?.closest<HTMLElement>("[data-row]");
+        if (cell) syncInlineHeatDom(cell);
+      }}
+      onBlur={(event) => {
+        if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
+          syncInlineHeatDom(null);
+        }
+      }}
+      onClick={(event) => openDelegatedCell(event.target)}
+      onKeyDown={(event) => {
+        if (event.key !== "Enter" && event.key !== " ") return;
+        const cell = (event.target as HTMLElement | null)?.closest<HTMLElement>("[data-row]");
+        if (!cell) return;
+        event.preventDefault();
+        openDelegatedCell(cell);
+      }}
     >
-      {grid.map((cells, row) => (
-        <div className="usage-heat-row" key={days[row]}>
-          <span>{copy(WEEKDAYS[weekdayOf[row] ?? 0] ?? "")}</span>
-          {HOURS.map((hour) => (
-            <i
-              key={hour}
-              data-level={level(cells[hour] ?? 0)}
-              style={{ animationDelay: `${(row * 24 + hour) * 7}ms` }}
-            />
-          ))}
-        </div>
-      ))}
+      {grid.map((cells, row) => {
+        const dayText = copy(WEEKDAYS[weekdayOf[row] ?? 0] ?? "");
+        return (
+          <div className="usage-heat-row" key={days[row]}>
+            <span>{dayText}</span>
+            {HOURS.map((hour) => {
+              const value = cells[hour] ?? 0;
+              const label = `${dayText} ${String(hour).padStart(2, "0")}:00 · ${format(value)}`;
+              return (
+                <i
+                  key={hour}
+                  tabIndex={0}
+                  data-level={level(value)}
+                  data-row={row}
+                  data-hour={hour}
+                  data-readout={label}
+                  aria-label={label}
+                  style={{ animationDelay: `${(row * 24 + hour) * 7}ms` }}
+                />
+              );
+            })}
+          </div>
+        );
+      })}
     </div>
   );
   return (
@@ -336,7 +444,9 @@ export function UsageActivityHeatmap({
         </div>
         {heatGrid}
         <div className="usage-heat-foot">
-          <span>{pending ? copy("Loading….") : heatSummary(grid, weekdayOf)}</span>
+          <span ref={heatReadoutRef} className="tabular-nums" role="status">
+            {defaultFootText}
+          </span>
           <span className="usage-heat-legend" aria-hidden>
             {copy("Less")}
             {[0, 1, 2, 3, 4, 5].map((value) => (
@@ -1022,7 +1132,11 @@ function V9ActivityHeatmapCard({
   const [sheetOpen, setSheetOpen] = useState(false);
   const [sheetView, setSheetView] = useState("grid");
   const [sheetHovered, setSheetHovered] = useState<{ label: string; value: number } | null>(null);
-  const [dotReadout, setDotReadout] = useState<string | null>(null);
+  const hmGridRef = useRef<HTMLDivElement>(null);
+  const hmReadoutRef = useRef<HTMLSpanElement>(null);
+  const hmActiveNodesRef = useRef<HTMLElement[]>([]);
+  const hmActiveHourAxisRef = useRef<HTMLElement | null>(null);
+  const hmLastKeyRef = useRef<string | null>(null);
 
   const scoped = scopeUsageEnvironments(
     usage.selectedEnvironments,
@@ -1137,6 +1251,82 @@ function V9ActivityHeatmapCard({
   const sheetLevel = (value: number) =>
     value <= 0 || peak <= 0 || value / peak < 0.03 ? 0 : Math.max(1, Math.ceil((value / peak) * 5));
 
+  // Single-delegation zero-setState scrubbing for V9 7x24 dot matrix.
+  const clearV9HeatDom = () => {
+    const gridEl = hmGridRef.current;
+    if (gridEl) delete gridEl.dataset.scrubbing;
+    for (const node of hmActiveNodesRef.current) {
+      delete node.dataset.active;
+      delete node.dataset.crosshair;
+      delete node.dataset.activeAxis;
+    }
+    hmActiveNodesRef.current = [];
+    if (hmActiveHourAxisRef.current) {
+      hmActiveHourAxisRef.current.textContent =
+        hmActiveHourAxisRef.current.dataset.defaultLabel ?? "";
+      hmActiveHourAxisRef.current = null;
+    }
+    hmLastKeyRef.current = null;
+    if (hmReadoutRef.current) {
+      hmReadoutRef.current.textContent = defaultReadout;
+    }
+  };
+  const syncV9HeatDom = (dot: HTMLElement | null) => {
+    if (dot === null) {
+      if (hmLastKeyRef.current !== null) clearV9HeatDom();
+      return;
+    }
+    const row = dot.dataset.row;
+    const hour = dot.dataset.hour;
+    if (row === undefined || hour === undefined) return;
+    const nextKey = `${row}:${hour}`;
+    if (hmLastKeyRef.current === nextKey) return;
+    clearV9HeatDom();
+    const gridEl = hmGridRef.current;
+    if (!gridEl) return;
+    gridEl.dataset.scrubbing = "true";
+    const touched: HTMLElement[] = [dot];
+    dot.dataset.active = "true";
+    const crosshairNodes = gridEl.querySelectorAll<HTMLElement>(
+      `[data-ctv9="hm-dot"][data-row="${row}"],[data-ctv9="hm-dot"][data-hour="${hour}"]`,
+    );
+    for (const node of crosshairNodes) {
+      if (node === dot) continue;
+      node.dataset.crosshair = "true";
+      touched.push(node);
+    }
+    const rowAxis = gridEl.querySelector<HTMLElement>(`[data-axis-row="${row}"]`);
+    if (rowAxis) {
+      rowAxis.dataset.activeAxis = "true";
+      touched.push(rowAxis);
+    }
+    const hourAxis = gridEl.querySelector<HTMLElement>(`[data-axis-hour="${hour}"]`);
+    if (hourAxis) {
+      hourAxis.dataset.activeAxis = "true";
+      hourAxis.textContent = hour;
+      hmActiveHourAxisRef.current = hourAxis;
+      touched.push(hourAxis);
+    }
+    hmActiveNodesRef.current = touched;
+    hmLastKeyRef.current = nextKey;
+    if (hmReadoutRef.current) {
+      hmReadoutRef.current.textContent = dot.dataset.readout ?? defaultReadout;
+    }
+  };
+  const openDelegatedV9Cell = (target: EventTarget | null) => {
+    const dot = (target as HTMLElement | null)?.closest<HTMLElement>('[data-ctv9="hm-dot"]');
+    if (!dot) return;
+    const row = Number(dot.dataset.row);
+    const hour = Number(dot.dataset.hour);
+    const day = days[row];
+    if (!Number.isInteger(row) || !Number.isInteger(hour) || day === undefined) return;
+    const val = grid[row]?.[hour] ?? 0;
+    const hrText = `${String(hour).padStart(2, "0")}:00`;
+    setSheetView("grid");
+    setSheetHovered({ label: `${day} ${hrText}`, value: val });
+    setSheetOpen(true);
+  };
+
   return (
     <>
       <section data-ctv9="card" data-layout="col-between" data-usage-card>
@@ -1146,30 +1336,69 @@ function V9ActivityHeatmapCard({
               {metric === "cost" ? text("7×24 cost activity") : text("7×24 token activity")}
             </span>
             <span data-ctv9="spacer" />
-            <span data-ctv9="card-sub" data-ctv9-num>
-              {dotReadout ?? defaultReadout}
+            <span ref={hmReadoutRef} data-ctv9="card-sub" data-ctv9-num>
+              {defaultReadout}
             </span>
             <button type="button" data-ctv9="hm-expand-btn" onClick={() => setSheetOpen(true)}>
               {copy("Expand")}
             </button>
           </div>
           <div
+            ref={hmGridRef}
             data-ctv9="hm-grid"
             role="img"
             aria-label={copy("Hourly usage over the last 7 days")}
-            onMouseLeave={() => setDotReadout(null)}
+            onPointerOver={(event) => {
+              const dot = (event.target as HTMLElement | null)?.closest<HTMLElement>(
+                '[data-ctv9="hm-dot"]',
+              );
+              if (dot) syncV9HeatDom(dot);
+            }}
+            onPointerLeave={() => syncV9HeatDom(null)}
+            onFocus={(event) => {
+              const dot = (event.target as HTMLElement | null)?.closest<HTMLElement>(
+                '[data-ctv9="hm-dot"]',
+              );
+              if (dot) syncV9HeatDom(dot);
+            }}
+            onBlur={(event) => {
+              if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
+                syncV9HeatDom(null);
+              }
+            }}
+            onClick={(event) => openDelegatedV9Cell(event.target)}
+            onKeyDown={(event) => {
+              if (event.key !== "Enter" && event.key !== " ") return;
+              const dot = (event.target as HTMLElement | null)?.closest<HTMLElement>(
+                '[data-ctv9="hm-dot"]',
+              );
+              if (!dot) return;
+              event.preventDefault();
+              openDelegatedV9Cell(dot);
+            }}
           >
             <div />
-            {HOURS.map((hour) => (
-              <div key={hour} data-ctv9="hm-axis-lbl" data-ctv9-num>
-                {hour % 4 === 0 ? hour : ""}
-              </div>
-            ))}
+            {HOURS.map((hour) => {
+              const defaultLabel = hour % 4 === 0 ? String(hour) : "";
+              return (
+                <div
+                  key={hour}
+                  data-ctv9="hm-axis-lbl"
+                  data-axis-hour={hour}
+                  data-default-label={defaultLabel}
+                  data-ctv9-num
+                >
+                  {defaultLabel}
+                </div>
+              );
+            })}
             {days.map((day, row) => {
               const dLabel = weekdayLabel(row);
               return (
                 <Fragment key={day}>
-                  <div data-ctv9="hm-lbl">{dLabel}</div>
+                  <div data-ctv9="hm-lbl" data-axis-row={row}>
+                    {dLabel}
+                  </div>
                   {HOURS.map((hour) => {
                     const hrText = `${String(hour).padStart(2, "0")}:00`;
                     const covered = coveredSlots.has(`${day}#${hour}`);
@@ -1182,9 +1411,13 @@ function V9ActivityHeatmapCard({
                       return (
                         <div
                           key={hour}
+                          tabIndex={0}
                           data-ctv9="hm-dot"
                           data-hm-state="missing"
-                          onMouseEnter={() => setDotReadout(info)}
+                          data-row={row}
+                          data-hour={hour}
+                          data-readout={info}
+                          aria-label={info}
                         />
                       );
                     }
@@ -1196,9 +1429,13 @@ function V9ActivityHeatmapCard({
                       return (
                         <div
                           key={hour}
+                          tabIndex={0}
                           data-ctv9="hm-dot"
                           data-hm-state="zero"
-                          onMouseEnter={() => setDotReadout(info)}
+                          data-row={row}
+                          data-hour={hour}
+                          data-readout={info}
+                          aria-label={info}
                         />
                       );
                     }
@@ -1230,10 +1467,14 @@ function V9ActivityHeatmapCard({
                     return (
                       <div
                         key={hour}
+                        tabIndex={0}
                         data-ctv9="hm-dot"
                         data-lv={lv}
                         data-hm-state="active"
-                        onMouseEnter={() => setDotReadout(info)}
+                        data-row={row}
+                        data-hour={hour}
+                        data-readout={info}
+                        aria-label={info}
                       />
                     );
                   })}
