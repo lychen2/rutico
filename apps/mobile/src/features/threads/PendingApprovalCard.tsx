@@ -4,6 +4,7 @@ import type {
   ProviderApprovalOption,
   RuntimeRequestId,
 } from "@t3tools/contracts";
+import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
 import {
   type ApprovalTextPart,
   approvalTextParts,
@@ -27,6 +28,7 @@ import Animated, {
   withSpring,
 } from "react-native-reanimated";
 
+import { AppActivityIndicator } from "../../components/ui/AppActivityIndicator";
 import { SymbolView } from "../../components/ui/AppSymbol";
 import { AppText as Text } from "../../components/ui/AppText";
 import { ThreadDisclosureChevron } from "../../components/ui/ThreadDisclosureChevron";
@@ -38,7 +40,6 @@ const COLLAPSE_DRAG_DISTANCE = 44;
 const COLLAPSE_VELOCITY_THRESHOLD = 520;
 const EXPAND_DRAG_DISTANCE = 28;
 const EXPAND_VELOCITY_THRESHOLD = 420;
-const DECISION_STAMP_DWELL_MS = 320;
 
 const CARD_LAYOUT_TRANSITION = LinearTransition.springify()
   .damping(26)
@@ -47,6 +48,57 @@ const CARD_LAYOUT_TRANSITION = LinearTransition.springify()
   .reduceMotion(ReduceMotion.System);
 const STAMP_ENTERING = FadeIn.duration(160).reduceMotion(ReduceMotion.System);
 const STAMP_EXITING = FadeOut.duration(120).reduceMotion(ReduceMotion.System);
+
+type ApprovalSubmissionPhase = "in_flight" | "confirmed" | "failed";
+
+interface ApprovalSubmissionState {
+  readonly requestId: RuntimeRequestId;
+  readonly decision: ProviderApprovalDecision;
+  readonly phase: ApprovalSubmissionPhase;
+  readonly errorMessage?: string | undefined;
+}
+
+type SettledDecisionKind = "approved" | "declined" | "cancelled";
+
+function settledDecisionKind(decision: ProviderApprovalDecision): SettledDecisionKind {
+  if (decision === "decline") return "declined";
+  if (decision === "cancel") return "cancelled";
+  return "approved";
+}
+
+function parseApprovalResponseFailure(result: unknown): {
+  readonly failed: boolean;
+  readonly errorMessage?: string | undefined;
+} {
+  if (result === false) {
+    return { failed: true };
+  }
+  if (result instanceof Error) {
+    return { failed: true, errorMessage: result.message || undefined };
+  }
+  if (typeof result === "object" && result !== null && "_tag" in result) {
+    const tagged = result as { readonly _tag?: unknown; readonly error?: unknown };
+    if (tagged._tag === "Failure") {
+      if ("cause" in result) {
+        try {
+          const squashed = squashAtomCommandFailure(
+            result as unknown as Parameters<typeof squashAtomCommandFailure>[0],
+          );
+          if (squashed instanceof Error && squashed.message) {
+            return { failed: true, errorMessage: squashed.message };
+          }
+        } catch {
+          // Lightweight failure objects without a full Effect Cause still count as failures.
+        }
+      }
+      if (tagged.error instanceof Error && tagged.error.message) {
+        return { failed: true, errorMessage: tagged.error.message };
+      }
+      return { failed: true };
+    }
+  }
+  return { failed: false };
+}
 
 export interface PendingApprovalCardProps {
   readonly canOperateThread: boolean;
@@ -72,13 +124,16 @@ export function PendingApprovalCard(props: PendingApprovalCardProps) {
   const warning = options.find((option) => option.warning)?.warning;
   const canRespond = props.approval.responseCapability === "live";
   const isResponding = props.respondingApprovalId === props.approval.requestId;
-  const [pendingDecision, setPendingDecision] = useState<ProviderApprovalDecision | null>(null);
-  const [decisionDwellActive, setDecisionDwellActive] = useState(false);
-  const dwellTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [submission, setSubmission] = useState<ApprovalSubmissionState | null>(null);
+  const mountedRef = useRef(true);
+  const attemptSeqRef = useRef(0);
   const [collapsed, setCollapsed] = useState(false);
   const [explanationOpen, setExplanationOpen] = useState(false);
-  const activeDecision = isResponding || decisionDwellActive ? pendingDecision : null;
-  const disabled = !canRespond || isResponding || decisionDwellActive;
+  const currentSubmission = submission?.requestId === props.approval.requestId ? submission : null;
+  const isInFlight = isResponding || currentSubmission?.phase === "in_flight";
+  const isConfirmed = !isInFlight && currentSubmission?.phase === "confirmed";
+  const isFailed = !isInFlight && currentSubmission?.phase === "failed";
+  const disabled = !canRespond || isInFlight || isConfirmed;
   // T3 Code's own question reads as the app asking: a plain sentence, then what it names.
   const { pushHooks } = props.approval;
   const detail =
@@ -87,15 +142,13 @@ export function PendingApprovalCard(props: PendingApprovalCardProps) {
     ? m(PUSH_HOOKS_APPROVAL_QUESTION)
     : (props.approval.appName ?? props.approval.requestKind);
 
-  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- clears the decision-lock dwell timer on unmount
-  useEffect(
-    () => () => {
-      if (dwellTimerRef.current !== null) {
-        clearTimeout(dwellTimerRef.current);
-      }
-    },
-    [],
-  );
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- tracks mounted state so settled approval responses do not update an unmounted card
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
 
   const dragOffsetY = useSharedValue(0);
 
@@ -172,17 +225,51 @@ export function PendingApprovalCard(props: PendingApprovalCardProps) {
   });
 
   const handleDecision = (decision: ProviderApprovalDecision) => {
-    setPendingDecision(decision);
-    setDecisionDwellActive(true);
-    if (dwellTimerRef.current !== null) {
-      clearTimeout(dwellTimerRef.current);
+    if (disabled || !props.canOperateThread) return;
+    const requestId = props.approval.requestId;
+    const attemptSeq = attemptSeqRef.current + 1;
+    attemptSeqRef.current = attemptSeq;
+    setSubmission({ requestId, decision, phase: "in_flight" });
+    triggerSemanticHaptic("contextClick");
+
+    let responsePromise: Promise<unknown>;
+    try {
+      responsePromise = Promise.resolve(props.onRespond(requestId, decision));
+    } catch (error) {
+      responsePromise = Promise.reject(error);
     }
-    dwellTimerRef.current = setTimeout(() => {
-      dwellTimerRef.current = null;
-      setDecisionDwellActive(false);
-    }, DECISION_STAMP_DWELL_MS);
-    triggerSemanticHaptic(decision === "decline" ? "reject" : "confirm");
-    void props.onRespond(props.approval.requestId, decision);
+
+    void responsePromise.then(
+      (result) => {
+        if (!mountedRef.current || attemptSeqRef.current !== attemptSeq) return;
+        const failure = parseApprovalResponseFailure(result);
+        if (failure.failed) {
+          setSubmission({
+            requestId,
+            decision,
+            phase: "failed",
+            errorMessage: failure.errorMessage,
+          });
+          triggerSemanticHaptic("reject");
+          return;
+        }
+        setSubmission({ requestId, decision, phase: "confirmed" });
+        const kind = settledDecisionKind(decision);
+        triggerSemanticHaptic(
+          kind === "approved" ? "confirm" : kind === "declined" ? "reject" : "toggleOff",
+        );
+      },
+      (error: unknown) => {
+        if (!mountedRef.current || attemptSeqRef.current !== attemptSeq) return;
+        setSubmission({
+          requestId,
+          decision,
+          phase: "failed",
+          errorMessage: error instanceof Error && error.message ? error.message : undefined,
+        });
+        triggerSemanticHaptic("reject");
+      },
+    );
   };
 
   if (collapsed) {
@@ -226,7 +313,32 @@ export function PendingApprovalCard(props: PendingApprovalCardProps) {
     );
   }
 
-  const decisionDeclined = activeDecision === "decline";
+  const confirmedDecision = isConfirmed ? (currentSubmission?.decision ?? null) : null;
+  const confirmedKind = confirmedDecision !== null ? settledDecisionKind(confirmedDecision) : null;
+  const inFlightDecision = isInFlight ? (currentSubmission?.decision ?? null) : null;
+  const submittingLabel =
+    inFlightDecision === "cancel"
+      ? gt("Cancelling request…")
+      : inFlightDecision === "decline"
+        ? gt("Submitting decline…")
+        : inFlightDecision !== null
+          ? gt("Submitting approval…")
+          : gt("Submitting response…");
+  const confirmedLabel =
+    confirmedKind === "declined"
+      ? gt("Declined")
+      : confirmedKind === "cancelled"
+        ? gt("Cancelled")
+        : confirmedDecision === "acceptForSession"
+          ? gt("Approved for session")
+          : confirmedDecision === "acceptAlways"
+            ? gt("Approved always")
+            : gt("Approved");
+  const failedLabel = currentSubmission?.errorMessage
+    ? gt("Couldn't submit response: {reason} Try again.", {
+        reason: currentSubmission.errorMessage,
+      })
+    : gt("Couldn't submit response. Try again.");
 
   return (
     <Animated.View
@@ -344,43 +456,111 @@ export function PendingApprovalCard(props: PendingApprovalCardProps) {
       {warning ? (
         <Text className="font-sans text-xs leading-normal text-warning-foreground">{warning}</Text>
       ) : null}
-      {activeDecision !== null ? (
+      {confirmedKind !== null ? (
         <Animated.View
           entering={STAMP_ENTERING}
           exiting={STAMP_EXITING}
+          testID="approval-status-banner"
+          accessible
+          accessibilityRole="text"
           accessibilityLiveRegion="polite"
-          className="min-h-12 flex-row items-center justify-center gap-2 rounded-2xl border px-4 py-3"
-          style={{
-            backgroundColor: decisionDeclined
-              ? "rgba(239, 68, 68, 0.14)"
-              : "rgba(16, 185, 129, 0.14)",
-            borderColor: decisionDeclined ? "rgba(239, 68, 68, 0.32)" : "rgba(16, 185, 129, 0.32)",
-          }}
+          accessibilityLabel={confirmedLabel}
+          accessibilityState={{ busy: false }}
+          className={
+            confirmedKind === "cancelled"
+              ? "min-h-12 flex-row items-center justify-center gap-2 rounded-2xl border border-border bg-subtle px-4 py-3"
+              : "min-h-12 flex-row items-center justify-center gap-2 rounded-2xl border px-4 py-3"
+          }
+          style={
+            confirmedKind === "declined"
+              ? {
+                  backgroundColor: "rgba(239, 68, 68, 0.14)",
+                  borderColor: "rgba(239, 68, 68, 0.32)",
+                }
+              : confirmedKind === "approved"
+                ? {
+                    backgroundColor: "rgba(16, 185, 129, 0.14)",
+                    borderColor: "rgba(16, 185, 129, 0.32)",
+                  }
+                : undefined
+          }
         >
           <SymbolView
-            name={decisionDeclined ? "xmark.circle.fill" : "checkmark.circle.fill"}
+            name={
+              confirmedKind === "declined"
+                ? "xmark.circle.fill"
+                : confirmedKind === "cancelled"
+                  ? "slash.circle"
+                  : "checkmark.circle.fill"
+            }
             size={16}
             tintColorClassName={
-              decisionDeclined ? "accent-danger-foreground" : "accent-adaptive-emerald-600-400"
+              confirmedKind === "declined"
+                ? "accent-danger-foreground"
+                : confirmedKind === "cancelled"
+                  ? "accent-foreground-muted"
+                  : "accent-adaptive-emerald-600-400"
             }
             type="monochrome"
           />
           <Text
             className={
-              decisionDeclined
+              confirmedKind === "declined"
                 ? "font-t3-bold text-sm text-danger-foreground"
-                : "font-t3-bold text-sm text-adaptive-emerald-700-300"
+                : confirmedKind === "cancelled"
+                  ? "font-t3-bold text-sm text-foreground-secondary"
+                  : "font-t3-bold text-sm text-adaptive-emerald-700-300"
             }
           >
-            {decisionDeclined
-              ? gt("Declined")
-              : activeDecision === "acceptForSession"
-                ? gt("Approved for session")
-                : gt("Approved")}
+            {confirmedLabel}
           </Text>
         </Animated.View>
       ) : (
         <View className="gap-2">
+          {isInFlight ? (
+            <Animated.View
+              entering={STAMP_ENTERING}
+              exiting={STAMP_EXITING}
+              testID="approval-status-banner"
+              accessible
+              accessibilityRole="progressbar"
+              accessibilityLiveRegion="polite"
+              accessibilityLabel={submittingLabel}
+              accessibilityState={{ busy: true }}
+              className="min-h-11 flex-row items-center justify-center gap-2 rounded-2xl border border-border bg-subtle px-4 py-2.5"
+            >
+              <AppActivityIndicator size="small" colorClassName="accent-foreground-muted" />
+              <Text className="font-t3-medium text-sm text-foreground-secondary">
+                {submittingLabel}
+              </Text>
+            </Animated.View>
+          ) : isFailed ? (
+            <Animated.View
+              entering={STAMP_ENTERING}
+              exiting={STAMP_EXITING}
+              testID="approval-status-banner"
+              accessible
+              accessibilityRole="alert"
+              accessibilityLiveRegion="assertive"
+              accessibilityLabel={failedLabel}
+              accessibilityState={{ busy: false }}
+              className="min-h-11 flex-row items-center gap-2 rounded-2xl border px-3.5 py-2.5"
+              style={{
+                backgroundColor: "rgba(239, 68, 68, 0.12)",
+                borderColor: "rgba(239, 68, 68, 0.32)",
+              }}
+            >
+              <SymbolView
+                name="exclamationmark.triangle"
+                size={15}
+                tintColorClassName="accent-danger-foreground"
+                type="monochrome"
+              />
+              <Text className="min-w-0 flex-1 font-t3-medium text-xs leading-normal text-danger-foreground">
+                {failedLabel}
+              </Text>
+            </Animated.View>
+          ) : null}
           {options.map((option) => (
             <Button
               key={option.decision}
@@ -392,7 +572,7 @@ export function PendingApprovalCard(props: PendingApprovalCardProps) {
                     ? "danger"
                     : "secondary"
               }
-              loading={activeDecision === option.decision}
+              loading={inFlightDecision === option.decision}
               disabled={disabled || !props.canOperateThread}
               onPress={() => handleDecision(option.decision)}
               fullWidth
