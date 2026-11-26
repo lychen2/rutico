@@ -38,8 +38,9 @@ function AlertDialogBackdrop({ className, ...props }: AlertDialogPrimitive.Backd
 function AlertDialogViewport({ className, ...props }: AlertDialogPrimitive.Viewport.Props) {
   return (
     <AlertDialogPrimitive.Viewport
+      // Electron drag regions ignore z-index, so without no-drag a click over a header drag strip never reaches the page.
       className={cn(
-        "fixed inset-0 z-50 grid grid-rows-[1fr_auto_1fr] justify-items-center p-4",
+        "fixed inset-0 z-50 grid grid-rows-[1fr_auto_1fr] justify-items-center p-4 [-webkit-app-region:no-drag]",
         className,
       )}
       data-slot="alert-dialog-viewport"
@@ -115,7 +116,8 @@ function AlertDialogFooter({
     <div
       className={cn(
         "flex flex-col-reverse gap-2 px-6 sm:flex-row sm:justify-end sm:rounded-b-[calc(var(--radius-2xl)-1px)]",
-        variant === "default" && "border-t bg-muted/72 py-4",
+        variant === "default" &&
+          "border-t border-border/60 bg-muted/40 py-4 dark:border-foreground/[0.07] dark:bg-foreground/[0.03]",
         variant === "bare" && "pb-6",
         className,
       )}
@@ -128,7 +130,10 @@ function AlertDialogFooter({
 function AlertDialogTitle({ className, ...props }: AlertDialogPrimitive.Title.Props) {
   return (
     <AlertDialogPrimitive.Title
-      className={cn("wrap-anywhere shrink-0 font-semibold text-xl leading-snug", className)}
+      className={cn(
+        "wrap-anywhere shrink-0 text-balance font-semibold text-xl leading-snug tracking-[-0.015em]",
+        className,
+      )}
       data-slot="alert-dialog-title"
       {...props}
     />
@@ -139,7 +144,7 @@ function AlertDialogDescription({ className, ...props }: AlertDialogPrimitive.De
   return (
     <AlertDialogPrimitive.Description
       className={cn(
-        "wrap-anywhere max-h-[min(24rem,60dvh)] min-h-0 overflow-y-auto overscroll-contain text-muted-foreground text-sm select-text",
+        "wrap-anywhere max-h-[min(24rem,60dvh)] min-h-0 overflow-y-auto overscroll-contain text-pretty text-muted-foreground text-sm leading-relaxed select-text",
         className,
       )}
       data-slot="alert-dialog-description"
