@@ -256,7 +256,10 @@ import {
   sourceControlHostIcon,
 } from "./CommandPaletteAddProject";
 import { useCommandPaletteThreadItems } from "./CommandPaletteThreadItems";
-import { useCommandPaletteThemeItems } from "./CommandPaletteThemeItems";
+import {
+  useCommandPaletteThemeItems,
+  useCommandPaletteThemeLivePreview,
+} from "./CommandPaletteThemeItems";
 import {
   PORT_FORWARD_GROUP_PREFIX,
   useCommandPalettePortForwardItem,
@@ -464,6 +467,7 @@ function OpenCommandPaletteDialog(props: {
   const deferredQuery = useDeferredValue(query);
   const isActionsOnly = deferredQuery.startsWith(">");
   const [highlightedItemValue, setHighlightedItemValue] = useState<string | null>(null);
+  useCommandPaletteThemeLivePreview(highlightedItemValue);
   const resultListRef = useRef<LegendListRef | null>(null);
   // A pushed view drops the typed highlight until the user moves it again.
   const highlightClearedRef = useRef(viewStack.length > 0);

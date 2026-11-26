@@ -1749,6 +1749,19 @@ export function applyThemeColorPreview(
   setThemePreviewAppearance(appearance);
 }
 
+/** Non-destructively previews a built-in, custom, or standard palette without mutating storage. */
+export function previewThemePreference(themeId: string | null, appearance: ThemeAppearance): void {
+  if (themeId === null) {
+    applyThemeColorPreview(getStandardPaintedThemeColors(appearance), appearance);
+    return;
+  }
+  const definition = getThemeDefinition(themeId);
+  if (!definition) return;
+  const matchedColors = getThemeColorsForMode(definition, appearance);
+  const effectiveAppearance = matchedColors ? appearance : definition.appearance;
+  applyThemeColorPreview(matchedColors ?? definition.colors, effectiveAppearance, definition.css);
+}
+
 export function applyThemePalette(theme: ThemePreference, appearance?: ThemeAppearance): void {
   if (typeof document === "undefined") return;
 
