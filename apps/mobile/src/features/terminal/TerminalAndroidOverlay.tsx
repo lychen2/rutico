@@ -14,6 +14,7 @@ import {
   type StickyModifierState,
 } from "./terminalAndroidControls";
 import type { PendingModifier } from "./terminalInput";
+import { normalizeTerminalFontSize } from "./terminalPreferences";
 
 const ZOOM_HUD_DISMISS_MS = 900;
 
@@ -60,7 +61,15 @@ export function useStickyTerminalModifier() {
   };
 }
 
-export function useTerminalZoomHud(onCommitFontSize: (fontSize: number) => void) {
+export interface UseTerminalZoomHudOptions {
+  readonly toPersistedFontSize?: (displayFontSize: number) => number;
+  readonly toDisplayFontSize?: (persistedFontSize: number) => number;
+}
+
+export function useTerminalZoomHud(
+  onCommitFontSize: (fontSize: number) => void,
+  options?: UseTerminalZoomHudOptions,
+) {
   const [hud, setHud] = useState<{
     readonly fontSize: number;
     readonly cols: number;
@@ -78,7 +87,13 @@ export function useTerminalZoomHud(onCommitFontSize: (fontSize: number) => void)
   }, []);
 
   const handleFontSizeZoom = (event: TerminalFontSizeZoomEvent) => {
-    setHud({ fontSize: event.fontSize, cols: event.cols, rows: event.rows });
+    const persistedFontSize = options?.toPersistedFontSize
+      ? options.toPersistedFontSize(event.fontSize)
+      : normalizeTerminalFontSize(event.fontSize);
+    const displayFontSize = options?.toDisplayFontSize
+      ? options.toDisplayFontSize(persistedFontSize)
+      : persistedFontSize;
+    setHud({ fontSize: displayFontSize, cols: event.cols, rows: event.rows });
     if (timerRef.current !== null) {
       clearTimeout(timerRef.current);
     }
@@ -87,7 +102,7 @@ export function useTerminalZoomHud(onCommitFontSize: (fontSize: number) => void)
       setHud(null);
     }, ZOOM_HUD_DISMISS_MS);
     if (event.final) {
-      onCommitFontSize(event.fontSize);
+      onCommitFontSize(persistedFontSize);
     }
   };
 

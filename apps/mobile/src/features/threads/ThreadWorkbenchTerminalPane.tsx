@@ -52,6 +52,10 @@ import {
   type TerminalMenuSession,
 } from "../terminal/terminalMenu";
 import { createTerminalPasteSession } from "../terminal/terminalPaste";
+import {
+  resolveWorkbenchTerminalFontSize,
+  workbenchDisplayToPersistedTerminalFontSize,
+} from "../terminal/terminalPreferences";
 import { getMobileTerminalTheme } from "../terminal/terminalTheme";
 import { cacheTerminalGridSize, getCachedTerminalGridSize } from "../terminal/terminalUiState";
 
@@ -311,7 +315,10 @@ function ThreadWorkbenchTerminalSession(props: {
     consume: consumeModifier,
     clear: clearModifier,
   } = useStickyTerminalModifier();
-  const { hud: zoomHud, handleFontSizeZoom } = useTerminalZoomHud(setTerminalFontSize);
+  const { hud: zoomHud, handleFontSizeZoom } = useTerminalZoomHud(setTerminalFontSize, {
+    toPersistedFontSize: workbenchDisplayToPersistedTerminalFontSize,
+    toDisplayFontSize: resolveWorkbenchTerminalFontSize,
+  });
   const [initialGridSize] = useState(
     () =>
       getCachedTerminalGridSize({
@@ -530,7 +537,7 @@ function ThreadWorkbenchTerminalSession(props: {
         readOnly={!props.canOperate}
         buffer={terminal.version === 0 ? null : terminal.buffer}
         output={terminal.version === 0 ? null : terminal.output}
-        fontSize={Math.max(10, appearance.terminalFontSize - 1)}
+        fontSize={resolveWorkbenchTerminalFontSize(appearance.terminalFontSize)}
         grid={terminal.grid}
         isRunning={isRunning}
         keyboardFocusRequest={props.keyboardFocusNonce}
