@@ -43,3 +43,39 @@ it("keeps the jump button on the right of the composer lane at both widths", asy
   );
   expect(screen.container.querySelector('[data-scroll-to-end-indicator="true"]')).toBeNull();
 });
+
+it("morphs into an expanded live-status capsule while the agent is working and collapses when idle", async () => {
+  await using screen = await render(
+    <div className="fixed inset-0">
+      <div className="chat-composer-lane">
+        <div
+          data-testid="composer"
+          className="mx-auto h-10 w-full max-w-(--chat-content-max-width)"
+        />
+      </div>
+      <ScrollToEndButton bottom={16} summary={null} isWorking onScrollToEnd={() => {}} />
+    </div>,
+  );
+  const button = screen.getByRole("button", { name: /Scroll to end.*Thinking/ });
+  expect(button.element().getAttribute("data-scroll-to-end-expanded")).toBe("true");
+  expect(
+    screen.container.querySelector(
+      '[data-scroll-to-end-indicator="true"][data-scroll-to-end-live="true"]',
+    ),
+  ).not.toBeNull();
+
+  await screen.rerender(
+    <div className="fixed inset-0">
+      <div className="chat-composer-lane">
+        <div
+          data-testid="composer"
+          className="mx-auto h-10 w-full max-w-(--chat-content-max-width)"
+        />
+      </div>
+      <ScrollToEndButton bottom={16} summary={null} isWorking={false} onScrollToEnd={() => {}} />
+    </div>,
+  );
+  const collapsed = screen.getByRole("button", { name: "Scroll to end" });
+  expect(collapsed.element().getAttribute("data-scroll-to-end-expanded")).toBe("false");
+  expect(screen.container.querySelector('[data-scroll-to-end-indicator="true"]')).toBeNull();
+});

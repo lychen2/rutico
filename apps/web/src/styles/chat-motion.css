@@ -1378,3 +1378,51 @@
     animation: none;
   }
 }
+
+/* ==========================================================================
+   D12 / C041: Grid-Morphing ScrollToEnd Unread-Activity Capsule
+   ========================================================================== */
+
+[data-scroll-to-end-label-grid="true"] {
+  grid-template-columns: 0fr;
+  opacity: 0;
+  transition:
+    grid-template-columns 220ms var(--spring-snappy),
+    opacity 150ms ease-out;
+}
+
+[data-scroll-to-end-label-grid="true"][data-expanded="true"] {
+  grid-template-columns: 1fr;
+  opacity: 1;
+}
+
+@keyframes chat-scroll-end-live-dot {
+  0%,
+  100% {
+    opacity: 0.45;
+    transform: scale(0.82);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.15);
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  [data-scroll-to-end-indicator="true"][data-scroll-to-end-live="true"] {
+    animation: chat-scroll-end-live-dot 1.4s ease-in-out infinite;
+    animation-play-state: var(--visible-animation-state, paused);
+    will-change: var(--visible-animation-will-change, auto);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-scroll-to-end-label-grid="true"],
+  [data-scroll-to-end-label-grid="true"][data-expanded="true"] {
+    transition: none;
+  }
+
+  [data-scroll-to-end-indicator="true"][data-scroll-to-end-live="true"] {
+    animation: none;
+  }
+}

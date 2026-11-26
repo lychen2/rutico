@@ -1,6 +1,7 @@
-import { T } from "gt-react";
+import { T, useGT } from "gt-react";
 import { ChevronDownIcon, PaperclipIcon } from "lucide-react";
 
+import { observeVisibleAnimation } from "~/lib/visibleAnimation";
 import { Button } from "../ui/button";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 
@@ -24,12 +25,18 @@ export function WorkspaceFileDropOverlay() {
 export function ScrollToEndButton(props: {
   readonly bottom: number;
   readonly summary: string | null;
+  readonly isWorking?: boolean;
+  readonly liveStatus?: string | null;
   readonly onScrollToEnd: () => void;
 }) {
+  const gt = useGT();
+  const capsuleText =
+    props.summary ?? (props.isWorking ? (props.liveStatus ?? gt("Thinking…")) : null);
+  const expanded = capsuleText !== null;
   const label = (
     <>
       <T>Scroll to end</T>
-      {props.summary === null ? null : ` · ${props.summary}`}
+      {capsuleText === null ? null : ` · ${capsuleText}`}
     </>
   );
   const button = (
@@ -39,22 +46,38 @@ export function ScrollToEndButton(props: {
           render={
             <Button
               data-scroll-to-end="true"
+              data-scroll-to-end-capsule="true"
+              data-scroll-to-end-expanded={expanded ? "true" : "false"}
               onPointerDown={(event) => event.preventDefault()}
               onClick={props.onScrollToEnd}
               className="pointer-events-auto"
-              size="icon-sm-pill"
+              size={expanded ? "sm-pill" : "icon-sm-pill"}
               variant="glass"
             />
           }
         >
-          <ChevronDownIcon aria-hidden className="size-4" />
-          {props.summary !== null ? (
-            <span
-              aria-hidden="true"
-              data-scroll-to-end-indicator="true"
-              className="pointer-events-none absolute -top-0.5 -right-0.5 size-2 rounded-full bg-primary ring-2 ring-background transition-transform duration-150 ease-(--ease-spring-snappy) starting:scale-0 motion-reduce:transition-none"
-            />
-          ) : null}
+          <ChevronDownIcon aria-hidden="true" className="size-4 shrink-0" />
+          <span
+            aria-hidden="true"
+            data-scroll-to-end-label-grid="true"
+            data-expanded={expanded ? "true" : "false"}
+            className="inline-grid items-center"
+          >
+            <span className="inline-flex min-w-0 items-center gap-1.5 overflow-hidden">
+              {expanded ? (
+                <span
+                  ref={props.isWorking ? observeVisibleAnimation : undefined}
+                  aria-hidden="true"
+                  data-scroll-to-end-indicator="true"
+                  data-scroll-to-end-live={props.isWorking ? "true" : "false"}
+                  className="size-1.5 shrink-0 rounded-full bg-primary"
+                />
+              ) : null}
+              <span className="max-w-32 truncate whitespace-nowrap text-xs font-medium leading-none">
+                {capsuleText}
+              </span>
+            </span>
+          </span>
           <span className="sr-only">{label}</span>
         </TooltipTrigger>
         <TooltipPopup side="top">{label}</TooltipPopup>

@@ -3891,6 +3891,7 @@ export default function ChatView(props: ChatViewProps) {
                   <ScrollToEndButton
                     bottom={scrollToEndClearance + 4}
                     summary={scrollToEndSummary}
+                    isWorking={isWorking}
                     onScrollToEnd={() => scrollToEnd(true)}
                   />
                 )}
