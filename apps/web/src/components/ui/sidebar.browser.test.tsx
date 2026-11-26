@@ -181,3 +181,86 @@ it("opens the mobile sheet without a transition while panel animations are off",
   expect(popup).not.toBeNull();
   expect(getComputedStyle(popup!).transitionDuration).toBe("0s");
 });
+
+it("dismisses the mobile sheet when dragged past the threshold and snaps back on short drags", async () => {
+  await page.viewport(390, 844);
+  await using screen = await render(
+    <SidebarProvider>
+      <Sidebar>
+        <span>Draggable sidebar</span>
+      </Sidebar>
+      <SidebarTrigger />
+      <MobileSheetMountedProbe />
+    </SidebarProvider>,
+    { router: false /* no routes involved */ },
+  );
+
+  await userEvent.click(screen.getByRole("button", { name: "Toggle Sidebar" }));
+  const sheetMounted = screen.getByLabelText("Sheet mounted");
+  await expect.element(sheetMounted).toHaveTextContent("true");
+
+  const popup = document.querySelector<HTMLElement>(
+    '[data-mobile="true"][data-sidebar="sidebar"]',
+  )!;
+  const rect = popup.getBoundingClientRect();
+
+  // Short drag (< 35%) snaps back and keeps the sheet open.
+  popup.dispatchEvent(
+    new PointerEvent("pointerdown", {
+      bubbles: true,
+      button: 0,
+      pointerId: 11,
+      clientX: rect.right - 20,
+      clientY: rect.top + 80,
+    }),
+  );
+  popup.dispatchEvent(
+    new PointerEvent("pointermove", {
+      bubbles: true,
+      button: 0,
+      pointerId: 11,
+      clientX: rect.right - 48,
+      clientY: rect.top + 80,
+    }),
+  );
+  popup.dispatchEvent(
+    new PointerEvent("pointerup", {
+      bubbles: true,
+      button: 0,
+      pointerId: 11,
+      clientX: rect.right - 48,
+      clientY: rect.top + 80,
+    }),
+  );
+  await expect.element(sheetMounted).toHaveTextContent("true");
+
+  // Drag past 35% of sheet width dismisses the mobile sidebar cleanly.
+  popup.dispatchEvent(
+    new PointerEvent("pointerdown", {
+      bubbles: true,
+      button: 0,
+      pointerId: 12,
+      clientX: rect.right - 20,
+      clientY: rect.top + 80,
+    }),
+  );
+  popup.dispatchEvent(
+    new PointerEvent("pointermove", {
+      bubbles: true,
+      button: 0,
+      pointerId: 12,
+      clientX: rect.right - 20 - rect.width * 0.55,
+      clientY: rect.top + 80,
+    }),
+  );
+  popup.dispatchEvent(
+    new PointerEvent("pointerup", {
+      bubbles: true,
+      button: 0,
+      pointerId: 12,
+      clientX: rect.right - 20 - rect.width * 0.55,
+      clientY: rect.top + 80,
+    }),
+  );
+  await expect.element(sheetMounted).toHaveTextContent("false");
+});

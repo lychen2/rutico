@@ -335,6 +335,7 @@ function Sidebar({
         >
           {/* Children stay mounted while closed so their window shortcuts, like thread jumps, keep working. */}
           <SheetPopup
+            dragToDismiss
             keepMounted
             {...(panelAnimationsActive ? {} : { transitionDurationMs: 0 })}
             className={cn(
