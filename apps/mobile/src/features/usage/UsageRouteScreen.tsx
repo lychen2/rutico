@@ -33,6 +33,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { SegmentedControl } from "../../components/ui/SegmentedControl";
 import { useReduceMotionEnabled } from "../../lib/appState";
+import { triggerSemanticHaptic } from "../../lib/hapticChoreography";
 import { AppText as Text } from "../../components/ui/AppText";
 import { useWorkspaceSettledContentWidth } from "../layout/workspace-content-width";
 import { cn } from "../../lib/cn";
@@ -116,7 +117,10 @@ function UsageScreen(props: {
     });
   }
   const { view } = selection;
-  const setView = (view: UsageView) => setSelection({ params: props.tabParam, view });
+  const setView = (nextView: UsageView) => {
+    if (nextView !== view) triggerSemanticHaptic("segmentTick");
+    setSelection({ params: props.tabParam, view: nextView });
+  };
   const [measuredWidth, setWidth] = useState(0);
   // A workspace pane knows its width in the render that resizes it; measuring lags a frame.
   const width = useWorkspaceSettledContentWidth() ?? measuredWidth;
@@ -174,6 +178,7 @@ function UsageScreen(props: {
     m,
   );
   const selectWindow = (days: number) => {
+    if (days !== windowDays) triggerSemanticHaptic("segmentTick");
     setWindowSelection({
       days,
       window: makeWindow(days, undefined, days === 1 ? "hour" : "day"),
@@ -466,9 +471,9 @@ function ChartCard(props: {
   readonly fill?: boolean;
 }) {
   const { merged, metric } = props;
+  const gt = useGT();
   const colors = useProviderColors();
   const locale = useLocale();
-  const isZh = locale.toLowerCase().startsWith("zh");
   const hasActivity = props.daily.some((period) => period.totalTokens > 0);
   const [fillHeight, setFillHeight] = useState(0);
   const [selectedDay, setSelectedDay] = useState<string | null>(null);
@@ -479,6 +484,12 @@ function ChartCard(props: {
       ? null
       : (props.daily.find((period) => period.day === activeSelectedDay) ?? null);
   const height = props.fill ? Math.max(fillHeight, props.height) : props.height;
+  const formatPeriodLabel = (period: string) =>
+    props.isPast24Hours
+      ? usageAxisHourLabel(period, locale, props.timeZone)
+      : usageAxisDayLabel(period, locale);
+  const formatValue = (value: number) =>
+    metric === "cost" ? formatUsd(value) : formatTokens(value);
   const chart = hasActivity ? (
     <UsageDailyChart
       days={props.days}
@@ -487,6 +498,8 @@ function ChartCard(props: {
       height={height}
       selectedDay={activeSelectedDay}
       onSelectDay={setSelectedDay}
+      formatPeriodLabel={formatPeriodLabel}
+      formatValue={formatValue}
     />
   ) : (
     <View style={{ height }} className="items-center justify-center">
@@ -510,18 +523,19 @@ function ChartCard(props: {
         </View>
         {activeSelectedDay !== null ? (
           <Pressable
-            onPress={() => setSelectedDay(null)}
+            onPress={() => {
+              triggerSemanticHaptic("toggleOff");
+              setSelectedDay(null);
+            }}
             className="rounded-full bg-subtle px-2.5 py-1"
           >
             <Text className="text-xs font-t3-medium tabular-nums text-foreground">
-              {props.isPast24Hours
-                ? usageAxisHourLabel(activeSelectedDay, locale, props.timeZone)
-                : usageAxisDayLabel(activeSelectedDay, locale)}
+              {formatPeriodLabel(activeSelectedDay)}
               {" · "}
               {selectedTotals
-                ? metric === "cost"
-                  ? formatUsd(selectedTotals.costUsd)
-                  : formatTokens(selectedTotals.totalTokens)
+                ? formatValue(
+                    metric === "cost" ? selectedTotals.costUsd : selectedTotals.totalTokens,
+                  )
                 : metric === "cost"
                   ? formatUsd(0)
                   : "0"}
@@ -529,7 +543,7 @@ function ChartCard(props: {
           </Pressable>
         ) : hasActivity ? (
           <Text className="text-xs text-foreground-tertiary">
-            {isZh ? "点击柱条看明细" : "Tap bar for detail"}
+            {gt("Drag or tap bars to inspect")}
           </Text>
         ) : null}
       </View>
@@ -590,9 +604,14 @@ function UsageSummary(props: { readonly merged: MergedUsage; readonly metric: Us
       <Text className="text-sm text-foreground-muted">
         {metric === "cost" ? gt("Raw token cost") : gt("Processed tokens")}
       </Text>
-      <Text className="text-4xl font-t3-bold tabular-nums text-foreground">
-        {metric === "cost" ? `${formatUsd(merged.costUsd)}*` : formatTokens(merged.totalTokens)}
-      </Text>
+      <Animated.View
+        key={`${metric}:${metric === "cost" ? merged.costUsd : merged.totalTokens}`}
+        entering={FadeIn.duration(160).reduceMotion(ReduceMotion.System)}
+      >
+        <Text className="text-4xl font-t3-bold tabular-nums text-foreground">
+          {metric === "cost" ? `${formatUsd(merged.costUsd)}*` : formatTokens(merged.totalTokens)}
+        </Text>
+      </Animated.View>
       <View className="flex-row flex-wrap items-center gap-1.5">
         {cacheSavingsUsd >= 0.01 ? (
           <View
