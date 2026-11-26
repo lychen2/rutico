@@ -1987,14 +1987,25 @@ code {
 
 :is(.chat-markdown, .composer-tiptap) h1 {
   font-size: 1.25rem;
+  letter-spacing: -0.02em;
 }
 
 :is(.chat-markdown, .composer-tiptap) h2 {
   font-size: 1.125rem;
+  letter-spacing: -0.015em;
 }
 
 :is(.chat-markdown, .composer-tiptap) h3 {
   font-size: 1rem;
+  letter-spacing: -0.01em;
+}
+
+.chat-markdown :is(h1, h2, h3, h4, h5, h6) {
+  text-wrap: balance;
+}
+
+.chat-markdown :is(p, li, blockquote) {
+  text-wrap: pretty;
 }
 
 :is(.chat-markdown, .composer-tiptap) h4,
