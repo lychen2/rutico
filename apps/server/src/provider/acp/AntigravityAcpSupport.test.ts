@@ -85,7 +85,7 @@ describe("Antigravity release gates", () => {
           : undefined,
       );
       // Thin-client editor always identifies itself honestly instead of spoofing another editor.
-      expect(antigravityClientInfo(version).name).toBe("rutico");
+      expect(antigravityClientInfo().name).toBe("rutico");
     },
   );
 });

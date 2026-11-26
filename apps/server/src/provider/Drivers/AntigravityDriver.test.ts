@@ -522,11 +522,11 @@ it.layer(layerTest)("AntigravityDriver", (it) => {
   );
 
   it.effect.skipIf(windowsHost)(
-    "refuses to open a session on a PATH executable older than 1.5",
+    "refuses to open a session on a PATH executable older than 1.5.1 (including 1.5.0)",
     () =>
       Effect.gen(function* () {
         const h = yield* makeHarness();
-        const old = yield* h.makeExecutable("runtime old", { agentVersion: "1.4.5" });
+        const old = yield* h.makeExecutable("runtime old", { agentVersion: "1.5.0" });
         h.controls.selected = { ...old, source: "path", version: null };
         const threadId = ThreadId.make("thread-antigravity-old-runtime");
         const modelSelection = { instanceId: h.instance.instanceId, model: "gemini-test-low" };
@@ -547,7 +547,7 @@ it.layer(layerTest)("AntigravityDriver", (it) => {
             yield* session.ensureThread({ threadId, modelSelection, runtimePolicy });
           }),
         ).pipe(Effect.flip);
-        const message = `Antigravity 1.4.5 does not work with this T3 Code release. Update the Antigravity executable at ${old.executablePath} to >=1.5.12 <2, then retry.`;
+        const message = `Antigravity 1.5.0 does not work with this T3 Code release. Update the Antigravity executable at ${old.executablePath} to >=1.5.12 <2, then retry.`;
         expect(knownProviderFailureMessage(error)).toBe(message);
         expect((yield* h.refresh().pipe(Effect.flip)).detail).toBe(message);
         const methods = (yield* h.readRequests).map((request) => request.method);

@@ -49,8 +49,6 @@ export interface AntigravityAcpRuntimeInput extends Omit<
   /** Serve `fs/read_text_file` from T3 instead of the agent's native reader. */
   readonly clientFileReads?: boolean;
   readonly clientCapabilities?: AcpSessionRuntime.AcpSessionRuntimeOptions["clientCapabilities"];
-  /** The installed version, known before `initialize`; it picks the client name. */
-  readonly runtimeVersion?: string | null;
   /** Conversational sessions only; helpers and probes leave the system prompt untouched. */
   readonly sessionSystemPromptAppend?: string;
   readonly authMethod?: AntigravityAuthMethod;
@@ -98,7 +96,7 @@ export function antigravitySessionMeta(
 }
 
 /** Identify this thin-client editor honestly on ACP initialize; never spoof another editor. */
-export function antigravityClientInfo(_version?: string | null | undefined) {
+export function antigravityClientInfo() {
   return { name: "rutico", title: "Rutico", version: packageJson.version };
 }
 
@@ -116,7 +114,7 @@ export const makeAntigravityAcpRuntime = Effect.fn("makeAntigravityAcpRuntime")(
       authenticateEagerly: true,
       resumeMethod: "resume",
       cancelBehavior: "wait-for-prompt",
-      clientInfo: antigravityClientInfo(input.runtimeVersion),
+      clientInfo: antigravityClientInfo(),
       sessionMeta: (initializeResult) =>
         antigravitySessionMeta(initializeResult, input.sessionSystemPromptAppend),
       clientCapabilities: {
