@@ -76,7 +76,7 @@ export function SidebarFolderDrop(props: { children: ReactNode }) {
         stackedThreadToast({
           type: "error",
           title: gt('Could not add "{name}"', { name: folder.name }),
-          description: response?.message ?? gt("T3 Code could not read the folder's path."),
+          description: response?.message ?? gt("Rutico could not read the folder's path."),
         }),
       );
     }
@@ -125,9 +125,9 @@ export function SidebarFolderDrop(props: { children: ReactNode }) {
       {isActive ? (
         <div
           aria-hidden
-          className="pointer-events-none absolute inset-1.5 z-30 flex flex-col items-center justify-center gap-2 rounded-lg px-4 text-center bg-sidebar/90 text-sm text-sidebar-foreground ring-1 ring-inset ring-primary/70"
+          className="pointer-events-none absolute inset-1.5 z-30 flex flex-col items-center justify-center gap-2 rounded-lg bg-sidebar/85 px-4 text-center text-sm text-sidebar-foreground shadow-sm ring-1 ring-inset ring-primary/60 backdrop-blur-sm transition-[opacity,transform] duration-180 ease-(--ease-spring-gentle) starting:scale-[0.985] starting:opacity-0 motion-reduce:transition-none motion-reduce:starting:scale-100 motion-reduce:starting:opacity-100"
         >
-          <FolderPlusIcon className="size-5 text-sidebar-muted-foreground" />
+          <FolderPlusIcon className="t3-icon-pop size-5 text-primary/80" />
           {bridge === undefined
             ? gt("Dropping folders needs the desktop app")
             : gt("Drop folders to add projects")}
