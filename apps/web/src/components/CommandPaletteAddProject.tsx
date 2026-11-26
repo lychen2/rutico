@@ -63,7 +63,11 @@ export function CommandPaletteSubmitButton(props: {
     >
       <span>{props.label}</span>
       <KbdGroup className="pointer-events-none -me-0.5">
-        <Kbd>{props.shortcutLabel}</Kbd>
+        {props.shortcutLabel.split(" ").map((token) => (
+          <Kbd key={token} reactiveKey={token === "Ctrl" || token === "\u2318" ? "Mod" : token}>
+            {token}
+          </Kbd>
+        ))}
       </KbdGroup>
     </SharedTooltipTrigger>
   );

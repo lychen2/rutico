@@ -133,7 +133,7 @@ function CommandInput({
 function CommandList({ className, ...props }: React.ComponentProps<typeof AutocompleteList>) {
   return (
     <AutocompleteList
-      className={cn("not-empty:scroll-py-2 not-empty:p-2", className)}
+      className={cn("relative not-empty:scroll-py-2 not-empty:p-2", className)}
       data-slot="command-list"
       {...props}
     />
@@ -146,7 +146,7 @@ function CommandListVirtualized({
 }: React.ComponentProps<typeof AutocompleteListVirtualized>) {
   return (
     <AutocompleteListVirtualized
-      className={cn("flex max-h-[inherit] min-h-0 flex-col", className)}
+      className={cn("relative flex max-h-[inherit] min-h-0 flex-col", className)}
       data-slot="command-list"
       {...props}
     />

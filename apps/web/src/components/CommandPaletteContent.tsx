@@ -192,10 +192,10 @@ export function CommandPaletteContent({
         <CommandFooter className="max-sm:flex-col max-sm:items-start">
           <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1.5">
             <KbdGroup>
-              <Kbd>
+              <Kbd reactiveKey="ArrowUp">
                 <ArrowUpIcon />
               </Kbd>
-              <Kbd>
+              <Kbd reactiveKey="ArrowDown">
                 <ArrowDownIcon />
               </Kbd>
               <span>
@@ -204,20 +204,20 @@ export function CommandPaletteContent({
             </KbdGroup>
             {footerActionLabel !== undefined ? (
               <KbdGroup>
-                <Kbd>↵</Kbd>
+                <Kbd reactiveKey="Enter">↵</Kbd>
                 <span>{footerActionLabel}</span>
               </KbdGroup>
             ) : null}
             {showBackHint ? (
               <KbdGroup>
-                <Kbd>⌫</Kbd>
+                <Kbd reactiveKey="Backspace">⌫</Kbd>
                 <span>
                   <T>Back</T>
                 </span>
               </KbdGroup>
             ) : null}
             <KbdGroup>
-              <Kbd>Esc</Kbd>
+              <Kbd reactiveKey="Escape">Esc</Kbd>
               <span>{escapeLabel ?? <T>Close</T>}</span>
             </KbdGroup>
           </div>
