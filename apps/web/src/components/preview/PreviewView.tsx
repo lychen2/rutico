@@ -185,6 +185,7 @@ export function PreviewView({
   const urlInputRef = useRef<HTMLInputElement | null>(null);
   const [find, setFind] = useState<{ tabId: string; requestId: number } | null>(null);
   const [pickActive, setPickActive] = useState(false);
+  const [shutterSequence, setShutterSequence] = useState(0);
   const canSendAnnotation =
     useEnvironmentScope(threadRef.environmentId, AuthOrchestrationOperateScope) &&
     Boolean(onSendAnnotation);
@@ -1019,7 +1020,16 @@ export function PreviewView({
         onStopLoading={handleStopLoading}
         onSubmit={(next) => void handleSubmitUrl(next)}
         onOpenInBrowser={tabId ? handleOpenInBrowser : undefined}
-        onCapture={previewBridge && tabId && !isServerTab ? handleCapture : undefined}
+        onCapture={
+          previewBridge && tabId && !isServerTab
+            ? (record) => {
+                if (!record && recordingRuntimeTabId === null) {
+                  setShutterSequence((sequence) => sequence + 1);
+                }
+                handleCapture(record);
+              }
+            : undefined
+        }
         captureDisabled={!desktopOverlay || isUnreachable}
         recording={recordingRuntimeTabId !== null}
         onPictureInPicture={
@@ -1156,6 +1166,14 @@ export function PreviewView({
         ) : null}
         {snapshot && desktopOverlay ? (
           <ZoomIndicator zoomFactor={desktopOverlay.zoomFactor} />
+        ) : null}
+        {shutterSequence > 0 ? (
+          <div
+            key={shutterSequence}
+            aria-hidden="true"
+            data-slot="preview-shutter-flash"
+            className="preview-shutter-flash pointer-events-none absolute inset-0 z-30"
+          />
         ) : null}
         {runtimeTabId &&
         desktopOverlay &&

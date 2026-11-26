@@ -1,9 +1,14 @@
 import { useEffect, useRef, useState } from "react";
 
+import { AnimatedNumber } from "~/components/ui/animated-number";
 import { cn } from "~/lib/utils";
 
 const HIDE_AFTER_MS = 1500;
 const ZOOM_EPSILON = 0.001;
+
+function formatZoomPercent(value: number): string {
+  return `${Math.round(value)}%`;
+}
 
 interface Props {
   zoomFactor: number;
@@ -32,17 +37,18 @@ export function ZoomIndicator({ zoomFactor }: Props) {
     };
   }, [zoomFactor]);
 
-  const percent = `${Math.round(zoomFactor * 100)}%`;
+  const percentValue = Math.round(zoomFactor * 100);
 
   return (
     <div
       aria-hidden={!visible}
+      data-slot="preview-zoom-indicator"
       className={cn(
-        "pointer-events-none absolute top-3 right-3 z-20 select-none rounded-full border border-border/70 bg-popover/95 px-2.5 py-1 text-xs font-medium text-foreground shadow-md/10 backdrop-blur transition-all duration-200 ease-out",
-        visible ? "opacity-100 translate-y-0" : "opacity-0 -translate-y-1",
+        "surface-optical-chrome surface-elevated-rim pointer-events-none absolute top-3 right-3 z-20 select-none rounded-full px-2.5 py-1 font-mono text-xs font-medium tabular-nums text-foreground transition-[opacity,transform] duration-200 ease-(--spring-snappy) motion-reduce:transition-none",
+        visible ? "translate-y-0 opacity-100" : "-translate-y-1 opacity-0",
       )}
     >
-      {percent}
+      <AnimatedNumber value={percentValue} format={formatZoomPercent} />
     </div>
   );
 }

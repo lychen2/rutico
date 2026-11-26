@@ -3,6 +3,7 @@ import {
   ArrowLeft,
   ArrowRight,
   Camera,
+  Check,
   ExternalLink,
   MousePointerClick,
   PictureInPicture2,
@@ -12,6 +13,8 @@ import {
   type KeyboardEvent,
   type ReactNode,
   type RefObject,
+  useEffect,
+  useRef,
   useState,
 } from "react";
 import { T, useGT } from "gt-react";
@@ -20,6 +23,52 @@ import { Button } from "~/components/ui/button";
 import { InputGroup, InputGroupAddon, InputGroupInput } from "~/components/ui/input-group";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "~/components/ui/tooltip";
 import { cn } from "~/lib/utils";
+import { observeVisibleAnimation } from "~/lib/visibleAnimation";
+
+interface OpticalUrlParts {
+  readonly scheme: string;
+  readonly host: string;
+  readonly tail: string;
+}
+
+function splitOpticalUrl(raw: string): OpticalUrlParts | null {
+  const trimmed = raw.trim();
+  if (trimmed.length === 0) return null;
+  try {
+    const parsed = new URL(trimmed);
+    if (!parsed.host) return null;
+    const scheme = `${parsed.protocol}//`;
+    const host = parsed.host;
+    const path = parsed.pathname === "/" && !parsed.search && !parsed.hash ? "" : parsed.pathname;
+    const tail = `${path}${parsed.search}${parsed.hash}`;
+    return { scheme, host, tail };
+  } catch {
+    return null;
+  }
+}
+
+function formatRecordingDuration(seconds: number): string {
+  const mins = Math.floor(seconds / 60);
+  const secs = seconds % 60;
+  return `${mins}:${secs < 10 ? "0" : ""}${secs}`;
+}
+
+function RecordingElapsedLabel() {
+  const [elapsedSeconds, setElapsedSeconds] = useState(0);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- advances the live recording timer once per second while mounted
+  useEffect(() => {
+    const startedAt = Date.now();
+    const timer = window.setInterval(() => {
+      setElapsedSeconds(Math.max(0, Math.floor((Date.now() - startedAt) / 1000)));
+    }, 1000);
+    return () => window.clearInterval(timer);
+  }, []);
+  return (
+    <span className="font-mono text-2xs font-medium tabular-nums text-destructive">
+      {formatRecordingDuration(elapsedSeconds)}
+    </span>
+  );
+}
 
 interface Props {
   url: string;
@@ -82,6 +131,30 @@ export function PreviewChromeRow({
   const gt = useGT();
   const [draft, setDraft] = useState(url);
   const [inputFocused, setInputFocused] = useState(false);
+  const [captureConfirmed, setCaptureConfirmed] = useState(false);
+  const captureConfirmTimerRef = useRef<number | null>(null);
+  const opticalUrl = !inputFocused ? splitOpticalUrl(url) : null;
+
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- clears the capture checkmark confirmation timer on unmount
+  useEffect(
+    () => () => {
+      if (captureConfirmTimerRef.current !== null) {
+        window.clearTimeout(captureConfirmTimerRef.current);
+      }
+    },
+    [],
+  );
+
+  const triggerCaptureConfirm = () => {
+    setCaptureConfirmed(true);
+    if (captureConfirmTimerRef.current !== null) {
+      window.clearTimeout(captureConfirmTimerRef.current);
+    }
+    captureConfirmTimerRef.current = window.setTimeout(() => {
+      setCaptureConfirmed(false);
+      captureConfirmTimerRef.current = null;
+    }, 900);
+  };
 
   const submit = (event?: FormEvent | KeyboardEvent) => {
     event?.preventDefault();
@@ -162,8 +235,28 @@ export function PreviewChromeRow({
 
         {leadingActions}
 
-        <div className="group/address flex h-7 min-w-0 flex-1 items-center overflow-hidden rounded-lg border border-border/50 bg-muted/35 transition-[border-color,background-color] duration-150 ease-out hover:border-border/80 has-[input:focus-visible]:border-transparent has-[input:focus-visible]:bg-background motion-reduce:transition-none">
-          <InputGroup variant="ghost" className="h-full flex-1">
+        <div
+          className={cn(
+            "group/address relative flex h-7 min-w-0 flex-1 items-center overflow-hidden rounded-lg border border-border/50 bg-muted/35 transition-[border-color,background-color] duration-150 ease-out hover:border-border/80 has-[input:focus-visible]:border-transparent has-[input:focus-visible]:bg-background motion-reduce:transition-none",
+            opticalUrl && "preview-url-overlay-active",
+          )}
+        >
+          <InputGroup variant="ghost" className="relative h-full flex-1">
+            {opticalUrl ? (
+              <span
+                aria-hidden="true"
+                data-slot="preview-url-optical-overlay"
+                className="pointer-events-none absolute inset-y-0 right-7 left-0 flex items-center overflow-hidden px-2.5 text-xs whitespace-nowrap"
+              >
+                <span className="shrink-0 text-muted-foreground/55">{opticalUrl.scheme}</span>
+                <span className="shrink-0 font-medium text-foreground">{opticalUrl.host}</span>
+                {opticalUrl.tail ? (
+                  <span className="min-w-0 truncate text-muted-foreground/70">
+                    {opticalUrl.tail}
+                  </span>
+                ) : null}
+              </span>
+            ) : null}
             <Tooltip disabled={inputFocused || url.trim().length === 0}>
               <TooltipTrigger
                 render={
@@ -263,8 +356,11 @@ export function PreviewChromeRow({
               render={
                 <Button
                   variant={recording ? "secondary" : "ghost"}
-                  size="icon-xs"
-                  onClick={(event) => onCapture(event.shiftKey)}
+                  size={recording ? "xs" : "icon-xs"}
+                  onClick={(event) => {
+                    if (!event.shiftKey && !recording) triggerCaptureConfirm();
+                    onCapture(event.shiftKey);
+                  }}
                   aria-label={recording ? gt("Stop recording") : gt("Capture screenshot")}
                   type="button"
                   className="relative"
@@ -272,10 +368,19 @@ export function PreviewChromeRow({
                 />
               }
             >
-              <Camera className={cn(recording && "text-destructive")} />
               {recording ? (
-                <span className="absolute right-0.5 top-0.5 size-1.5 motion-safe:animate-status-pulse rounded-full bg-destructive" />
-              ) : null}
+                <span className="inline-flex items-center gap-1.5">
+                  <span
+                    ref={observeVisibleAnimation}
+                    className="preview-recording-dot size-1.5 rounded-full bg-destructive"
+                  />
+                  <RecordingElapsedLabel />
+                </span>
+              ) : captureConfirmed ? (
+                <Check className="t3-icon-pop text-success" />
+              ) : (
+                <Camera />
+              )}
             </TooltipTrigger>
             <TooltipPopup>
               {recording ? gt("Stop recording") : gt("Screenshot · Shift-click to record")}

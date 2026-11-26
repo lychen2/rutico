@@ -407,3 +407,57 @@
     animation: none;
   }
 }
+
+/* --------------------------------------------------------------------------
+   D20 / C066: Preview Shutter Flash, Recording Dot & Live Local Server Dot
+   -------------------------------------------------------------------------- */
+
+@keyframes preview-shutter-edge-flash {
+  0% {
+    opacity: 0.9;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
+.preview-shutter-flash {
+  box-shadow:
+    inset 0 0 0 2px rgb(255 255 255 / 0.85),
+    inset 0 0 32px rgb(255 255 255 / 0.42);
+  background-color: rgb(255 255 255 / 0.18);
+  animation: preview-shutter-edge-flash 180ms ease-out forwards;
+}
+
+@keyframes preview-status-breathe {
+  0%,
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.48;
+    transform: scale(0.86);
+  }
+}
+
+.preview-recording-dot,
+.preview-server-live-dot {
+  animation: preview-status-breathe 1.6s ease-in-out infinite;
+  animation-play-state: var(--visible-animation-state, running);
+}
+
+.preview-url-overlay-active input[data-preview-url-input] {
+  color: transparent;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .preview-shutter-flash,
+  .preview-recording-dot,
+  .preview-server-live-dot {
+    animation: none;
+  }
+  .preview-shutter-flash {
+    opacity: 0;
+  }
+}
