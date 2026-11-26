@@ -54,7 +54,7 @@ const buttonVariants = cva(
         "ghost-destructive":
           "[--control-icon-color:currentColor] border-transparent text-muted-foreground data-pressed:bg-accent [:hover,[data-pressed]]:bg-accent [:hover,[data-pressed]]:text-destructive",
         glass:
-          "surface-glass [--control-icon-color:var(--contrast-muted-foreground)] rounded-full border-border/60 text-foreground shadow-md/10 transition-[box-shadow,scale,translate,border-color] duration-180 ease-(--ease-spring-snappy) before:rounded-full hover:-translate-y-0.5 hover:shadow-lg/15 [:hover,[data-pressed]]:border-border motion-reduce:hover:translate-y-0",
+          "surface-glass [--control-icon-color:var(--contrast-muted-foreground)] rounded-full border-border/60 text-foreground inset-shadow-[0_1px_--theme(--color-white/35%)] shadow-md/10 transition-[box-shadow,scale,translate,border-color] duration-180 ease-(--ease-spring-snappy) before:rounded-full dark:inset-shadow-[0_1px_--theme(--color-white/10%)] motion-safe:any-hover:not-active:-translate-y-0.5 any-hover:shadow-lg/15 any-hover:border-border data-pressed:border-border [:active,[data-pressed]]:shadow-xs/10",
         link: "border-transparent underline-offset-4 [:hover,[data-pressed]]:underline",
         "media-close":
           "[--control-icon-color:currentColor] border-transparent bg-black/65 text-white shadow-sm ring-1 ring-white/20 [:hover,[data-pressed]]:bg-black/80 focus-visible:ring-white",
