@@ -13,6 +13,43 @@ export function hasVisibleToastAction(actionProps: unknown): boolean {
   return children != null && children !== false && children !== "";
 }
 
+export function hasAnyToastAction(toast: {
+  readonly actionProps?: unknown;
+  readonly data?:
+    | {
+        readonly additionalActions?: readonly unknown[] | undefined;
+        readonly secondaryActionProps?: unknown;
+      }
+    | undefined;
+}): boolean {
+  return (
+    hasVisibleToastAction(toast.actionProps) ||
+    (toast.data?.additionalActions?.length ?? 0) > 0 ||
+    toast.data?.secondaryActionProps !== undefined
+  );
+}
+
+/**
+ * Tip 016 completion sheen fires exclusively for terminal non-actionable states
+ * (`success` / `error`). Loading pulses and action-awaiting toasts stay calm.
+ */
+export function shouldPlayToastCompletionSheen(params: {
+  readonly type?: string | undefined;
+  readonly hasAction: boolean;
+}): boolean {
+  if (params.hasAction) return false;
+  return params.type === "success" || params.type === "error";
+}
+
+export type ToastStackLayer = 0 | 1 | 2 | 3;
+
+export function resolveToastStackLayer(visibleIndex: number): ToastStackLayer {
+  if (visibleIndex <= 0) return 0;
+  if (visibleIndex === 1) return 1;
+  if (visibleIndex === 2) return 2;
+  return 3;
+}
+
 export function shouldHideCollapsedToastContent(
   visibleToastIndex: number,
   visibleToastCount: number,

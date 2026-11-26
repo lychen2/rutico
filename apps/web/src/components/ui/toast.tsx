@@ -23,14 +23,18 @@ import {
 } from "lucide-react";
 
 import { cn } from "~/lib/utils";
+import { AnimatedHeight } from "~/components/AnimatedHeight";
 import { Button, buttonVariants } from "~/components/ui/button";
 import { Collapsible, CollapsiblePanel, CollapsibleTrigger } from "~/components/ui/collapsible";
 import { useComposerDraftStore } from "~/composerDraftStore";
 import { useCopyToClipboard } from "~/hooks/useCopyToClipboard";
 import {
   buildVisibleToastLayout,
+  hasAnyToastAction,
   hasVisibleToastAction,
+  resolveToastStackLayer,
   shouldHideCollapsedToastContent,
+  shouldPlayToastCompletionSheen,
   shouldRenderThreadScopedToast,
 } from "./toast.logic";
 import { useThreadRouteTarget } from "~/hooks/useThreadRouteTarget";
@@ -404,6 +408,7 @@ function ToastBodyContent({
             <div
               className="[&>svg]:h-lh [&>svg]:w-4 [&_svg]:pointer-events-none [&_svg]:shrink-0"
               data-slot="toast-icon"
+              data-toast-icon-state={typeof toastType === "string" ? toastType : "default"}
             >
               <Icon
                 key={typeof toastType === "string" ? toastType : "icon"}
@@ -626,13 +631,18 @@ function Toasts({ position }: { position: ToastPosition }) {
             visibleIndex,
             visibleToastLayout.items.length,
           );
+          const stackLayer = resolveToastStackLayer(visibleIndex);
+          const showCompletionSheen = shouldPlayToastCompletionSheen({
+            type: toast.type,
+            hasAction: hasAnyToastAction(toast),
+          });
           const bodyDescriptor = deriveToastBodyDescriptor(toast);
           const { stackedActionLayout, inlineContentEndPad } = bodyDescriptor;
 
           return (
             <Toast.Root
               className={cn(
-                "group/toast dropdown-glass absolute z-[calc(9999-var(--toast-index))] w-full overflow-visible select-none rounded-lg text-popover-foreground shadow-xl shadow-black/25 [transition:transform_.5s_cubic-bezier(.22,1,.36,1),opacity_.5s,height_.15s] motion-reduce:[transition:opacity_.15s_ease-out]",
+                "group/toast dropdown-glass absolute z-[calc(9999-var(--toast-index))] w-full overflow-visible select-none rounded-lg text-popover-foreground",
                 "data-[position*=right]:right-0 data-[position*=right]:left-auto",
                 "data-[position*=left]:right-auto data-[position*=left]:left-0",
                 "data-[position*=center]:right-0 data-[position*=center]:left-0",
@@ -644,7 +654,7 @@ function Toasts({ position }: { position: ToastPosition }) {
                 visibleIndex > 0
                   ? "not-data-expanded:[--toast-calc-height:var(--toast-frontmost-height)] data-expanded:[--toast-calc-height:max(var(--toast-frontmost-height,var(--toast-height)),var(--toast-height))]"
                   : "[--toast-calc-height:max(var(--toast-frontmost-height,var(--toast-height)),var(--toast-height))]",
-                "[--toast-gap:--spacing(3)] [--toast-peek:--spacing(3)] [--toast-scale:calc(max(0,1-(var(--toast-index)*.1)))] [--toast-shrink:calc(1-var(--toast-scale))]",
+                "[--toast-gap:--spacing(3)] [--toast-peek:--spacing(2.5)] [--toast-scale:calc(max(0,1-(var(--toast-index)*.05)))] [--toast-shrink:calc(1-var(--toast-scale))]",
                 // Base UI measures with height:auto; --toast-height as min-height would prevent shrinking.
                 visibleIndex > 0
                   ? "not-data-expanded:h-(--toast-calc-height) data-expanded:h-auto"
@@ -672,6 +682,8 @@ function Toasts({ position }: { position: ToastPosition }) {
                 "motion-safe:data-expanded:data-ending-style:data-[swipe-direction=down]:transform-[translateY(calc(var(--toast-swipe-movement-y)+100%+var(--toast-inset)))]",
               )}
               data-position={position}
+              data-slot="toast-root"
+              data-toast-layer={String(stackLayer)}
               key={toast.id}
               style={
                 {
@@ -692,6 +704,15 @@ function Toasts({ position }: { position: ToastPosition }) {
                 dismissAfterVisibleMs={toast.data?.dismissAfterVisibleMs}
                 toastId={toast.id}
               />
+              {showCompletionSheen ? (
+                <div
+                  aria-hidden="true"
+                  className="pointer-events-none absolute inset-0 overflow-hidden rounded-[inherit]"
+                  data-slot="toast-completion-sheen"
+                  data-toast-sheen-type={toast.type}
+                  key={`sheen-${toast.type}`}
+                />
+              ) : null}
               <div className={toastCornerDismissClass}>
                 <button
                   aria-label={gt("Dismiss notification")}
@@ -709,21 +730,36 @@ function Toasts({ position }: { position: ToastPosition }) {
                 className={cn(
                   // overflow-x:clip preserves visible vertical overflow; hidden would force overflow-y:auto
                   // and clip detail panels.
-                  "pointer-events-auto min-h-0 overflow-y-visible pl-3.5 text-sm transition-opacity duration-250 motion-reduce:transition-none [overflow-x:clip] data-expanded:opacity-100",
-                  stackedActionLayout
-                    ? "flex flex-col gap-2 py-2.5 pr-3.5"
-                    : cn("py-3", "flex items-center justify-between gap-1.5", inlineContentEndPad),
+                  "pointer-events-auto min-h-0 overflow-y-visible text-sm transition-opacity duration-250 motion-reduce:transition-none [overflow-x:clip] data-expanded:opacity-100",
                   hideCollapsedContent &&
                     "not-data-expanded:pointer-events-none not-data-expanded:opacity-0",
                 )}
               >
-                <ToastBodyContent
-                  {...bodyDescriptor}
-                  actionProps={toast.actionProps}
-                  toastData={toast.data}
-                  toastDescription={toast.description}
-                  toastType={toast.type}
-                />
+                <AnimatedHeight
+                  contentKey={typeof toast.type === "string" ? toast.type : "default"}
+                  holdHeight={hideCollapsedContent}
+                >
+                  <div
+                    className={cn(
+                      "pl-3.5",
+                      stackedActionLayout
+                        ? "flex flex-col gap-2 py-2.5 pr-3.5"
+                        : cn(
+                            "py-3",
+                            "flex items-center justify-between gap-1.5",
+                            inlineContentEndPad,
+                          ),
+                    )}
+                  >
+                    <ToastBodyContent
+                      {...bodyDescriptor}
+                      actionProps={toast.actionProps}
+                      toastData={toast.data}
+                      toastDescription={toast.description}
+                      toastType={toast.type}
+                    />
+                  </div>
+                </AnimatedHeight>
               </Toast.Content>
             </Toast.Root>
           );
