@@ -2,19 +2,19 @@ import { useAtomValue } from "@effect/atom-react";
 import { workspaceAreaProps } from "../lib/workspaceFocus";
 import { T, useGT } from "gt-react";
 import { MessageSquareDashedIcon, PlusIcon } from "lucide-react";
-import { useRef } from "react";
 
 import { openCommandPalette } from "../commandPaletteBus";
 import { isElectron } from "../env";
 import { useScratchProject } from "../hooks/useScratchProject";
 import { shortcutLabelForCommand } from "../keybindings";
-import { useSpecularPointer } from "../lib/motion/useSpecularPointer";
 import { usePrimaryEnvironmentId } from "../state/environments";
 import { primaryServerKeybindingsAtom } from "../state/server";
+import { T3Wordmark } from "./T3Wordmark";
 import { Button } from "./ui/button";
 import { Empty, EmptyDescription, EmptyHeader, EmptyTitle, EmptyWireframe } from "./ui/empty";
 import { Kbd } from "./ui/kbd";
 import { SidebarInset } from "./ui/sidebar";
+import { SpecularHeroCard } from "./ui/standalone-page";
 import { WorkspacePageHeader } from "./WorkspacePageHeader";
 
 export function NoProjectsHero() {
@@ -25,8 +25,6 @@ export function NoProjectsHero() {
   const scratchTargetEnvironmentId = scratchEnvironmentId(primaryEnvironmentId);
   const keybindings = useAtomValue(primaryServerKeybindingsAtom);
   const commandPaletteShortcut = shortcutLabelForCommand(keybindings, "commandPalette.toggle");
-  const heroCardRef = useRef<HTMLDivElement>(null);
-  useSpecularPointer(heroCardRef);
 
   return (
     <SidebarInset
@@ -39,11 +37,13 @@ export function NoProjectsHero() {
         <div className="relative z-10 flex min-h-0 flex-1 flex-col">
           {isElectron ? <WorkspacePageHeader electron /> : null}
           <Empty size="hero" className="flex-1">
-            <div
-              ref={heroCardRef}
-              className="surface-glass surface-specular-prism w-full max-w-lg rounded-2xl border border-border/50 px-8 py-10 dark:border-white/8"
-            >
+            <SpecularHeroCard maxWidth="lg">
               <EmptyHeader className="max-w-none">
+                <div className="mb-3 inline-flex items-center gap-1.5 rounded-full border border-border/60 bg-background/70 px-2.5 py-1 text-xs font-medium text-muted-foreground dark:border-white/10">
+                  <T3Wordmark animated aria-hidden className="h-3 w-auto text-foreground" />
+                  {/* oxlint-disable-next-line t3code/no-untranslated-copy -- product wordmark */}
+                  <span>Rutico</span>
+                </div>
                 <EmptyWireframe variant="workspace" />
                 <div className="t3-draft-hero-title">
                   <EmptyTitle>
@@ -76,11 +76,13 @@ export function NoProjectsHero() {
                 {commandPaletteShortcut ? (
                   <div className="t3-draft-hero-actions mt-5 flex items-center justify-center gap-1.5 text-xs text-muted-foreground">
                     <span>{gt("Command palette")}</span>
-                    <Kbd variant="outline">{commandPaletteShortcut}</Kbd>
+                    <Kbd reactiveKey="Mod" variant="outline">
+                      {commandPaletteShortcut}
+                    </Kbd>
                   </div>
                 ) : null}
               </EmptyHeader>
-            </div>
+            </SpecularHeroCard>
           </Empty>
         </div>
       </div>

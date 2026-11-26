@@ -1116,3 +1116,37 @@ html[data-palette-dragging="true"] [data-slot="thread-context-drag-ghost"] .drag
     animation: none;
   }
 }
+
+/* ==========================================================================
+   D32 / C107: Unified Specular Kinetic Hero Canvas
+   (NoProjectsHero, 404, Error & DraftStartError)
+   ========================================================================== */
+
+@keyframes hero-card-settle {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 10px, 0) scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+}
+
+[data-slot="standalone-page-card"]:has([data-slot="standalone-page-header"][data-tone="error"]) {
+  border-color: color-mix(in oklch, var(--destructive) 30%, var(--border));
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  [data-slot="specular-hero-card"],
+  [data-slot="standalone-page-card"] {
+    animation: hero-card-settle 340ms var(--spring-spatial) both;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-slot="specular-hero-card"],
+  [data-slot="standalone-page-card"] {
+    animation: none;
+  }
+}
