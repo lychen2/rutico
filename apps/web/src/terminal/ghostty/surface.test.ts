@@ -346,6 +346,27 @@ describe("GhosttyTerminalSurface visibility", () => {
     expect(pasteFromClipboard).toHaveBeenCalledOnce();
   });
 
+  it("emits clipboard feedback on Linux middle-click primary paste and native copy", async () => {
+    vi.stubGlobal("navigator", { platform: "Linux x86_64" });
+    const harness = createHarness();
+    const onClipboardFeedback = vi.fn();
+    const surface = await harness.create({ onClipboardFeedback });
+    Object.assign(surface.input, { select() {} });
+    surface.write("echo linux");
+    surface.selectAll();
+
+    harness.pointer("pointerdown", 5, 4, {}, 1);
+    await Promise.resolve();
+    expect(onClipboardFeedback).toHaveBeenCalledWith("pasted");
+
+    surface.input.dispatchEvent(
+      Object.assign(new Event("copy", { cancelable: true }), {
+        clipboardData: { setData: vi.fn() },
+      }),
+    );
+    expect(onClipboardFeedback).toHaveBeenCalledWith("copied");
+  });
+
   it("coalesces PTY onResize notifications while resizing and deduplicates identical integer cols x rows", async () => {
     const harness = createHarness();
     const onResize = vi.fn();

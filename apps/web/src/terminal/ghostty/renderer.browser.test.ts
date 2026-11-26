@@ -55,7 +55,7 @@ const layout = {
   originY: 4,
 };
 
-describe.each([1.25, 2.2])("renderGhosttySnapshot at a %sx device pixel ratio", (scale) => {
+describe.each([1.25, 1.5, 2.2])("renderGhosttySnapshot at a %sx device pixel ratio", (scale) => {
   it.each([
     ["bar", 0],
     ["block", 1],
@@ -239,5 +239,49 @@ describe.each([1.25, 2.2])("renderGhosttySnapshot at a %sx device pixel ratio", 
     });
     expect(isDarkAt(context, point.filled[0]!, point.filled[1]!)).toBe(true);
     expect(isDarkAt(context, point.empty[0]!, point.empty[1]!)).toBe(false);
+  });
+
+  it("joins adjacent colored cell backgrounds and Powerline separators without sub-pixel seams", () => {
+    const context = scaledContext(scale);
+    const fillColor = { r: 18, g: 24, b: 36 };
+    const filledCell = { ...blank, background: fillColor };
+    const separatorCell = { ...blank, text: "\ue0b0", foreground: fillColor };
+    renderGhosttySnapshot({
+      ...layout,
+      context,
+      snapshot: {
+        cols: 3,
+        rows: 1,
+        foreground: { r: 0, g: 0, b: 0 },
+        background,
+        cursor: { r: 0, g: 0, b: 0 },
+        cursorX: -1,
+        cursorY: -1,
+        cursorVisible: false,
+        cursorBlinking: false,
+        cursorStyle: 1,
+        dirtyRows: new Set([0]),
+        rowData: [
+          {
+            cells: [filledCell, { ...filledCell, selected: true }, separatorCell],
+            text: "",
+            isWrapContinuation: false,
+            wrapsToNext: false,
+          },
+        ],
+      },
+      forceFull: true,
+      cursorOn: false,
+    });
+    const { a, d } = context.getTransform();
+    const rowMidY = Math.floor((layout.originY + layout.metrics.height / 2) * d);
+    const firstStartPx = Math.round(layout.padding * a);
+    const seamEndPx = Math.round((layout.padding + 2 * layout.metrics.width) * a);
+    const { data } = context.getImageData(firstStartPx, rowMidY, seamEndPx - firstStartPx + 1, 1);
+    for (let offset = 0; offset < data.length; offset += 4) {
+      const isWhiteSeam =
+        data[offset] === 255 && data[offset + 1] === 255 && data[offset + 2] === 255;
+      expect(isWhiteSeam).toBe(false);
+    }
   });
 });

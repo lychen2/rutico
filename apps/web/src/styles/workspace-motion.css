@@ -251,8 +251,8 @@
 .tab-audio-eq-bar {
   transform-origin: bottom center;
   animation: tab-audio-eq-pulse 780ms ease-in-out infinite;
-  animation-play-state: var(--visible-animation-state, running);
-  will-change: transform;
+  animation-play-state: var(--visible-animation-state, paused);
+  will-change: var(--visible-animation-will-change, auto);
 }
 
 .tab-audio-eq-bar-1 {
@@ -444,7 +444,7 @@
 .preview-recording-dot,
 .preview-server-live-dot {
   animation: preview-status-breathe 1.6s ease-in-out infinite;
-  animation-play-state: var(--visible-animation-state, running);
+  animation-play-state: var(--visible-animation-state, paused);
 }
 
 .preview-url-overlay-active input[data-preview-url-input] {
@@ -581,7 +581,7 @@
 
 .device-fold-pending {
   animation: device-fold-pending-ring 1100ms ease-in-out infinite;
-  animation-play-state: var(--visible-animation-state, running);
+  animation-play-state: var(--visible-animation-state, paused);
 }
 
 .device-fold-settled {
@@ -770,7 +770,7 @@
 
 .terminal-activity-pulse {
   animation: terminal-activity-breathe 1.3s ease-in-out infinite;
-  animation-play-state: var(--visible-animation-state, running);
+  animation-play-state: var(--visible-animation-state, paused);
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -780,5 +780,98 @@
   }
   .terminal-activity-pulse {
     animation: none;
+  }
+}
+
+/* --------------------------------------------------------------------------
+   D22 / C075: Linux Clipboard Micro-Pulse, Build Hairline & CLI PATH Pill
+   -------------------------------------------------------------------------- */
+
+@keyframes terminal-clipboard-enter {
+  0% {
+    opacity: 0;
+    transform: translate3d(0, 6px, 0) scale(0.94);
+  }
+  100% {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+}
+
+.terminal-clipboard-pulse {
+  animation: terminal-clipboard-enter 160ms var(--spring-snappy) both;
+}
+
+@keyframes terminal-copy-ring {
+  0% {
+    box-shadow: inset 0 0 0 2px color-mix(in oklch, var(--primary) 55%, transparent);
+    opacity: 1;
+  }
+  100% {
+    box-shadow: inset 0 0 0 2px color-mix(in oklch, var(--primary) 0%, transparent);
+    opacity: 0;
+  }
+}
+
+.terminal-copy-flash {
+  animation: terminal-copy-ring 160ms ease-out both;
+}
+
+@keyframes terminal-build-hairline-sweep {
+  0% {
+    transform: translate3d(-45%, 0, 0) scaleX(0.35);
+    opacity: 0.35;
+  }
+  50% {
+    opacity: 0.85;
+  }
+  100% {
+    transform: translate3d(145%, 0, 0) scaleX(0.45);
+    opacity: 0.35;
+  }
+}
+
+.terminal-build-hairline {
+  height: 1.5px;
+  overflow: hidden;
+  background-color: color-mix(in oklch, var(--primary) 16%, transparent);
+}
+
+.terminal-build-hairline::after {
+  content: "";
+  display: block;
+  width: 55%;
+  height: 100%;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    color-mix(in oklch, var(--primary) 75%, transparent),
+    transparent
+  );
+  animation: terminal-build-hairline-sweep 1.35s ease-in-out infinite;
+  animation-play-state: var(--visible-animation-state, paused);
+}
+
+.cli-path-pill-settle {
+  transition:
+    opacity 160ms ease-out,
+    transform 180ms var(--spring-snappy);
+}
+
+@starting-style {
+  .cli-path-pill-settle {
+    opacity: 0;
+    transform: scale(0.94);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .terminal-clipboard-pulse,
+  .terminal-copy-flash,
+  .terminal-build-hairline::after {
+    animation: none;
+  }
+  .cli-path-pill-settle {
+    transition: none;
   }
 }

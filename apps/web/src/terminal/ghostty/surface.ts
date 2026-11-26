@@ -548,6 +548,8 @@ export interface GhosttyTerminalSurfaceOptions {
   ) => void;
   /** Fires when live PTY output appends to this surface (not on initial reset/replay). */
   readonly onOutputActivity?: () => void;
+  /** Fires after a successful terminal copy or paste action (including Linux middle-click primary paste). */
+  readonly onClipboardFeedback?: (kind: "copied" | "pasted") => void;
   /** The host must prevent the default menu; native Paste cannot reach a canvas terminal. */
   readonly onContextMenu?: (event: MouseEvent) => void;
 }
@@ -1076,7 +1078,10 @@ export class GhosttyTerminalSurface {
     this.pasteShortcutToken += 1;
     if (text.length === 0) return;
     const encoded = this.core.encodePaste(text);
-    if (encoded.length > 0) this.options.onData(encoded);
+    if (encoded.length > 0) {
+      this.options.onData(encoded);
+      this.options.onClipboardFeedback?.("pasted");
+    }
   }
 
   // The terminal selection is the only browser-readable PRIMARY-like buffer.
@@ -1287,6 +1292,7 @@ export class GhosttyTerminalSurface {
             void clipboard.writeText(selection).then(
               () => {
                 if (this.disposed || this.copyShortcutToken !== token) return;
+                this.options.onClipboardFeedback?.("copied");
                 if (this.clearSelectionAfterCopy) {
                   this.clearSelectionAfterCopy = false;
                   this.clearSelection();
@@ -1327,6 +1333,7 @@ export class GhosttyTerminalSurface {
             if (text.length === 0) return;
             if (this.pasteShortcutGesture === gesture) gesture.readText = text;
             this.options.onData(this.core.encodePaste(text));
+            this.options.onClipboardFeedback?.("pasted");
           },
           () => {},
         );
@@ -1428,6 +1435,7 @@ export class GhosttyTerminalSurface {
     if (result.claimWriteFallback) {
       // Native copy wrote successfully; invalidate writeText so it cannot overwrite a later copy.
       this.copyShortcutToken += 1;
+      this.options.onClipboardFeedback?.("copied");
       if (this.clearSelectionAfterCopy) {
         this.clearSelectionAfterCopy = false;
         this.clearSelection();
@@ -1449,6 +1457,7 @@ export class GhosttyTerminalSurface {
     // must not double. An empty native paste leaves the read as the only path.
     this.pasteShortcutToken += 1;
     this.options.onData(this.core.encodePaste(data));
+    this.options.onClipboardFeedback?.("pasted");
   };
 
   private readonly onCompositionStart = () => {

@@ -17,6 +17,7 @@ import {
   type TerminalSessionState,
 } from "@t3tools/client-runtime/state/terminal";
 import {
+  CheckIcon,
   CopyIcon,
   MessageSquarePlusIcon,
   Plus,
@@ -560,6 +561,30 @@ function TerminalSessionViewport({
     readonly clipboardText: string;
     readonly selection: TerminalContextSelection;
   } | null>(null);
+  const [clipboardFeedback, setClipboardFeedback] = useState<{
+    readonly kind: "copied" | "pasted";
+    readonly seq: number;
+  } | null>(null);
+  const clipboardFeedbackTimerRef = useRef<number | null>(null);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Clears the terminal clipboard micro-pulse timer on unmount.
+  useEffect(
+    () => () => {
+      if (clipboardFeedbackTimerRef.current !== null) {
+        window.clearTimeout(clipboardFeedbackTimerRef.current);
+      }
+    },
+    [],
+  );
+  const triggerClipboardFeedback = useEffectEvent((kind: "copied" | "pasted") => {
+    setClipboardFeedback((previous) => ({ kind, seq: (previous?.seq ?? 0) + 1 }));
+    if (clipboardFeedbackTimerRef.current !== null) {
+      window.clearTimeout(clipboardFeedbackTimerRef.current);
+    }
+    clipboardFeedbackTimerRef.current = window.setTimeout(() => {
+      setClipboardFeedback(null);
+      clipboardFeedbackTimerRef.current = null;
+    }, 900);
+  });
   const notifyOutputActivity = useEffectEvent(() => {
     onOutputActivity?.();
   });
@@ -785,6 +810,7 @@ function TerminalSessionViewport({
           });
         },
         onOutputActivity: () => notifyOutputActivity(),
+        onClipboardFeedback: (kind) => triggerClipboardFeedback(kind),
         // Surface listeners start before WASM loading finishes and the terminal handler exists.
         onContextMenu: (event) => {
           if (terminalRef.current) void showTerminalContextMenu(event);
@@ -953,6 +979,7 @@ function TerminalSessionViewport({
             ),
             failureMessage: msg("Failed to copy terminal selection to the clipboard."),
           });
+          triggerClipboardFeedback("copied");
         } catch (error) {
           reportIfCurrent(requestId, error, m(msg("Unable to copy terminal selection")));
         }
@@ -1339,7 +1366,9 @@ function TerminalSessionViewport({
                   "Clipboard API is unavailable while copying terminal selection.",
                 ),
                 failureMessage: msg("Failed to copy terminal selection to the clipboard."),
-              }).catch(() => {});
+              })
+                .then(() => triggerClipboardFeedback("copied"))
+                .catch(() => {});
               terminalRef.current?.focus();
             }}
             className="inline-flex cursor-pointer items-center gap-1 rounded-sm px-1.5 py-0.5 text-muted-foreground transition-colors duration-120 hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
@@ -1358,6 +1387,26 @@ function TerminalSessionViewport({
         >
           {linkOpenHint}
         </div>
+      ) : null}
+      {visible && clipboardFeedback ? (
+        <>
+          {clipboardFeedback.kind === "copied" ? (
+            <div
+              key={`flash-${clipboardFeedback.seq}`}
+              aria-hidden="true"
+              className="terminal-copy-flash pointer-events-none absolute inset-0 z-10"
+            />
+          ) : null}
+          <div
+            key={`badge-${clipboardFeedback.seq}`}
+            role="status"
+            aria-live="polite"
+            className="terminal-clipboard-pulse surface-optical-chrome surface-elevated-rim pointer-events-none absolute right-2.5 bottom-2.5 z-20 inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-2xs font-medium text-foreground"
+          >
+            <CheckIcon className="size-3 text-success" />
+            <span>{clipboardFeedback.kind === "copied" ? gt("Copied") : gt("Pasted")}</span>
+          </div>
+        </>
       ) : null}
     </div>
   );
@@ -2391,6 +2440,13 @@ export default function ThreadTerminalDrawer({
       style={isPanel ? undefined : { height: `${drawerHeight}px` }}
     >
       {resizeHandle}
+      {visible && streamingTerminalIds.has(resolvedActiveTerminalId) ? (
+        <div
+          ref={observeVisibleAnimation}
+          aria-hidden="true"
+          className="terminal-build-hairline pointer-events-none absolute inset-x-0 top-0 z-20"
+        />
+      ) : null}
 
       {!hasTerminalSidebar && (
         <div className="pointer-events-none absolute right-2 top-2 z-20">
