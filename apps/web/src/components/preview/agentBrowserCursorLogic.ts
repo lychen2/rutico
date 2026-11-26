@@ -11,5 +11,8 @@ export function agentBrowserCursorOpacity(active: boolean, controller: BrowserCo
 /** Maps horizontal pointer displacement into a subtle ±6° aerodynamic pointer tilt. */
 export function computeAgentCursorTiltDeg(dx: number): number {
   if (!Number.isFinite(dx) || Math.abs(dx) < 0.5) return 0;
-  return Math.max(-MAX_AGENT_CURSOR_TILT_DEG, Math.min(MAX_AGENT_CURSOR_TILT_DEG, dx * AGENT_CURSOR_TILT_FACTOR));
+  return Math.max(
+    -MAX_AGENT_CURSOR_TILT_DEG,
+    Math.min(MAX_AGENT_CURSOR_TILT_DEG, dx * AGENT_CURSOR_TILT_FACTOR),
+  );
 }
