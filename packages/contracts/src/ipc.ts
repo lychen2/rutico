@@ -1189,6 +1189,35 @@ export const DesktopTrayStateSchema = Schema.Struct({
 });
 export type DesktopTrayState = typeof DesktopTrayStateSchema.Type;
 
+const DesktopTaskbarProgressModeSchema = Schema.Literals([
+  "none",
+  "normal",
+  "indeterminate",
+  "error",
+  "paused",
+]);
+export const DesktopTaskbarProgressSchema = Schema.Struct({
+  progress: Schema.Finite.check(Schema.isBetween({ minimum: -1, maximum: 2 })),
+  mode: Schema.optionalKey(DesktopTaskbarProgressModeSchema),
+});
+export type DesktopTaskbarProgress = typeof DesktopTaskbarProgressSchema.Type;
+
+const DesktopAttentionUrgencySchema = Schema.Literals(["normal", "critical"]);
+export const DesktopWindowAttentionSchema = Schema.Struct({
+  urgency: Schema.optionalKey(DesktopAttentionUrgencySchema),
+});
+type DesktopWindowAttention = typeof DesktopWindowAttentionSchema.Type;
+
+export const DesktopNativeNotificationSchema = Schema.Struct({
+  title: Schema.String.check(Schema.isTrimmed(), Schema.isNonEmpty(), Schema.isMaxLength(200)),
+  body: Schema.String.check(Schema.isMaxLength(500)),
+  tag: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(128))),
+  urgency: Schema.optionalKey(DesktopAttentionUrgencySchema),
+  environmentId: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(128))),
+  threadId: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(128))),
+});
+type DesktopNativeNotification = typeof DesktopNativeNotificationSchema.Type;
+
 export interface DesktopBridge {
   getAppBranding: () => DesktopAppBranding | null;
   getPathForFile: (file: File) => string;
@@ -1308,6 +1337,9 @@ export interface DesktopBridge {
   onWindowZoomStateChange?: (listener: (state: DesktopWindowZoomState) => void) => () => void;
   setWindowZoom?: (direction: MainWindowZoomDirection) => Promise<void>;
   setTrayState?: (state: DesktopTrayState) => Promise<void>;
+  setTaskbarProgress?: (input: DesktopTaskbarProgress) => Promise<void>;
+  requestWindowAttention?: (input?: DesktopWindowAttention) => Promise<void>;
+  showNativeNotification?: (input: DesktopNativeNotification) => Promise<boolean>;
   getUpdateState: () => Promise<DesktopUpdateState>;
   /** `minimumVersion` is a track switch's checked release; nothing older is offered after. */
   setUpdateChannel: (

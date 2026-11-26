@@ -1,4 +1,4 @@
-import type { EnvironmentId, ThreadId } from "@t3tools/contracts";
+import type { DesktopTaskbarProgress, EnvironmentId, ThreadId } from "@t3tools/contracts";
 import type { ClientSettings } from "@t3tools/contracts/settings";
 import { msg } from "gt-react";
 
@@ -79,6 +79,23 @@ export function setNotificationBadge(count: number) {
     }
   }
   void bridge?.setNotificationBadge({ count, image }).catch(() => undefined);
+}
+
+let lastTaskbarProgressSignature = "";
+
+export function setTaskbarProgress(input: DesktopTaskbarProgress) {
+  const bridge = window.desktopBridge;
+  if (typeof bridge?.setTaskbarProgress !== "function") return;
+  const signature = `${input.progress}:${input.mode ?? ""}`;
+  if (signature === lastTaskbarProgressSignature) return;
+  lastTaskbarProgressSignature = signature;
+  void bridge.setTaskbarProgress(input).catch(() => undefined);
+}
+
+export function requestWindowAttention(urgency: "normal" | "critical" = "normal") {
+  const bridge = window.desktopBridge;
+  if (typeof bridge?.requestWindowAttention !== "function") return;
+  void bridge.requestWindowAttention({ urgency }).catch(() => undefined);
 }
 
 let audioContext: AudioContext | undefined;

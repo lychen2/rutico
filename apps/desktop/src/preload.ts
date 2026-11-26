@@ -435,6 +435,12 @@ contextBridge.exposeInMainWorld("desktopBridge", {
   },
   setWindowZoom: (direction) => ipcRenderer.invoke(IpcChannels.SET_WINDOW_ZOOM_CHANNEL, direction),
   setTrayState: (state) => ipcRenderer.invoke(IpcChannels.SET_TRAY_STATE_CHANNEL, state),
+  setTaskbarProgress: (input) =>
+    ipcRenderer.invoke(IpcChannels.SET_TASKBAR_PROGRESS_CHANNEL, input),
+  requestWindowAttention: (input) =>
+    ipcRenderer.invoke(IpcChannels.REQUEST_WINDOW_ATTENTION_CHANNEL, input),
+  showNativeNotification: (input) =>
+    ipcRenderer.invoke(IpcChannels.SHOW_NATIVE_NOTIFICATION_CHANNEL, input),
   onWindowFullscreenStateChange: (listener) => {
     const wrappedListener = (_event: Electron.IpcRendererEvent, fullscreen: unknown) => {
       if (typeof fullscreen !== "boolean") return;

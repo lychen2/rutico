@@ -36,7 +36,9 @@ import {
   hasDesktopNotifications,
   hasNotificationSound,
   playNotificationSound,
+  requestWindowAttention,
   setNotificationBadge,
+  setTaskbarProgress,
   threadNotificationTag,
   unlockNotificationAudio,
 } from "../threadNotifications";
@@ -78,8 +80,11 @@ export function startThreadNotifications(
     string,
     { environmentId: EnvironmentId; threadId: ThreadId; notification: Notification }
   >();
+  const pendingNativeTags = new Set<string>();
   const watched = new Map<EnvironmentId, WatchedEnvironment>();
   let lastTraySignature = "";
+
+  const totalPendingBadgeCount = () => pending.size + pendingNativeTags.size;
 
   const trayStatusForThread = (state: NotificationState): DesktopTrayAgentStatus => {
     if (state.status === "approval" || state.status === "input" || state.status === "request") {
@@ -152,7 +157,7 @@ export function startThreadNotifications(
 
     rankedThreads.sort((left, right) => right.priority - left.priority);
     const threads = rankedThreads.slice(0, 5).map((entry) => entry.item);
-    const unreadCount = pending.size;
+    const unreadCount = totalPendingBadgeCount();
     const status: DesktopTrayAgentStatus =
       approvalCount > 0
         ? "approval"
@@ -163,6 +168,12 @@ export function startThreadNotifications(
             : unreadCount > 0
               ? "completed"
               : "idle";
+
+    if (runningCount > 0) {
+      setTaskbarProgress({ progress: 2, mode: "indeterminate" });
+    } else {
+      setTaskbarProgress({ progress: -1, mode: "none" });
+    }
 
     const payload: DesktopTrayState = {
       status,
@@ -184,7 +195,7 @@ export function startThreadNotifications(
   ) => {
     pending.get(notification.tag)?.notification.close();
     pending.set(notification.tag, { environmentId, threadId, notification });
-    setNotificationBadge(pending.size);
+    setNotificationBadge(totalPendingBadgeCount());
     syncDesktopTray();
   };
   // Toast ids by thread key, so hiding or opening a thread, or removing its environment, closes them.
@@ -232,6 +243,7 @@ export function startThreadNotifications(
   const clearPending = () => {
     for (const { notification } of pending.values()) notification.close();
     pending.clear();
+    pendingNativeTags.clear();
     setNotificationBadge(0);
     syncDesktopTray();
   };
@@ -310,32 +322,70 @@ export function startThreadNotifications(
     }
     if (
       !hasDesktopNotifications(mode) ||
-      (document.visibilityState === "visible" && document.hasFocus()) ||
-      typeof Notification === "undefined" ||
-      Notification.permission !== "granted"
-    )
+      (document.visibilityState === "visible" && document.hasFocus())
+    ) {
       return;
-    try {
-      const notification = new Notification(title, {
-        body: thread.title,
-        tag: threadNotificationTag(environmentId, thread.id),
-        silent: true,
-        // Windows drops clicks after a toast moves into Notification Center.
-        requireInteraction: kind === "completion" && isWindowsPlatform(navigator.platform),
-      });
-      trackNotification(environmentId, thread.id, notification);
-      notification.addEventListener("click", () => {
-        notification.close();
-        window.focus();
-        void window.desktopBridge?.revealWindow().catch(() => undefined);
-        void router.navigate({
-          to: "/$environmentId/$threadId",
-          params: { environmentId, threadId: thread.id },
-        });
-      });
-    } catch {
-      // Some browsers expose Notification but reject desktop presentation.
     }
+
+    const urgency = status === "approval" || status === "failed" ? "critical" : "normal";
+    requestWindowAttention(urgency);
+
+    const tag = threadNotificationTag(environmentId, thread.id);
+    const presentWebNotification = () => {
+      if (typeof Notification === "undefined" || Notification.permission !== "granted") return;
+      try {
+        const notification = new Notification(title, {
+          body: thread.title,
+          tag,
+          silent: true,
+          // Windows drops clicks after a toast moves into Notification Center.
+          requireInteraction: kind === "completion" && isWindowsPlatform(navigator.platform),
+        });
+        trackNotification(environmentId, thread.id, notification);
+        notification.addEventListener("click", () => {
+          notification.close();
+          window.focus();
+          void window.desktopBridge?.revealWindow().catch(() => undefined);
+          void router.navigate({
+            to: "/$environmentId/$threadId",
+            params: { environmentId, threadId: thread.id },
+          });
+        });
+      } catch {
+        // Some browsers expose Notification but reject desktop presentation.
+      }
+    };
+
+    const bridge = window.desktopBridge;
+    if (
+      bridge?.getClientPlatform() === "linux" &&
+      typeof bridge.showNativeNotification === "function"
+    ) {
+      void bridge
+        .showNativeNotification({
+          title,
+          body: thread.title.slice(0, 500),
+          tag,
+          urgency,
+          environmentId,
+          threadId: thread.id,
+        })
+        .then((shown) => {
+          if (shown) {
+            pendingNativeTags.add(tag);
+            setNotificationBadge(totalPendingBadgeCount());
+            syncDesktopTray();
+          } else {
+            presentWebNotification();
+          }
+        })
+        .catch(() => {
+          presentWebNotification();
+        });
+      return;
+    }
+
+    presentWebNotification();
   };
 
   const observeThreads = (
