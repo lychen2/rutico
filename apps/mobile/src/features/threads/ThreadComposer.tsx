@@ -197,7 +197,7 @@ export interface ThreadComposerProps {
 
 const COMPOSER_ATTACHMENT_ENTERING =
   Platform.OS === "android"
-    ? FadeIn.duration(160)
+    ? FadeIn.duration(160).reduceMotion(ReduceMotion.System)
     : FadeIn.delay(COMPOSER_TRANSITION_DURATION_MS).duration(160).reduceMotion(ReduceMotion.System);
 
 const FOLLOW_UP_ACTION_LABEL = {
@@ -650,7 +650,7 @@ export const ThreadComposer = function ThreadComposer(props: ThreadComposerProps
         <Animated.View
           className="px-[14px] pb-2.5 pt-2"
           entering={COMPOSER_ATTACHMENT_ENTERING}
-          exiting={FadeOut.duration(120)}
+          exiting={FadeOut.duration(120).reduceMotion(ReduceMotion.System)}
         >
           <ComposerQueuedEditAttachments
             environmentId={props.environmentId}
@@ -664,7 +664,7 @@ export const ThreadComposer = function ThreadComposer(props: ThreadComposerProps
         <Animated.View
           className="px-[14px] pb-2.5 pt-2"
           entering={COMPOSER_ATTACHMENT_ENTERING}
-          exiting={FadeOut.duration(120)}
+          exiting={FadeOut.duration(120).reduceMotion(ReduceMotion.System)}
         >
           <ComposerAttachmentStrip
             environmentId={props.environmentId}

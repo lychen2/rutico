@@ -104,6 +104,7 @@ import Animated, {
   FadeIn,
   FadeOut,
   LinearTransition,
+  ReduceMotion,
   useAnimatedScrollHandler,
   useAnimatedStyle,
   useSharedValue,
@@ -121,9 +122,12 @@ export { THREAD_DISCLOSURE_TRANSITION_MS, ThreadDisclosureChevron };
 
 const SHIMMER_WIDTH = 72;
 const SHIMMER_ICON_AND_GAP_WIDTH = 30;
-const WORK_LOG_LAYOUT_TRANSITION = LinearTransition.duration(THREAD_DISCLOSURE_TRANSITION_MS);
-const WORK_LOG_DETAIL_ENTER_TRANSITION = FadeIn.duration(140);
-const WORK_LOG_DETAIL_EXIT_TRANSITION = FadeOut.duration(120);
+const WORK_LOG_LAYOUT_TRANSITION = LinearTransition.duration(
+  THREAD_DISCLOSURE_TRANSITION_MS,
+).reduceMotion(ReduceMotion.System);
+const WORK_LOG_DETAIL_ENTER_TRANSITION = FadeIn.duration(140).reduceMotion(ReduceMotion.System);
+const WORK_LOG_DETAIL_EXIT_TRANSITION = FadeOut.duration(120).reduceMotion(ReduceMotion.System);
+const WORK_LOG_FRESH_ROW_ENTERING = FadeIn.duration(200).reduceMotion(ReduceMotion.System);
 type WorkContentIcon =
   | AppSymbolName
   | "browser"
@@ -1057,7 +1061,7 @@ const ThreadWorkLogRow = function ThreadWorkLogRow(
     <Animated.View
       layout={WORK_LOG_LAYOUT_TRANSITION}
       className="overflow-hidden"
-      {...(isFreshRow(row.createdAt) ? { entering: FadeIn.duration(200) } : {})}
+      {...(isFreshRow(row.createdAt) ? { entering: WORK_LOG_FRESH_ROW_ENTERING } : {})}
     >
       <WorkLogPressable
         accessibilityRole={
