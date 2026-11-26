@@ -19,6 +19,7 @@ import { useWorkflowEnvironmentIds } from "./useWorkflowEnvironmentIds";
 import { Button } from "../ui/button";
 import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "../ui/select";
 import { SidebarInset } from "../ui/sidebar";
+import { Spinner } from "../ui/spinner";
 import {
   WorkspaceBreadcrumb,
   WorkspaceBreadcrumbItem,
@@ -214,7 +215,7 @@ export function WorkflowsPage() {
               >
                 <SelectTrigger
                   size="sm"
-                  aria-label={gt("Environment", { $context: "a T3 Code server to pick" })}
+                  aria-label={gt("Environment", { $context: "a Rutico server to pick" })}
                 >
                   <SelectValue>
                     {away ??
@@ -249,9 +250,15 @@ export function WorkflowsPage() {
           {editing && fileEnvironmentId !== null ? (
             <Suspense
               fallback={
-                <p className="p-6 text-sm text-muted-foreground" role="status">
-                  <T>Loading the editor…</T>
-                </p>
+                <div
+                  className="flex items-center gap-2 p-6 text-sm text-muted-foreground"
+                  role="status"
+                >
+                  <Spinner size="sm" tone="muted" aria-hidden="true" role={undefined} />
+                  <span>
+                    <T>Loading the editor…</T>
+                  </span>
+                </div>
               }
             >
               <WorkflowDefinitionEditor

@@ -1,6 +1,6 @@
 import { type EnvironmentId, type WorkflowRunReference } from "@t3tools/contracts";
 import { msg, T, useGT, useMessages } from "gt-react";
-import { WorkflowIcon } from "lucide-react";
+import { CircleAlertIcon, WorkflowIcon } from "lucide-react";
 import { useState, type ReactNode } from "react";
 
 import { cn } from "../../lib/utils";
@@ -10,6 +10,8 @@ import { Button } from "../ui/button";
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "../ui/empty";
 import { ScrollArea } from "../ui/scroll-area";
 import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "../ui/select";
+import { Skeleton } from "../ui/skeleton";
+import { Spinner } from "../ui/spinner";
 import { Toggle, ToggleGroup } from "../ui/toggle-group";
 import {
   RelativeLabel,
@@ -105,9 +107,22 @@ export function WorkflowRunsView({
   }
   if (!snapshot) {
     return (
-      <p className="p-6 text-sm text-muted-foreground" role="status">
-        <T>Loading workflow runs…</T>
-      </p>
+      <div className="flex min-h-0 min-w-0 flex-1" role="status">
+        <div className="hidden w-72 shrink-0 flex-col gap-2 border-e p-2 md:flex">
+          <Skeleton className="h-8 w-full" shape="card" />
+          <div className="space-y-1.5 pt-1">
+            <Skeleton className="h-14 w-full" shape="card" />
+            <Skeleton className="h-14 w-full" shape="card" />
+            <Skeleton className="h-14 w-full" shape="card" />
+          </div>
+        </div>
+        <div className="flex min-w-0 flex-1 items-start gap-2 p-6 text-sm text-muted-foreground">
+          <Spinner size="sm" tone="muted" aria-hidden="true" role={undefined} />
+          <span>
+            <T>Loading workflow runs…</T>
+          </span>
+        </div>
+      </div>
     );
   }
   // A broken file is said even where nothing has run, or its workflows would just seem missing.
@@ -117,6 +132,10 @@ export function WorkflowRunsView({
         role="alert"
         className="flex shrink-0 items-center gap-3 border-b bg-destructive/4 px-4 py-2 text-xs"
       >
+        <CircleAlertIcon
+          aria-hidden="true"
+          className="size-3.5 shrink-0 text-destructive-foreground"
+        />
         <span className="min-w-0 flex-1 text-muted-foreground">
           <T>
             <span className="font-medium text-destructive-foreground">
@@ -170,7 +189,7 @@ export function WorkflowRunsView({
             restarts. Write one under{" "}
             <button
               type="button"
-              className="underline underline-offset-2 hover:text-foreground"
+              className="cursor-pointer underline underline-offset-2 hover:text-foreground"
               onClick={onOpenDefinitions}
             >
               Definitions
