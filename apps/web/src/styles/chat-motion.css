@@ -1893,3 +1893,28 @@
     display: none;
   }
 }
+
+/* ==========================================================================
+   D14 / C048: ExpandedImageDialog Shared-Element Stage & Zoom HUD Pill
+   ========================================================================== */
+
+[data-zoom-hud="true"] {
+  opacity: 0;
+  transform: translate3d(0, -4px, 0) scale(0.94);
+  transition:
+    opacity 180ms ease-out,
+    transform 180ms var(--spring-snappy);
+}
+
+[data-zoom-hud="true"][data-visible="true"] {
+  opacity: 1;
+  transform: translate3d(0, 0, 0) scale(1);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-zoom-hud="true"],
+  [data-zoom-hud="true"][data-visible="true"] {
+    transition: none;
+    transform: none;
+  }
+}

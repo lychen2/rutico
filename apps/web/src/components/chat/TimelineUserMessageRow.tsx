@@ -54,6 +54,7 @@ import {
   buildAttachmentVideoAsset,
   buildAttachmentVideoPreview,
   buildExpandedImagePreview,
+  capturePreviewSourceRect,
 } from "./ExpandedImagePreview";
 import {
   SNAP_SHOT_ATTACHMENT_FRAME_CLASS,
@@ -856,10 +857,13 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
                 type="button"
                 className="group/thumb block h-full w-full cursor-zoom-in"
                 aria-label={gt("Preview {label}", { label: image.name })}
-                onClick={() => {
+                onClick={(event) => {
                   const preview = buildExpandedImagePreview(regularImages, image.id, copySnapshot);
                   if (!preview) return;
-                  ctx.onImageExpand(preview);
+                  ctx.onImageExpand({
+                    ...preview,
+                    sourceRect: capturePreviewSourceRect(event.currentTarget),
+                  });
                 }}
               >
                 {/* Isolate the thumbnail raster from nearby activity repaints in Chromium. */}

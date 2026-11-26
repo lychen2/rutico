@@ -187,4 +187,31 @@ describe("ExpandedImageDialog", () => {
     expect(pointerFraction().x).toBeCloseTo(anchor.x, 2);
     expect(pointerFraction().y).toBeCloseTo(anchor.y, 2);
   });
+
+  it("displays the zoom multiplier HUD on click zoom and steps cleanly between gallery items", async () => {
+    await using _screen = await render(
+      <ExpandedImageDialog
+        preview={{
+          images: [
+            { src: PIXEL, name: "first.png" },
+            { src: PIXEL, name: "second.png" },
+          ],
+          index: 0,
+          sourceRect: { left: 24, top: 24, width: 64, height: 64 },
+        }}
+        onClose={() => {}}
+      />,
+      { router: false },
+    );
+
+    const hud = document.querySelector<HTMLElement>('[data-zoom-hud="true"]')!;
+    expect(hud.getAttribute("data-visible")).toBe("false");
+
+    await userEvent.click(page.getByRole("region", { name: "first.png, zoomable image" }));
+    expect(hud.getAttribute("data-visible")).toBe("true");
+    expect(hud.textContent).toBe("200%");
+
+    await userEvent.click(page.getByRole("button", { name: "Next media" }));
+    await expect.element(page.getByText("second.png (2/2)")).toBeVisible();
+  });
 });

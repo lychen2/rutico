@@ -60,6 +60,7 @@ import type { PreparingComposerImage } from "./preparingComposerImages";
 import {
   attachVideoThumbnail,
   buildExpandedImagePreview,
+  capturePreviewSourceRect,
   type ExpandedImagePreview,
 } from "./ExpandedImagePreview";
 import { PierreEntryIcon } from "./PierreEntryIcon";
@@ -394,10 +395,13 @@ export function ComposerAttachmentMediaRow({
                   className={cn("h-full w-full", ready && "cursor-zoom-in")}
                   aria-label={gt("Preview {name}", { name: image.name })}
                   disabled={!ready}
-                  onClick={() => {
+                  onClick={(event) => {
                     const preview = buildExpandedImagePreview(images, image.id, onCopySnapshot);
                     if (!preview) return;
-                    onExpandImage(preview);
+                    onExpandImage({
+                      ...preview,
+                      sourceRect: capturePreviewSourceRect(event.currentTarget),
+                    });
                   }}
                 >
                   <ComposerImageThumbnail
@@ -799,9 +803,14 @@ export function ComposerRestingImagePreviews({
             className="relative size-7 shrink-0 cursor-zoom-in overflow-hidden rounded-md border border-border/70 bg-muted/60"
             aria-label={gt("Preview {name}", { name: image.name })}
             onPointerDown={(event) => event.preventDefault()}
-            onClick={() => {
+            onClick={(event) => {
               const preview = buildExpandedImagePreview(allImages, image.id, onCopySnapshot);
-              if (preview) onExpandImage(preview);
+              if (preview) {
+                onExpandImage({
+                  ...preview,
+                  sourceRect: capturePreviewSourceRect(event.currentTarget),
+                });
+              }
             }}
           >
             {image.previewUrl ? (

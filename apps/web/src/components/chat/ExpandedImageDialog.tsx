@@ -1,7 +1,8 @@
-import { memo, useRef, useState, type ReactNode, type KeyboardEvent } from "react";
+import { memo, useLayoutEffect, useRef, useState, type ReactNode, type KeyboardEvent } from "react";
 import { flushSync } from "react-dom";
 import { useGT } from "gt-react";
 import { ChevronLeftIcon, ChevronRightIcon, ImageIcon, TextIcon, XIcon } from "lucide-react";
+import { getSpringWaapiTiming, prefersReducedMotion } from "~/lib/motion/springs";
 import { Button } from "../ui/button";
 import { Dialog, DialogPopup, DialogTitle } from "../ui/dialog";
 import type { ExpandedImageItem, ExpandedImagePreview } from "./ExpandedImagePreview";
@@ -88,6 +89,9 @@ export const ExpandedImageDialog = memo(function ExpandedImageDialog({
   const [failedImageSrc, setFailedImageSrc] = useState<string | null>(null);
   const [accessibilityDetailsSrc, setAccessibilityDetailsSrc] = useState<string | null>(null);
   const zoomableImageRef = useRef<ZoomableImageHandle>(null);
+  const mediaStageRef = useRef<HTMLDivElement>(null);
+  const hasPlayedOpenFlipRef = useRef(false);
+  const navDirectionRef = useRef<-1 | 1 | 0>(0);
   const [returnFocus] = useState(() => {
     const target = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     return { target, focusVisible: target?.matches(":focus-visible") ?? false };
@@ -122,8 +126,66 @@ export const ExpandedImageDialog = memo(function ExpandedImageDialog({
     : source;
 
   const navigateImage = (direction: -1 | 1) => {
+    navDirectionRef.current = direction;
     setImageOffset((current) => current + direction);
   };
+
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- plays one-shot shared-element FLIP zoom handoff on the inner media stage (never touching DialogPopup)
+  useLayoutEffect(() => {
+    const stage = mediaStageRef.current;
+    const sourceRect = preview.sourceRect;
+    if (
+      !stage ||
+      !sourceRect ||
+      hasPlayedOpenFlipRef.current ||
+      prefersReducedMotion() ||
+      typeof stage.animate !== "function"
+    ) {
+      return;
+    }
+    hasPlayedOpenFlipRef.current = true;
+    const targetRect = stage.getBoundingClientRect();
+    if (targetRect.width <= 1 || targetRect.height <= 1) return;
+    const dx = sourceRect.left + sourceRect.width / 2 - (targetRect.left + targetRect.width / 2);
+    const dy = sourceRect.top + sourceRect.height / 2 - (targetRect.top + targetRect.height / 2);
+    const scale = Math.max(
+      0.16,
+      Math.min(
+        0.95,
+        Math.min(sourceRect.width / targetRect.width, sourceRect.height / targetRect.height),
+      ),
+    );
+    const timing = getSpringWaapiTiming("spatial");
+    const animation = stage.animate(
+      [
+        {
+          transform: `translate3d(${dx.toFixed(1)}px, ${dy.toFixed(1)}px, 0) scale(${scale.toFixed(3)})`,
+          opacity: 0.72,
+        },
+        { transform: "translate3d(0, 0, 0) scale(1)", opacity: 1 },
+      ],
+      { duration: Math.min(280, timing.duration), easing: timing.easing },
+    );
+    return () => animation.cancel();
+  }, [preview.sourceRect]);
+
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- animates directional slide transition on the inner media stage when stepping through gallery items
+  useLayoutEffect(() => {
+    const direction = navDirectionRef.current;
+    const stage = mediaStageRef.current;
+    if (index < 0 || direction === 0 || !stage) return;
+    navDirectionRef.current = 0;
+    if (prefersReducedMotion() || typeof stage.animate !== "function") return;
+    const timing = getSpringWaapiTiming("snappy");
+    const animation = stage.animate(
+      [
+        { transform: `translate3d(${direction * 20}px, 0, 0)`, opacity: 0.58 },
+        { transform: "translate3d(0, 0, 0)", opacity: 1 },
+      ],
+      { duration: Math.min(200, timing.duration), easing: timing.easing },
+    );
+    return () => animation.cancel();
+  }, [index]);
 
   const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
     if (event.defaultPrevented || isContextMenuOpen() || event.target instanceof HTMLVideoElement)
@@ -215,7 +277,11 @@ export const ExpandedImageDialog = memo(function ExpandedImageDialog({
           </Button>
         )}
         <MediaActions source={actionsSource} showTooltip={false}>
-          <div className="relative isolate z-10 flex max-h-full max-w-[var(--media-width)] flex-col items-center">
+          <div
+            ref={mediaStageRef}
+            data-expanded-media-stage="true"
+            className="relative isolate z-10 flex max-h-full max-w-[var(--media-width)] flex-col items-center"
+          >
             {item.type === "video" ? (
               <ExpandedVideo key={index} item={item} />
             ) : showingAccessibilityDetails ? (

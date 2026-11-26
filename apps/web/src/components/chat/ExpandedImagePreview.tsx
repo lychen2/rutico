@@ -36,9 +36,31 @@ export interface ExpandedImageItem {
   actionsSource?: MediaActionSource;
 }
 
+interface ExpandedImageSourceRect {
+  readonly left: number;
+  readonly top: number;
+  readonly width: number;
+  readonly height: number;
+}
+
 export interface ExpandedImagePreview {
   images: ExpandedImageItem[];
   index: number;
+  sourceRect?: ExpandedImageSourceRect | undefined;
+}
+
+export function capturePreviewSourceRect(
+  element: HTMLElement | null | undefined,
+): ExpandedImageSourceRect | undefined {
+  if (!element) return undefined;
+  const rect = element.getBoundingClientRect();
+  if (rect.width <= 0 || rect.height <= 0) return undefined;
+  return {
+    left: rect.left,
+    top: rect.top,
+    width: rect.width,
+    height: rect.height,
+  };
 }
 
 export async function resolveMarkdownMediaPreview(input: {
