@@ -92,7 +92,7 @@ describe("Antigravity process environment", () => {
     expect(baseEnv).toEqual(original);
     expect(spawn).toEqual({
       command: "/usr/bin/agy",
-      args: ["acp", "--disable-telemetry"],
+      args: ["acp"],
       cwd: "/project",
       extendEnv: false,
       env: {

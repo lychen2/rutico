@@ -16,11 +16,9 @@ import * as Scope from "effect/Scope";
 import * as EffectAcpErrors from "effect-acp/errors";
 
 import * as ProviderHost from "@t3tools/provider-core/server/ProviderHost";
-import { PULL_REQUEST_LINKING_INSTRUCTIONS } from "@t3tools/provider-core/server/runtimeInstructions";
 import type { AntigravityAuth } from "../../provider/AntigravityAuth.ts";
 import type * as AcpSessionRuntime from "@t3tools/provider-acp/server/AcpSessionRuntime";
 import {
-  antigravityAppendsSystemPrompt,
   antigravityPermissionDisposition,
   antigravityPermissionMode,
   antigravityRuntimeModeForSessionMode,
@@ -33,8 +31,6 @@ import {
   ANTIGRAVITY_SUBAGENT_BATCH_TITLE,
   antigravitySubagentLaunches,
   describeAntigravitySubagentLaunches,
-  readAntigravityChildrenAtWork,
-  readAntigravityPendingReply,
 } from "../../provider/acp/AntigravityChildWork.ts";
 import { readAntigravityClientTextFile } from "../../provider/acp/AntigravityClientFiles.ts";
 import {
@@ -68,7 +64,15 @@ const AntigravityProviderCapabilitiesV2 = {
   },
   tools: {
     ...AcpProviderCapabilitiesV2.tools,
-    supportsMcpTools: true,
+    supportsMcpTools: false,
+  },
+  context: {
+    ...AcpProviderCapabilitiesV2.context,
+    acceptsSyntheticUserContext: false,
+    canGenerateSummaries: false,
+    canConsumeHandoffSummaries: false,
+    supportsDeltaHandoff: false,
+    supportsFullThreadHandoff: false,
   },
   subagents: {
     ...AcpProviderCapabilitiesV2.subagents,
@@ -102,8 +106,6 @@ export interface AntigravityAdapterV2Options {
   readonly onSessionEvent?: AcpAdapterV2Flavor["onSessionEvent"];
   readonly nativeLogging?: Parameters<typeof makeAcpAdapterV2>[0]["nativeLogging"];
   readonly continuationRequests?: Parameters<typeof makeAcpAdapterV2>[0]["continuationRequests"];
-  /** The agent's GEMINI_HOME. Its session logs show turns that ended on an upstream error. */
-  readonly profileDirectory?: string;
 }
 
 /**
@@ -146,7 +148,6 @@ interface AntigravityFlavorServices {
 export function makeAntigravityAcpAdapterFlavor(
   options: AntigravityAdapterV2Options & AntigravityFlavorServices,
 ): AcpAdapterV2Flavor {
-  const { profileDirectory } = options;
   const antigravityClientFileRoots = (cwd: string | null) =>
     cwd === null ? [options.host.paths.attachmentsDir] : [cwd, options.host.paths.attachmentsDir];
   const makeRuntime = Effect.fn("AntigravityAdapterV2.makeRuntime")(
@@ -158,7 +159,6 @@ export function makeAntigravityAcpAdapterFlavor(
           options.makeRuntime({
             ...input,
             clientFileReads: true,
-            sessionSystemPromptAppend: PULL_REQUEST_LINKING_INSTRUCTIONS,
           }),
         )
         .pipe(Effect.provideService(Scope.Scope, scope));
@@ -223,9 +223,9 @@ export function makeAntigravityAcpAdapterFlavor(
     runtimeHarness: "Antigravity",
     capabilities: AntigravityProviderCapabilitiesV2,
     supportsNativeGoals: options.supportsNativeGoals ?? Effect.succeed(false),
-    // Agents that advertise HTTP MCP skip the stdio bridge process; others keep stdio.
-    mcpOverHttp: true,
-    sessionCarriesPullRequestLinking: antigravityAppendsSystemPrompt,
+    // Thin-client editor mode: Antigravity remains the primary agent with its own prompt,
+    // tools, and session state; Rutico does not inject outer MCP tools or harness prompts.
+    thinClientMode: true,
     makeRuntime,
     buildAttachmentPrompt: ({ text, attachments, resolveAttachmentPath, promptCapabilities }) =>
       buildAntigravityPrompt({
@@ -303,21 +303,6 @@ export function makeAntigravityAcpAdapterFlavor(
     promptInactivityTimeout: "15 minutes",
     reportsPerTurnPromptUsage: true,
     geminiPromptUsage: true,
-    ...(profileDirectory === undefined
-      ? {}
-      : {
-          subagentsOutlivingPrompt: ({ sessionId, nativeTaskIds }) =>
-            readAntigravityChildrenAtWork({
-              profileDirectory,
-              rootSessionId: sessionId,
-              toolCallIds: nativeTaskIds,
-            }),
-          hasPendingReply: (sessionId: string) =>
-            readAntigravityPendingReply({
-              profileDirectory,
-              sessionId,
-            }),
-        }),
   };
 }
 

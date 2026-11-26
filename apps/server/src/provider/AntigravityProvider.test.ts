@@ -806,7 +806,7 @@ it.layer(layerTest)("Antigravity provider snapshots", (it) => {
   );
 
   it.effect(
-    "publishes limits, retains a successful read on failure, and clears them on sign-out",
+    "reads usage only on manual refresh, retains a successful read on failure, and clears them on sign-out",
     () =>
       Effect.gen(function* () {
         const limits: ServerProviderUsageLimits = {
@@ -820,12 +820,22 @@ it.layer(layerTest)("Antigravity provider snapshots", (it) => {
             },
           ],
         };
+        const reads = yield* Ref.make(0);
         const usage = yield* Ref.make(limits);
-        const harness = yield* makeHarness({ probeUsage: Ref.get(usage) });
-        const published = yield* harness.nextPublish((snapshot) => !!snapshot.usageLimits);
+        const harness = yield* makeHarness({
+          probeUsage: Ref.update(reads, (count) => count + 1).pipe(Effect.andThen(Ref.get(usage))),
+        });
         yield* harness.initialize;
+        yield* harness.provider.onSessionStarted(started, "/workspace");
+        // Startup checks and session starts must not automatically spawn `agy -p "/usage"`.
+        expect(yield* Ref.get(reads)).toBe(0);
+        expect((yield* harness.provider.snapshot.getSnapshot).usageLimits).toBeUndefined();
+
+        yield* Ref.set(harness.probe, Effect.succeed(initializeResult));
+        const published = yield* harness.nextPublish((snapshot) => !!snapshot.usageLimits);
+        yield* harness.provider.snapshot.refresh;
         expect((yield* published)?.usageLimits).toEqual(limits);
-        // The second health check is the one the failed background read triggers.
+        // The second health check is the one the failed manual read triggers when republishing.
         const checks = yield* Ref.make(0);
         const failedReadApplied = yield* Deferred.make<void>();
         yield* Ref.set(
@@ -852,6 +862,7 @@ it.layer(layerTest)("Antigravity provider snapshots", (it) => {
           windows: [],
           unavailable: { reason: "unsupported" },
         });
+        yield* harness.provider.onSessionStarted(started, "/workspace");
         const unsupported = yield* harness.nextPublish(
           (snapshot) => snapshot.usageLimits?.unavailable?.reason === "unsupported",
         );
@@ -869,6 +880,7 @@ it.layer(layerTest)("Antigravity provider snapshots", (it) => {
       );
       const harness = yield* makeHarness({ probeUsage: Ref.get(usage).pipe(Effect.flatten) });
       yield* harness.initialize;
+      yield* harness.provider.onSessionStarted(started, "/workspace");
       yield* Ref.set(harness.probe, Effect.succeed(initializeResult));
       yield* Ref.set(
         usage,
@@ -886,7 +898,7 @@ it.layer(layerTest)("Antigravity provider snapshots", (it) => {
     }),
   );
 
-  it.effect("reports ready and starts sessions while one shared quota read is pending", () =>
+  it.effect("reports ready and starts sessions while one shared manual quota read is pending", () =>
     Effect.gen(function* () {
       const reads = yield* Ref.make(0);
       const readStarted = yield* Deferred.make<void>();
@@ -897,11 +909,14 @@ it.layer(layerTest)("Antigravity provider snapshots", (it) => {
           Effect.andThen(Deferred.await(readResult)),
         ),
       });
-      const published = yield* harness.nextPublish((snapshot) => !!snapshot.usageLimits);
       yield* harness.initialize;
-      yield* Deferred.await(readStarted);
+      yield* Ref.set(harness.probe, Effect.succeed(initializeResult));
       yield* harness.provider.onSessionStarted(started, "/workspace");
+      const published = yield* harness.nextPublish((snapshot) => !!snapshot.usageLimits);
+      yield* harness.provider.snapshot.refresh;
+      yield* Deferred.await(readStarted);
       yield* harness.provider.onSessionStarted(started, "/other");
+      yield* harness.provider.snapshot.refreshUsage!;
       const ready = yield* harness.provider.snapshot.getSnapshot;
       expect(ready).toMatchObject({ status: "ready", auth: { status: "authenticated" } });
       expect(ready.usageLimits).toBeUndefined();
@@ -926,12 +941,16 @@ it.layer(layerTest)("Antigravity provider snapshots", (it) => {
         Deferred.succeed(oldReadStarted, undefined).pipe(Effect.andThen(Effect.never)),
       );
       const harness = yield* makeHarness({ probeUsage: Ref.get(usage).pipe(Effect.flatten) });
-      const published = yield* harness.nextPublish((snapshot) => !!snapshot.usageLimits);
       yield* harness.initialize;
+      yield* Ref.set(harness.probe, Effect.succeed(initializeResult));
+      yield* harness.provider.onSessionStarted(started);
+      yield* harness.provider.snapshot.refresh;
       yield* Deferred.await(oldReadStarted);
+      const published = yield* harness.nextPublish((snapshot) => !!snapshot.usageLimits);
       yield* Ref.set(usage, Effect.succeed(newLimits));
       yield* harness.provider.onSignedIn;
       yield* harness.provider.onSessionStarted(started);
+      yield* harness.provider.snapshot.refresh;
       expect((yield* published)?.usageLimits).toEqual(newLimits);
       // Switching again must not republish the previous account's limits, even if the read fails.
       const failed = {
@@ -946,6 +965,7 @@ it.layer(layerTest)("Antigravity provider snapshots", (it) => {
       yield* harness.provider.onSignedIn;
       expect((yield* harness.provider.snapshot.getSnapshot).usageLimits).toBeUndefined();
       yield* harness.provider.onSessionStarted(started);
+      yield* harness.provider.snapshot.refresh;
       expect((yield* republished)?.usageLimits).toEqual(failed);
     }),
   );

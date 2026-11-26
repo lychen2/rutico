@@ -49,9 +49,7 @@ import {
   type AntigravityAuthConfig,
 } from "../antigravityAuthSupport.ts";
 import {
-  antigravityModelOptions,
   antigravitySessionMode,
-  antigravityThinkingConfig,
   makeAntigravityAcpRuntime,
   type AntigravityAcpRuntimeInput,
 } from "../acp/AntigravityAcpSupport.ts";
@@ -471,10 +469,7 @@ export const AntigravityDriver: ProviderDriver<
 
     const publishCatalog = Effect.fn("AntigravityDriver.publishCatalog")(function* (
       started: AcpSessionRuntime.AcpSessionRuntimeStartResult,
-      runtime: Pick<
-        AcpSessionRuntime.AcpSessionRuntime["Service"],
-        "getEvents" | "drainEvents" | "setModel"
-      >,
+      runtime: Pick<AcpSessionRuntime.AcpSessionRuntime["Service"], "getEvents" | "drainEvents">,
     ) {
       yield* provider.onSessionStarted(started);
       yield* authFlow.onSignedInElsewhere;
@@ -489,14 +484,6 @@ export const AntigravityDriver: ProviderDriver<
           ? provider.onAvailableCommands(event.availableCommands)
           : Effect.void;
       }).pipe(Effect.forkScoped);
-      // Thinking levels differ per model and are reported only for the selected one.
-      const configOptions = started.sessionSetupResult.configOptions ?? [];
-      const current = configOptions.find((option) => option.id === "model")?.currentValue;
-      if (antigravityThinkingConfig(configOptions) !== undefined && typeof current === "string") {
-        for (const model of [...antigravityModelOptions(configOptions), { value: current }]) {
-          yield* runtime.setModel(model.value).pipe(Effect.ignore);
-        }
-      }
       yield* runtime.drainEvents;
     }, Effect.scoped);
 
@@ -612,7 +599,6 @@ export const AntigravityDriver: ProviderDriver<
           (snapshot) => snapshot.slashCommands?.some((command) => command.name === "goal") === true,
         ),
       ),
-      profileDirectory: nativeGeminiHome,
       onSessionStarted: (started, cwd) =>
         provider.onSessionStarted(started, cwd).pipe(Effect.andThen(authFlow.onSignedInElsewhere)),
       onSessionEvent: (event, cwd) => {

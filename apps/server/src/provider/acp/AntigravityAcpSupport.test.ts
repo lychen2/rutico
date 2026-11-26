@@ -60,14 +60,14 @@ function makeModelRuntime(
 
 describe("Antigravity release gates", () => {
   it.each([
-    { version: "1.5.0", ownName: false, advertisedAppend: false },
-    { version: "1.5.1", ownName: true, advertisedAppend: false },
-    { version: "1.5.7", ownName: true, advertisedAppend: true },
-    { version: undefined, ownName: false, advertisedAppend: false },
-    { version: "unknown", ownName: false, advertisedAppend: false },
+    { version: "1.5.0", advertisedAppend: false },
+    { version: "1.5.1", advertisedAppend: false },
+    { version: "1.5.7", advertisedAppend: true },
+    { version: undefined, advertisedAppend: false },
+    { version: "unknown", advertisedAppend: false },
   ])(
-    "$version: advertised system append $advertisedAppend, own client name $ownName",
-    ({ version, ownName, advertisedAppend }) => {
+    "$version: advertised system append $advertisedAppend, always uses honest editor client name",
+    ({ version, advertisedAppend }) => {
       const initialize = {
         protocolVersion: 1,
         ...(advertisedAppend
@@ -84,7 +84,8 @@ describe("Antigravity release gates", () => {
           ? { antigravity: { systemPrompt: { append: "<pull_request_linking/>" } } }
           : undefined,
       );
-      expect(antigravityClientInfo(version).name).toBe(ownName ? "t3-code" : "zed");
+      // Thin-client editor always identifies itself honestly instead of spoofing another editor.
+      expect(antigravityClientInfo(version).name).toBe("rutico");
     },
   );
 });
@@ -135,7 +136,7 @@ describe("Antigravity Auto", () => {
   );
 
   it.each(["auto", "auto-accept-edits"] as const)(
-    "runs only server-qualified T3 MCP calls unasked in %s",
+    "never auto-approves T3 MCP tool requests in thin-client mode (%s)",
     (runtimeMode) => {
       const policy = { runtimeMode, cwd: "/workspace" };
       const request = (
@@ -146,39 +147,19 @@ describe("Antigravity Auto", () => {
         toolCall: { toolCallId: "call-1", title, kind: "execute", rawInput },
         options: [{ optionId: "allow", name: "Allow", kind: "allow_once" }],
       });
-      for (const t3Call of [
+      for (const call of [
         request("Run mcp_t3-code_t3_thread_list?"),
         request("MCP Tool delegate_task", { ServerName: "t3-code", ToolName: "delegate_task" }),
+        request("Running preview_status"),
+        request("Run mcp_github_create_issue"),
       ]) {
-        expect(antigravityPermissionDisposition(policy, t3Call)).toBe("allow");
-        expect(
-          antigravityPermissionDisposition({ ...policy, approvalPolicy: "on-request" }, t3Call),
-        ).toBe("ask");
+        expect(antigravityPermissionDisposition(policy, call)).toBe("ask");
         expect(
           antigravityPermissionDisposition(
             { ...policy, sandboxPolicy: { type: "readOnly" } },
-            t3Call,
+            call,
           ),
         ).toBe("deny");
-      }
-      for (const otherCall of [
-        // Names no server, so another MCP server's tool of the same name looks identical.
-        request("Running preview_status"),
-        request("Run mcp_github_create_issue"),
-        request("MCP Tool preview_status", { ServerName: "other", ToolName: "preview_status" }),
-        request("Run mcp_t3-code_preview_status", {
-          CommandLine: "Run mcp_t3-code_preview_status",
-        }),
-        // A directly called tool's rawInput is its own arguments, whatever their names.
-        request("Run mcp_github_create_issue", {
-          ServerName: "t3-code",
-          ToolName: "delegate_task",
-        }),
-        request("Running create_issue", { ServerName: "t3-code", ToolName: "delegate_task" }),
-        // call_mcp_tool is titled for the tool it calls.
-        request("MCP Tool create_issue", { ServerName: "t3-code", ToolName: "delegate_task" }),
-      ]) {
-        expect(antigravityPermissionDisposition(policy, otherCall)).toBe("ask");
       }
     },
   );

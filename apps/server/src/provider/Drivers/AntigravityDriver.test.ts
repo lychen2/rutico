@@ -344,7 +344,7 @@ it.layer(layerTest)("AntigravityDriver", (it) => {
           h.second.executablePath,
         ]);
         for (const launch of agentLaunches) {
-          expect(launch.args).toEqual(["acp", "--disable-telemetry"]);
+          expect(launch.args).toEqual(["acp"]);
           expect(launch.profileDirectory).toBeUndefined();
           expect(launch.forceFileStorage).toBeUndefined();
           expect(launch.extendEnv).toBe(false);
@@ -436,7 +436,7 @@ it.layer(layerTest)("AntigravityDriver", (it) => {
             modelSelection,
             runtimePolicy: cliPolicy,
           });
-          expect(h.launches.at(-1)?.args).toEqual(["acp", "--disable-telemetry"]);
+          expect(h.launches.at(-1)?.args).toEqual(["acp"]);
           expect(
             (yield* h.readRequests)
               .slice(requestsBefore)
@@ -452,7 +452,7 @@ it.layer(layerTest)("AntigravityDriver", (it) => {
   );
 
   it.effect.skipIf(windowsHost)(
-    "gives a thread session its own T3 thread and MCP fallback environment",
+    "keeps thread sessions as a thin client without injecting T3 MCP servers or env overrides",
     () =>
       Effect.gen(function* () {
         const h = yield* makeHarness({
@@ -476,8 +476,6 @@ it.layer(layerTest)("AntigravityDriver", (it) => {
           authorizationHeader: "Bearer antigravity-thread-token",
           browserToolsAvailable: false,
         });
-        // Running from source, the fallback entrypoint is this process's script.
-        const entrypoint = h.path.resolve(process.argv[1]!);
         yield* Effect.scoped(
           Effect.gen(function* () {
             const workspace = yield* h.fs.makeTempDirectoryScoped({ prefix: "t3-ag-environment-" });
@@ -499,27 +497,26 @@ it.layer(layerTest)("AntigravityDriver", (it) => {
           }),
         );
 
-        // Gemini Enterprise can strip the native MCP servers, and the documented `acp-mcp-call`
-        // fallback reads these from the shell.
+        // Thin-client mode never injects T3's MCP server or thread MCP env vars into agy acp.
         const agentLaunches = h.launches.filter(
           (launch) => launch.command === h.first.executablePath && launch.args[0] === "acp",
         );
         expect(agentLaunches).toHaveLength(2);
-        expect(agentLaunches[1]?.environment).toMatchObject({
-          T3CODE_THREAD_ID: threadId,
-          T3_ACP_MCP_ENDPOINT: endpoint,
-          T3_ACP_MCP_AUTHORIZATION: "Bearer antigravity-thread-token",
-          T3_ACP_MCP_NODE: process.execPath,
-          T3_ACP_MCP_ENTRYPOINT: entrypoint,
-        });
-        // Model refresh and sign-in launches are not part of a thread.
-        expect(agentLaunches[0]?.environment).toMatchObject({
-          T3CODE_THREAD_ID: "thread-antigravity-ambient",
-          T3_ACP_MCP_ENDPOINT: "http://127.0.0.1:9/ambient",
-          T3_ACP_MCP_AUTHORIZATION: "Bearer ambient-token",
-          T3_ACP_MCP_NODE: "/ambient/node",
-          T3_ACP_MCP_ENTRYPOINT: "/ambient/entrypoint.mjs",
-        });
+        for (const launch of agentLaunches) {
+          expect(launch.args).toEqual(["acp"]);
+          expect(launch.environment).toMatchObject({
+            T3CODE_THREAD_ID: "thread-antigravity-ambient",
+            T3_ACP_MCP_ENDPOINT: "http://127.0.0.1:9/ambient",
+            T3_ACP_MCP_AUTHORIZATION: "Bearer ambient-token",
+            T3_ACP_MCP_NODE: "/ambient/node",
+            T3_ACP_MCP_ENTRYPOINT: "/ambient/entrypoint.mjs",
+          });
+        }
+        expect(
+          (yield* h.readRequests)
+            .filter((request) => request.method === "session/new")
+            .map((request) => request.params?.mcpServers),
+        ).toEqual([[], []]);
         yield* h.assertClosed;
       }),
   );

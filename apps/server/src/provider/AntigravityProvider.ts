@@ -372,7 +372,6 @@ export const makeAntigravityProvider = Effect.fn("makeAntigravityProvider")(func
       const stored = deferFailure && state.draft.status === "ready" ? state : checked;
       return [checked, stored === state ? Option.none() : Option.some(stored)];
     });
-    if (initialized !== undefined) yield* refreshUsage();
     return yield* options.stampIdentity(next.draft);
   });
 
@@ -452,7 +451,6 @@ export const makeAntigravityProvider = Effect.fn("makeAntigravityProvider")(func
       return [draft.supportedRuntimeModes, next] as const;
     });
     yield* rememberRuntimeModes(previousModes, supportedRuntimeModes);
-    if (!before.draft.usageLimits || before.draft.usageLimits.unavailable) yield* refreshUsage();
   });
 
   const onConfigOptionsUpdated = Effect.fn("AntigravityProvider.onConfigOptionsUpdated")(function* (
@@ -561,8 +559,23 @@ export const makeAntigravityProvider = Effect.fn("makeAntigravityProvider")(func
       : { ...snapshot, skills: resolvedSkills };
   });
 
+  // Usage quota reads spawn `agy -p "/usage"`; run them only on explicit manual refresh or
+  // explicit usage-limit recovery, never during automatic startup or background health checks.
+  const refreshManual = Effect.fn("AntigravityProvider.refresh")(function* () {
+    const refreshed = yield* managed.refresh;
+    if (refreshed.installed && refreshed.auth.status !== "unauthenticated") {
+      yield* refreshUsage();
+    }
+    return refreshed;
+  });
+
   return {
-    snapshot: { ...managed, getSnapshot },
+    snapshot: {
+      ...managed,
+      getSnapshot,
+      refresh: refreshManual(),
+      refreshUsage: refreshUsage(),
+    },
     onSessionStarted,
     onConfigOptionsUpdated,
     onAvailableCommands,

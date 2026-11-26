@@ -462,6 +462,12 @@ export interface AcpAdapterV2Flavor {
   readonly mcpOverHttp?: boolean;
   /** The agent has no tool search of its own, so T3 lists optional tools on demand. */
   readonly deferMcpTools?: boolean;
+  /**
+   * Direct thin-client editor mode: do not inject T3's MCP server or `T3_ACP_MCP_*` shell env,
+   * and send user prompts and attachments directly without wrapping them in outer harness
+   * system/runtime/appContext instructions.
+   */
+  readonly thinClientMode?: boolean;
   readonly normalizeSessionUpdate?: (
     notification: EffectAcpSchema.SessionNotification,
   ) => EffectAcpSchema.SessionNotification;
@@ -1016,6 +1022,7 @@ function negotiatedCapabilities(
   modelOptionArrivesLate: boolean,
   forksFromTurn: boolean,
   steersWithPrompt: boolean,
+  thinClientMode: boolean,
 ): OrchestrationV2ProviderCapabilities {
   const agent = started.initializeResult.agentCapabilities ?? {};
   const session = agent.sessionCapabilities;
@@ -1042,7 +1049,7 @@ function negotiatedCapabilities(
     },
     tools: {
       ...base.tools,
-      supportsMcpTools: true,
+      supportsMcpTools: thinClientMode ? base.tools.supportsMcpTools : true,
     },
     checkpointing: {
       ...base.checkpointing,
@@ -2096,7 +2103,7 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
   const { flavor, selfInvocation: self } = options;
   const callLauncher = yield* writeAcpMcpCallLauncher(host.paths.stateDir);
   const readMcpContext = (threadId: ThreadId | null) =>
-    threadId === null
+    flavor.thinClientMode === true || threadId === null
       ? Effect.succeed(
           acpMcpContext(undefined, self, flavor.mcpOverHttp, flavor.deferMcpTools, callLauncher),
         )
@@ -8230,6 +8237,7 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
           flavor.modelOptionArrivesLate === true,
           flavor.forkFromTurn?.supported(started.initializeResult) === true,
           steersWithPrompt,
+          flavor.thinClientMode === true,
         );
         const canLoadSession = started.initializeResult.agentCapabilities?.loadSession === true;
         const canResumeSession =
@@ -9285,30 +9293,36 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
           const previousInstructionState = (yield* Ref.get(promptInstructionStates)).get(sessionId);
           const compactionMarker = (yield* Ref.get(compactionMarkers)).get(sessionId);
           const deliveredContext = (yield* Ref.get(deliveredAppContext)).get(sessionId);
-          const appContextEntries = unsentAcpAppContext(
-            turnInput.appContext,
-            deliveredContext,
-            isNativeSlashCommand,
-          );
-          const text = t3AcpPromptWithInstructions({
-            prompt: messageText,
-            state: instructionState,
-            ...(previousInstructionState === undefined || compactionMarker !== undefined
-              ? {}
-              : { previousState: previousInstructionState }),
-          });
+          const isThinClient = flavor.thinClientMode === true;
+          const appContextEntries = isThinClient
+            ? []
+            : unsentAcpAppContext(turnInput.appContext, deliveredContext, isNativeSlashCommand);
+          const text = isThinClient
+            ? messageText
+            : t3AcpPromptWithInstructions({
+                prompt: messageText,
+                state: instructionState,
+                ...(previousInstructionState === undefined || compactionMarker !== undefined
+                  ? {}
+                  : { previousState: previousInstructionState }),
+              });
           const sessionSetup = yield* Ref.get(activeSessionSetup);
-          const runtimeInstructions = buildRuntimeInstructions({
-            agentFeedback: instructionState.hasT3Mcp ? (turnInput.agentFeedback ?? "off") : "off",
-            harness: flavor.runtimeHarness ?? driver,
-            model: turnInput.modelSelection.model,
-            runtimePolicy: turnInput.runtimePolicy,
-            pullRequestLinking:
-              sessionSetup === null ||
-              flavor.sessionCarriesPullRequestLinking?.(sessionSetup.initializeResult) !== true,
-          });
+          const runtimeInstructions = isThinClient
+            ? undefined
+            : buildRuntimeInstructions({
+                agentFeedback: instructionState.hasT3Mcp
+                  ? (turnInput.agentFeedback ?? "off")
+                  : "off",
+                harness: flavor.runtimeHarness ?? driver,
+                model: turnInput.modelSelection.model,
+                runtimePolicy: turnInput.runtimePolicy,
+                pullRequestLinking:
+                  sessionSetup === null ||
+                  flavor.sessionCarriesPullRequestLinking?.(sessionSetup.initializeResult) !== true,
+              });
           // The agent keeps its own history, so resend only after compaction or when the text changes.
           const sendRuntimeInstructions =
+            runtimeInstructions !== undefined &&
             !isNativeSlashCommand &&
             (compactionMarker !== undefined ||
               (yield* Ref.get(promptRuntimeInstructions)).get(sessionId) !== runtimeInstructions);
@@ -9330,12 +9344,12 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
               })),
             );
           }
-          if (sendRuntimeInstructions) {
+          if (sendRuntimeInstructions && runtimeInstructions !== undefined) {
             prompt.push({ type: "text", text: runtimeInstructions });
           }
           return {
             prompt,
-            instructionState: text === messageText ? undefined : instructionState,
+            instructionState: isThinClient || text === messageText ? undefined : instructionState,
             runtimeInstructions: sendRuntimeInstructions ? runtimeInstructions : undefined,
             appContextEntries,
             compactionMarker,

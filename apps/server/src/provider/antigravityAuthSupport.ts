@@ -590,7 +590,7 @@ export function buildAntigravityAcpSpawnInput(input: {
 }): AcpSessionRuntime.AcpSpawnInput {
   return {
     command: input.installation.executablePath,
-    args: ["acp", "--disable-telemetry"],
+    args: ["acp"],
     cwd: input.cwd,
     env: antigravityEnvironment(
       input.profile,
