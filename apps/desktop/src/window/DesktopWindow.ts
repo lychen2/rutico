@@ -91,6 +91,8 @@ function syncMacosWindowButtons(window: Electron.BrowserWindow): void {
 const TITLEBAR_COLOR = "#01000000"; // #00000000 does not work correctly on Linux
 const TITLEBAR_LIGHT_SYMBOL_COLOR = "#1f2937";
 const TITLEBAR_DARK_SYMBOL_COLOR = "#f8fafc";
+const SPLASH_FADE_STEP_MS = 30;
+const SPLASH_FADE_OPACITIES = [0.75, 0.5, 0.25, 0] as const;
 const MAIN_WINDOW_BOUNDS_PERSIST_DEBOUNCE_MS = 500;
 const DEVELOPMENT_LOAD_RETRY_DELAYS_MS = [100, 250, 500, 1_000, 2_000] as const;
 const RENDERER_RECOVERY_RELOAD_DELAY_MS = 500;
@@ -314,12 +316,20 @@ export function resolveInitialMainWindowBounds(
   return DesktopAppSettings.DEFAULT_MAIN_WINDOW_SIZE;
 }
 
-function buildConnectingSplashDataUrl(shouldUseDarkColors: boolean): string {
-  const background = getInitialWindowBackgroundColor(shouldUseDarkColors);
-  const label = shouldUseDarkColors ? "#9ca3af" : "#6b7280";
-  const accent = shouldUseDarkColors ? "#f8fafc" : "#1f2937";
-  const track = shouldUseDarkColors ? "rgba(248,250,252,0.18)" : "rgba(31,41,55,0.18)";
-  const html = `<!doctype html><html><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'"><style>html,body{margin:0;height:100%}body{background:${background};color:${label};font-family:system-ui,-apple-system,'Segoe UI',sans-serif;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:18px;-webkit-user-select:none;user-select:none;-webkit-app-region:drag}.spinner{width:26px;height:26px;border:3px solid ${track};border-top-color:${accent};border-radius:50%;animation:spin .8s linear infinite}.label{font-size:13px}@keyframes spin{to{transform:rotate(360deg)}}</style></head><body><div class="spinner"></div><div class="label">Connecting to WSL…</div></body></html>`;
+const RUTICO_SPLASH_EMBLEM_SVG =
+  '<svg class="emblem" viewBox="32 20 76 86" width="28" height="32" aria-hidden="true" xmlns="http://www.w3.org/2000/svg"><path d="M35 34C35 29.5817 38.5817 26 43 26H66.5C80.5833 26 90 34.4 90 46.5C90 57.6 82.05 65.4 69.8 66.8H51V54.2H65.2C71.7 54.2 75.6 51.3 75.6 46.5C75.6 41.7 71.7 38.8 65.2 38.8H50.2V94C50.2 98.4183 46.6183 102 42.2 102H40.5C37.4624 102 35 99.5376 35 96.5V34Z" fill="currentColor"/><path d="M56.5 70.5H72.2C74.9 70.5 77.4 71.9 78.8 74.2L94.4 99.2C95.3 100.6 94.1 102.4 92.5 102L84.8 99.8L79.6 102.5C78.4 103.1 76.9 102.6 76.2 101.5L56.5 70.5Z" fill="currentColor" fill-opacity="0.78"/><path d="M97 23L99.5 29.5L106 32L99.5 34.5L97 41L94.5 34.5L88 32L94.5 29.5L97 23Z" fill="currentColor" fill-opacity="0.9"/></svg>';
+
+export function buildConnectingSplashDataUrl(
+  shouldUseDarkColors: boolean,
+  persistedTheme?: string | null,
+): string {
+  const background = getInitialWindowBackgroundColor(shouldUseDarkColors, persistedTheme);
+  const foreground = shouldUseDarkColors ? "#f6f4fc" : "#1c1729";
+  const label = shouldUseDarkColors ? "#b0adbe" : "#5d576b";
+  const accent = shouldUseDarkColors ? "#b4a3fd" : "#684dc6";
+  const track = shouldUseDarkColors ? "rgba(180,163,253,0.22)" : "rgba(104,77,198,0.18)";
+  const hairline = shouldUseDarkColors ? "rgba(255,255,255,0.08)" : "rgba(28,23,41,0.08)";
+  const html = `<!doctype html><html><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'"><style>html,body{margin:0;height:100%}body{box-sizing:border-box;background:${background};color:${foreground};border:1px solid ${hairline};border-radius:12px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif;-webkit-font-smoothing:antialiased;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;-webkit-user-select:none;user-select:none;-webkit-app-region:drag}.emblem{display:block;color:${foreground}}.status{display:flex;align-items:center;gap:9px;color:${label};font-size:12.5px;line-height:1.2;letter-spacing:-0.005em}.spinner{width:14px;height:14px;box-sizing:border-box;border:2px solid ${track};border-top-color:${accent};border-radius:50%;animation:spin .8s linear infinite}@keyframes spin{to{transform:rotate(360deg)}}@media (prefers-reduced-motion: reduce){.spinner{animation:none;border-color:${accent};opacity:0.55}}</style></head><body>${RUTICO_SPLASH_EMBLEM_SVG}<div class="status"><div class="spinner" aria-hidden="true"></div><span>Connecting to WSL…</span></div></body></html>`;
   return `data:text/html;charset=utf-8,${encodeURIComponent(html)}`;
 }
 
@@ -480,9 +490,39 @@ export const make = Effect.gen(function* () {
 
   const dismissConnectingSplash = Effect.gen(function* () {
     const splash = yield* Ref.getAndSet(splashWindowRef, Option.none());
-    if (Option.isSome(splash) && !splash.value.isDestroyed()) {
-      splash.value.close();
+    if (Option.isNone(splash) || splash.value.isDestroyed()) {
+      return;
     }
+    const target = splash.value;
+    // Linux lacks Electron window opacity; close immediately there.
+    if (environment.platform === "linux") {
+      target.close();
+      return;
+    }
+    runFork(
+      Effect.forEach(
+        SPLASH_FADE_OPACITIES,
+        (opacity) =>
+          Effect.sleep(SPLASH_FADE_STEP_MS).pipe(
+            Effect.andThen(
+              Effect.sync(() => {
+                if (!target.isDestroyed()) {
+                  target.setOpacity(opacity);
+                }
+              }),
+            ),
+          ),
+        { discard: true },
+      ).pipe(
+        Effect.ensuring(
+          Effect.sync(() => {
+            if (!target.isDestroyed()) {
+              target.close();
+            }
+          }),
+        ),
+      ),
+    );
   });
 
   // Electron's first-window fallback can select the unregistered connecting splash; exclude it so main creation retries.
@@ -1204,6 +1244,8 @@ export const make = Effect.gen(function* () {
       maximizable: false,
       fullscreenable: false,
       frame: false,
+      roundedCorners: true,
+      hasShadow: true,
       center: true,
       show: false,
       skipTaskbar: false,
@@ -1229,7 +1271,7 @@ export const make = Effect.gen(function* () {
         splash.show();
       }
     });
-    void splash.loadURL(buildConnectingSplashDataUrl(shouldUseDarkColors));
+    void splash.loadURL(buildConnectingSplashDataUrl(shouldUseDarkColors, persistedTheme));
     yield* logWindowInfo("connecting splash shown");
   }).pipe(
     Effect.catch((error) =>

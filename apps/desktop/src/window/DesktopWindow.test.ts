@@ -1386,6 +1386,51 @@ describe("DesktopWindow", () => {
     assert.equal(DesktopWindow.getInitialWindowBackgroundColor(true, "unknown-theme"), "#1a1727");
   });
 
+  it("renders a branded Rutico connecting splash with reduced-motion fallback", () => {
+    const darkHtml = decodeURIComponent(
+      DesktopWindow.buildConnectingSplashDataUrl(true).replace("data:text/html;charset=utf-8,", ""),
+    );
+    assert.include(darkHtml, 'viewBox="32 20 76 86"');
+    assert.include(darkHtml, "background:#1a1727");
+    assert.include(darkHtml, "@media (prefers-reduced-motion: reduce){.spinner{animation:none;");
+    assert.include(darkHtml, "Connecting to WSL…");
+
+    const lightGroveHtml = decodeURIComponent(
+      DesktopWindow.buildConnectingSplashDataUrl(false, "grove").replace(
+        "data:text/html;charset=utf-8,",
+        "",
+      ),
+    );
+    assert.include(lightGroveHtml, "background:#f3f7f4");
+  });
+
+  it.effect("fades the connecting splash out smoothly before closing on main reveal", () =>
+    Effect.gen(function* () {
+      const splash = makeFakeBrowserWindow();
+      const main = makeFakeBrowserWindow();
+      const scenario = yield* makeSplashScenario([splash.window, main.window]);
+
+      yield* Effect.gen(function* () {
+        const desktopWindow = yield* DesktopWindow.DesktopWindow;
+        yield* desktopWindow.showConnectingSplash;
+        yield* desktopWindow.handleBackendReady(new URL("http://127.0.0.1:3773"));
+
+        main.windowListeners.get("ready-to-show")?.();
+        yield* Effect.promise(() => Promise.resolve());
+        assert.equal(vi.mocked(splash.window.close).mock.calls.length, 0);
+
+        yield* TestClock.adjust(120);
+        yield* Effect.promise(() => Promise.resolve());
+
+        assert.deepEqual(
+          splash.setOpacity.mock.calls.map(([opacity]) => opacity),
+          [0.75, 0.5, 0.25, 0],
+        );
+        assert.equal(vi.mocked(splash.window.close).mock.calls.length, 1);
+      }).pipe(Effect.provide(scenario.layer));
+    }),
+  );
+
   it.effect.each([
     { window: "normal", write: "flush" },
     { window: "normal", write: "debounce" },
