@@ -218,3 +218,109 @@
     transition: none;
   }
 }
+
+/* ==========================================================================
+   D27 / C089: Spotlight CommandPalette — 0ms Open Latency, 150ms Soft Exit,
+   Directional Push/Pop Subviews & Back Breadcrumb Pill
+   ========================================================================== */
+
+[data-slot="command-dialog-backdrop"] {
+  transition-duration: 0ms;
+}
+
+[data-slot="command-dialog-backdrop"][data-starting-style] {
+  opacity: 1;
+}
+
+[data-slot="command-dialog-backdrop"][data-ending-style] {
+  transition-duration: 150ms;
+  transition-timing-function: var(--ease-exit, ease-out);
+  opacity: 0;
+}
+
+/* High-frequency Spotlight command palette opens in 0ms (zero opening lag/scale),
+   keeping only a crisp 150ms exit fade & smooth width transition for wide content search. */
+[data-slot="command-dialog-popup"] {
+  transition:
+    opacity 0ms,
+    scale 0ms,
+    translate 0ms,
+    max-width 200ms var(--spring-snappy);
+}
+
+[data-slot="command-dialog-popup"][data-starting-style] {
+  opacity: 1;
+  scale: 1;
+  translate: 0 0;
+}
+
+[data-slot="command-dialog-popup"][data-ending-style] {
+  transition:
+    opacity 150ms var(--ease-exit, ease-out),
+    scale 150ms var(--ease-exit, ease-out),
+    translate 150ms var(--ease-exit, ease-out);
+  opacity: 0;
+  scale: 0.97;
+  translate: 0 6px;
+}
+
+@keyframes command-subview-push {
+  from {
+    opacity: 0;
+    transform: translate3d(18px, 0, 0);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+@keyframes command-subview-pop {
+  from {
+    opacity: 0;
+    transform: translate3d(-18px, 0, 0);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+@keyframes command-breadcrumb-enter {
+  from {
+    opacity: 0;
+    transform: translate3d(-6px, 0, 0);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  [data-command-view-transition="push"] {
+    animation: command-subview-push var(--duration-snappy) var(--spring-snappy) both;
+  }
+
+  [data-command-view-transition="pop"] {
+    animation: command-subview-pop var(--duration-snappy) var(--spring-snappy) both;
+  }
+
+  [data-slot="command-breadcrumb-pill"] {
+    animation: command-breadcrumb-enter var(--duration-micro) var(--spring-snappy) both;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-slot="command-dialog-backdrop"],
+  [data-slot="command-dialog-popup"],
+  [data-slot="command-dialog-popup"][data-ending-style] {
+    transition: none;
+  }
+
+  [data-command-view-transition="push"],
+  [data-command-view-transition="pop"],
+  [data-slot="command-breadcrumb-pill"] {
+    animation: none;
+  }
+}

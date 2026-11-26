@@ -238,7 +238,11 @@ import {
   type SearchOverlayMode,
 } from "./CommandPalette.logic";
 import { resolveEnvironmentOptionLabel } from "./BranchToolbar.logic";
-import { CommandPaletteContent, type PendingInputSelection } from "./CommandPaletteContent";
+import {
+  CommandPaletteContent,
+  type CommandViewTransitionDirection,
+  type PendingInputSelection,
+} from "./CommandPaletteContent";
 import {
   selectCommandPaletteClientSettings,
   useEnvironmentLookups,
@@ -479,6 +483,13 @@ function OpenCommandPaletteDialog(props: {
   const deferredQuery = useDeferredValue(query);
   const isActionsOnly = deferredQuery.startsWith(">");
   const [highlightedItemValue, setHighlightedItemValue] = useState<string | null>(null);
+  const [viewTransition, setViewTransition] = useState<CommandViewTransitionDirection>("none");
+  const panelHeightRef = useRef<number | null>(null);
+  const consumePreviousPanelHeight = useStableCallback((nextHeight: number): number | null => {
+    const previous = panelHeightRef.current;
+    panelHeightRef.current = nextHeight;
+    return previous;
+  });
   useCommandPaletteThemeLivePreview(highlightedItemValue);
   const resultListRef = useRef<LegendListRef | null>(null);
   // A pushed view drops the typed highlight until the user moves it again.
@@ -1021,6 +1032,7 @@ function OpenCommandPaletteDialog(props: {
 
   const pushPaletteView = useStableCallback((view: CommandPaletteView): void => {
     browseNavigation.invalidate();
+    setViewTransition("push");
     dispatchSearch({ type: "push", view });
     highlightClearedRef.current = true;
     setHighlightedItemValue(null);
@@ -1037,6 +1049,7 @@ function OpenCommandPaletteDialog(props: {
     } else if (newProjectFlow?.sourcesEnvironmentId) {
       setAddProjectEnvironmentId(newProjectFlow.sourcesEnvironmentId);
     }
+    setViewTransition("pop");
     dispatchSearch({ type: "back" });
     setHighlightedItemValue(null);
   });
@@ -3111,14 +3124,35 @@ function OpenCommandPaletteDialog(props: {
     </span>
   ) : null;
 
+  const viewContentKey = `${viewStack.length}-${browseGeneration}-${isBrowsing}-${newProjectFlow ? "new-project" : (addProjectCloneFlow?.step ?? "none")}`;
+  const heightBucket = resultRows.rows.length === 0 ? 0 : Math.min(8, resultRows.rows.length);
+  const breadcrumbLabel = isSubmenu
+    ? newProjectFlow !== null
+      ? gt("New project")
+      : addProjectCloneFlow !== null
+        ? gt("Clone repository")
+        : currentView?.groups[0]?.label ||
+          (currentView?.groups[0]?.value === ADD_PROJECT_ENTRY_GROUP
+            ? gt("Add project")
+            : isBrowsing
+              ? gt("Browse folders")
+              : gt("Back"))
+    : undefined;
+
   return (
     <CommandPaletteContent
-      key={`${viewStack.length}-${browseGeneration}-${isBrowsing}-${newProjectFlow ? "new-project" : (addProjectCloneFlow?.step ?? "none")}`}
+      key={viewContentKey}
       aria-label={gt("Command palette")}
       autoHighlight={autoHighlightsFirstRow ? "always" : false}
+      breadcrumbLabel={breadcrumbLabel}
+      consumePreviousPanelHeight={consumePreviousPanelHeight}
       footerActionLabel={footerActionLabel}
       footerTrailing={footerTrailing}
+      heightBucket={heightBucket}
       inputAccessory={inputAccessory}
+      onBack={popView}
+      viewTransition={viewTransition}
+      viewTransitionKey={viewContentKey}
       inputProps={{
         className: hasHighlightedNewProjectItem
           ? "*:data-[slot=autocomplete-input]:pe-38!"
