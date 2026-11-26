@@ -242,7 +242,7 @@ function antigravityEnvironment(
     baseEnv.SSL_CERT_DIR === undefined
       ? { SSL_CERT_FILE: profile.caBundlePath }
       : {}),
-    AGY_CLI_DISABLE_AUTO_UPDATE: "1",
+    AGY_CLI_DISABLE_AUTO_UPDATE: "true",
     BROWSER: profile.browserCommand,
     PYTHONUNBUFFERED: "1",
     ELECTRON_RUN_AS_NODE: "1",

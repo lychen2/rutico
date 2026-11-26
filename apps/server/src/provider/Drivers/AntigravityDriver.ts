@@ -541,6 +541,7 @@ export const AntigravityDriver: ProviderDriver<
     const usage = yield* makeAntigravityUsageProbe({
       authMethod: auth.authMethod,
       resolveExecutable: installation.resolve(settings.binaryPath, processEnvironment),
+      checkCompatibility: installation.compatibility,
       environment: processEnvironment,
       platform,
       userHome,

@@ -99,7 +99,7 @@ describe("Antigravity process environment", () => {
         HOME: "/home/developer",
         PATH: "/usr/bin",
         CUSTOM_SETTING: "keep-this",
-        AGY_CLI_DISABLE_AUTO_UPDATE: "1",
+        AGY_CLI_DISABLE_AUTO_UPDATE: "true",
         BROWSER: profile.browserCommand,
         PYTHONUNBUFFERED: "1",
         ELECTRON_RUN_AS_NODE: "1",
