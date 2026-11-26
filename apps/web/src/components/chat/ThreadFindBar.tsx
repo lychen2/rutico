@@ -3,6 +3,8 @@ import { T, useGT } from "gt-react";
 import { ChevronDownIcon, ChevronUpIcon, XIcon } from "lucide-react";
 import { Button } from "../ui/button";
 import { InputGroup, InputGroupAddon, InputGroupInput } from "../ui/input-group";
+import { Kbd, KbdGroup } from "../ui/kbd";
+import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { cn } from "~/lib/utils";
 import {
   formatThreadFindCount,
@@ -48,7 +50,7 @@ export function ThreadFindBar(props: ThreadFindBarProps) {
   ]);
 
   const hasQuery = props.query.trim().length > 0;
-  const noResults = hasQuery && !props.status && props.matchCount === 0;
+  const noResults = hasQuery && !props.status && !props.counting && props.matchCount === 0;
   let label = "";
   if (hasQuery) {
     label = props.counting ? "1/…" : formatThreadFindCount(props.activeIndex, props.matchCount);
@@ -81,7 +83,11 @@ export function ThreadFindBar(props: ThreadFindBarProps) {
   return (
     <div
       data-thread-find-bar
-      className="absolute top-3 right-3 z-40 w-[min(var(--thread-details-panel-width),calc(100%-1.5rem))] transition-opacity duration-150 ease-out starting:opacity-0 motion-reduce:transition-none"
+      data-thread-find-no-results={noResults ? "true" : undefined}
+      className={cn(
+        "absolute top-3 right-3 z-40 w-[min(var(--thread-details-panel-width),calc(100%-1.5rem))] origin-top rounded-2xl transition-[opacity,transform,box-shadow] duration-200 ease-(--ease-spring-snappy) starting:-translate-y-2 starting:scale-[0.98] starting:opacity-0 motion-reduce:transition-none",
+        noResults && "ring-2 ring-destructive/25",
+      )}
     >
       <InputGroup
         variant="popover"
@@ -123,32 +129,71 @@ export function ThreadFindBar(props: ThreadFindBarProps) {
               <T>Retry</T>
             </Button>
           ) : null}
-          <Button
-            size="icon-xs"
-            variant="ghost"
-            aria-label={gt("Previous match")}
-            disabled={navigationDisabled}
-            onClick={props.onPrevious}
-          >
-            <ChevronUpIcon />
-          </Button>
-          <Button
-            size="icon-xs"
-            variant="ghost"
-            aria-label={gt("Next match")}
-            disabled={navigationDisabled}
-            onClick={props.onNext}
-          >
-            <ChevronDownIcon />
-          </Button>
-          <Button
-            size="icon-xs"
-            variant="ghost"
-            aria-label={gt("Close find")}
-            onClick={props.onClose}
-          >
-            <XIcon />
-          </Button>
+          <Tooltip>
+            <TooltipTrigger
+              render={
+                <Button
+                  size="icon-xs"
+                  variant="ghost"
+                  aria-label={gt("Previous match")}
+                  disabled={navigationDisabled}
+                  onClick={props.onPrevious}
+                />
+              }
+            >
+              <ChevronUpIcon />
+            </TooltipTrigger>
+            <TooltipPopup side="bottom">
+              <span className="inline-flex items-center gap-1.5">
+                <span>{gt("Previous match")}</span>
+                <KbdGroup>
+                  <Kbd>Shift</Kbd>
+                  <Kbd>Enter</Kbd>
+                </KbdGroup>
+              </span>
+            </TooltipPopup>
+          </Tooltip>
+          <Tooltip>
+            <TooltipTrigger
+              render={
+                <Button
+                  size="icon-xs"
+                  variant="ghost"
+                  aria-label={gt("Next match")}
+                  disabled={navigationDisabled}
+                  onClick={props.onNext}
+                />
+              }
+            >
+              <ChevronDownIcon />
+            </TooltipTrigger>
+            <TooltipPopup side="bottom">
+              <span className="inline-flex items-center gap-1.5">
+                <span>{gt("Next match")}</span>
+                <Kbd>Enter</Kbd>
+              </span>
+            </TooltipPopup>
+          </Tooltip>
+          <Tooltip>
+            <TooltipTrigger
+              render={
+                <Button
+                  size="icon-xs"
+                  variant="ghost"
+                  aria-label={gt("Close find")}
+                  onClick={props.onClose}
+                />
+              }
+            >
+              <XIcon />
+            </TooltipTrigger>
+            <TooltipPopup side="bottom">
+              <span className="inline-flex items-center gap-1.5">
+                <span>{gt("Close find")}</span>
+                <Kbd>Esc</Kbd>
+              </span>
+            </TooltipPopup>
+          </Tooltip>
         </InputGroupAddon>
       </InputGroup>
     </div>
