@@ -3,16 +3,43 @@ import type { EnvironmentId, ThreadId } from "@t3tools/contracts";
 import { beforeEach, describe, expect, it, vi } from "vite-plus/test";
 
 const harness = vi.hoisted(() => ({
+  os: "ios" as "ios" | "android",
   appActive: true,
   selectionAsync: vi.fn(async () => {}),
   impactAsync: vi.fn(async () => {}),
+  notificationAsync: vi.fn(async () => {}),
+  performAndroidHapticsAsync: vi.fn(async () => {}),
   threadAtom: null as Atom.Writable<unknown, unknown> | null,
 }));
 
+vi.mock("react-native", () => ({
+  Platform: {
+    get OS() {
+      return harness.os;
+    },
+  },
+}));
 vi.mock("expo-haptics", () => ({
-  ImpactFeedbackStyle: { Light: "light" },
+  AndroidHaptics: {
+    Confirm: "confirm",
+    Reject: "reject",
+    Gesture_Start: "gesture-start",
+    Gesture_End: "gesture-end",
+    Segment_Tick: "segment-tick",
+    Segment_Frequent_Tick: "segment-frequent-tick",
+    Clock_Tick: "clock-tick",
+    Toggle_On: "toggle-on",
+    Toggle_Off: "toggle-off",
+    Context_Click: "context-click",
+    Drag_Start: "drag-start",
+    Long_Press: "long-press",
+  },
+  ImpactFeedbackStyle: { Light: "light", Medium: "medium", Soft: "soft" },
+  NotificationFeedbackType: { Success: "success", Warning: "warning", Error: "error" },
+  performAndroidHapticsAsync: harness.performAndroidHapticsAsync,
   selectionAsync: harness.selectionAsync,
   impactAsync: harness.impactAsync,
+  notificationAsync: harness.notificationAsync,
 }));
 vi.mock("../../lib/appState", () => ({
   isAppActive: () => harness.appActive,
@@ -24,7 +51,9 @@ vi.mock("../../state/threads", () => ({
 }));
 
 import {
+  shouldFireRunFailedHaptic,
   shouldFireStreamCompleteHaptic,
+  shouldFireToolCompleteHaptic,
   shouldTickStreamHaptic,
   threadStreamHaptics,
 } from "./threadStreamHaptics";
@@ -93,11 +122,31 @@ describe("shouldFireStreamCompleteHaptic", () => {
   });
 });
 
+describe("shouldFireToolCompleteHaptic and shouldFireRunFailedHaptic", () => {
+  it("detects tool completion increments and newly failed runs", () => {
+    expect(
+      shouldFireToolCompleteHaptic({ previousCompletedCount: 1, currentCompletedCount: 2 }),
+    ).toBe(true);
+    expect(
+      shouldFireToolCompleteHaptic({ previousCompletedCount: 2, currentCompletedCount: 2 }),
+    ).toBe(false);
+    expect(
+      shouldFireRunFailedHaptic({ previousFailedRunId: null, latestFailedRunId: "run-1" }),
+    ).toBe(true);
+    expect(
+      shouldFireRunFailedHaptic({ previousFailedRunId: "run-1", latestFailedRunId: "run-1" }),
+    ).toBe(false);
+  });
+});
+
 describe("threadStreamHaptics foreground gating & completion", () => {
   beforeEach(() => {
+    harness.os = "ios";
     harness.appActive = true;
     harness.selectionAsync.mockClear();
     harness.impactAsync.mockClear();
+    harness.notificationAsync.mockClear();
+    harness.performAndroidHapticsAsync.mockClear();
   });
 
   it("suppresses haptics while backgrounded and fires a light completion impact in the foreground", () => {
@@ -144,6 +193,68 @@ describe("threadStreamHaptics foreground gating & completion", () => {
       });
       expect(harness.impactAsync).toHaveBeenCalledTimes(1);
       expect(harness.impactAsync).toHaveBeenCalledWith("light");
+    } finally {
+      unmount();
+    }
+  });
+
+  it("fires Android semantic haptic ladder for stream token, tool completion, turn completion and failure", () => {
+    harness.os = "android";
+    harness.threadAtom = Atom.make<unknown>({
+      projection: {
+        messages: [],
+        turnItems: [],
+        runs: [],
+      },
+    });
+    const registry = AtomRegistry.make();
+    const unmount = registry.mount(
+      threadStreamHaptics({
+        environmentId: "env-android-1" as EnvironmentId,
+        threadId: "thread-android-1" as ThreadId,
+      }),
+    );
+
+    try {
+      // 1. First token -> Clock_Tick
+      registry.set(harness.threadAtom, {
+        projection: {
+          messages: [{ id: "m1", role: "assistant", streaming: true, text: "Hel" }],
+          turnItems: [],
+          runs: [],
+        },
+      });
+      expect(harness.performAndroidHapticsAsync).toHaveBeenLastCalledWith("clock-tick");
+
+      // 2. Tool completion -> Segment_Tick
+      registry.set(harness.threadAtom, {
+        projection: {
+          messages: [{ id: "m1", role: "assistant", streaming: true, text: "Hel" }],
+          turnItems: [{ item: { type: "command_execution", status: "completed" } }],
+          runs: [],
+        },
+      });
+      expect(harness.performAndroidHapticsAsync).toHaveBeenLastCalledWith("segment-tick");
+
+      // 3. Turn completion -> Confirm
+      registry.set(harness.threadAtom, {
+        projection: {
+          messages: [{ id: "m1", role: "assistant", streaming: false, text: "Hello!" }],
+          turnItems: [{ item: { type: "command_execution", status: "completed" } }],
+          runs: [],
+        },
+      });
+      expect(harness.performAndroidHapticsAsync).toHaveBeenLastCalledWith("confirm");
+
+      // 4. Run failure -> Reject
+      registry.set(harness.threadAtom, {
+        projection: {
+          messages: [{ id: "m1", role: "assistant", streaming: false, text: "Hello!" }],
+          turnItems: [{ item: { type: "command_execution", status: "completed" } }],
+          runs: [{ id: "run-fail-1", status: "failed" }],
+        },
+      });
+      expect(harness.performAndroidHapticsAsync).toHaveBeenLastCalledWith("reject");
     } finally {
       unmount();
     }
