@@ -1,3 +1,4 @@
+import * as Haptics from "expo-haptics";
 import { NativeThemeHost } from "./NativeThemeHost.android";
 import { Switch as ComposeSwitch } from "@expo/ui/jetpack-compose";
 import { Pressable, View } from "react-native";
@@ -12,7 +13,10 @@ export function NativeSwitch(props: ThemedSwitchProps) {
   return (
     <Pressable
       disabled={props.disabled}
-      onPress={() => props.onValueChange?.(!props.value)}
+      onPress={() => {
+        void Haptics.selectionAsync().catch(() => undefined);
+        props.onValueChange?.(!props.value);
+      }}
       accessibilityLabel={props.accessibilityLabel}
       accessibilityHint={props.accessibilityHint}
       accessibilityRole="switch"
