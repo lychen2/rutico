@@ -11,6 +11,7 @@ import {
   ProviderInstanceId,
   ProviderSessionId,
   ProviderThreadId,
+  ProviderTurnId,
   RunAttemptId,
   RunId,
   RuntimeRequestId,
@@ -300,7 +301,103 @@ it.effect("queues provider and resource cleanup and preserves an earlier deletio
         { type: "terminal.cleanup" },
         { type: "preview.cleanup" },
         { type: "attachment.cleanup", attachmentIds: ["shared_file"] },
+        { type: "thread-content.purge" },
       ],
     );
   }).pipe(Effect.provide(IdAllocator.layer)),
+);
+
+it.effect(
+  "captures providerThreads and running providerTurns on provider-session.detach so hard-delete cannot hide them",
+  () =>
+    Effect.gen(function* () {
+      const base = makeProjection();
+      const sessionId = ProviderSessionId.make("session:delete-plan:codex-shared");
+      const activeTurnId = ProviderTurnId.make("provider-turn:delete-plan:running");
+      const completedTurnId = ProviderTurnId.make("provider-turn:delete-plan:completed");
+      const providerThread = {
+        id: providerThreadId,
+        driver,
+        providerInstanceId,
+        providerSessionId: sessionId,
+        appThreadId: threadId,
+        ownerNodeId: null,
+        nativeThreadRef: { driver, nativeId: "native-codex-thread", strength: "strong" as const },
+        nativeConversationHeadRef: null,
+        status: "active" as const,
+        firstRunOrdinal: 1,
+        lastRunOrdinal: 1,
+        handoffIds: [],
+        forkedFrom: null,
+        pendingBackgroundTasks: [],
+        contextUsage: null,
+        nativeMetadata: null,
+        goal: null,
+        createdAt,
+        updatedAt: createdAt,
+      };
+      const projection: OrchestrationV2ThreadProjection = {
+        ...base,
+        providerSessions: [
+          {
+            id: sessionId,
+            driver,
+            providerInstanceId,
+            status: "running",
+            cwd: "/workspace/feature",
+            model: "gpt-5.4",
+            capabilities: CodexProviderCapabilitiesV2,
+            createdAt,
+            updatedAt: createdAt,
+            lastError: null,
+          },
+        ],
+        providerThreads: [providerThread],
+        providerTurns: [
+          {
+            id: activeTurnId,
+            providerThreadId,
+            nodeId: base.nodes[3]!.id,
+            runAttemptId: base.runs[3]!.activeAttemptId,
+            nativeTurnRef: { driver, nativeId: "native-turn-1", strength: "strong" },
+            ordinal: 1,
+            status: "running",
+            startedAt: createdAt,
+            completedAt: null,
+          },
+          {
+            id: completedTurnId,
+            providerThreadId,
+            nodeId: base.nodes[5]!.id,
+            runAttemptId: base.runs[5]!.activeAttemptId,
+            nativeTurnRef: { driver, nativeId: "native-turn-0", strength: "strong" },
+            ordinal: 2,
+            status: "completed",
+            startedAt: createdAt,
+            completedAt: createdAt,
+          },
+        ],
+      };
+
+      const plan = yield* planThreadDeletion({
+        command,
+        projection,
+        attachmentIds: [],
+        now: deletedAt,
+        idAllocator: yield* IdAllocator.IdAllocatorV2,
+      });
+
+      const detachEffect = plan.effects.find(
+        (effect) => effect.request.type === "provider-session.detach",
+      );
+      assert.isDefined(detachEffect);
+      assert.deepEqual(detachEffect?.request, {
+        type: "provider-session.detach",
+        providerSessionId: sessionId,
+        detail: "Thread deleted.",
+        revokeMcpCredential: true,
+        providerThreads: [providerThread],
+        activeProviderTurns: [{ providerThreadId, providerTurnId: activeTurnId }],
+      });
+    }).pipe(Effect.provide(IdAllocator.layer)),
 );

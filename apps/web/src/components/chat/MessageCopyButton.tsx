@@ -7,7 +7,7 @@ import {
   ANCHORED_COPY_TOAST_TIMEOUT_MS,
   showAnchoredCopyErrorToast,
 } from "../ui/anchoredCopyToast";
-import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
+import { SharedTooltipTrigger } from "../ui/shared-tooltip";
 
 export const MessageCopyButton = memo(function MessageCopyButton({
   text,
@@ -37,32 +37,28 @@ export const MessageCopyButton = memo(function MessageCopyButton({
   const activeLabel = isCopied ? gt("Copied") : label;
 
   return (
-    <Tooltip>
-      <TooltipTrigger
-        render={
-          <Button
-            aria-label={activeLabel}
-            data-copied={isCopied ? "true" : undefined}
-            onClick={() => {
-              if (!isCopied) copyToClipboard(text);
-            }}
-            ref={ref}
-            type="button"
-            size={size}
-            variant={variant === "ghost" ? "ghost-muted" : variant}
-            className={className}
-          />
-        }
-      >
-        {isCopied ? (
-          <CheckIcon key="copied" className="t3-icon-pop size-3 text-success" />
-        ) : (
-          <Icon key="copy" className="size-3" />
-        )}
-      </TooltipTrigger>
-      <TooltipPopup>
-        <p>{activeLabel}</p>
-      </TooltipPopup>
-    </Tooltip>
+    <SharedTooltipTrigger
+      render={
+        <Button
+          aria-label={activeLabel}
+          data-copied={isCopied ? "true" : undefined}
+          onClick={() => {
+            if (!isCopied) copyToClipboard(text);
+          }}
+          ref={ref}
+          type="button"
+          size={size}
+          variant={variant === "ghost" ? "ghost-muted" : variant}
+          className={className}
+        />
+      }
+      label={<p>{activeLabel}</p>}
+    >
+      {isCopied ? (
+        <CheckIcon key="copied" className="t3-icon-pop size-3 text-success" />
+      ) : (
+        <Icon key="copy" className="size-3" />
+      )}
+    </SharedTooltipTrigger>
   );
 });

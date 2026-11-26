@@ -1,5 +1,6 @@
 import { sha256 } from "@noble/hashes/sha2";
 import type { RelayAgentActivityAggregateState } from "@t3tools/contracts/relay";
+import { compareSemverVersions, parseSemver } from "@t3tools/shared/semver";
 import * as Hex from "effect/encoding/Hex";
 import {
   activityPhasePriority,
@@ -11,12 +12,17 @@ const textEncoder = new TextEncoder();
 
 /**
  * Lets the device ignore pushes for an account it no longer has without FCM
- * seeing the raw account id. Salted per-device with `deviceId`.
+ * seeing the raw account id. Builds before 2.4.0 only match the raw `user_id`.
  */
-export function androidRecipientData(userId: string, deviceId: string) {
+export function androidRecipientData(userId: string, deviceId: string, appVersion: string | null) {
+  const readsHash =
+    appVersion !== null &&
+    parseSemver(appVersion) !== null &&
+    compareSemverVersions(appVersion, "2.4.0") >= 0;
   return {
     device_id: deviceId,
     user_hash: Hex.encode(sha256(textEncoder.encode(`${userId}:${deviceId}`))),
+    ...(readsHash ? {} : { user_id: userId }),
   };
 }
 

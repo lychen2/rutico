@@ -7,7 +7,6 @@ import { T, useGT } from "gt-react";
 import { AlertCircle, Laptop, RotateCw } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { Button } from "~/components/ui/button";
-import { Tooltip, TooltipPopup, TooltipTrigger } from "~/components/ui/tooltip";
 import { cn } from "~/lib/utils";
 import { observeVisibleAnimation } from "~/lib/visibleAnimation";
 import {
@@ -19,6 +18,7 @@ import {
 } from "./deviceFold";
 import { androidFoldReadAtom, androidFoldViewAtom, foldAngle, NOOP_ATOM } from "./deviceHubAtoms";
 import { DeviceDuoGlyph } from "./DeviceDuoGlyph";
+import { SharedTooltipTrigger } from "~/components/ui/shared-tooltip";
 
 const isAndroidFoldError = Schema.is(AndroidFoldError);
 
@@ -141,82 +141,84 @@ export function DeviceAndroidFoldControls(props: {
         >
           {formatAndroidFoldAngle(displayAngle)}
         </span>
-        <Tooltip>
-          <TooltipTrigger
-            render={
-              <Button
-                size="icon"
-                variant={fold.posture === "closed" && !isTabletopPreview ? "secondary" : "ghost"}
-                aria-label={gt("Fold device")}
-                aria-pressed={fold.posture === "closed" && !isTabletopPreview}
-                disabled={pending || !props.enabled}
-                onClick={() => change("closed")}
-              />
-            }
-          >
-            <DeviceDuoGlyph pose="closed" />
-          </TooltipTrigger>
-          <TooltipPopup side="left">
-            <T>Fold device (0°)</T>
-          </TooltipPopup>
-        </Tooltip>
-        <Tooltip>
-          <TooltipTrigger
-            render={
-              <Button
-                size="icon"
-                variant={isTabletopPreview ? "secondary" : "ghost"}
-                aria-label={gt("Preview 90° tabletop posture")}
-                aria-pressed={isTabletopPreview}
-                disabled={pending || !props.enabled}
-                onClick={toggleTabletopPreview}
-              />
-            }
-          >
-            <Laptop className="size-3.5" />
-          </TooltipTrigger>
-          <TooltipPopup side="left">
-            <T>Preview 90° tabletop posture</T>
-          </TooltipPopup>
-        </Tooltip>
-        <Tooltip>
-          <TooltipTrigger
-            render={
-              <Button
-                size="icon"
-                variant={fold.posture === "opened" && !isTabletopPreview ? "secondary" : "ghost"}
-                aria-label={gt("Unfold device")}
-                aria-pressed={fold.posture === "opened" && !isTabletopPreview}
-                disabled={pending || !props.enabled}
-                onClick={() => change("opened")}
-              />
-            }
-          >
-            <DeviceDuoGlyph pose="open" />
-          </TooltipTrigger>
-          <TooltipPopup side="left">
-            <T>Unfold device (180°)</T>
-          </TooltipPopup>
-        </Tooltip>
+        <SharedTooltipTrigger
+          render={
+            <Button
+              size="icon"
+              variant={fold.posture === "closed" && !isTabletopPreview ? "secondary" : "ghost"}
+              aria-label={gt("Fold device")}
+              aria-pressed={fold.posture === "closed" && !isTabletopPreview}
+              disabled={pending || !props.enabled}
+              onClick={() => change("closed")}
+            />
+          }
+          label={
+            <>
+              <T>Fold device (0°)</T>
+            </>
+          }
+          side="left"
+        >
+          <DeviceDuoGlyph pose="closed" />
+        </SharedTooltipTrigger>
+        <SharedTooltipTrigger
+          render={
+            <Button
+              size="icon"
+              variant={isTabletopPreview ? "secondary" : "ghost"}
+              aria-label={gt("Preview 90° tabletop posture")}
+              aria-pressed={isTabletopPreview}
+              disabled={pending || !props.enabled}
+              onClick={toggleTabletopPreview}
+            />
+          }
+          label={
+            <>
+              <T>Preview 90° tabletop posture</T>
+            </>
+          }
+          side="left"
+        >
+          <Laptop className="size-3.5" />
+        </SharedTooltipTrigger>
+        <SharedTooltipTrigger
+          render={
+            <Button
+              size="icon"
+              variant={fold.posture === "opened" && !isTabletopPreview ? "secondary" : "ghost"}
+              aria-label={gt("Unfold device")}
+              aria-pressed={fold.posture === "opened" && !isTabletopPreview}
+              disabled={pending || !props.enabled}
+              onClick={() => change("opened")}
+            />
+          }
+          label={
+            <>
+              <T>Unfold device (180°)</T>
+            </>
+          }
+          side="left"
+        >
+          <DeviceDuoGlyph pose="open" />
+        </SharedTooltipTrigger>
       </div>
       {error ? (
-        <Tooltip>
-          <TooltipTrigger
-            render={
-              <button
-                type="button"
-                role="alert"
-                aria-label={gt("{error} Click to retry.", { error })}
-                onClick={() => change(lastPosture)}
-                className="surface-optical-chrome pointer-events-auto inline-flex cursor-pointer items-center gap-0.5 rounded-full border border-destructive/50 px-1.5 py-0.5 text-3xs font-medium text-destructive transition-colors hover:bg-destructive/10"
-              >
-                <AlertCircle className="size-3 shrink-0" />
-                <RotateCw className="size-2.5 shrink-0" />
-              </button>
-            }
-          />
-          <TooltipPopup side="left">{gt("{error} Click to retry.", { error })}</TooltipPopup>
-        </Tooltip>
+        <SharedTooltipTrigger
+          render={
+            <button
+              type="button"
+              role="alert"
+              aria-label={gt("{error} Click to retry.", { error })}
+              onClick={() => change(lastPosture)}
+              className="surface-optical-chrome pointer-events-auto inline-flex cursor-pointer items-center gap-0.5 rounded-full border border-destructive/50 px-1.5 py-0.5 text-3xs font-medium text-destructive transition-colors hover:bg-destructive/10"
+            >
+              <AlertCircle className="size-3 shrink-0" />
+              <RotateCw className="size-2.5 shrink-0" />
+            </button>
+          }
+          label={gt("{error} Click to retry.", { error })}
+          side="left"
+        />
       ) : null}
     </div>
   );

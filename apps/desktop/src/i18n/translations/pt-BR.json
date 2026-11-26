@@ -123,5 +123,12 @@
   "8af79268f2349f4c": "Copiar endereço de e-mail",
   "a9f9254d458e49fe": "Copiar imagem",
   "9c1b20fbc881de5d": "Configuração do desktop",
-  "1b14230874f19eb9": "Imagens"
+  "1b14230874f19eb9": "Imagens",
+  "e632aac04674913c": "{origin} quer usar sua câmera e seu microfone",
+  "379c230d24c9b5c5": "{origin} quer usar seu microfone",
+  "576ac67fdb145936": "{origin} quer usar sua câmera",
+  "d8d5fbd2529b6bd3": "O macOS impediu o T3 Code de usar sua câmera e seu microfone",
+  "65dff766a75b43d5": "O macOS impediu o T3 Code de usar seu microfone",
+  "39e3d7326db9af25": "O macOS impediu o T3 Code de usar sua câmera",
+  "fb7c135eaced773b": "Permita o T3 Code em Ajustes do Sistema › Privacidade e Segurança e reinicie o T3 Code."
 }

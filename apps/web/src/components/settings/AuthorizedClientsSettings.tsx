@@ -2,7 +2,7 @@ import { thrownErrorMessage } from "@t3tools/client-runtime/errors";
 import { m as resolveMessage } from "~/i18n/messages";
 import { managedCapabilityDenial } from "@t3tools/client-runtime/contract-labels";
 import { AUTH_SCOPE_OPTIONS as PAIRING_SCOPE_OPTIONS } from "@t3tools/shared/authScopeOptions";
-import { PlugIcon, PlusIcon, QrCodeIcon } from "lucide-react";
+import { ChevronDownIcon, PlugIcon, PlusIcon, QrCodeIcon } from "lucide-react";
 import { type ReactNode, memo, useId, useRef, useState } from "react";
 import { T, useGT, useMessages } from "gt-react";
 import {
@@ -49,10 +49,10 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "../ui/dialog";
+import { Menu, MenuItem, MenuPopup, MenuTrigger } from "../ui/menu";
 import { Popover, PopoverPopup, PopoverTrigger } from "../ui/popover";
 import { QRCodeSvg } from "../ui/qr-code";
 import { stackedThreadToast, toastManager } from "../ui/toast";
-import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { Button } from "../ui/button";
 import { Textarea } from "../ui/textarea";
 import {
@@ -77,6 +77,7 @@ import {
   isHostedAppPairingUrl,
   endpointShareHint,
 } from "./ConnectionsSettings.logic";
+import { SharedTooltipTrigger } from "../ui/shared-tooltip";
 
 function AccessScopeSummary({
   scopes,
@@ -288,12 +289,9 @@ const PairingLinkListRow = memo(function PairingLinkListRow({
             <h3 className="text-sm font-medium text-foreground">{primaryLabel}</h3>
           </div>
           <p className="text-xs text-muted-foreground">
-            <Tooltip>
-              <TooltipTrigger render={<span />}>
-                {formatExpiresInLabel(pairingLink.expiresAt, nowMs, m)}
-              </TooltipTrigger>
-              <TooltipPopup side="top">{expiresAbsolute}</TooltipPopup>
-            </Tooltip>
+            <SharedTooltipTrigger render={<span />} label={expiresAbsolute}>
+              {formatExpiresInLabel(pairingLink.expiresAt, nowMs, m)}
+            </SharedTooltipTrigger>
             <span aria-hidden> · </span>
             <AccessScopeSummary scopes={pairingLink.scopes} label={gt("Pairing link scopes")} />
           </p>
@@ -454,16 +452,14 @@ const PairingLinkListRow = memo(function PairingLinkListRow({
               </div>
             ) : null}
             <div className="flex items-center gap-2 rounded-lg border border-border/60 bg-muted/30 px-2.5 py-1.5">
-              <Tooltip>
-                <TooltipTrigger
-                  render={
-                    <code className="min-w-0 flex-1 truncate font-mono text-2xs text-muted-foreground">
-                      {qrPairingUrl}
-                    </code>
-                  }
-                />
-                <TooltipPopup side="top">{qrPairingUrl}</TooltipPopup>
-              </Tooltip>
+              <SharedTooltipTrigger
+                render={
+                  <code className="min-w-0 flex-1 truncate font-mono text-2xs text-muted-foreground">
+                    {qrPairingUrl}
+                  </code>
+                }
+                label={qrPairingUrl}
+              />
               <Button
                 size="xs"
                 variant="ghost"
@@ -477,13 +473,45 @@ const PairingLinkListRow = memo(function PairingLinkListRow({
               <Button size="xs" variant="ghost" onClick={handleCopyCode}>
                 <T>Copy code only</T>
               </Button>
-              <Button
-                size="xs"
-                variant="ghost"
-                onClick={() => copyPairingValue(buildRuticoPairingAppLink(qrPairingUrl), "link")}
-              >
-                <T>Copy Rutico app link</T>
-              </Button>
+              <Menu>
+                <MenuTrigger
+                  render={
+                    <Button size="xs" variant="ghost">
+                      <T>Copy Rutico app link</T>
+                      <ChevronDownIcon className="size-3" aria-hidden="true" />
+                    </Button>
+                  }
+                />
+                <MenuPopup align="start">
+                  <MenuItem
+                    onClick={() =>
+                      copyPairingValue(buildRuticoPairingAppLink(qrPairingUrl, "rutico"), "link")
+                    }
+                  >
+                    <T>Rutico (Release)</T>
+                  </MenuItem>
+                  <MenuItem
+                    onClick={() =>
+                      copyPairingValue(
+                        buildRuticoPairingAppLink(qrPairingUrl, "rutico-preview"),
+                        "link",
+                      )
+                    }
+                  >
+                    <T>Rutico Preview / Nightly</T>
+                  </MenuItem>
+                  <MenuItem
+                    onClick={() =>
+                      copyPairingValue(
+                        buildRuticoPairingAppLink(qrPairingUrl, "rutico-dev"),
+                        "link",
+                      )
+                    }
+                  >
+                    <T>Rutico Dev</T>
+                  </MenuItem>
+                </MenuPopup>
+              </Menu>
               <Button
                 size="xs"
                 variant="ghost"
@@ -977,16 +1005,14 @@ export const AdvertisedEndpointListRow = memo(function AdvertisedEndpointListRow
             {endpoint.label}
           </h3>
           {shouldShowEndpointUrl ? (
-            <Tooltip>
-              <TooltipTrigger
-                render={
-                  <p className="min-w-0 truncate text-xs leading-5 text-muted-foreground">
-                    {endpoint.httpBaseUrl}
-                  </p>
-                }
-              />
-              <TooltipPopup side="top">{endpoint.httpBaseUrl}</TooltipPopup>
-            </Tooltip>
+            <SharedTooltipTrigger
+              render={
+                <p className="min-w-0 truncate text-xs leading-5 text-muted-foreground">
+                  {endpoint.httpBaseUrl}
+                </p>
+              }
+              label={endpoint.httpBaseUrl}
+            />
           ) : null}
           {!isAvailable ? (
             <span className="inline-flex h-6 shrink-0 items-center rounded-md border border-border/70 px-1.5 text-3xs text-muted-foreground">

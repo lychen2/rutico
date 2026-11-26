@@ -12,7 +12,7 @@
 ## Highlights
 
 - **Native Oh My Pi (OMP) integration**: Built-in `omp --mode rpc-ui` adapter mapping native tool intents, to-do phases, and subagent lifecycle events into the shared timeline.
-- **Native Antigravity ACP integration**: Runs `agy` over ACP with telemetry disabled and direct local quota reporting.
+- **Native Antigravity ACP integration**: Runs native `agy` over ACP as a thin client using your local CLI configuration, with direct local quota reporting.
 - **Privacy-hardened local runtime**: Telemetry/analytics stripped, process argument redaction enabled, and hard deletion of removed thread history.
 - **Custom Rutico branding & frosted glass workspace**: Wisteria/lavender palette, persistent anime backdrop with frosted glass surfaces across desktop/web and Android, plus full-bleed adaptive icons.
 - **Multi-environment & Git worktrees**: Control Claude Code, Codex, OMP, Antigravity, Pi, OpenCode, Cursor, Kiro, and ACP agents across local machines, SSH hosts, and Tailscale.

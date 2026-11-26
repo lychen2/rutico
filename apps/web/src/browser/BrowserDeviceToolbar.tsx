@@ -12,7 +12,6 @@ import { msg, T, useGT, useMessages } from "gt-react";
 import { pulseBrowserSurfaceGeometrySync } from "~/browser/BrowserSurfaceSlot";
 import { Button } from "~/components/ui/button";
 import { Input } from "~/components/ui/input";
-import { Tooltip, TooltipPopup, TooltipTrigger } from "~/components/ui/tooltip";
 import {
   Select,
   SelectGroup,
@@ -28,6 +27,7 @@ import { cn } from "~/lib/utils";
 import { BROWSER_DEVICE_TOOLBAR_HEIGHT, resizeFreeformViewport } from "./browserViewportLayout";
 import { commitViewportAndAspectRatio } from "./browserDeviceToolbarState";
 import { ScreenRotationIcon } from "./ScreenRotationIcon";
+import { SharedTooltipTrigger } from "~/components/ui/shared-tooltip";
 
 const RESPONSIVE_VALUE = "responsive";
 const QUICK_FORM_FACTORS = [
@@ -263,28 +263,28 @@ export function BrowserDeviceToolbar({
               ? `${shortLabelText} (${factor.detail})`
               : shortLabelText;
             return (
-              <Tooltip key={factor.id}>
-                <TooltipTrigger
-                  render={
-                    <button
-                      type="button"
-                      disabled={pending}
-                      data-quick-factor-active={active ? "true" : undefined}
-                      aria-pressed={active}
-                      aria-label={titleLabel}
-                      onClick={() => selectViewport(factor.id)}
-                      className={cn(
-                        "relative z-1 inline-flex h-5 cursor-pointer items-center gap-1 rounded-sm px-1.5 text-2xs font-medium transition-colors duration-120 ease-out outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring motion-reduce:transition-none",
-                        active ? "text-foreground" : "text-muted-foreground hover:text-foreground",
-                      )}
-                    >
-                      <Icon className="size-3 shrink-0" />
-                      {width >= 660 ? <span>{shortLabelText}</span> : null}
-                    </button>
-                  }
-                />
-                <TooltipPopup side="bottom">{titleLabel}</TooltipPopup>
-              </Tooltip>
+              <SharedTooltipTrigger
+                key={factor.id}
+                label={titleLabel}
+                side="bottom"
+                render={
+                  <button
+                    type="button"
+                    disabled={pending}
+                    data-quick-factor-active={active ? "true" : undefined}
+                    aria-pressed={active}
+                    aria-label={titleLabel}
+                    onClick={() => selectViewport(factor.id)}
+                    className={cn(
+                      "relative z-1 inline-flex h-5 cursor-pointer items-center gap-1 rounded-sm px-1.5 text-2xs font-medium transition-colors duration-120 ease-out outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring motion-reduce:transition-none",
+                      active ? "text-foreground" : "text-muted-foreground hover:text-foreground",
+                    )}
+                  />
+                }
+              >
+                <Icon className="size-3 shrink-0" />
+                {width >= 660 ? <span>{shortLabelText}</span> : null}
+              </SharedTooltipTrigger>
             );
           })}
         </div>
@@ -383,35 +383,31 @@ export function BrowserDeviceToolbar({
         />
       </form>
 
-      <Tooltip>
-        <TooltipTrigger
-          render={
-            <Button
-              variant={aspectRatio === null ? "ghost" : "secondary"}
-              size="icon-xs"
-              type="button"
-              aria-label={
-                aspectRatio === null
-                  ? gt("Lock viewport aspect ratio")
-                  : gt("Unlock viewport aspect ratio")
-              }
-              aria-pressed={aspectRatio !== null}
-              disabled={pending || !customValid}
-              onPointerDown={(event) => event.preventDefault()}
-              onClick={toggleAspectRatio}
-            />
-          }
-        >
-          {aspectRatio === null ? (
-            <Unlink2 className={cn(aspectRatio !== null && "text-foreground")} />
-          ) : (
-            <Link2 className={cn(aspectRatio !== null && "text-foreground")} />
-          )}
-        </TooltipTrigger>
-        <TooltipPopup side="top">
-          {aspectRatio === null ? <T>Lock aspect ratio</T> : <T>Unlock aspect ratio</T>}
-        </TooltipPopup>
-      </Tooltip>
+      <SharedTooltipTrigger
+        render={
+          <Button
+            variant={aspectRatio === null ? "ghost" : "secondary"}
+            size="icon-xs"
+            type="button"
+            aria-label={
+              aspectRatio === null
+                ? gt("Lock viewport aspect ratio")
+                : gt("Unlock viewport aspect ratio")
+            }
+            aria-pressed={aspectRatio !== null}
+            disabled={pending || !customValid}
+            onPointerDown={(event) => event.preventDefault()}
+            onClick={toggleAspectRatio}
+          />
+        }
+        label={aspectRatio === null ? <T>Lock aspect ratio</T> : <T>Unlock aspect ratio</T>}
+      >
+        {aspectRatio === null ? (
+          <Unlink2 className={cn(aspectRatio !== null && "text-foreground")} />
+        ) : (
+          <Link2 className={cn(aspectRatio !== null && "text-foreground")} />
+        )}
+      </SharedTooltipTrigger>
       <Button
         variant="ghost"
         size="icon-xs"

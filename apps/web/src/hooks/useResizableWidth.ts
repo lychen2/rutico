@@ -270,7 +270,7 @@ export function useResizableWidth(options: UseResizableWidthOptions): {
       width: startWidth,
       edge,
       bounds: { min: minWidth, max: maxWidth },
-      resize(nextWidth, meta) {
+      resize(nextWidth, _rawWidth, meta) {
         const containerWidth = row?.clientWidth ?? 0;
         const match = resolveMagneticSnapWidth({
           rawWidth: nextWidth,

@@ -1,7 +1,10 @@
 import { useAtomValue } from "@effect/atom-react";
 import { AuthOrchestrationOperateScope, type ScopedThreadRef } from "@t3tools/contracts";
 import type { ChildThreadApproval } from "@t3tools/client-runtime/state/thread-requests";
-import { fullAccessOverrideExplanation } from "@t3tools/client-runtime/state/thread-requests";
+import {
+  fullAccessOverrideExplanation,
+  PUSH_HOOKS_APPROVAL_QUESTION,
+} from "@t3tools/client-runtime/state/thread-requests";
 import {
   isAtomCommandInterrupted,
   squashAtomCommandFailure,
@@ -13,7 +16,9 @@ import { useEnvironmentScope } from "../../state/session";
 import { childThreadApprovalsAtom, threadEnvironment } from "../../state/threads";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { Badge } from "../ui/badge";
+import { ApprovalText } from "./ApprovalText";
 import { ComposerPendingApprovalActions } from "./ComposerPendingApprovalActions";
+import { PushHooksApprovalDetails } from "./PushHooksApprovalDetails";
 
 function ChildApproval({
   entry,
@@ -55,9 +60,19 @@ function ChildApproval({
           </Badge>
         ) : null}
       </div>
-      <pre className="max-h-40 overflow-auto rounded-lg border border-border/75 bg-code/70 px-3 py-2 whitespace-pre-wrap break-words font-mono text-foreground [scrollbar-width:thin]">
-        {approval.detail || approval.requestKind}
-      </pre>
+      {approval.pushHooks ? (
+        <div className="flex min-w-0 flex-col gap-1.5 rounded-lg border border-border/75 bg-code/50 px-3 py-2">
+          <p className="font-medium text-foreground">{messages(PUSH_HOOKS_APPROVAL_QUESTION)}</p>
+          <PushHooksApprovalDetails pushHooks={approval.pushHooks} />
+        </div>
+      ) : (
+        <div className="flex min-w-0 flex-col gap-1.5">
+          <ApprovalText
+            text={approval.detail || approval.requestKind}
+            className="rounded-lg border border-border/75 bg-code/70 px-3 py-2"
+          />
+        </div>
+      )}
       {approval.appName ? <p className="mt-2 text-muted-foreground">{approval.appName}</p> : null}
       {approval.responseCapability !== "live" ? (
         <p className="mt-2 text-warning">

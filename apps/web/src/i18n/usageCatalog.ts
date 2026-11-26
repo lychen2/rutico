@@ -2,6 +2,7 @@
 export const usageZhCN: Readonly<Record<string, string>> = {
   "{count} malformed or inconsistent usage record(s) were skipped; usage may be incomplete.":
     "已跳过 {count} 条格式异常或不一致的用量记录，统计可能不完整。",
+  "{remaining}% left": "剩余 {remaining}%",
   " · {0}% of the window left": " · 时间窗口剩余 {0}%",
   "$0 cap": "上限 $0",
   "$1 hours": "$1 小时",

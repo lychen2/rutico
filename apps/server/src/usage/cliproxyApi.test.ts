@@ -532,14 +532,9 @@ describe("CLIProxyAPI built-in management API", () => {
     Effect.gen(function* () {
       const test = fixture({
         accounts: [
-          {
-            id: "antigravity-g@example.com.json",
-            auth_index: "g",
-            provider: "antigravity",
-            email: "g@example.com",
-            project_id: "project-7",
-          },
           { id: "kiro.json", auth_index: "k", provider: "kiro", email: "k@example.com" },
+          // Antigravity only allows ACP clients, so its internal quota API is never called.
+          { id: "antigravity.json", auth_index: "g", provider: "antigravity", project_id: "p" },
           { ...accounts[0]!, provider: "claude" },
         ],
         upstream: () => ({ status: 200, body: { five_hour: { utilization: 1, resets_at: null } } }),
@@ -548,6 +543,7 @@ describe("CLIProxyAPI built-in management API", () => {
       expect(result.map((account) => account.driver)).toEqual(["claudeAgent"]);
       expect(test.requests.map((request) => request.body?.auth_index)).not.toContain("g");
       expect(test.requests.map((request) => request.body?.auth_index)).not.toContain("k");
+      expect(test.requests.map((request) => request.body?.auth_index)).not.toContain("g");
     }),
   );
 

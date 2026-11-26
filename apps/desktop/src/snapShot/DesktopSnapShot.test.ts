@@ -2399,3 +2399,15 @@ it.effect("reports Linux Wayland capability tier and telemetry on state and read
     }),
   ).pipe(Effect.provide(layer), Effect.ensuring(Effect.sync(() => vi.unstubAllEnvs())));
 });
+
+it.each([
+  ["preview-config", "Alt+Super+C is already used by Hyprland. Choose another shortcut."],
+  ["apply-config", "Your config changed since this preview. Review changes again before saving."],
+] as const)("tells the renderer why %s failed", (action, reason) => {
+  const error = new DesktopSnapShot.DesktopSnapShotSetupError({
+    action,
+    reason: "setup-failed",
+    cause: new Error(reason),
+  });
+  assert.include(error.message, reason);
+});

@@ -2484,7 +2484,7 @@ export function MaintenanceSettingsPanel() {
           settingKeys={["enableProviderUpdateChecks"]}
           {...setting("provider-update-checks")}
           description={gt(
-            "Check installed provider CLIs for newer available versions and fetch model catalog updates. When off, new models may not appear.",
+            "Check installed provider CLIs for newer available versions. Shared model metadata is bundled with each app release.",
           )}
           resetAction={
             settings.enableProviderUpdateChecks !==

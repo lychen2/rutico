@@ -216,22 +216,27 @@ function antigravityEnvironment(
     // Windows treats environment keys as case-insensitive. Remove aliases too.
     if (!removedEnvironmentKeys.has(key.toUpperCase())) environment[key] = value;
   }
-  // Pass Vertex AI project settings via environment as well so native (~/.gemini) runs use the configured GCP target.
+  // Pass GCP project/location via environment so native (~/.gemini) runs honor the configured target.
   const credential =
     auth.authMethod === "gemini-api-key" && auth.apiKey
       ? { GEMINI_API_KEY: auth.apiKey }
-      : auth.authMethod === "agent-platform"
+      : auth.authMethod === "oauth-business"
         ? {
-            ...(auth.apiKey ? { GOOGLE_API_KEY: auth.apiKey } : {}),
-            ...(auth.gcpProject && auth.gcpLocation
-              ? {
-                  GOOGLE_GENAI_USE_VERTEXAI: "true",
-                  GOOGLE_CLOUD_PROJECT: auth.gcpProject,
-                  GOOGLE_CLOUD_LOCATION: auth.gcpLocation,
-                }
-              : {}),
+            ...(auth.gcpProject ? { GOOGLE_CLOUD_PROJECT: auth.gcpProject } : {}),
+            ...(auth.gcpLocation ? { GOOGLE_CLOUD_LOCATION: auth.gcpLocation } : {}),
           }
-        : {};
+        : auth.authMethod === "agent-platform"
+          ? {
+              ...(auth.apiKey ? { GOOGLE_API_KEY: auth.apiKey } : {}),
+              ...(auth.gcpProject && auth.gcpLocation
+                ? {
+                    GOOGLE_GENAI_USE_VERTEXAI: "true",
+                    GOOGLE_CLOUD_PROJECT: auth.gcpProject,
+                    GOOGLE_CLOUD_LOCATION: auth.gcpLocation,
+                  }
+                : {}),
+            }
+          : {};
   // Each launch unpacks about 1 GB; use T3-owned temp so the driver can reclaim files after force-kill.
   const tempDirectory = runtimeTempDirectory ?? profile.tempDirectory;
   return {
@@ -242,7 +247,8 @@ function antigravityEnvironment(
     baseEnv.SSL_CERT_DIR === undefined
       ? { SSL_CERT_FILE: profile.caBundlePath }
       : {}),
-    AGY_CLI_DISABLE_AUTO_UPDATE: "1",
+    // agy's troubleshooting docs specify "true"; the interactive CLI keeps self-updating with "1".
+    AGY_CLI_DISABLE_AUTO_UPDATE: "true",
     BROWSER: profile.browserCommand,
     PYTHONUNBUFFERED: "1",
     ELECTRON_RUN_AS_NODE: "1",

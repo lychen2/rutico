@@ -123,5 +123,12 @@
   "8af79268f2349f4c": "Kopiera e-postadress",
   "a9f9254d458e49fe": "Kopiera bild",
   "9c1b20fbc881de5d": "Skrivbordskonfiguration",
-  "1b14230874f19eb9": "Bilder"
+  "1b14230874f19eb9": "Bilder",
+  "e632aac04674913c": "{origin} vill använda din kamera och mikrofon",
+  "379c230d24c9b5c5": "{origin} vill använda din mikrofon",
+  "576ac67fdb145936": "{origin} vill använda din kamera",
+  "d8d5fbd2529b6bd3": "macOS har blockerat T3 Code från att använda din kamera och mikrofon",
+  "65dff766a75b43d5": "macOS har blockerat T3 Code från att använda din mikrofon",
+  "39e3d7326db9af25": "macOS har blockerat T3 Code från att använda din kamera",
+  "fb7c135eaced773b": "Tillåt T3 Code i Systeminställningar › Integritet och säkerhet och starta sedan om T3 Code."
 }

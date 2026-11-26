@@ -388,3 +388,37 @@ it("suppresses stale running and approval states for disconnected environments u
     ),
   ).toBe(true);
 });
+
+it("classifies many finished delegated threads without duplicating them under todayTasks", () => {
+  const home = EnvironmentId.make("home");
+  const remote = EnvironmentId.make("remote");
+  const root = makeThreadFixture({
+    environmentId: home,
+    id: ThreadId.make("home-root-many"),
+    createdAt: start,
+    updatedAt: end,
+  });
+  const delegates = Array.from({ length: 200 }, (_, index) =>
+    makeThreadFixture({
+      environmentId: remote,
+      id: ThreadId.make(`remote-delegate-${index}`),
+      delegatedFrom: { environmentId: home, threadId: root.id, title: root.title },
+      createdAt: end,
+      updatedAt: end,
+      lastVisitedAt: end,
+      latestRun: {
+        runId: RunId.make(`run-delegate-${index}`),
+        status: "completed",
+        requestedAt: start,
+        startedAt: start,
+        completedAt: end,
+        assistantMessageId: null,
+      },
+    }),
+  );
+
+  const overview = buildSidebarOverview([root, ...delegates], now, {});
+  expect(overview.active).toEqual([]);
+  expect(overview.attention).toEqual([]);
+  expect(overview.todayTasks.map((row) => row.ref.threadId)).toEqual([root.id]);
+});

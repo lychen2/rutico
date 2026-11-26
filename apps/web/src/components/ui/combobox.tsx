@@ -226,9 +226,23 @@ function ComboboxEmpty({ className, ...props }: ComboboxPrimitive.Empty.Props) {
   );
 }
 
-function ComboboxList({ className, children, ...props }: ComboboxPrimitive.List.Props) {
+function ComboboxList({
+  className,
+  scrollAreaClassName,
+  children,
+  ...props
+}: ComboboxPrimitive.List.Props & {
+  /** Put height caps here, not on `className`: a capped list never resizes, so the scrollbar goes stale. */
+  scrollAreaClassName?: string;
+}) {
   return (
-    <ScrollArea scrollbarGutter scrollFade>
+    // A flex column lets the viewport shrink with a height-capped parent instead of overflowing it.
+    <ScrollArea
+      className={cn("flex flex-col", scrollAreaClassName)}
+      observeContent
+      scrollbarGutter
+      scrollFade
+    >
       <div className="relative">
         <FloatingHighlight className="bg-foreground/[0.09]" />
         <ComboboxPrimitive.List

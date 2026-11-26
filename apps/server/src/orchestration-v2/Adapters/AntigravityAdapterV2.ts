@@ -35,10 +35,13 @@ import {
 import { readAntigravityClientTextFile } from "../../provider/acp/AntigravityClientFiles.ts";
 import {
   antigravityApprovalOptions,
+  antigravitySwarmAddChildSessionId,
+  antigravitySwarmAddModel,
   antigravityToolOutlivesPrompt,
   antigravityCommandOutlivesPrompt,
   antigravitySubagentOutput,
   classifyAntigravitySubagentToolCall,
+  extractAntigravityElicitationForm,
   extractAntigravityUserInputQuestion,
   makeAntigravityReadRepair,
   makeAntigravityUpdateStepsPlans,
@@ -64,7 +67,7 @@ const AntigravityProviderCapabilitiesV2 = {
   },
   tools: {
     ...AcpProviderCapabilitiesV2.tools,
-    supportsMcpTools: false,
+    supportsMcpTools: true,
   },
   context: {
     ...AcpProviderCapabilitiesV2.context,
@@ -102,6 +105,7 @@ export interface AntigravityAdapterV2Options {
   readonly onSessionStarted?: (
     started: AcpSessionRuntime.AcpSessionRuntimeStartResult,
     cwd: string,
+    session?: { readonly resumed: boolean },
   ) => Effect.Effect<void>;
   readonly onSessionEvent?: AcpAdapterV2Flavor["onSessionEvent"];
   readonly nativeLogging?: Parameters<typeof makeAcpAdapterV2>[0]["nativeLogging"];
@@ -131,9 +135,9 @@ const extractAntigravitySubagentUpdate: NonNullable<AcpAdapterV2Flavor["extractS
       toolCall.title ??
       ANTIGRAVITY_SUBAGENT_BATCH_TITLE,
     title: launch?.title ?? ANTIGRAVITY_SUBAGENT_BATCH_TITLE,
-    model: null,
+    model: antigravitySwarmAddModel(toolCall),
     status,
-    childSessionId: null,
+    childSessionId: antigravitySwarmAddChildSessionId(toolCall),
     result: status === "failed" ? (antigravitySubagentOutput(toolCall) ?? null) : null,
   };
 };
@@ -201,13 +205,16 @@ export function makeAntigravityAcpAdapterFlavor(
           });
         },
         start: () =>
-          runtime
-            .start()
-            .pipe(
-              Effect.tap(
-                (started) => options.onSessionStarted?.(started, input.cwd) ?? Effect.void,
-              ),
+          runtime.start().pipe(
+            Effect.tap(
+              (started) =>
+                options.onSessionStarted?.(started, input.cwd, {
+                  resumed:
+                    input.resumeSessionId !== undefined &&
+                    started.sessionId === input.resumeSessionId,
+                }) ?? Effect.void,
             ),
+          ),
       } satisfies typeof runtime;
     },
     Effect.provideService(SecureRandom.SecureRandom, options.random),
@@ -223,8 +230,11 @@ export function makeAntigravityAcpAdapterFlavor(
     runtimeHarness: "Antigravity",
     capabilities: AntigravityProviderCapabilitiesV2,
     supportsNativeGoals: options.supportsNativeGoals ?? Effect.succeed(false),
-    // Thin-client editor mode: Antigravity remains the primary agent with its own prompt,
-    // tools, and session state; Rutico does not inject outer MCP tools or harness prompts.
+    // Agents that advertise HTTP MCP skip the stdio bridge process; others keep stdio.
+    mcpOverHttp: true,
+    // Thin-client editor mode: Antigravity remains the primary agent with its own prompt
+    // and session state; Rutico exposes its MCP server via standard ACP `mcpServers`
+    // without wrapping prompts in outer harness instructions or shell fallback env vars.
     thinClientMode: true,
     makeRuntime,
     buildAttachmentPrompt: ({ text, attachments, resolveAttachmentPath, promptCapabilities }) =>
@@ -293,6 +303,7 @@ export function makeAntigravityAcpAdapterFlavor(
         respond: (answers) => makeAntigravityUserInputResponse(request, answers),
       };
     },
+    extractElicitationForm: extractAntigravityElicitationForm,
     normalizeToolCall: normalizeAntigravityToolCall,
     extractSubagentUpdate: extractAntigravitySubagentUpdate,
     supportsImagePrompts: true,

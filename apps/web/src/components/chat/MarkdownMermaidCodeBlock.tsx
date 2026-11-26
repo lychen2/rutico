@@ -5,10 +5,10 @@ import { Suspense, use, useLayoutEffect, useRef, useState, type ReactNode } from
 import { getSpringWaapiTiming, prefersReducedMotion } from "~/lib/motion/springs";
 import { RenderErrorBoundary } from "../RenderErrorBoundary";
 import { ToggleGroup, ToggleGroupItem } from "../ui/toggle-group";
-import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { MarkdownCodeBlock } from "./MarkdownCodeBlock";
 import { findRevealRef, MarkdownFindContext } from "./markdownFindContext";
 import { MermaidDiagram } from "./MermaidDiagram";
+import { SharedTooltipTrigger } from "../ui/shared-tooltip";
 
 export function MarkdownMermaidCodeBlock({
   code,
@@ -126,22 +126,18 @@ export function MarkdownMermaidCodeBlock({
             }}
             aria-label={gt("Diagram view")}
           >
-            <Tooltip>
-              <TooltipTrigger
-                render={<ToggleGroupItem value="diagram" aria-label={gt("Show diagram")} />}
-              >
-                <WorkflowIcon className="size-3" />
-              </TooltipTrigger>
-              <TooltipPopup side="top">{gt("Show diagram")}</TooltipPopup>
-            </Tooltip>
-            <Tooltip>
-              <TooltipTrigger
-                render={<ToggleGroupItem value="code" aria-label={gt("Show code")} />}
-              >
-                <CodeIcon className="size-3" />
-              </TooltipTrigger>
-              <TooltipPopup side="top">{gt("Show code")}</TooltipPopup>
-            </Tooltip>
+            <SharedTooltipTrigger
+              render={<ToggleGroupItem value="diagram" aria-label={gt("Show diagram")} />}
+              label={gt("Show diagram")}
+            >
+              <WorkflowIcon className="size-3" />
+            </SharedTooltipTrigger>
+            <SharedTooltipTrigger
+              render={<ToggleGroupItem value="code" aria-label={gt("Show code")} />}
+              label={gt("Show code")}
+            >
+              <CodeIcon className="size-3" />
+            </SharedTooltipTrigger>
           </ToggleGroup>
         )
       }

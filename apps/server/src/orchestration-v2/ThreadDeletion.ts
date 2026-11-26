@@ -19,7 +19,8 @@ export const planThreadDeletion = Effect.fn("ThreadDeletion.planThreadDeletion")
   readonly projection: Pick<
     OrchestrationV2ThreadProjection,
     "thread" | "runs" | "attempts" | "nodes" | "runtimeRequests" | "subagents" | "providerSessions"
-  >;
+  > &
+    Partial<Pick<OrchestrationV2ThreadProjection, "providerThreads" | "providerTurns">>;
   readonly attachmentIds: ReadonlyArray<string>;
   readonly now: DateTime.Utc;
   readonly idAllocator: IdAllocator.IdAllocatorV2["Service"];
@@ -185,6 +186,20 @@ export const planThreadDeletion = Effect.fn("ThreadDeletion.planThreadDeletion")
   for (const session of projection.providerSessions) {
     // An errored session can still own a reusable live runtime.
     if (session.status === "stopped") continue;
+    const sessionProviderThreads = (projection.providerThreads ?? []).filter(
+      (providerThread) => providerThread.providerSessionId === session.id,
+    );
+    const sessionProviderThreadIds = new Set(
+      sessionProviderThreads.map((providerThread) => providerThread.id),
+    );
+    const activeProviderTurns = (projection.providerTurns ?? [])
+      .filter(
+        (turn) => turn.status === "running" && sessionProviderThreadIds.has(turn.providerThreadId),
+      )
+      .map((turn) => ({
+        providerThreadId: turn.providerThreadId,
+        providerTurnId: turn.id,
+      }));
     yield* emitEvent({
       type: "provider-session.detached",
       threadId: command.threadId,
@@ -206,6 +221,8 @@ export const planThreadDeletion = Effect.fn("ThreadDeletion.planThreadDeletion")
         providerSessionId: session.id,
         detail: "Thread deleted.",
         revokeMcpCredential: true,
+        ...(sessionProviderThreads.length > 0 ? { providerThreads: sessionProviderThreads } : {}),
+        ...(activeProviderTurns.length > 0 ? { activeProviderTurns } : {}),
       },
     });
   }
@@ -236,5 +253,11 @@ export const planThreadDeletion = Effect.fn("ThreadDeletion.planThreadDeletion")
       request: { type: "attachment.cleanup", attachmentIds },
     });
   }
+  effects.push({
+    id: `effect:${command.commandId}:thread-content.purge`,
+    commandId: command.commandId,
+    threadId: command.threadId,
+    request: { type: "thread-content.purge" },
+  });
   return { events, effects };
 });

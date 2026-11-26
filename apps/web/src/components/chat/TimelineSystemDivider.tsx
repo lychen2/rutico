@@ -2,7 +2,7 @@ import type { ReactNode } from "react";
 import type { LucideIcon } from "lucide-react";
 
 import { cn } from "~/lib/utils";
-import { Tooltip, TooltipPopup, TooltipTrigger } from "~/components/ui/tooltip";
+import { SharedTooltipTrigger } from "~/components/ui/shared-tooltip";
 
 interface CompactTokenMetric {
   readonly numericTotal: number;
@@ -104,26 +104,24 @@ export function TimelineSystemDivider(props: {
         className="h-px flex-1"
       />
       {props.onAction ? (
-        <Tooltip>
-          <TooltipTrigger
-            render={
-              <button
-                type="button"
-                aria-label={props.actionLabel}
-                onClick={props.onAction}
-                data-system-divider-capsule={variant}
-                className={cn(
-                  "min-w-0 cursor-pointer rounded-full border bg-card/90 px-2.5 py-1 shadow-xs transition-[background-color,border-color,color,transform] duration-150 ease-out hover:-translate-y-px hover:border-foreground/22 hover:bg-card hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/70 active:translate-y-0 active:scale-[0.975] motion-reduce:transition-none motion-reduce:hover:translate-y-0 motion-reduce:active:scale-100",
-                  isDanger ? "border-destructive/35 bg-destructive/6" : "border-border/75",
-                  props.wrapDetail ? "text-center" : "flex items-center gap-1.5",
-                )}
-              />
-            }
-          >
-            {content}
-          </TooltipTrigger>
-          <TooltipPopup side="top">{props.actionLabel}</TooltipPopup>
-        </Tooltip>
+        <SharedTooltipTrigger
+          render={
+            <button
+              type="button"
+              aria-label={props.actionLabel}
+              onClick={props.onAction}
+              data-system-divider-capsule={variant}
+              className={cn(
+                "min-w-0 cursor-pointer rounded-full border bg-card/90 px-2.5 py-1 shadow-xs transition-[background-color,border-color,color,transform] duration-150 ease-out hover:-translate-y-px hover:border-foreground/22 hover:bg-card hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/70 active:translate-y-0 active:scale-[0.975] motion-reduce:transition-none motion-reduce:hover:translate-y-0 motion-reduce:active:scale-100",
+                isDanger ? "border-destructive/35 bg-destructive/6" : "border-border/75",
+                props.wrapDetail ? "text-center" : "flex items-center gap-1.5",
+              )}
+            />
+          }
+          label={props.actionLabel}
+        >
+          {content}
+        </SharedTooltipTrigger>
       ) : (
         <span
           data-system-divider-capsule={variant}

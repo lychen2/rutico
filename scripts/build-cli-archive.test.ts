@@ -299,6 +299,12 @@ it.layer(NodeServices.layer)("build-cli-archive linux libatomic", (it) => {
         if (argv[0] === "pacman" && argv[1] === "-Q") {
           return { exitCode: 0, stdout: "gcc-libs 14.2.1-1\n" };
         }
+        if (argv[0] === "readelf" && argv[1] === "-d") {
+          return {
+            exitCode: 0,
+            stdout: " 0x000000000000001d (RUNPATH) Library runpath: [$ORIGIN/lib]\n",
+          };
+        }
         return { exitCode: 0 };
       });
 
@@ -320,6 +326,54 @@ it.layer(NodeServices.layer)("build-cli-archive linux libatomic", (it) => {
       );
       assert.include(licenseText, "GCC EXCEPTION");
       assert.isTrue(yield* fs.exists(path.join(content.contentDir, "lib/libatomic.so.1")));
+    }).pipe(Effect.scoped),
+  );
+
+  it.effect("fails locally when patchelf is absent and ELF lacks $ORIGIN/lib RUNPATH", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const content = yield* makeContent();
+      const fakeLib = path.join(content.root, "libatomic.so.1");
+      yield* fs.writeFileString(fakeLib, "elf");
+      yield* fs.makeDirectory(path.join(content.root, "scripts/licenses"), { recursive: true });
+      yield* fs.writeFileString(
+        path.join(content.root, "scripts/licenses/libatomic.LICENSE"),
+        "GCC EXCEPTION\n",
+      );
+
+      const stub = stubCommandSpawner((argv) => {
+        if (argv[0] === "ldd") {
+          return { exitCode: 0, stdout: `\tlibatomic.so.1 => ${fakeLib} (0x00007f0000000000)\n` };
+        }
+        if (argv[0] === "dpkg-query" || argv[0] === "patchelf") {
+          return { exitCode: 127 };
+        }
+        if (argv[0] === "pacman" && argv[1] === "-Qoq") {
+          return { exitCode: 0, stdout: "gcc-libs\n" };
+        }
+        if (argv[0] === "pacman" && argv[1] === "-Q") {
+          return { exitCode: 0, stdout: "gcc-libs 14.2.1-1\n" };
+        }
+        if (argv[0] === "readelf" && argv[1] === "-d") {
+          return {
+            exitCode: 0,
+            stdout: " 0x0000000000000001 (NEEDED) Shared library: [libatomic.so.1]\n",
+          };
+        }
+        return { exitCode: 0 };
+      });
+
+      const error = yield* withStubs(
+        bundleLinuxLibatomic({
+          repoRoot: content.root,
+          contentDir: content.contentDir,
+          executablePath: content.executablePath,
+        }),
+        stub,
+        {},
+      ).pipe(Effect.flip);
+      assert.equal(error._tag, "CliArchiveInputMissingError");
     }).pipe(Effect.scoped),
   );
 });

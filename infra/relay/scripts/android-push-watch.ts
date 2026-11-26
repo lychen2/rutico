@@ -207,7 +207,7 @@ const main = Effect.gen(function* () {
             alert: alert !== null,
             data: fitFcmData({
               t3_kind: "agent_activity",
-              ...androidRecipientData(device.userId, device.deviceId),
+              ...androidRecipientData(device.userId, device.deviceId, null),
               updated_at: String(now),
               ...androidActivityData(aggregate),
               ...alert,

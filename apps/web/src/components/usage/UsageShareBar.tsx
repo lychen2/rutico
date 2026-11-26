@@ -3,7 +3,7 @@ import { formatPercent } from "@t3tools/shared/usageFormat";
 import { useState, type ReactNode } from "react";
 
 import { cn } from "~/lib/utils";
-import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
+import { SharedTooltipTrigger } from "../ui/shared-tooltip";
 
 export interface ShareSegment {
   readonly label: string;
@@ -41,24 +41,25 @@ export function UsageShareBar({
           const isHovered = hoveredLabel === segmentKey;
           const isDimmed = hoveredLabel !== null && !isHovered;
           return (
-            <Tooltip key={segmentKey}>
-              <TooltipTrigger
-                render={
-                  <div
-                    onMouseEnter={() => setHoveredLabel(segmentKey)}
-                    className={cn(
-                      "h-full min-w-1 rounded-xs transition-[flex-grow,opacity,transform] duration-(--duration-fluid) ease-(--spring-fluid) first:rounded-l-full last:rounded-r-full motion-reduce:transition-none",
-                      isHovered && "scale-y-125",
-                      isDimmed && "opacity-40",
-                    )}
-                    style={{ flex: `${segment.value} 1 0`, backgroundColor: segment.color }}
-                  />
-                }
-              />
-              <TooltipPopup>
-                {segmentKey} · {format(segment.value)} · {formatPercent(segment.value / total)}
-              </TooltipPopup>
-            </Tooltip>
+            <SharedTooltipTrigger
+              key={segmentKey}
+              render={
+                <div
+                  onMouseEnter={() => setHoveredLabel(segmentKey)}
+                  className={cn(
+                    "h-full min-w-1 rounded-xs transition-[flex-grow,opacity,transform] duration-(--duration-fluid) ease-(--spring-fluid) first:rounded-l-full last:rounded-r-full motion-reduce:transition-none",
+                    isHovered && "scale-y-125",
+                    isDimmed && "opacity-40",
+                  )}
+                  style={{ flex: `${segment.value} 1 0`, backgroundColor: segment.color }}
+                />
+              }
+              label={
+                <>
+                  {segmentKey} · {format(segment.value)} · {formatPercent(segment.value / total)}
+                </>
+              }
+            />
           );
         })}
       </div>

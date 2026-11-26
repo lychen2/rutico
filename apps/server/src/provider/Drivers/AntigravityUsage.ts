@@ -40,7 +40,7 @@ export class AntigravityUsage extends Context.Service<
 /** Scanning and binary-decoding Antigravity's private SQLite/protobuf databases is disabled. */
 const make = Effect.succeed(
   AntigravityUsage.of({
-    scan: () => Effect.succeed([]),
+    scan: Effect.fn("AntigravityUsage.scan")(() => Effect.succeed([])),
   }),
 );
 

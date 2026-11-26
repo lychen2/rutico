@@ -29,7 +29,7 @@ import { CommandPaletteContent } from "../CommandPaletteContent";
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia } from "../ui/empty";
 import { ScrollArea } from "../ui/scroll-area";
 import { Toggle } from "../ui/toggle";
-import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
+import { SharedTooltipTrigger } from "../ui/shared-tooltip";
 import {
   HighlightedSearchContext,
   HighlightedSearchLine,
@@ -214,23 +214,21 @@ function SearchOptionButton(props: {
   readonly children: ReactNode;
 }) {
   return (
-    <Tooltip>
-      <TooltipTrigger
-        render={
-          <Toggle
-            aria-label={props.label}
-            disabled={props.disabled}
-            pressed={props.active}
-            size="segmented"
-            variant="segmented"
-            onClick={props.onClick}
-          />
-        }
-      >
-        <span className="font-mono">{props.children}</span>
-      </TooltipTrigger>
-      <TooltipPopup side="top">{props.label}</TooltipPopup>
-    </Tooltip>
+    <SharedTooltipTrigger
+      render={
+        <Toggle
+          aria-label={props.label}
+          disabled={props.disabled}
+          pressed={props.active}
+          size="segmented"
+          variant="segmented"
+          onClick={props.onClick}
+        />
+      }
+      label={props.label}
+    >
+      <span className="font-mono">{props.children}</span>
+    </SharedTooltipTrigger>
   );
 }
 

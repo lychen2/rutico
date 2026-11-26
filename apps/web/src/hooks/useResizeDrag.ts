@@ -14,9 +14,10 @@ interface ResizeDragMeta {
 interface ResizeSession {
   width: number;
   edge: "left" | "right";
-  /** Pointer widths are clamped to these before `resize` sees them. */
+  /** The first `resize` argument is clamped; the second retains pointer intent. */
   bounds: ResizeBounds;
-  resize: (width: number, meta: ResizeDragMeta) => number;
+  resize: (width: number, rawWidth: number, meta: ResizeDragMeta) => number;
+  cancelOnInterrupt?: boolean;
   finish: (width: number, moved: boolean) => void;
   cleanup?: (committed: boolean) => void;
 }
@@ -48,14 +49,12 @@ function createResizeDrag<T extends HTMLElement>() {
     if (!active) return;
     const delta = (active.pendingX - active.startX) * (active.session.edge === "left" ? -1 : 1);
     if (Math.abs(delta) > 2) active.moved = true;
-    active.width = active.session.resize(
-      clampToBounds(active.session.width + delta, active.session.bounds),
-      {
-        clientX: active.pendingX,
-        clientY: active.pendingY,
-        altKey: active.altKey,
-      },
-    );
+    const rawWidth = active.session.width + delta;
+    active.width = active.session.resize(clampToBounds(rawWidth, active.session.bounds), rawWidth, {
+      clientX: active.pendingX,
+      clientY: active.pendingY,
+      altKey: active.altKey,
+    });
   };
 
   const scheduleFlush = (active: ActiveDrag<T>) => {
@@ -96,7 +95,7 @@ function createResizeDrag<T extends HTMLElement>() {
       active.pendingY = event.clientY;
       active.altKey = event.altKey;
     }
-    finish(true);
+    finish(usePosition || !active.session.cancelOnInterrupt);
   };
 
   return {
@@ -119,8 +118,7 @@ function createResizeDrag<T extends HTMLElement>() {
       }
       event.preventDefault();
       event.stopPropagation();
-      // Leaving the window mid-drag commits where the pointer was.
-      const onBlur = () => finish(true);
+      const onBlur = () => finish(!session.cancelOnInterrupt);
       const onKeyChange = (keyEvent: KeyboardEvent) => {
         if (!drag || keyEvent.key !== "Alt") return;
         const nextAlt = keyEvent.type === "keydown" ? true : keyEvent.altKey;

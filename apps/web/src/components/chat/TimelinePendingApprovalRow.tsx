@@ -1,6 +1,8 @@
 import {
   FULL_ACCESS_OVERRIDE_QUESTION,
   fullAccessOverrideExplanation,
+  PUSH_HOOKS_APPROVAL_LABEL,
+  PUSH_HOOKS_APPROVAL_QUESTION,
 } from "@t3tools/client-runtime/state/thread-requests";
 import { msg, T, useMessages } from "gt-react";
 import { ShieldIcon } from "lucide-react";
@@ -9,7 +11,9 @@ import { type PendingApproval } from "../../session-logic";
 import { Badge } from "../ui/badge";
 import { InlineButton } from "../ui/button";
 import { Popover, PopoverPopup, PopoverTrigger } from "../ui/popover";
+import { ApprovalText } from "./ApprovalText";
 import { ComposerPendingApprovalActions } from "./ComposerPendingApprovalActions";
+import { PushHooksApprovalDetails } from "./PushHooksApprovalDetails";
 import { ToolActivityIconView, type WorkEntryIconName } from "./TimelineToolActivityIcon";
 import { TimelineRowCtx } from "./timelineRowContext";
 
@@ -48,11 +52,14 @@ export const TimelinePendingApprovalRow = memo(function TimelinePendingApprovalR
   const { respondingRequestIds, canOperateThread, onRespondToApproval } = use(TimelineRowCtx);
   const m = useMessages();
   const presentation = APPROVAL_PRESENTATION[approval.requestKind];
+  // T3 Code's own question reads as the app asking: a plain sentence, then what it names.
+  const { pushHooks } = approval;
+  const label = pushHooks ? PUSH_HOOKS_APPROVAL_LABEL : presentation.label;
   const canRespond = approval.responseCapability === "live";
   return (
     <div
       role="group"
-      aria-label={m(presentation.label)}
+      aria-label={m(label)}
       data-v2-item-type="approval_request"
       data-approval-decision-card="true"
       className="my-1.5 flex min-w-0 flex-col gap-2.5 rounded-xl border border-warning/30 bg-card p-3.5 text-xs shadow-xs"
@@ -62,13 +69,13 @@ export const TimelinePendingApprovalRow = memo(function TimelinePendingApprovalR
           <span className="inline-flex size-6 shrink-0 items-center justify-center rounded-lg border border-warning/25 bg-warning/10 text-warning">
             <ToolActivityIconView
               icon={undefined}
-              fallbackName={presentation.icon}
+              fallbackName={pushHooks ? "terminal" : presentation.icon}
               className="block size-3.5 shrink-0 stroke-2"
               muted={false}
             />
           </span>
           <Badge variant="warning" size="sm">
-            {m(presentation.label)}
+            {m(label)}
           </Badge>
           {approval.appName ? (
             <span className="min-w-0 truncate text-muted-foreground">{approval.appName}</span>
@@ -81,14 +88,22 @@ export const TimelinePendingApprovalRow = memo(function TimelinePendingApprovalR
           </span>
         ) : null}
       </div>
-      <code
-        aria-label={m(presentation.detailLabel)}
-        className="block max-h-40 min-w-0 overflow-auto rounded-lg border border-border/75 bg-code/70 px-3 py-2 whitespace-pre-wrap font-mono text-xs leading-5 text-foreground select-text! wrap-anywhere [scrollbar-width:thin] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/70"
-        data-approval-detail="complete"
-        tabIndex={0}
-      >
-        {approval.detail || m(presentation.label)}
-      </code>
+      {pushHooks ? (
+        <div className="flex min-w-0 flex-col gap-1.5 rounded-lg border border-border/75 bg-code/50 px-3 py-2">
+          <span className="block min-w-0 font-medium text-foreground select-text! wrap-anywhere">
+            {m(PUSH_HOOKS_APPROVAL_QUESTION)}
+          </span>
+          <PushHooksApprovalDetails pushHooks={pushHooks} />
+        </div>
+      ) : (
+        <div className="flex min-w-0 flex-col gap-1.5">
+          <ApprovalText
+            text={approval.detail || m(presentation.label)}
+            label={m(presentation.detailLabel)}
+            className="rounded-lg border border-border/75 bg-code/70 px-3 py-2"
+          />
+        </div>
+      )}
       {approval.reason ? (
         <p className="text-muted-foreground select-text wrap-anywhere">{approval.reason}</p>
       ) : null}

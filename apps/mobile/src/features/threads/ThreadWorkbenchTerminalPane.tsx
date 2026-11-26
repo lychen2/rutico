@@ -491,7 +491,7 @@ function ThreadWorkbenchTerminalSession(props: {
       label: "Tab",
       accessibilityLabel: gt("Tab"),
       onPress: () => {
-        void writeInput("\t");
+        handleInput("\t");
       },
     },
     {

@@ -99,7 +99,7 @@ describe("Antigravity process environment", () => {
         HOME: "/home/developer",
         PATH: "/usr/bin",
         CUSTOM_SETTING: "keep-this",
-        AGY_CLI_DISABLE_AUTO_UPDATE: "1",
+        AGY_CLI_DISABLE_AUTO_UPDATE: "true",
         BROWSER: profile.browserCommand,
         PYTHONUNBUFFERED: "1",
         ELECTRON_RUN_AS_NODE: "1",
@@ -147,6 +147,17 @@ describe("Antigravity process environment", () => {
     expect(business.GEMINI_API_KEY).toBeUndefined();
     expect(business.GOOGLE_API_KEY).toBeUndefined();
     expect(business.GOOGLE_GENAI_USE_VERTEXAI).toBeUndefined();
+    expect(business.GOOGLE_CLOUD_PROJECT).toBe("proj");
+    expect(business.GOOGLE_CLOUD_LOCATION).toBe("us-central1");
+
+    const otherBusiness = spawnFor({
+      authMethod: "oauth-business",
+      apiKey: "",
+      gcpProject: "other-proj",
+      gcpLocation: "europe-west4",
+    });
+    expect(otherBusiness.GOOGLE_CLOUD_PROJECT).toBe("other-proj");
+    expect(otherBusiness.GOOGLE_CLOUD_LOCATION).toBe("europe-west4");
 
     const vertexGcp = spawnFor({
       authMethod: "agent-platform",

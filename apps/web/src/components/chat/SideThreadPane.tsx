@@ -37,9 +37,9 @@ import { useAtomCommand } from "../../state/use-atom-command";
 import ChatView from "../ChatView";
 import { Button } from "../ui/button";
 import { toastManager } from "../ui/toast";
-import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { BackgroundThreadContext } from "./backgroundThread";
 import { closeThreadFindIn } from "./threadFindStore";
+import { SharedTooltipTrigger } from "../ui/shared-tooltip";
 
 /**
  * A side chat or a subagent as a tab: the thread's own chat, which decides its bottom, the
@@ -169,48 +169,47 @@ export default function SideThreadPane(props: {
       {isSideChat ? (
         <div className="flex h-9 shrink-0 items-center gap-1 border-b border-border pr-1 pl-3">
           <h2 className="min-w-0 flex-1 truncate text-xs font-medium">{title}</h2>
-          <Tooltip>
-            <TooltipTrigger
-              render={
-                <Button
-                  variant="ghost"
-                  size="xs"
-                  data-side-chat-added-pill={recentlyAdded ? "true" : undefined}
-                  aria-disabled={!canAddToChat || undefined}
-                  onClick={addToChat}
-                >
-                  {recentlyAdded ? (
-                    <span className="inline-flex items-center gap-1 text-success-foreground">
-                      <svg
-                        aria-hidden="true"
-                        viewBox="0 0 14 14"
-                        fill="none"
-                        className="size-3 shrink-0"
-                      >
-                        <path
-                          d="M2.8 7.3l2.8 2.8 5.6-6"
-                          stroke="currentColor"
-                          strokeWidth="1.8"
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          pathLength={100}
-                          data-side-chat-added-check="true"
-                        />
-                      </svg>
-                      <T>Added</T>
-                    </span>
-                  ) : (
-                    <T>Add to chat</T>
-                  )}
-                </Button>
-              }
-            />
-            <TooltipPopup side="bottom">
-              {canAddToChat
+          <SharedTooltipTrigger
+            render={
+              <Button
+                variant="ghost"
+                size="xs"
+                data-side-chat-added-pill={recentlyAdded ? "true" : undefined}
+                aria-disabled={!canAddToChat || undefined}
+                onClick={addToChat}
+              >
+                {recentlyAdded ? (
+                  <span className="inline-flex items-center gap-1 text-success-foreground">
+                    <svg
+                      aria-hidden="true"
+                      viewBox="0 0 14 14"
+                      fill="none"
+                      className="size-3 shrink-0"
+                    >
+                      <path
+                        d="M2.8 7.3l2.8 2.8 5.6-6"
+                        stroke="currentColor"
+                        strokeWidth="1.8"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        pathLength={100}
+                        data-side-chat-added-check="true"
+                      />
+                    </svg>
+                    <T>Added</T>
+                  </span>
+                ) : (
+                  <T>Add to chat</T>
+                )}
+              </Button>
+            }
+            label={
+              canAddToChat
                 ? gt("Adds this side chat to the main thread's next message.")
-                : gt("Available after the first message.")}
-            </TooltipPopup>
-          </Tooltip>
+                : gt("Available after the first message.")
+            }
+            side="bottom"
+          />
           <Button
             variant="ghost"
             size="icon-xs"

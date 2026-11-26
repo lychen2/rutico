@@ -52,9 +52,10 @@ import {
   AlertDialogTitle,
 } from "../ui/alert-dialog";
 import { Button } from "../ui/button";
-import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { UsageLimitsPooled } from "./UsageLimitsPooled";
 import { PROVIDER_PRESENTATION } from "./usageProviders";
+import { SharedTooltipTrigger } from "../ui/shared-tooltip";
+
 const PACE: Record<
   LimitPace,
   {
@@ -92,22 +93,18 @@ export function barColor(driver: ServerProvider["driver"]): string {
 function PaceIcon({ pace }: { readonly pace: LimitPace }) {
   const Icon = PACE[pace].icon;
   return (
-    <Tooltip>
-      <TooltipTrigger
-        render={
-          <span
-            role={"img"}
-            aria-label={PACE[pace].label}
-            className={"inline-flex text-muted-foreground"}
-          />
-        }
-      >
-        <Icon className={"size-3.5"} aria-hidden />
-      </TooltipTrigger>
-      <TooltipPopup data-usage-portal side={"top"}>
-        {PACE[pace].label}
-      </TooltipPopup>
-    </Tooltip>
+    <SharedTooltipTrigger
+      render={
+        <span
+          role="img"
+          aria-label={PACE[pace].label}
+          className="inline-flex text-muted-foreground"
+        />
+      }
+      label={PACE[pace].label}
+    >
+      <Icon className="size-3.5" aria-hidden />
+    </SharedTooltipTrigger>
   );
 }
 
@@ -170,68 +167,58 @@ function WindowBar({
   const summary = `${window.label}: ${remaining}% left${timeLeft === null ? "" : `, ${timeLeft}% of the window left`}${resetsIn ? `, ${resetsIn}` : ""}`;
 
   return (
-    <Tooltip>
-      <TooltipTrigger
-        render={
-          <div
-            ref={barRef}
-            role={"img"}
-            aria-label={summary}
-            tabIndex={0}
-            className={
-              "relative h-6 cursor-default rounded-full outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
-            }
-          />
-        }
-      >
-        {/* Clip both layers so the gap exposes even a translucent composer surface. */}
+    <SharedTooltipTrigger
+      render={
         <div
-          className={
-            "absolute inset-0 transition-[clip-path] duration-300 ease-(--ease-drawer) motion-reduce:transition-none"
-          }
-          style={paceMark?.gap}
-        >
-          <div className={"absolute inset-x-0 inset-y-1.5 rounded-full bg-muted"} />
-          {remaining > 0 ? (
-            <div
-              className={
-                "absolute inset-y-1.5 left-0 rounded-full transition-[width] duration-300 ease-(--ease-drawer) motion-reduce:transition-none"
-              }
-              style={{ width: `${remaining}%`, backgroundColor: color }}
-            />
-          ) : null}
-        </div>
-        {paceMark ? (
-          <span
-            aria-hidden
-            className={
-              "absolute inset-y-1 w-0.5 -translate-x-1/2 rounded-full bg-foreground transition-[left] duration-300 ease-(--ease-drawer) motion-reduce:transition-none"
-            }
-            style={paceMark.tick}
-          />
-        ) : null}
-      </TooltipTrigger>
-      <TooltipPopup data-usage-portal side={"top"}>
-        <div className={"flex flex-col gap-0.5"}>
-          <span className={"text-foreground"}>
+          ref={barRef}
+          role="img"
+          aria-label={summary}
+          tabIndex={0}
+          className="relative h-6 cursor-default rounded-full outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+        />
+      }
+      label={
+        <div className="flex flex-col gap-0.5">
+          <span className="text-foreground">
             {remaining}
             {uiText("% left")}
             {timeLeft !== null ? uiText(" · {0}% of the window left", { "0": timeLeft }) : ""}
           </span>
           {timeLeft !== null ? (
-            <span className={"text-muted-foreground"}>
+            <span className="text-muted-foreground">
               {uiText("The line is where even spending would be.")}
             </span>
           ) : null}
           {resetsAt ? (
-            <span className={"text-muted-foreground"}>
+            <span className="text-muted-foreground">
               {uiText("Resets {time}", { time: resetsAt })}
               {resetsIn ? ` · ${resetsIn}` : ""}
             </span>
           ) : null}
         </div>
-      </TooltipPopup>
-    </Tooltip>
+      }
+    >
+      {/* Clip both layers so the gap exposes even a translucent composer surface. */}
+      <div
+        className="absolute inset-0 transition-[clip-path] duration-300 ease-(--ease-drawer) motion-reduce:transition-none"
+        style={paceMark?.gap}
+      >
+        <div className="absolute inset-x-0 inset-y-1.5 rounded-full bg-muted" />
+        {remaining > 0 ? (
+          <div
+            className="absolute inset-y-1.5 left-0 rounded-full transition-[width] duration-300 ease-(--ease-drawer) motion-reduce:transition-none"
+            style={{ width: `${remaining}%`, backgroundColor: color }}
+          />
+        ) : null}
+      </div>
+      {paceMark ? (
+        <span
+          aria-hidden
+          className="absolute inset-y-1 w-0.5 -translate-x-1/2 rounded-full bg-foreground transition-[left] duration-300 ease-(--ease-drawer) motion-reduce:transition-none"
+          style={paceMark.tick}
+        />
+      ) : null}
+    </SharedTooltipTrigger>
   );
 }
 

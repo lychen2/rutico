@@ -3,6 +3,7 @@ import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, describe, it } from "@effect/vitest";
 import {
   ChatFileAttachment,
+  EnvironmentId,
   MessageId,
   NodeId,
   ProjectId,
@@ -161,6 +162,43 @@ describe("AntigravityAdapterV2 flavor", () => {
     assert.deepEqual(question?.respond({ interaction_2: "opt-dev" }), {
       outcome: { outcome: "selected", optionId: "opt-dev" },
     });
+  });
+
+  it("shows each ask_question question as the question body, not the generic form message", () => {
+    // agy's ask_question puts each question in its field's title, with no description,
+    // and a generic count in the form message.
+    const choice = (title: string) => ({
+      type: "string",
+      title,
+      oneOf: [
+        { const: "npm", title: "npm" },
+        { const: "pnpm", title: "pnpm" },
+      ],
+    });
+    const form = flavor.extractElicitationForm?.({
+      sessionId: "session-1",
+      mode: "form",
+      message: "The agent has 2 questions.",
+      requestedSchema: {
+        type: "object",
+        properties: {
+          q0: choice("Which package manager should this new TypeScript project use?"),
+          q0_other: { type: "string", title: "Other" },
+          q1: choice("Which package manager should the docs site use?"),
+          q1_other: { type: "string", title: "Other" },
+        },
+      },
+    } as EffectAcpSchema.CreateElicitationRequest);
+    assert.deepEqual(
+      form?.questions.map((question) => question.question),
+      [
+        "Which package manager should this new TypeScript project use?",
+        "Which package manager should the docs site use?",
+      ],
+    );
+    for (const question of form?.questions ?? []) {
+      assert.notStrictEqual(question.header, question.question);
+    }
   });
 });
 
@@ -2391,13 +2429,14 @@ describe("AntigravityAdapterV2 runtime mode ceiling", () => {
 
 describe("AntigravityAdapterV2 thin-client editor mode", () => {
   it.effect.each(["1.5.0", "1.5.12"])(
-    "sends raw user prompts with no system prompt append, no MCP server, and no harness wrapper on %s",
+    "passes standard ACP MCP servers with raw user prompts and no harness wrapper or shell fallback env on %s",
     (agentVersion) =>
       Effect.gen(function* () {
         const childProcessSpawner = yield* ChildProcessSpawner.ChildProcessSpawner;
         const fileSystem = yield* FileSystem.FileSystem;
         const path = yield* Path.Path;
         const crypto = yield* SecureRandom.SecureRandom;
+        const mcpSessions = yield* McpProviderSessions.McpProviderSessions;
         const mockAgentPath = yield* path.fromFileUrl(
           new URL("../../../scripts/acp-mock-agent.ts", import.meta.url),
         );
@@ -2406,11 +2445,25 @@ describe("AntigravityAdapterV2 thin-client editor mode", () => {
         type RuntimeService = AcpSessionRuntime.AcpSessionRuntime["Service"];
         const promptReceived = yield* Deferred.make<Parameters<RuntimeService["prompt"]>[0]>();
         const instanceId = ProviderInstanceId.make("antigravity-thin-client-test");
+        const threadId = ThreadId.make("thread-antigravity-thin-client");
+        const endpoint = "http://127.0.0.1:43125/mcp";
+        const authorizationHeader = "Bearer antigravity-thin-client-token";
+        yield* mcpSessions.set({
+          environmentId: EnvironmentId.make("environment-antigravity-thin-client"),
+          threadId,
+          providerSessionId: "mcp-session-antigravity-thin-client",
+          providerInstanceId: instanceId,
+          endpoint,
+          authorizationHeader,
+          browserToolsAvailable: true,
+        });
+        const observedProcessEnvironments: Array<NodeJS.ProcessEnv | undefined> = [];
         const adapter = yield* makeAntigravityAdapterV2({
           instanceId,
           selfInvocation: yield* resolveSelfInvocation(),
-          makeRuntime: (input) =>
-            makeAntigravityAcpRuntime({
+          makeRuntime: (input) => {
+            observedProcessEnvironments.push(input.processEnvironment);
+            return makeAntigravityAcpRuntime({
               ...input,
               childProcessSpawner,
               spawn: {
@@ -2420,6 +2473,7 @@ describe("AntigravityAdapterV2 thin-client editor mode", () => {
                 env: {
                   T3_ACP_ANTIGRAVITY: "1",
                   T3_ACP_AGENT_VERSION: agentVersion,
+                  T3_ACP_MCP_HTTP: "1",
                   T3_ACP_REQUEST_LOG_PATH: requestLog,
                   T3_ACP_HANG_PROMPT_FOREVER: "1",
                 },
@@ -2433,12 +2487,13 @@ describe("AntigravityAdapterV2 thin-client editor mode", () => {
                     Effect.andThen(runtime.prompt(request)),
                   ),
               })),
-            ),
+            );
+          },
           withProcess: (_stop, task) => task,
           defaultModel: Effect.undefined,
         });
         const staticCapabilities = yield* adapter.getCapabilities();
-        assert.isFalse(staticCapabilities.tools.supportsMcpTools);
+        assert.isTrue(staticCapabilities.tools.supportsMcpTools);
         assert.isFalse(staticCapabilities.context.acceptsSyntheticUserContext);
         assert.isFalse(staticCapabilities.context.canGenerateSummaries);
         assert.isFalse(staticCapabilities.context.canConsumeHandoffSummaries);
@@ -2451,7 +2506,6 @@ describe("AntigravityAdapterV2 thin-client editor mode", () => {
           interactionMode: "default",
           cwd: workspace,
         });
-        const threadId = ThreadId.make("thread-antigravity-thin-client");
         const modelSelection = { instanceId, model: "gemini-test-low" } as const;
         const session = yield* adapter.openSession({
           threadId,
@@ -2464,7 +2518,8 @@ describe("AntigravityAdapterV2 thin-client editor mode", () => {
           modelSelection,
           runtimePolicy,
         });
-        assert.isFalse(session.providerSession.capabilities.tools.supportsMcpTools);
+        assert.isTrue(session.providerSession.capabilities.tools.supportsMcpTools);
+        assert.deepEqual(observedProcessEnvironments, [undefined]);
         const now = yield* DateTime.now;
         yield* session
           .startTurn({
@@ -2526,7 +2581,14 @@ describe("AntigravityAdapterV2 thin-client editor mode", () => {
         const sessionNew = requests.find((request) => request.method === "session/new");
         const append = JSON.stringify(sessionNew?.params?._meta ?? null);
         assert.equal(initialize?.params?.clientInfo?.name, "rutico");
-        assert.deepEqual(sessionNew?.params?.mcpServers, []);
+        assert.deepEqual(sessionNew?.params?.mcpServers, [
+          {
+            type: "http",
+            name: "t3-code",
+            url: endpoint,
+            headers: [{ name: "Authorization", value: authorizationHeader }],
+          },
+        ]);
         assert.notInclude(append, "systemPrompt");
         assert.notInclude(sent, "<t3_code_instructions>");
         assert.notInclude(sent, "<runtime_info>");
