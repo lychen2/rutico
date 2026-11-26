@@ -56,14 +56,26 @@ const focusRingClassName =
 
 type LineProps = Omit<ComponentProps<"div">, "className" | "style" | "children">;
 
-function WorkLogLine({ icon, label, trailing, wrapLabel, ...lineProps }: RowContent & LineProps) {
+function WorkLogLine({
+  icon,
+  label,
+  trailing,
+  wrapLabel,
+  interactive = false,
+  ...lineProps
+}: RowContent & LineProps & { interactive?: boolean }) {
+  const rowInteractive = interactive || lineProps.role === "button";
   return (
     <div
       {...lineProps}
       className={cn(
         "flex min-h-6 min-w-0 gap-1.5 text-sm leading-relaxed select-none [&_*]:select-none",
         wrapLabel ? "items-start" : "items-center",
-        lineProps.role === "button" && focusRingClassName,
+        lineProps.role === "button" &&
+          cn(
+            "group/work-line rounded-md transition-colors duration-150 ease-out any-hover:bg-foreground/[0.04] motion-reduce:transition-none",
+            focusRingClassName,
+          ),
       )}
     >
       <div className="flex min-w-0 flex-1 items-baseline gap-1.5">
@@ -77,6 +89,8 @@ function WorkLogLine({ icon, label, trailing, wrapLabel, ...lineProps }: RowCont
         <div
           className={cn(
             "min-w-0 flex-1 text-secondary-label",
+            rowInteractive &&
+              "transition-colors duration-150 ease-out group-hover/work-line:text-foreground motion-reduce:transition-none",
             !wrapLabel && "truncate [&_*]:whitespace-nowrap",
           )}
         >
@@ -91,9 +105,10 @@ function WorkLogLine({ icon, label, trailing, wrapLabel, ...lineProps }: RowCont
 function useRowClassName(interactive: boolean, focusable = interactive) {
   const grouped = use(GroupedRows);
   return cn(
-    "group/timeline-row relative w-full min-w-0 rounded-md px-0.5 text-left transition-colors",
+    "group/timeline-row relative w-full min-w-0 rounded-md px-0.5 text-left transition-colors duration-150 ease-out motion-reduce:transition-none",
     grouped ? "py-0" : "py-0.5",
     interactive && "cursor-pointer",
+    interactive && focusable && "group/work-line any-hover:bg-foreground/[0.04]",
     focusable && focusRingClassName,
   );
 }
@@ -108,7 +123,13 @@ export function WorkLogButton({
   const className = useRowClassName(true);
   return (
     <button {...buttonProps} type="button" className={className}>
-      <WorkLogLine icon={icon} label={label} trailing={trailing} wrapLabel={wrapLabel} />
+      <WorkLogLine
+        icon={icon}
+        label={label}
+        trailing={trailing}
+        wrapLabel={wrapLabel}
+        interactive
+      />
     </button>
   );
 }
@@ -176,12 +197,12 @@ export function WorkLogDetails({
         atLiveEdgeRef.current = scrollHeight - scrollTop - clientHeight <= LIVE_EDGE_PX;
       }}
       className={cn(
-        "cursor-auto",
+        "cursor-auto transition-[opacity,transform] duration-180 ease-out starting:-translate-y-1 starting:opacity-0 motion-reduce:transition-none",
         kind === "text"
-          ? "ms-7 flex max-h-96 flex-col gap-3 overflow-auto px-0.5 py-1 select-text"
+          ? "ms-3 flex max-h-96 flex-col gap-3 overflow-auto border-s border-border/60 py-1 ps-4 pe-0.5 select-text"
           : kind === "panel"
-            ? "mt-0.5 mb-1.5 pb-2"
-            : "mt-1",
+            ? "mt-0.5 mb-1.5 ms-3 border-s border-border/60 ps-4 pb-2"
+            : "mt-1 ms-3 border-s border-border/60 ps-4",
       )}
       onClick={(event) => event.stopPropagation()}
       onPointerDown={(event) => event.stopPropagation()}
