@@ -18,7 +18,7 @@ import { page, userEvent } from "vite-plus/test/browser";
 
 import "~/index.css";
 import { createModelCapabilities } from "@t3tools/shared/model";
-import { act, render } from "../../../test/render";
+import { act, fakeTimers, render } from "../../../test/render";
 import { ScheduledTasksSettings } from "./ScheduledTasksSettings";
 import { ConfirmDialogHost } from "../ConfirmDialogHost";
 
@@ -62,6 +62,7 @@ const threadFamilyRead = {
 const state = vi.hoisted(() => ({
   connected: true,
   tasksLoaded: true,
+  timeZone: undefined as string | undefined,
   remove: vi.fn(),
   tasks: [] as ScheduledTask[],
   secondary: false,
@@ -85,6 +86,7 @@ function taskList(id: string) {
 function setup() {
   state.connected = true;
   state.tasksLoaded = true;
+  state.timeZone = undefined;
   state.remove.mockReset().mockReturnValue(Effect.succeed({ id: task.id }));
   state.tasks = [task];
   state.secondary = false;
@@ -176,7 +178,10 @@ vi.mock(import("../../state/query"), async (original) => ({
     data:
       request === null || request === threadFamilyRead
         ? request
-        : { tasks: state.tasksLoaded ? state.tasks : [] },
+        : {
+            tasks: state.tasksLoaded ? state.tasks : [],
+            ...(state.timeZone === undefined ? {} : { timeZone: state.timeZone }),
+          },
     error: null,
     isPending: false,
     refresh: vi.fn(),
@@ -465,5 +470,118 @@ describe("ScheduledTasksSettings", () => {
 
     await expect.element(dialog).toHaveAttribute("data-open");
     await expect.element(name).toHaveValue("My draft");
+  });
+
+  it("computes draft fixed-time preview runs in the target environment timezone rather than browser local Date", async () => {
+    setup();
+    state.timeZone = "America/New_York";
+    // 2026-11-26T12:00:00Z is Thu 20:00 in Asia/Shanghai (past 09:00 local),
+    // but Thu 07:00 EST in America/New_York (2 hours before Thu 09:00 EST = 14:00Z).
+    using _timers = fakeTimers({ now: Date.parse("2026-11-26T12:00:00.000Z") });
+    await using screen = await render(<ScheduledTasksSettings />);
+    await screen.getByRole("button", { name: "New task" }).click();
+
+    const preview = page
+      .getByRole("dialog")
+      .element()
+      .querySelector('[data-slot="schedule-rhythm-preview"]')!;
+    const runTimes = () =>
+      [...preview.querySelectorAll<HTMLTimeElement>('time[data-slot="schedule-next-run"]')].map(
+        (el) => ({ iso: el.dateTime, text: el.textContent ?? "" }),
+      );
+
+    expect(runTimes().map((run) => run.iso)).toEqual([
+      "2026-11-26T14:00:00.000Z",
+      "2026-11-27T14:00:00.000Z",
+      "2026-11-30T14:00:00.000Z",
+    ]);
+    expect(runTimes()[0]!.text).toContain("EST");
+
+    // Moving the fixed time to 06:00 EST (already passed at 07:00 EST) shifts the first run to Fri 06:00 EST.
+    await userEvent.fill(page.getByRole("dialog").getByLabelText("Run at"), "06:00");
+    expect(runTimes().map((run) => run.iso)).toEqual([
+      "2026-11-27T11:00:00.000Z",
+      "2026-11-30T11:00:00.000Z",
+      "2026-12-01T11:00:00.000Z",
+    ]);
+  });
+
+  it("preserves the server nextRunAt when editing only non-schedule fields on a saved recurring task", async () => {
+    setup();
+    state.timeZone = "America/New_York";
+    const savedNextRunAt = "2026-11-26T12:17:00.000Z";
+    state.tasks = [
+      {
+        ...task,
+        enabled: true,
+        schedule: { type: "interval", everyMs: 60 * 60_000 },
+        nextRunAt: savedNextRunAt,
+      },
+    ];
+    // At 12:00Z, naive now + 60m would wrongly show 13:00Z instead of server's authoritative 12:17Z.
+    using _timers = fakeTimers({ now: Date.parse("2026-11-26T12:00:00.000Z") });
+    await using _screen = await render(<ScheduledTasksSettings taskId={task.id} />);
+
+    const dialog = page.getByRole("dialog");
+    const runIsos = () =>
+      [
+        ...dialog
+          .element()
+          .querySelectorAll<HTMLTimeElement>('time[data-slot="schedule-next-run"]'),
+      ].map((el) => el.dateTime);
+
+    expect(runIsos()).toEqual([
+      "2026-11-26T12:17:00.000Z",
+      "2026-11-26T13:17:00.000Z",
+      "2026-11-26T14:17:00.000Z",
+    ]);
+
+    // Title-only edit must keep server's authoritative nextRunAt.
+    await userEvent.fill(dialog.getByRole("textbox", { name: "Name" }), "Renamed recurring task");
+    expect(runIsos()).toEqual([
+      "2026-11-26T12:17:00.000Z",
+      "2026-11-26T13:17:00.000Z",
+      "2026-11-26T14:17:00.000Z",
+    ]);
+
+    // Editing the interval itself restarts the preview from now + new interval.
+    await userEvent.fill(dialog.getByLabelText("Run every"), "30");
+    expect(runIsos()).toEqual([
+      "2026-11-26T12:30:00.000Z",
+      "2026-11-26T13:00:00.000Z",
+      "2026-11-26T13:30:00.000Z",
+    ]);
+  });
+
+  it("lists no next runs for a disabled task and hides next runs when toggled off", async () => {
+    setup();
+    state.timeZone = "America/New_York";
+    state.tasks = [
+      {
+        ...task,
+        enabled: false,
+        schedule: { type: "fixed_time", timeOfDay: "09:00", weekdays: [1, 2, 3, 4, 5] },
+        nextRunAt: null,
+      },
+    ];
+    using _timers = fakeTimers({ now: Date.parse("2026-11-26T12:00:00.000Z") });
+    await using _screen = await render(<ScheduledTasksSettings taskId={task.id} />);
+
+    const dialog = page.getByRole("dialog");
+    const preview = () => dialog.element().querySelector('[data-slot="schedule-rhythm-preview"]')!;
+    const runEls = () => preview().querySelectorAll('time[data-slot="schedule-next-run"]');
+
+    expect(runEls()).toHaveLength(0);
+    expect(preview().textContent).not.toContain("Next runs:");
+
+    // Enabling the task in the editor computes next runs in the target environment timezone.
+    await userEvent.click(dialog.getByRole("switch", { name: "Enabled" }));
+    expect(runEls()).toHaveLength(3);
+    expect(preview().textContent).toContain("Next runs:");
+
+    // Toggling Enabled back off clears next runs again.
+    await userEvent.click(dialog.getByRole("switch", { name: "Enabled" }));
+    expect(runEls()).toHaveLength(0);
+    expect(preview().textContent).not.toContain("Next runs:");
   });
 });
