@@ -18,7 +18,8 @@ class T3ContextChip(
   fontSize: Float,
   private val color: Int,
   maximumWidth: Float,
-  density: Float
+  density: Float,
+  private val highlighted: Boolean = false
 ) {
   /** What the chip says: its name, the size beside it, and the glyph that leads it. */
   data class Content(
@@ -51,6 +52,17 @@ class T3ContextChip(
     }
   }
   private val padding = density * 5
+  private val highlightRadius = density * 6
+  private val highlightStrokeWidth = density.coerceAtLeast(1f)
+  private val highlightFillPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+    style = Paint.Style.FILL
+    color = (this@T3ContextChip.color and 0x00FFFFFF) or (0x24 shl 24)
+  }
+  private val highlightBorderPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+    style = Paint.Style.STROKE
+    strokeWidth = highlightStrokeWidth
+    color = (this@T3ContextChip.color and 0x00FFFFFF) or (0xB8 shl 24)
+  }
   private val iconSlot = if (iconUri.isEmpty()) 0f else em * 1.25f
   val width = ceil(
     min(
@@ -69,6 +81,12 @@ class T3ContextChip(
   fun draw(canvas: Canvas, x: Float, y: Float) {
     canvas.save()
     canvas.translate(x, y)
+    if (highlighted) {
+      val inset = highlightStrokeWidth / 2f
+      val rect = RectF(inset, inset, width - inset, height - inset)
+      canvas.drawRoundRect(rect, highlightRadius, highlightRadius, highlightFillPaint)
+      canvas.drawRoundRect(rect, highlightRadius, highlightRadius, highlightBorderPaint)
+    }
     T3ChipIcons.cached(iconUri)?.let {
       val top = (height - em) / 2
       canvas.drawBitmap(it, null, RectF(padding, top, padding + em, top + em), iconPaint)

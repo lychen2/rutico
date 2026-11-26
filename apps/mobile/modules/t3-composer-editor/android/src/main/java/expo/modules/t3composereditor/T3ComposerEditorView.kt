@@ -9,6 +9,7 @@ import android.graphics.Canvas
 import android.graphics.Paint
 import android.graphics.Typeface
 import android.os.Build
+import android.provider.Settings
 import android.text.Editable
 import android.text.InputType
 import android.text.InputFilter
@@ -22,6 +23,7 @@ import android.util.TypedValue
 import android.view.DragEvent
 import android.view.Gravity
 import android.view.GestureDetector
+import android.view.HapticFeedbackConstants
 import android.view.InputDevice
 import android.view.MotionEvent
 import android.view.KeyEvent
@@ -90,6 +92,13 @@ class T3ComposerEditorView(context: Context, appContext: AppContext) : ExpoView(
   private var autoCorrect = true
   private var spellCheck = true
   private var nativeEventCount = 0
+  private var highlightedChipRange: Pair<Int, Int>? = null
+  private val clearChipHighlightRunnable = Runnable {
+    if (highlightedChipRange != null) {
+      highlightedChipRange = null
+      applyTokenSpans()
+    }
+  }
 
   init {
     editor.setBackgroundColor(Color.TRANSPARENT)
@@ -145,6 +154,9 @@ class T3ComposerEditorView(context: Context, appContext: AppContext) : ExpoView(
             if (token.end <= editor.length() &&
               editor.text.substring(token.start, token.end) == token.source
             ) {
+              // Fire semantic haptic and brief chip border highlight only on confirmed tap, never onDown.
+              editor.performHapticFeedback(HapticFeedbackConstants.CONTEXT_CLICK)
+              flashTappedChip(token.start, token.end)
               onComposerContextPress(
                 mapOf(
                   "source" to token.source,
@@ -194,6 +206,10 @@ class T3ComposerEditorView(context: Context, appContext: AppContext) : ExpoView(
 
         override fun afterTextChanged(editable: Editable?) {
           if (applyingNativeValue) return
+          if (highlightedChipRange != null) {
+            removeCallbacks(clearChipHighlightRunnable)
+            highlightedChipRange = null
+          }
           val nextValue = editable.toString()
           val selection = currentSelectionPayload()
           nativeEventCount += 1
@@ -454,11 +470,34 @@ class T3ComposerEditorView(context: Context, appContext: AppContext) : ExpoView(
     )
   }
 
+  override fun onDetachedFromWindow() {
+    removeCallbacks(clearChipHighlightRunnable)
+    highlightedChipRange = null
+    super.onDetachedFromWindow()
+  }
+
+  private fun flashTappedChip(start: Int, end: Int) {
+    removeCallbacks(clearChipHighlightRunnable)
+    val animatorScale = try {
+      Settings.Global.getFloat(context.contentResolver, Settings.Global.ANIMATOR_DURATION_SCALE, 1f)
+    } catch (_: Throwable) {
+      1f
+    }
+    if (animatorScale == 0f) {
+      highlightedChipRange = null
+      return
+    }
+    highlightedChipRange = start to end
+    applyTokenSpans()
+    postDelayed(clearChipHighlightRunnable, 180L)
+  }
+
   private fun emitContentSizeIfNeeded() {
     // The laid-out text without insets. A one-line draft reports its natural width, so
     // JS can tell whether it fits a narrower row than the one it is laid out in; past
     // one line only the height matters. Trailing whitespace hangs past a line without
     // wrapping it, so getLineMax leaves it out.
+    if (!editor.isLaidOut || editor.width <= 0) return
     val layout = editor.layout
     val contentHeight = layout?.height ?: editor.measuredHeight
     val contentWidth = singleLineContentWidth(layout)
@@ -518,6 +557,7 @@ class T3ComposerEditorView(context: Context, appContext: AppContext) : ExpoView(
               } ?: resources.displayMetrics.widthPixels
               ).toFloat(),
             density = resources.displayMetrics.density,
+            highlighted = highlightedChipRange == (token.start to token.end),
           )
         ),
         token.start,
