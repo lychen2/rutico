@@ -1366,12 +1366,25 @@ describe("DesktopWindow", () => {
         yield* desktopWindow.syncAppearance;
       }).pipe(Effect.provide(layer));
 
-      assert.deepEqual(vi.mocked(framed.window.setBackgroundColor).mock.calls, [["#ffffff"]]);
+      assert.deepEqual(vi.mocked(framed.window.setBackgroundColor).mock.calls, [
+        [DesktopWindow.DEFAULT_WINDOW_BACKGROUND_COLORS.light],
+      ]);
       assert.lengthOf(vi.mocked(framed.window.setTitleBarOverlay).mock.calls, 0);
-      assert.deepEqual(vi.mocked(overlay.window.setBackgroundColor).mock.calls, [["#ffffff"]]);
+      assert.deepEqual(vi.mocked(overlay.window.setBackgroundColor).mock.calls, [
+        [DesktopWindow.DEFAULT_WINDOW_BACKGROUND_COLORS.light],
+      ]);
       assert.lengthOf(vi.mocked(overlay.window.setTitleBarOverlay).mock.calls, 1);
     }),
   );
+
+  it("matches initial BrowserWindow backgroundColor to Rutico and persisted themes", () => {
+    assert.equal(DesktopWindow.getInitialWindowBackgroundColor(false), "#faf8fd");
+    assert.equal(DesktopWindow.getInitialWindowBackgroundColor(true), "#1a1727");
+    assert.equal(DesktopWindow.getInitialWindowBackgroundColor(false, "grove"), "#f3f7f4");
+    assert.equal(DesktopWindow.getInitialWindowBackgroundColor(true, "grove"), "#1b2821");
+    assert.equal(DesktopWindow.getInitialWindowBackgroundColor(true, "#123456"), "#123456");
+    assert.equal(DesktopWindow.getInitialWindowBackgroundColor(true, "unknown-theme"), "#1a1727");
+  });
 
   it.effect.each([
     { window: "normal", write: "flush" },
