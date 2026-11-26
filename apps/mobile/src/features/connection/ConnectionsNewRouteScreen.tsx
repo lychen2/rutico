@@ -5,7 +5,6 @@ import * as Dialog from "../../components/ui/Dialog";
 import { ScreenScrollView as ScrollView } from "../../components/ui/ScreenScrollView";
 import { useAuth } from "@clerk/expo";
 import { CameraView, useCameraPermissions } from "expo-camera";
-import * as Haptics from "expo-haptics";
 import {
   StackActions,
   useIsFocused,
@@ -19,22 +18,31 @@ import {
   Animated as RNAnimated,
   Easing as RNEasing,
   Linking,
+  Platform,
   Pressable,
   StyleSheet,
   useAnimatedValue,
   View,
 } from "react-native";
-import { useReducedMotion } from "react-native-reanimated";
+import Reanimated, {
+  useAnimatedStyle,
+  useReducedMotion,
+  useSharedValue,
+  withSpring,
+} from "react-native-reanimated";
 import Svg, { Defs, RadialGradient, Rect, Stop } from "react-native-svg";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useAppActive } from "../../lib/appState";
 import { cn } from "../../lib/cn";
+import { triggerSemanticHaptic } from "../../lib/hapticChoreography";
+import { SPRING_SPATIAL_SNAPPY, startNativePulseLoop } from "../../lib/mobileMotion";
 import { useUniwindTheme } from "../../lib/useUniwindTheme";
 import { useAppearancePreferences } from "../settings/appearance/AppearancePreferencesProvider";
 import { SettingsScreen } from "../settings/components/SettingsScreen";
 import { AppText as Text, AppTextInput, type AppTextInputProps } from "../../components/ui/AppText";
 import { Button } from "../../components/ui/Button";
 import { FrostedCutout } from "../../components/ui/FrostedCutout";
+import type { FrostedCutoutLockRect } from "../../components/ui/FrostedCutout.types";
 import { buildPairingUrl, extractPairingUrlFromQrPayload, parsePairingUrl } from "./pairing";
 import { useRemoteConnections } from "../../state/use-remote-environment-registry";
 import { SymbolView } from "../../components/ui/AppSymbol";
@@ -50,6 +58,63 @@ import { splitEnvironmentSections } from "./environmentSections";
 import { leaveSettingsPage } from "../settings/settings-navigation";
 import { workspaceHasColumns } from "../layout/workspace/workspace-selection-store";
 import { m } from "../../i18n/messages";
+
+export interface QrBarcodeScanPayload {
+  readonly data: string;
+  readonly bounds?: {
+    readonly origin?: { readonly x: number; readonly y: number };
+    readonly size?: { readonly width: number; readonly height: number };
+  } | null;
+  readonly cornerPoints?: ReadonlyArray<{ readonly x: number; readonly y: number }>;
+}
+
+/**
+ * Extracts a positive-area bounding rectangle from CameraX / MLKit barcode scan output,
+ * returning `null` when Android supplies empty bounds so the reticle performs a centered squeeze.
+ */
+export function extractBarcodeLockRect(result: QrBarcodeScanPayload): FrostedCutoutLockRect | null {
+  const origin = result.bounds?.origin;
+  const size = result.bounds?.size;
+  if (
+    origin &&
+    size &&
+    Number.isFinite(origin.x) &&
+    Number.isFinite(origin.y) &&
+    Number.isFinite(size.width) &&
+    Number.isFinite(size.height) &&
+    size.width > 12 &&
+    size.height > 12
+  ) {
+    return {
+      x: origin.x,
+      y: origin.y,
+      width: size.width,
+      height: size.height,
+    };
+  }
+
+  const points = result.cornerPoints;
+  if (points && points.length >= 3) {
+    let minX = Infinity;
+    let minY = Infinity;
+    let maxX = -Infinity;
+    let maxY = -Infinity;
+    for (const point of points) {
+      if (!Number.isFinite(point.x) || !Number.isFinite(point.y)) continue;
+      if (point.x < minX) minX = point.x;
+      if (point.y < minY) minY = point.y;
+      if (point.x > maxX) maxX = point.x;
+      if (point.y > maxY) maxY = point.y;
+    }
+    const width = maxX - minX;
+    const height = maxY - minY;
+    if (Number.isFinite(width) && Number.isFinite(height) && width > 12 && height > 12) {
+      return { x: minX, y: minY, width, height };
+    }
+  }
+
+  return null;
+}
 
 type ConnectionsNewRouteParams = {
   readonly mode?: string;
@@ -112,6 +177,8 @@ function PairingForm({
   const [scannerLocked, setScannerLocked] = useState(false);
   // A good scan parks the camera so it can't re-read the code over later edits.
   const [scanComplete, setScanComplete] = useState(false);
+  const [lockedRect, setLockedRect] = useState<FrostedCutoutLockRect | null>(null);
+  const [scannedHost, setScannedHost] = useState<string | null>(null);
   const codeInputRef = useRef<ComponentRef<typeof AppTextInput>>(null);
 
   const headerIconColor = useUniwindTheme()["--color-icon"];
@@ -143,6 +210,9 @@ function PairingForm({
     const permission = await requestCameraPermission();
     if (permission.granted) {
       setScanComplete(false);
+      setLockedRect(null);
+      setScannedHost(null);
+      clearError();
       return;
     }
     if (permission.canAskAgain) return;
@@ -156,7 +226,7 @@ function PairingForm({
     );
   };
 
-  const handleQrScan = ({ data }: { readonly data: string }) => {
+  const handleQrScan = (result: QrBarcodeScanPayload) => {
     if (scannerLocked) {
       return;
     }
@@ -164,18 +234,21 @@ function PairingForm({
     setScannerLocked(true);
 
     try {
-      const pairingUrl = extractPairingUrlFromQrPayload(data);
+      const pairingUrl = extractPairingUrlFromQrPayload(result.data);
       const { host, code } = parsePairingUrl(pairingUrl);
+      const lockRect = extractBarcodeLockRect(result);
+      setLockedRect(lockRect);
+      setScannedHost(host);
       setHostInput(host);
       setCodeInput(code);
       onChangeConnectionPairingUrl(pairingUrl);
       setScanComplete(true);
       setScannerLocked(false);
-      void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(
-        () => undefined,
-      );
+      clearError();
+      // Keep explicit user confirmation (B12): lock reticle & present in-place handshake card instead of auto-pairing.
+      triggerSemanticHaptic("confirm");
     } catch (error) {
-      void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      triggerSemanticHaptic("reject");
       Dialog.alert(
         gt("Invalid QR code"),
         error instanceof Error
@@ -197,11 +270,7 @@ function PairingForm({
     const outcome = await onConnectPress(pairingUrl, routeFor);
     setIsSubmitting(false);
     setSubmitError(outcome.error);
-    void Haptics.notificationAsync(
-      outcome.ok
-        ? Haptics.NotificationFeedbackType.Success
-        : Haptics.NotificationFeedbackType.Error,
-    );
+    triggerSemanticHaptic(outcome.ok ? "confirm" : "reject");
     if (outcome.ok) {
       // Replacing with Home would nest it inside any sheet below; return to the opener.
       if (!navigation.canGoBack()) {
@@ -251,11 +320,29 @@ function PairingForm({
           <PairingScanCard
             cameraActive={cameraPermission?.granted === true && screenFocused && !scanComplete}
             scanComplete={scanComplete}
+            lockedRect={lockedRect}
+            screenFocused={screenFocused}
             onScan={handleQrScan}
             onScanPress={() => {
               void handleScanPress();
             }}
           />
+
+          {scanComplete && (scannedHost || hostInput.trim().length > 0) ? (
+            <PairingHandshakeCard
+              host={hostInput.trim() || scannedHost || ""}
+              connecting={connecting}
+              error={pairingConnectionError}
+              connectDisabled={connectDisabled}
+              screenFocused={screenFocused}
+              onConfirmConnect={() => {
+                void handleSubmit();
+              }}
+              onRescan={() => {
+                void handleScanPress();
+              }}
+            />
+          ) : null}
 
           <View collapsable={false} className="gap-2">
             <Text className="px-4 text-sm font-t3-medium text-foreground-muted">
@@ -336,10 +423,10 @@ const SCAN_RETICLE_SIZE = 150;
 const SCAN_RETICLE_TOP = 36;
 const SCAN_RETICLE_RADIUS = 28;
 
-function ReticleScanLine() {
+function ReticleScanLine(props: { readonly focused: boolean }) {
   const appActive = useAppActive();
   const reducedMotion = useReducedMotion();
-  const animate = appActive && !reducedMotion;
+  const animate = appActive && props.focused && !reducedMotion;
   const progress = useAnimatedValue(0, { useNativeDriver: true });
 
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- animates a subtle native-driver scan line inside the active QR viewfinder
@@ -385,14 +472,210 @@ function ReticleScanLine() {
   );
 }
 
+function HandshakePulseDot(props: { readonly active: boolean; readonly focused: boolean }) {
+  const appActive = useAppActive();
+  const reducedMotion = useReducedMotion();
+  const pulse = useAnimatedValue(0, { useNativeDriver: true });
+  const shouldPulse = props.active && appActive && props.focused && !reducedMotion;
+
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- drives continuous handshake pulse on RN Animated native driver (obeys DISABLE_COMMIT_PAUSING_MECHANISM)
+  useEffect(
+    () => startNativePulseLoop(pulse, { active: shouldPulse, duration: 1200, mode: "breathe" }),
+    [pulse, shouldPulse],
+  );
+
+  const ringScale = pulse.interpolate({ inputRange: [0, 1], outputRange: [1, 1.85] });
+  const ringOpacity = pulse.interpolate({ inputRange: [0, 1], outputRange: [0.45, 0] });
+
+  return (
+    <View className="size-4 items-center justify-center">
+      {shouldPulse ? (
+        <RNAnimated.View
+          pointerEvents="none"
+          className="absolute size-3 rounded-full bg-primary"
+          style={{ opacity: ringOpacity, transform: [{ scale: ringScale }] }}
+        />
+      ) : null}
+      <View className="size-2 rounded-full bg-primary" />
+    </View>
+  );
+}
+
+function PairingHandshakeCard(props: {
+  readonly host: string;
+  readonly connecting: boolean;
+  readonly error: string | null;
+  readonly connectDisabled: boolean;
+  readonly screenFocused: boolean;
+  readonly onConfirmConnect: () => void;
+  readonly onRescan: () => void;
+}) {
+  const gt = useGT();
+  const enterProgress = useSharedValue(0);
+
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- springs the in-place handshake card into view on QR lock-on
+  useEffect(() => {
+    enterProgress.set(withSpring(1, SPRING_SPATIAL_SNAPPY));
+  }, [enterProgress]);
+
+  const cardStyle = useAnimatedStyle(() => ({
+    opacity: enterProgress.get(),
+    transform: [{ translateY: (1 - enterProgress.get()) * 14 }],
+  }));
+
+  const activeStep: "confirm" | "handshake" | "error" = props.connecting
+    ? "handshake"
+    : props.error
+      ? "error"
+      : "confirm";
+
+  return (
+    <Reanimated.View
+      collapsable={false}
+      style={cardStyle}
+      className={cn(
+        "gap-3.5 rounded-[26px] border-continuous border bg-grouped-card p-4",
+        props.error ? "border-danger-foreground/50" : "border-adaptive-emerald-600-400/35",
+      )}
+    >
+      <View className="flex-row items-center gap-3">
+        <View className="size-10 items-center justify-center rounded-2xl bg-subtle">
+          {props.connecting ? (
+            <HandshakePulseDot active focused={props.screenFocused} />
+          ) : (
+            <SymbolView
+              name={props.error ? "exclamationmark.triangle" : "desktopcomputer"}
+              size={18}
+              tintColorClassName={
+                props.error ? "accent-danger-foreground" : "accent-adaptive-emerald-600-400"
+              }
+              type="monochrome"
+            />
+          )}
+        </View>
+        <View className="min-w-0 flex-1 gap-0.5">
+          <Text className="text-sm font-t3-bold text-foreground">
+            {props.connecting
+              ? gt("Handshaking with host")
+              : props.error
+                ? gt("Handshake failed")
+                : gt("Ready to pair")}
+          </Text>
+          <Text className="font-mono text-xs text-foreground-muted" numberOfLines={1}>
+            {props.host}
+          </Text>
+        </View>
+      </View>
+
+      {/* 3-step live handshake progress pills */}
+      <View className="flex-row items-center gap-2">
+        <HandshakeStepPill label={gt("Scanned")} status="done" />
+        <View className="h-[1px] flex-1 bg-border-subtle" />
+        <HandshakeStepPill
+          label={gt("Confirm")}
+          status={activeStep === "handshake" ? "done" : activeStep === "error" ? "error" : "active"}
+        />
+        <View className="h-[1px] flex-1 bg-border-subtle" />
+        <HandshakeStepPill
+          label={gt("Connect")}
+          status={activeStep === "handshake" ? "active" : activeStep === "error" ? "error" : "idle"}
+        />
+      </View>
+
+      {props.error ? (
+        <Text
+          accessibilityLiveRegion="polite"
+          className="text-xs leading-normal text-danger-foreground"
+        >
+          {props.error}
+        </Text>
+      ) : (
+        <Text className="text-xs leading-normal text-foreground-muted">
+          {props.connecting
+            ? gt("Verifying one-time pairing credential with {host}…", { host: props.host })
+            : gt("Confirm this host address before connecting.")}
+        </Text>
+      )}
+
+      <View className="flex-row gap-2.5">
+        <View className="flex-1">
+          <Button
+            label={gt("Scan again")}
+            tone="secondary"
+            fullWidth
+            disabled={props.connecting}
+            onPress={props.onRescan}
+          />
+        </View>
+        <View className="flex-1">
+          <Button
+            label={
+              props.connecting
+                ? gt("Connecting", { $context: "connection status" })
+                : props.error
+                  ? gt("Retry handshake")
+                  : gt("Confirm & connect")
+            }
+            tone="primary"
+            fullWidth
+            loading={props.connecting}
+            disabled={props.connectDisabled}
+            onPress={props.onConfirmConnect}
+          />
+        </View>
+      </View>
+    </Reanimated.View>
+  );
+}
+
+function HandshakeStepPill(props: {
+  readonly label: string;
+  readonly status: "done" | "active" | "error" | "idle";
+}) {
+  return (
+    <View className="flex-row items-center gap-1.5">
+      <View
+        className={cn(
+          "size-2 rounded-full",
+          props.status === "done"
+            ? "bg-adaptive-emerald-600-400"
+            : props.status === "active"
+              ? "bg-primary"
+              : props.status === "error"
+                ? "bg-danger-foreground"
+                : "bg-foreground-muted/35",
+        )}
+      />
+      <Text
+        className={cn(
+          "text-2xs font-t3-medium",
+          props.status === "done"
+            ? "text-adaptive-emerald-700-300"
+            : props.status === "active"
+              ? "text-foreground"
+              : props.status === "error"
+                ? "text-danger-foreground"
+                : "text-foreground-muted",
+        )}
+      >
+        {props.label}
+      </Text>
+    </View>
+  );
+}
+
 function PairingScanCard(props: {
   readonly cameraActive: boolean;
   readonly scanComplete: boolean;
-  readonly onScan: (result: { readonly data: string }) => void;
+  readonly lockedRect: FrostedCutoutLockRect | null;
+  readonly screenFocused: boolean;
+  readonly onScan: (result: QrBarcodeScanPayload) => void;
   readonly onScanPress: () => void;
 }) {
   const gt = useGT();
   const light = useAppearancePreferences().themeAppearance === "light";
+  const showAndroidReticleOverlay =
+    Platform.OS === "android" && (props.cameraActive || props.scanComplete);
   return (
     <Pressable
       accessibilityRole={props.cameraActive ? undefined : "button"}
@@ -416,21 +699,24 @@ function PairingScanCard(props: {
       </Svg>
 
       {props.cameraActive ? (
-        <>
-          <CameraView
-            active
-            barcodeScannerSettings={{ barcodeTypes: ["qr"] }}
-            onBarcodeScanned={props.onScan}
-            style={StyleSheet.absoluteFill}
-          />
-          <FrostedCutout
-            cutoutTop={SCAN_RETICLE_TOP}
-            cutoutWidth={SCAN_RETICLE_SIZE}
-            cutoutHeight={SCAN_RETICLE_SIZE}
-            cutoutRadius={SCAN_RETICLE_RADIUS}
-            appearance={light ? "light" : "dark"}
-          />
-        </>
+        <CameraView
+          active
+          barcodeScannerSettings={{ barcodeTypes: ["qr"] }}
+          onBarcodeScanned={props.onScan}
+          style={StyleSheet.absoluteFill}
+        />
+      ) : null}
+
+      {props.cameraActive || props.scanComplete ? (
+        <FrostedCutout
+          cutoutTop={SCAN_RETICLE_TOP}
+          cutoutWidth={SCAN_RETICLE_SIZE}
+          cutoutHeight={SCAN_RETICLE_SIZE}
+          cutoutRadius={SCAN_RETICLE_RADIUS}
+          appearance={light ? "light" : "dark"}
+          locked={props.scanComplete}
+          lockRect={props.lockedRect}
+        />
       ) : null}
 
       <View
@@ -440,12 +726,17 @@ function PairingScanCard(props: {
       >
         <View
           className={cn(
-            "items-center justify-center gap-2 overflow-hidden border-continuous border-[3px]",
-            props.scanComplete && !props.cameraActive
-              ? "border-adaptive-emerald-600-400"
-              : light
-                ? "border-black/70"
-                : "border-white/80",
+            "items-center justify-center gap-2 overflow-hidden border-continuous",
+            showAndroidReticleOverlay
+              ? "border border-transparent"
+              : cn(
+                  "border-[3px]",
+                  props.scanComplete && !props.cameraActive
+                    ? "border-adaptive-emerald-600-400"
+                    : light
+                      ? "border-black/70"
+                      : "border-white/80",
+                ),
           )}
           style={{
             borderRadius: SCAN_RETICLE_RADIUS,
@@ -454,7 +745,7 @@ function PairingScanCard(props: {
           }}
         >
           {props.cameraActive ? (
-            <ReticleScanLine />
+            <ReticleScanLine focused={props.screenFocused} />
           ) : props.scanComplete ? (
             <>
               <SymbolView
@@ -464,7 +755,7 @@ function PairingScanCard(props: {
                 type="monochrome"
               />
               <Text className="font-t3-medium text-sm text-adaptive-emerald-700-300">
-                <T>Scanned</T>
+                <T>Locked</T>
               </Text>
             </>
           ) : (
@@ -495,7 +786,7 @@ function PairingScanCard(props: {
           )}
         >
           {props.scanComplete && !props.cameraActive
-            ? gt("QR scanned. Ready to connect.")
+            ? gt("QR locked. Confirm below to connect.")
             : gt("Scan the code from {command} or desktop Connections settings", {
                 command: "t3 pair",
               })}
