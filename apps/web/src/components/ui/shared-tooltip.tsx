@@ -15,8 +15,8 @@ import { flushSync } from "react-dom";
 
 import { Tooltip, TooltipPopup, TooltipTrigger, useTooltipScrollTracker } from "./tooltip";
 
-// Base UI's tooltip timing: open after a rest, reopen at once right after another closed.
-const OPEN_DELAY_MS = 600;
+// Snappier warm-up delay matching TooltipProvider; reopen at once right after another closes.
+const OPEN_DELAY_MS = 400;
 const REOPEN_WINDOW_MS = 400;
 // Time to travel from the trigger into a hoverable popup.
 const CLOSE_GRACE_MS = 100;
