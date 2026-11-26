@@ -2949,6 +2949,15 @@ code {
   }
 }
 
+@keyframes t3-quit-hold-fill {
+  from {
+    transform: scaleX(0);
+  }
+  to {
+    transform: scaleX(1);
+  }
+}
+
 @media (prefers-reduced-motion: no-preference) {
   .t3-icon-pop {
     animation: t3-icon-pop 240ms var(--ease-spring-snappy) both;
@@ -3087,6 +3096,79 @@ code {
 
   .t3-sidebar-status-pop {
     animation: t3-icon-pop 280ms var(--ease-spring-snappy) both;
+  }
+
+  .t3-quit-hold-hud {
+    transition:
+      opacity 160ms ease-out,
+      transform 200ms var(--ease-spring-snappy);
+
+    @starting-style {
+      opacity: 0;
+      transform: translateY(-8px) scale(0.96);
+    }
+  }
+}
+
+/* Quit-hold progress bar matches QUIT_HOLD_DURATION_MS (1200ms) while held and retracts on release. */
+.t3-quit-hold-progress {
+  opacity: 0;
+  transform: scaleX(0);
+  transition:
+    transform 180ms ease-out,
+    opacity 180ms ease-out;
+}
+
+.t3-quit-hold-progress[data-holding="true"] {
+  opacity: 1;
+  animation: t3-quit-hold-fill 1200ms linear forwards;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .t3-quit-hold-progress {
+    transition: none;
+  }
+
+  .t3-quit-hold-progress[data-holding="true"] {
+    animation: none;
+    transform: scaleX(1);
+    opacity: 0.7;
+  }
+}
+
+/* Native inactive-window dimming when Electron marks the desktop window unfocused. */
+html[data-desktop-window-focused]
+  :is(
+    [data-chat-header] > *,
+    [data-workspace-titlebar-controls],
+    [data-app-sidebar] [data-slot="sidebar-header"],
+    [data-app-sidebar] [data-slot="sidebar-content"],
+    [data-app-sidebar] [data-slot="sidebar-footer"]
+  ) {
+  transition: opacity 180ms ease-out;
+}
+
+html[data-desktop-window-focused="false"]
+  :is([data-chat-header] > *, [data-workspace-titlebar-controls]) {
+  opacity: 0.72;
+}
+
+html[data-desktop-window-focused="false"]
+  [data-app-sidebar]
+  :is([data-slot="sidebar-header"], [data-slot="sidebar-content"], [data-slot="sidebar-footer"]) {
+  opacity: 0.85;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html[data-desktop-window-focused]
+    :is(
+      [data-chat-header] > *,
+      [data-workspace-titlebar-controls],
+      [data-app-sidebar] [data-slot="sidebar-header"],
+      [data-app-sidebar] [data-slot="sidebar-content"],
+      [data-app-sidebar] [data-slot="sidebar-footer"]
+    ) {
+    transition: none;
   }
 }
 
