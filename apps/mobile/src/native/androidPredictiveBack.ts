@@ -44,6 +44,18 @@ const nativeNavigationModule: NativeWorkspaceNavigationModule | null =
     ? requireOptionalNativeModule<NativeWorkspaceNavigationModule>("T3WorkspaceNavigation")
     : null;
 
+/**
+ * Returns true when the native `T3WorkspaceNavigation` module is available to arbitrate
+ * `PANEL` predictive-back ownership (`modal -> rail -> panel -> screen-stack`).
+ */
+export function hasNativePanelPredictiveBackBridge(): boolean {
+  return (
+    Platform.OS === "android" &&
+    typeof nativeNavigationModule?.setPanelBackOwnerCount === "function" &&
+    typeof nativeNavigationModule?.addListener === "function"
+  );
+}
+
 let externalModalCount = 0;
 let registeredModalCount = 0;
 
