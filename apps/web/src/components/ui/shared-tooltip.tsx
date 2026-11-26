@@ -4,6 +4,7 @@ import {
   use,
   useEffect,
   useId,
+  useLayoutEffect,
   useRef,
   useState,
   type FocusEvent,
@@ -13,13 +14,27 @@ import {
 } from "react";
 import { flushSync } from "react-dom";
 
-import { Tooltip, TooltipPopup, TooltipTrigger, useTooltipScrollTracker } from "./tooltip";
+import { createVelocityTracker } from "~/lib/motion/rubberBand";
+import { getSpringWaapiTiming, prefersReducedMotion } from "~/lib/motion/springs";
+import {
+  DEFAULT_TOOLTIP_DELAY_MS,
+  Tooltip,
+  TooltipPopup,
+  TooltipTrigger,
+  useTooltipScrollTracker,
+} from "./tooltip";
 
-// Snappier warm-up delay matching TooltipProvider; reopen at once right after another closes.
-const OPEN_DELAY_MS = 400;
+// Kubai087 Tip 025: 500ms cold intent open, 0ms warm glide, 0.1px/ms pointer speed filter.
+const OPEN_DELAY_MS = DEFAULT_TOOLTIP_DELAY_MS;
 const REOPEN_WINDOW_MS = 400;
-// Time to travel from the trigger into a hoverable popup.
-const CLOSE_GRACE_MS = 100;
+const CLOSE_GRACE_MS = 120;
+const POINTER_SETTLE_SPEED_PX_PER_MS = 0.1;
+const POINTER_SETTLE_RETRY_MS = 90;
+
+/** Return true when cursor sweep speed exceeds the Tip 025 0.1px/ms intent threshold. */
+export function shouldDeferTooltipForPointerSpeed(speedPerMs: number): boolean {
+  return Number.isFinite(speedPerMs) && speedPerMs > POINTER_SETTLE_SPEED_PX_PER_MS;
+}
 
 interface SharedTooltipContent {
   readonly render: () => ReactNode;
@@ -32,6 +47,8 @@ interface SharedTooltipContent {
 interface SharedTooltipState extends SharedTooltipContent {
   readonly anchor: HTMLElement;
   readonly open: boolean;
+  readonly slideOffset?: { readonly x: number; readonly y: number } | null;
+  readonly switchSeq: number;
 }
 
 interface SharedTooltipApi {
@@ -41,6 +58,7 @@ interface SharedTooltipApi {
   /** A press closes it at once, as Base UI's closeOnClick does. */
   dismiss(anchor: HTMLElement): void;
   holdOpen(): void;
+  cleanup(): void;
 }
 
 function setAriaDescribedBy(element: HTMLElement, id: string, present: boolean) {
@@ -52,6 +70,21 @@ function setAriaDescribedBy(element: HTMLElement, id: string, present: boolean) 
     : tokens.filter((token) => token !== id);
   if (next.length > 0) element.setAttribute("aria-describedby", next.join(" "));
   else element.removeAttribute("aria-describedby");
+}
+
+function computeAnchorSlideOffset(
+  prevAnchor: HTMLElement | null,
+  nextAnchor: HTMLElement,
+): { readonly x: number; readonly y: number } | null {
+  if (!prevAnchor || prevAnchor === nextAnchor || !prevAnchor.isConnected) return null;
+  const prevRect = prevAnchor.getBoundingClientRect();
+  const nextRect = nextAnchor.getBoundingClientRect();
+  const dx = nextRect.left + nextRect.width / 2 - (prevRect.left + prevRect.width / 2);
+  const dy = nextRect.top + nextRect.height / 2 - (prevRect.top + prevRect.height / 2);
+  if (Math.hypot(dx, dy) < 2) return null;
+  const clamp = (delta: number) =>
+    Math.max(-6, Math.min(6, Math.sign(delta) * Math.min(6, Math.abs(delta) * 0.12)));
+  return { x: clamp(dx), y: clamp(dy) };
 }
 
 const SharedTooltipContext = createContext<SharedTooltipApi | null>(null);
@@ -67,70 +100,156 @@ export function SharedTooltipProvider({ children }: { children: ReactNode }) {
   const pending = useRef<SharedTooltipState | null>(null);
   const lastClosedAt = useRef(0);
   const current = useRef<SharedTooltipState | null>(null);
+  const switchSeqRef = useRef(0);
+  const contentWrapperRef = useRef<HTMLDivElement | null>(null);
 
   const commit = (next: SharedTooltipState | null) => {
     current.current = next;
     setState(next);
   };
-  const clearTimer = () => {
-    if (timer.current !== null) clearTimeout(timer.current);
-    timer.current = null;
-    pending.current = null;
-  };
-  const [api] = useState<SharedTooltipApi>(() => ({
-    show(anchor, content, immediate) {
-      clearTimer();
-      // A Root that mounts open skips Base UI's mount transition, so the popup would slide in from (0,0).
-      if (!current.current) flushSync(() => commit({ ...content, anchor, open: false }));
-      const open = current.current?.open === true;
-      const reopen = performance.now() - lastClosedAt.current < REOPEN_WINDOW_MS;
-      if (immediate || open || reopen) {
-        commit({ ...content, anchor, open: true });
-        return;
-      }
-      pending.current = { ...content, anchor, open: true };
+  const [api] = useState<SharedTooltipApi>(() => {
+    const velocityTracker = createVelocityTracker(90);
+    let trackingMove = false;
+    const handlePointerMove = (event: globalThis.PointerEvent) => {
+      velocityTracker.push(event.clientX, event.clientY, event.timeStamp);
+    };
+    const stopVelocityTracking = () => {
+      if (!trackingMove || typeof window === "undefined") return;
+      trackingMove = false;
+      window.removeEventListener("pointermove", handlePointerMove, true);
+      velocityTracker.reset();
+    };
+    const startVelocityTracking = () => {
+      if (trackingMove || typeof window === "undefined") return;
+      trackingMove = true;
+      velocityTracker.reset();
+      window.addEventListener("pointermove", handlePointerMove, true);
+    };
+    const clearTimer = () => {
+      if (timer.current !== null) clearTimeout(timer.current);
+      timer.current = null;
+      pending.current = null;
+      stopVelocityTracking();
+    };
+    const schedulePendingCommit = (delayMs: number) => {
       timer.current = setTimeout(() => {
         const next = pending.current;
+        if (!next) {
+          stopVelocityTracking();
+          return;
+        }
+        const speed = velocityTracker.getVelocity(performance.now()).speedPerMs;
+        if (shouldDeferTooltipForPointerSpeed(speed)) {
+          schedulePendingCommit(POINTER_SETTLE_RETRY_MS);
+          return;
+        }
         pending.current = null;
-        if (next) commit(next);
-      }, OPEN_DELAY_MS);
-    },
-    refresh(anchor, content) {
-      if (pending.current?.anchor === anchor) {
-        pending.current = { ...pending.current, ...content };
-      }
-      const active = current.current;
-      if (!active || active.anchor !== anchor) return;
-      if (
-        active.contentKey === content.contentKey &&
-        active.side === content.side &&
-        active.variant === content.variant
-      ) {
-        return;
-      }
-      commit({ ...active, ...content });
-    },
-    hide(anchor) {
-      if (current.current && current.current.anchor !== anchor) {
+        timer.current = null;
+        stopVelocityTracking();
+        commit(next);
+      }, delayMs);
+    };
+
+    return {
+      show(anchor, content, immediate) {
         clearTimer();
-        return;
-      }
-      clearTimer();
-      timer.current = setTimeout(() => {
-        if (current.current?.open) lastClosedAt.current = performance.now();
-        if (current.current) commit({ ...current.current, open: false });
-      }, CLOSE_GRACE_MS);
-    },
-    dismiss(anchor) {
-      clearTimer();
-      if (current.current?.anchor !== anchor) return;
-      if (current.current.open) lastClosedAt.current = 0;
-      commit({ ...current.current, open: false });
-    },
-    holdOpen() {
-      clearTimer();
-    },
-  }));
+        // A Root that mounts open skips Base UI's mount transition, so the popup would slide in from (0,0).
+        if (!current.current) {
+          flushSync(() =>
+            commit({ ...content, anchor, open: false, slideOffset: null, switchSeq: 0 }),
+          );
+        }
+        const open = current.current?.open === true;
+        const reopen = performance.now() - lastClosedAt.current < REOPEN_WINDOW_MS;
+        if (immediate || open || reopen) {
+          const slideOffset =
+            open && current.current
+              ? computeAnchorSlideOffset(current.current.anchor, anchor)
+              : null;
+          if (slideOffset) switchSeqRef.current += 1;
+          commit({
+            ...content,
+            anchor,
+            open: true,
+            slideOffset,
+            switchSeq: switchSeqRef.current,
+          });
+          return;
+        }
+        pending.current = {
+          ...content,
+          anchor,
+          open: true,
+          slideOffset: null,
+          switchSeq: switchSeqRef.current,
+        };
+        startVelocityTracking();
+        schedulePendingCommit(OPEN_DELAY_MS);
+      },
+      refresh(anchor, content) {
+        if (pending.current?.anchor === anchor) {
+          pending.current = { ...pending.current, ...content };
+        }
+        const active = current.current;
+        if (!active || active.anchor !== anchor) return;
+        if (
+          active.contentKey === content.contentKey &&
+          active.side === content.side &&
+          active.variant === content.variant
+        ) {
+          return;
+        }
+        commit({ ...active, ...content });
+      },
+      hide(anchor) {
+        if (current.current && current.current.anchor !== anchor) {
+          clearTimer();
+          return;
+        }
+        clearTimer();
+        timer.current = setTimeout(() => {
+          if (current.current?.open) lastClosedAt.current = performance.now();
+          if (current.current) commit({ ...current.current, open: false, slideOffset: null });
+        }, CLOSE_GRACE_MS);
+      },
+      dismiss(anchor) {
+        clearTimer();
+        if (current.current?.anchor !== anchor) return;
+        if (current.current.open) lastClosedAt.current = 0;
+        commit({ ...current.current, open: false, slideOffset: null });
+      },
+      holdOpen() {
+        clearTimer();
+      },
+      cleanup() {
+        clearTimer();
+      },
+    };
+  });
+
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- cleans up active hover timer and pointer velocity listener on unmount
+  useEffect(() => () => api.cleanup(), [api]);
+
+  const activeSlideOffset = state?.open ? state.slideOffset : null;
+  const activeSwitchSeq = state?.switchSeq ?? 0;
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- drives subtle directional content slide when gliding between adjacent triggers
+  useLayoutEffect(() => {
+    if (!activeSlideOffset || activeSwitchSeq === 0) return;
+    const node = contentWrapperRef.current;
+    if (!node || typeof node.animate !== "function" || prefersReducedMotion()) return;
+    const timing = getSpringWaapiTiming("snappy");
+    const animation = node.animate(
+      [
+        {
+          opacity: 0.4,
+          transform: `translate3d(${activeSlideOffset.x.toFixed(1)}px, ${activeSlideOffset.y.toFixed(1)}px, 0)`,
+        },
+        { opacity: 1, transform: "translate3d(0, 0, 0)" },
+      ],
+      { duration: Math.min(180, timing.duration), easing: timing.easing },
+    );
+    return () => animation.cancel();
+  }, [activeSlideOffset, activeSwitchSeq]);
 
   const activeAnchor = state?.open ? state.anchor : null;
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- links the active trigger DOM element to the shared tooltip popup via aria-describedby
@@ -159,7 +278,9 @@ export function SharedTooltipProvider({ children }: { children: ReactNode }) {
             onMouseEnter={() => api.holdOpen()}
             onMouseLeave={() => api.hide(state.anchor)}
           >
-            {state.render()}
+            <div ref={contentWrapperRef} data-slot="shared-tooltip-content">
+              {state.render()}
+            </div>
           </TooltipPopup>
         </Tooltip>
       ) : null}

@@ -1,11 +1,17 @@
 import type { ComponentProps, ReactNode } from "react";
-import { TooltipPopup } from "./ui/tooltip";
+import {
+  HOVER_CARD_INTENT_CLOSE_DELAY_MS,
+  HOVER_CARD_INTENT_DELAY_MS,
+  TooltipPopup,
+} from "./ui/tooltip";
 import { cn } from "~/lib/utils";
 
 export function ThreadHoverCardPopup({ className, ...props }: ComponentProps<typeof TooltipPopup>) {
   return (
     <TooltipPopup
       {...props}
+      data-hover-card-close-grace={HOVER_CARD_INTENT_CLOSE_DELAY_MS}
+      data-hover-card-delay={HOVER_CARD_INTENT_DELAY_MS}
       variant="glass"
       className={cn("max-w-80 text-left whitespace-normal", className)}
     />

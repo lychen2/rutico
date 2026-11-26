@@ -14,7 +14,26 @@ import { useNativeTitlebarHeight } from "~/lib/windowControlsOverlay";
 
 // Base UI's default, restated because a padding object zeroes the sides it omits.
 const COLLISION_PADDING = 5;
-const DEFAULT_TOOLTIP_DELAY_MS = 400;
+// Kubai087 Tip 025 intent-timed hover ladder: 500ms tooltip, 700ms hover-card, 900ms preview.
+const DEFAULT_TOOLTIP_DELAY_MS = 500;
+const HOVER_CARD_INTENT_DELAY_MS = 700;
+const HOVER_CARD_INTENT_CLOSE_DELAY_MS = 300;
+const PREVIEW_INTENT_DELAY_MS = 900;
+
+type TooltipIntent = "tooltip" | "hover-card" | "preview";
+
+function resolveIntentTiming(intent: TooltipIntent): {
+  readonly delay: number;
+  readonly closeDelay: number | undefined;
+} {
+  if (intent === "hover-card") {
+    return { delay: HOVER_CARD_INTENT_DELAY_MS, closeDelay: HOVER_CARD_INTENT_CLOSE_DELAY_MS };
+  }
+  if (intent === "preview") {
+    return { delay: PREVIEW_INTENT_DELAY_MS, closeDelay: HOVER_CARD_INTENT_CLOSE_DELAY_MS };
+  }
+  return { delay: DEFAULT_TOOLTIP_DELAY_MS, closeDelay: undefined };
+}
 
 const HasTooltipProviderContext = createContext(false);
 
@@ -95,18 +114,38 @@ function Tooltip<Payload>(props: TooltipPrimitive.Root.Props<Payload>) {
   );
 }
 
-function TooltipTrigger(props: TooltipPrimitive.Trigger.Props) {
+function TooltipTrigger({
+  intent = "tooltip",
+  ...props
+}: TooltipPrimitive.Trigger.Props & {
+  readonly intent?: TooltipIntent;
+}) {
   const hasProvider = use(HasTooltipProviderContext);
   const tracker = use(TooltipScrollContext);
   const actionsRef = use(TooltipHoverContext);
-  const delay = hasProvider ? props.delay : (props.delay ?? DEFAULT_TOOLTIP_DELAY_MS);
+  const intentTiming = resolveIntentTiming(intent);
+  const delay =
+    intent !== "tooltip"
+      ? (props.delay ?? intentTiming.delay)
+      : hasProvider
+        ? props.delay
+        : (props.delay ?? intentTiming.delay);
+  const closeDelay = props.closeDelay ?? intentTiming.closeDelay;
   if (!tracker || !actionsRef) {
-    return <TooltipPrimitive.Trigger data-slot="tooltip-trigger" {...props} delay={delay} />;
+    return (
+      <TooltipPrimitive.Trigger
+        data-slot="tooltip-trigger"
+        {...props}
+        closeDelay={closeDelay}
+        delay={delay}
+      />
+    );
   }
   return (
     <TooltipPrimitive.Trigger
       data-slot="tooltip-trigger"
       {...props}
+      closeDelay={closeDelay}
       delay={delay}
       onMouseEnter={(event) => {
         props.onMouseEnter?.(event);
@@ -121,7 +160,7 @@ function TooltipPositioner(props: TooltipPrimitive.Positioner.Props) {
   const titlebarHeight = useNativeTitlebarHeight();
   return (
     <TooltipPrimitive.Positioner
-      className="pointer-events-none z-[140] max-w-(--available-width) transition-[top,left,right,bottom,transform] data-instant:transition-none motion-reduce:transition-none"
+      className="pointer-events-none z-[140] max-w-(--available-width) transition-[top,left,right,bottom,transform] duration-200 ease-(--spring-snappy) data-instant:transition-none motion-reduce:transition-none"
       collisionPadding={{
         top: COLLISION_PADDING + titlebarHeight,
         right: COLLISION_PADDING,
@@ -155,9 +194,9 @@ function TooltipPopup({
       <TooltipPositioner align={align} anchor={anchor} side={side} sideOffset={sideOffset}>
         <TooltipPrimitive.Popup
           className={cn(
-            "relative flex origin-(--transform-origin) rounded-md text-popover-foreground text-xs transition-[scale,opacity,translate] duration-150 ease-(--ease-spring-snappy) before:pointer-events-none before:absolute before:inset-0 before:rounded-[calc(var(--radius-md)-1px)] before:shadow-[0_1px_--theme(--color-black/4%)] data-starting-style:scale-[0.94] data-starting-style:opacity-0 data-[side=top]:data-starting-style:translate-y-1 data-[side=bottom]:data-starting-style:-translate-y-1 data-[side=left]:data-starting-style:translate-x-1 data-[side=right]:data-starting-style:-translate-x-1 data-ending-style:duration-100 data-ending-style:ease-(--ease-exit) data-ending-style:scale-[0.96] data-ending-style:opacity-0 data-instant:duration-0 motion-reduce:transition-none dark:before:shadow-[0_-1px_--theme(--color-white/6%)]",
+            "relative flex origin-(--transform-origin) rounded-md text-popover-foreground text-xs transition-[scale,opacity,translate] duration-150 ease-(--spring-snappy) before:pointer-events-none before:absolute before:inset-0 before:rounded-[calc(var(--radius-md)-1px)] before:shadow-[0_1px_--theme(--color-black/4%)] data-starting-style:scale-[0.94] data-starting-style:opacity-0 data-[side=top]:data-starting-style:translate-y-1 data-[side=bottom]:data-starting-style:-translate-y-1 data-[side=left]:data-starting-style:translate-x-1 data-[side=right]:data-starting-style:-translate-x-1 data-ending-style:duration-100 data-ending-style:ease-(--ease-exit) data-ending-style:scale-[0.96] data-ending-style:opacity-0 data-instant:duration-0 motion-reduce:transition-none dark:before:shadow-[0_-1px_--theme(--color-white/6%)]",
             variant === "glass"
-              ? "dropdown-glass shadow-xl shadow-black/25 before:hidden"
+              ? "dropdown-glass surface-elevated-rim shadow-xl shadow-black/25 before:hidden"
               : "border bg-popover not-dark:bg-clip-padding shadow-md/5",
             variant === "code"
               ? "max-w-120 wrap-anywhere text-left font-mono text-[11px] leading-relaxed"
@@ -180,6 +219,10 @@ function TooltipPopup({
 const useTooltipScrollTracker = () => use(TooltipScrollContext);
 
 export {
+  DEFAULT_TOOLTIP_DELAY_MS,
+  HOVER_CARD_INTENT_CLOSE_DELAY_MS,
+  HOVER_CARD_INTENT_DELAY_MS,
+  PREVIEW_INTENT_DELAY_MS,
   TooltipProvider,
   Tooltip,
   TooltipTrigger,
