@@ -5,11 +5,14 @@ import { describe, expect, it, vi } from "vite-plus/test";
 import type { ChatMessage } from "../../types";
 import {
   applyOptimisticUserMessagesAction,
+  consumeUserMessageLaunchOrigin,
   createOptimisticBlobPreviews,
   dropOptimisticHandoff,
   emptyOptimisticUserMessages,
   loadedHandoffMessageIdsAtom,
   reconcileOptimisticUserMessages,
+  recordUserMessageLaunchOrigin,
+  userMessageLaunchKey,
 } from "./optimisticUserMessages";
 
 const threadA = ThreadId.make("thread-a");
@@ -169,5 +172,24 @@ describe("handoff preloads", () => {
     } finally {
       vi.unstubAllGlobals();
     }
+  });
+});
+
+describe("user message FLIP launch origins", () => {
+  it("consumes recorded launch rect once per stable thread+message identity", () => {
+    const key = userMessageLaunchKey("env:thread-a", "msg-flip-1");
+    const rect = { left: 100, top: 640, width: 520, height: 84 };
+    recordUserMessageLaunchOrigin(key, rect, 1_000);
+
+    expect(consumeUserMessageLaunchOrigin(key, 1_120)).toEqual(rect);
+    // Recycled LegendList row for the same message must never replay.
+    expect(consumeUserMessageLaunchOrigin(key, 1_130)).toBeNull();
+  });
+
+  it("expires unconsumed launch origins after the 500ms TTL", () => {
+    const key = userMessageLaunchKey("env:thread-a", "msg-flip-expired");
+    recordUserMessageLaunchOrigin(key, { left: 0, top: 400, width: 400, height: 60 }, 2_000);
+
+    expect(consumeUserMessageLaunchOrigin(key, 2_501)).toBeNull();
   });
 });

@@ -312,3 +312,56 @@
     transition: none;
   }
 }
+
+/* ==========================================================================
+   D07 / C022: Magnetic Composer-to-Timeline FLIP Launch & Optimistic Settle
+   ========================================================================== */
+
+@keyframes chat-user-optimistic-rim {
+  0%,
+  100% {
+    opacity: 0.28;
+    transform: scaleX(0.68);
+  }
+  50% {
+    opacity: 0.85;
+    transform: scaleX(1);
+  }
+}
+
+[data-user-message-bubble]::before {
+  content: "";
+  position: absolute;
+  inset-inline: 1rem;
+  top: 0;
+  height: 1px;
+  border-radius: 9999px;
+  pointer-events: none;
+  opacity: 0;
+  background-image: linear-gradient(
+    90deg,
+    transparent 0%,
+    color-mix(in oklch, var(--primary) 52%, var(--contrast-foreground)) 50%,
+    transparent 100%
+  );
+  transition: opacity 200ms ease-out;
+}
+
+[data-user-message-bubble][data-user-message-state="launching"]::before {
+  opacity: 0.6;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  [data-user-message-bubble][data-user-message-state="launching"]::before {
+    animation: chat-user-optimistic-rim 1.3s ease-in-out infinite;
+    animation-play-state: var(--visible-animation-state, paused);
+    will-change: var(--visible-animation-will-change, auto);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-user-message-bubble]::before {
+    transition: none;
+    animation: none;
+  }
+}
