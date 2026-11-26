@@ -1,6 +1,6 @@
 import type { MenuAction, MenuComponentProps } from "@react-native-menu/menu";
 import { cloneElement, isValidElement, type ReactElement, type ReactNode } from "react";
-import { use, useRef, useState } from "react";
+import { use, useEffect, useRef, useState } from "react";
 import type {
   AccessibilityProps,
   PressableProps,
@@ -10,16 +10,28 @@ import type {
 } from "react-native";
 import { Pressable, ScrollView, View } from "react-native";
 import { useKeyboardState } from "react-native-keyboard-controller";
+import Animated, {
+  Extrapolation,
+  interpolate,
+  useAnimatedStyle,
+  useReducedMotion,
+  useSharedValue,
+  withSpring,
+} from "react-native-reanimated";
 
+import { useAppearancePreferences } from "../../features/settings/appearance/AppearancePreferencesProvider";
 import { useHardwareBack } from "../../lib/backHandler";
+import { androidTonalSurfaceChrome, MOBILE_SHAPE } from "../../lib/designTokens";
+import { triggerSemanticHaptic } from "../../lib/hapticChoreography";
 import {
   deriveMenuHorizontalPlacement,
   deriveMenuVerticalPlacement,
 } from "../../lib/menu-placement";
+import { SPRING_SPATIAL_SNAPPY } from "../../lib/mobileMotion";
 import { WindowHingeContext } from "../../native/window-hinge-context";
+import { MenuPopup } from "./MenuPopup";
 import { OverlayPortal } from "./OverlayPortal";
 import { useAndroidControlSizing } from "./useAndroidControlSizing";
-import { MenuPopup } from "./MenuPopup";
 
 const SCREEN_MARGIN = 12;
 const ANCHOR_GAP = 6;
@@ -152,6 +164,85 @@ function extractTriggerAccessibility(
   return acc;
 }
 
+/**
+ * Wraps the inline MenuPopup OUTSIDE the Compose NativeThemeHost so first-frame
+ * Compose sizing is never disturbed while delivering an origin-aware Material 3
+ * Expressive spring reveal (scale 0.92 -> 1.0) with concentric 16dp geometry.
+ */
+function AnimatedMenuRevealShell(props: {
+  readonly left: number;
+  readonly width: number;
+  readonly scale: number;
+  readonly opensAbove: boolean;
+  readonly alignRight: boolean;
+  readonly verticalPlacement: ViewStyle | null;
+  readonly children: ReactNode;
+}) {
+  const { themeAppearance } = useAppearancePreferences();
+  const isDark = themeAppearance === "dark";
+  const reducedMotion = useReducedMotion();
+  const reveal = useSharedValue(reducedMotion ? 1 : 0);
+
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- drives mount spring reveal on the outer wrapper outside NativeThemeHost
+  useEffect(() => {
+    if (reducedMotion) {
+      reveal.set(1);
+      return;
+    }
+    reveal.set(withSpring(1, SPRING_SPATIAL_SNAPPY));
+  }, [reducedMotion, reveal]);
+
+  const outerRadius = Math.round(MOBILE_SHAPE.menuOuter * props.scale);
+  const chrome = androidTonalSurfaceChrome(isDark, "high");
+  const verticalOrigin = props.opensAbove ? "bottom" : "top";
+  const horizontalOrigin = props.alignRight ? "right" : "left";
+  const translateSign = props.opensAbove ? 1 : -1;
+
+  const animatedStyle = useAnimatedStyle(() => {
+    const progress = reveal.get();
+    return {
+      opacity: interpolate(progress, [0, 0.55, 1], [0, 0.92, 1], Extrapolation.CLAMP),
+      transform: [
+        {
+          translateY: interpolate(progress, [0, 1], [translateSign * 6, 0], Extrapolation.CLAMP),
+        },
+        {
+          scale: interpolate(progress, [0, 1], [0.92, 1], Extrapolation.CLAMP),
+        },
+      ],
+    };
+  });
+
+  return (
+    <Animated.View
+      style={[
+        {
+          position: "absolute",
+          left: props.left,
+          width: props.width,
+          borderRadius: outerRadius,
+          transformOrigin: `${verticalOrigin} ${horizontalOrigin}`,
+          boxShadow: [...chrome.boxShadow],
+          ...props.verticalPlacement,
+        },
+        animatedStyle,
+      ]}
+    >
+      <View
+        className="overflow-hidden bg-card-alt"
+        style={{
+          borderRadius: outerRadius,
+          borderWidth: 1,
+          borderColor: chrome.borderColor,
+          borderTopColor: chrome.specularTopBorderColor,
+        }}
+      >
+        {props.children}
+      </View>
+    </Animated.View>
+  );
+}
+
 export function AndroidAnchoredMenu(props: AndroidAnchoredMenuProps) {
   const { scale, menuWidth: desiredMenuWidth, menuItemHeight } = useAndroidControlSizing();
   const [anchor, setAnchor] = useState<AnchorSnapshot | null>(null);
@@ -176,6 +267,7 @@ export function AndroidAnchoredMenu(props: AndroidAnchoredMenuProps) {
   }
 
   const open = () => {
+    triggerSemanticHaptic("gestureStart");
     anchorNode?.measureInWindow((x, y, width, height) => {
       setAnchor({ x, y, width, height, keyboardWasVisible: keyboardVisible });
     });
@@ -191,6 +283,7 @@ export function AndroidAnchoredMenu(props: AndroidAnchoredMenuProps) {
   // handles back itself.
   useHardwareBack(anchor?.keyboardWasVisible === true, () => {
     if (path.length > 0) {
+      triggerSemanticHaptic("segmentTick");
       setPath((current) => current.slice(0, -1));
     } else {
       close();
@@ -239,9 +332,11 @@ export function AndroidAnchoredMenu(props: AndroidAnchoredMenuProps) {
 
   const onPressItem = (action: MenuAction) => {
     if ((action.subactions?.length ?? 0) > 0) {
+      triggerSemanticHaptic("segmentTick");
       setPath((current) => [...current, action]);
       return;
     }
+    triggerSemanticHaptic("contextClick");
     close();
     if (action.id !== undefined) {
       props.onPressAction?.({
@@ -257,6 +352,9 @@ export function AndroidAnchoredMenu(props: AndroidAnchoredMenuProps) {
   const triggerHint = props.accessibilityHint ?? triggerAccessibility.accessibilityHint;
   const triggerState = props.accessibilityState ?? triggerAccessibility.accessibilityState;
   const triggerHitSlop = props.hitSlop ?? triggerAccessibility.hitSlop;
+
+  const opensAbove = verticalPlacement !== null && "bottom" in verticalPlacement;
+  const alignRight = local !== null && local.x + local.width * 0.5 >= left + menuWidth * 0.5;
 
   return (
     <>
@@ -310,25 +408,26 @@ export function AndroidAnchoredMenu(props: AndroidAnchoredMenuProps) {
                 title={props.title}
                 parent={parent}
                 onPress={onPressItem}
-                onBack={() => setPath((current) => current.slice(0, -1))}
+                onBack={() => {
+                  triggerSemanticHaptic("segmentTick");
+                  setPath((current) => current.slice(0, -1));
+                }}
                 onClose={close}
               />
             ) : (
-              <View
-                // No entering animation: it freezes this frame before the Compose host reports its size.
-                className="absolute overflow-hidden bg-card-alt shadow-md"
-                style={{
-                  left,
-                  width: menuWidth,
-                  borderRadius: 4 * scale,
-                  ...verticalPlacement,
-                }}
+              <AnimatedMenuRevealShell
+                left={left}
+                width={menuWidth}
+                scale={scale}
+                opensAbove={opensAbove}
+                alignRight={alignRight}
+                verticalPlacement={verticalPlacement}
               >
                 {/* Compose DropdownMenu takes focus; in-window editor menus preserve the keyboard. */}
 
                 {/* The first item tap must act while the keyboard is open. */}
                 <ScrollView
-                  contentContainerStyle={{ paddingVertical: 7 * scale }}
+                  contentContainerStyle={{ paddingVertical: 6 * scale }}
                   bounces={false}
                   keyboardShouldPersistTaps="always"
                   showsVerticalScrollIndicator={false}
@@ -341,11 +440,14 @@ export function AndroidAnchoredMenu(props: AndroidAnchoredMenuProps) {
                     title={props.title}
                     parent={parent}
                     onPress={onPressItem}
-                    onBack={() => setPath((current) => current.slice(0, -1))}
+                    onBack={() => {
+                      triggerSemanticHaptic("segmentTick");
+                      setPath((current) => current.slice(0, -1));
+                    }}
                     onClose={close}
                   />
                 </ScrollView>
-              </View>
+              </AnimatedMenuRevealShell>
             )}
           </View>
         </OverlayPortal>

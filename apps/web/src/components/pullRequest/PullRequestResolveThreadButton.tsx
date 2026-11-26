@@ -5,10 +5,12 @@ import type {
   PullRequestConversationThread,
 } from "@t3tools/contracts";
 import { canResolvePullRequestThread } from "@t3tools/client-runtime/pull-request-editing";
+import { CircleCheckIcon, RotateCcwIcon } from "lucide-react";
 import { msg, useGT } from "gt-react";
 import { useState } from "react";
 
 import { m } from "~/i18n/messages";
+import { cn } from "~/lib/utils";
 
 import { pullRequestEnvironment } from "~/state/pullRequests";
 import { useAtomCommand } from "~/state/use-atom-command";
@@ -60,11 +62,25 @@ export function PullRequestResolveThreadButton({
     <Button
       size="xs"
       variant="ghost"
+      data-slot="pr-resolve-thread-button"
+      data-resolved={thread.isResolved ? "true" : "false"}
       className="shrink-0"
       disabled={pending}
       onClick={() => void toggle()}
     >
-      {thread.isResolved ? gt("Unresolve") : gt("Resolve")}
+      <span
+        className={cn(
+          "inline-flex items-center gap-1 transition-colors duration-180 motion-reduce:transition-none",
+          thread.isResolved && "text-success-foreground",
+        )}
+      >
+        {thread.isResolved ? (
+          <RotateCcwIcon aria-hidden="true" className="size-3" />
+        ) : (
+          <CircleCheckIcon aria-hidden="true" className="size-3" />
+        )}
+        {thread.isResolved ? gt("Unresolve") : gt("Resolve")}
+      </span>
     </Button>
   );
 }

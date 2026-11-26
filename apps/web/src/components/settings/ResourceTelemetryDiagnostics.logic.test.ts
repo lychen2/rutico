@@ -4,8 +4,10 @@ import type { ResourceTelemetryProcess } from "@t3tools/contracts";
 import * as DateTime from "effect/DateTime";
 
 import {
+  clampOscilloscopeBucketIndex,
   formatCpuTime,
   formatSamplingStatus,
+  processCpuUtilizationRatio,
   visibleResourceTelemetryProcesses,
 } from "./ResourceTelemetryDiagnostics.logic";
 
@@ -79,5 +81,24 @@ describe("formatSamplingStatus", () => {
       "Sampling every 500 ms",
       "Sampling every 2 seconds",
     ]);
+  });
+});
+
+describe("oscilloscope and process CPU ratio helpers", () => {
+  it("clamps oscilloscope scrub ratios to valid bucket indices", () => {
+    expect(clampOscilloscopeBucketIndex(0.5, 0)).toBe(-1);
+    expect(clampOscilloscopeBucketIndex(-0.2, 10)).toBe(0);
+    expect(clampOscilloscopeBucketIndex(0, 10)).toBe(0);
+    expect(clampOscilloscopeBucketIndex(0.49, 10)).toBe(4);
+    expect(clampOscilloscopeBucketIndex(1, 10)).toBe(9);
+    expect(clampOscilloscopeBucketIndex(1.5, 10)).toBe(9);
+  });
+
+  it("scales process CPU utilization relative to floor 10% and clamps to [0, 1]", () => {
+    expect(processCpuUtilizationRatio(0, 50)).toBe(0);
+    expect(processCpuUtilizationRatio(-5, 50)).toBe(0);
+    expect(processCpuUtilizationRatio(5, 4)).toBe(0.5);
+    expect(processCpuUtilizationRatio(25, 100)).toBe(0.25);
+    expect(processCpuUtilizationRatio(150, 100)).toBe(1);
   });
 });

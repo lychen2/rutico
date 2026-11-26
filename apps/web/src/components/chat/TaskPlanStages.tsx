@@ -1,4 +1,4 @@
-import { useId, useState } from "react";
+import { useId, useState, type CSSProperties } from "react";
 import { ChevronRightIcon } from "lucide-react";
 
 import { msg, useGT, useMessages } from "gt-react";
@@ -94,12 +94,25 @@ function stageSummary(milestone: Milestone, gt: UiText) {
   }
 }
 
+const OPERATION_CHIP_STAGGER_MS = [0, 20, 38, 54, 68, 80] as const;
+
 function StageMark({ status }: { status: Milestone["status"] }) {
+  const [previousStatus, setPreviousStatus] = useState(status);
+  const [justDone, setJustDone] = useState(false);
+  if (previousStatus !== status) {
+    setPreviousStatus(status);
+    setJustDone(previousStatus !== "done" && status === "done");
+  }
   return (
-    <span className={styles["plan-stage-mark"]} data-status={status} aria-hidden>
+    <span
+      className={styles["plan-stage-mark"]}
+      data-status={status}
+      data-just-done={justDone ? "true" : undefined}
+      aria-hidden
+    >
       {status === "done" ? (
         <svg viewBox="0 0 16 16">
-          <path d="M3.6 8.4l3 3 5.8-6.2" />
+          <path d="M3.6 8.4l3 3 5.8-6.2" pathLength="100" />
         </svg>
       ) : null}
     </span>
@@ -116,12 +129,19 @@ function GroupedToolChips({
   const resolve = useMessages();
   return (
     <div className={styles["plan-step-sub"]}>
-      {groups.map((group) => {
+      {groups.map((group, groupIndex) => {
         const kindLabel = resolve(TOOL_KIND_LABELS[group.kind]);
         const tag = group.items.length > 1 ? `${kindLabel} ×${group.items.length}` : kindLabel;
         const separator = group.kind === "search" ? " / " : " · ";
+        const chipDelay = OPERATION_CHIP_STAGGER_MS[groupIndex] ?? 0;
         return (
-          <div className={styles["plan-tool-chip"]} key={group.kind} data-tool-kind={group.kind}>
+          <div
+            className={styles["plan-tool-chip"]}
+            key={group.kind}
+            data-tool-kind={group.kind}
+            data-chip-stagger={groupIndex < OPERATION_CHIP_STAGGER_MS.length ? "true" : undefined}
+            style={{ "--plan-chip-delay": `${chipDelay}ms` } as CSSProperties}
+          >
             <span className={styles["plan-tool-tag"]}>{tag}</span>
             <span className={styles["plan-tool-items"]}>
               {group.items.map((activity, idx) => {

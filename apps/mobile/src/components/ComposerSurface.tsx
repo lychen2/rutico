@@ -7,6 +7,7 @@ import Animated, {
   useAnimatedStyle,
   useDerivedValue,
   useSharedValue,
+  withSpring,
   withTiming,
 } from "react-native-reanimated";
 
@@ -79,12 +80,12 @@ export function useCompactComposerEditor(text: ScaledTextRole, value: string, an
   });
   const editorStyle = useAnimatedStyle(() => {
     const compactInsets = compactEditorInsets({
-      slotX: editorX.value,
-      slotWidth: editorWidth.value,
-      rowWidth: rowWidth.value,
+      slotX: editorX.get(),
+      slotWidth: editorWidth.get(),
+      rowWidth: rowWidth.get(),
       isRTL,
     });
-    const progress = expansion.value;
+    const progress = expansion.get();
     // Hanging from the row top lets the text ride the growing edge and ignore the stale
     // height measured while it still wrapped in the compact slot. Layout props only:
     // Reanimated applies transforms frames ahead of layout, which tore the text from its frame.
@@ -92,7 +93,7 @@ export function useCompactComposerEditor(text: ScaledTextRole, value: string, an
       position: "absolute",
       overflow: "hidden",
       // The compact slot is unknown until its first layout, so the editor would draw over the + button.
-      opacity: isExpanded || editorWidth.value > 0 ? 1 : 0,
+      opacity: isExpanded || editorWidth.get() > 0 ? 1 : 0,
       height,
       top: compactBottom * (1 - progress),
       left: compactInsets.left + (EXPANDED_EDITOR_INSET - compactInsets.left) * progress,
@@ -101,7 +102,7 @@ export function useCompactComposerEditor(text: ScaledTextRole, value: string, an
     };
   });
   const containerStyle = useAnimatedStyle(() => ({
-    height: compactRowHeight + (expandedRowHeight - compactRowHeight) * expansion.value,
+    height: compactRowHeight + (expandedRowHeight - compactRowHeight) * expansion.get(),
   }));
   return {
     isExpanded,
@@ -162,7 +163,13 @@ const composerHeightTransition: LayoutAnimationFunction = (values) => {
     },
   };
 };
-const COMPOSER_LAYOUT_TRANSITION = Platform.OS === "android" ? undefined : composerHeightTransition;
+const COMPOSER_LAYOUT_TRANSITION = composerHeightTransition;
+const ANDROID_RADIUS_SPRING = {
+  damping: 26,
+  stiffness: 320,
+  mass: 0.85,
+  reduceMotion: ReduceMotion.System,
+} as const;
 // Share of the one-row composer the draft keeps; a long model name truncates first.
 export const INLINE_EDITOR_MIN_WIDTH = "40%";
 const INLINE_EDITOR_HEIGHT = 36;
@@ -177,21 +184,25 @@ export function ComposerSurface(props: {
   const colors = useUniwindTheme();
   const targetBorderRadius =
     typeof props.style.borderRadius === "number" ? props.style.borderRadius : 0;
-  const shouldAnimate = props.animateLayout !== false && Platform.OS !== "android";
-  const animatedBorderRadius = useDerivedValue(() =>
-    shouldAnimate
-      ? withTiming(targetBorderRadius, {
+  const shouldAnimate = props.animateLayout !== false;
+  const animatedBorderRadius = useDerivedValue(() => {
+    if (!shouldAnimate) return targetBorderRadius;
+    return Platform.OS === "android"
+      ? withSpring(targetBorderRadius, ANDROID_RADIUS_SPRING)
+      : withTiming(targetBorderRadius, {
           duration: COMPOSER_TRANSITION_DURATION_MS,
           reduceMotion: ReduceMotion.System,
-        })
-      : targetBorderRadius,
-  );
+        });
+  });
   const borderCurve = props.style.borderCurve;
   const animatedShapeStyle = useAnimatedStyle(() => ({
-    borderRadius: animatedBorderRadius.value,
+    borderRadius: animatedBorderRadius.get(),
     ...(borderCurve ? { borderCurve } : {}),
   }));
-  const layoutTransition = shouldAnimate ? COMPOSER_LAYOUT_TRANSITION : undefined;
+  const shellLayoutTransition = shouldAnimate ? COMPOSER_LAYOUT_TRANSITION : undefined;
+  // On Android, animate only the outer shell and backdrop so the native EditText keeps its final
+  // layout immediately without feeding intermediate animated heights back into content measurement.
+  const contentLayoutTransition = Platform.OS === "android" ? undefined : shellLayoutTransition;
 
   // Animate every native frame or glass and content jump to final height inside the clip.
   return (
@@ -199,7 +210,7 @@ export function ComposerSurface(props: {
       className={
         Platform.OS === "android" ? undefined : "shadow-[0_6px_28px] shadow-adaptive-black-a15-a35"
       }
-      layout={layoutTransition}
+      layout={shellLayoutTransition}
       style={[
         animatedShapeStyle,
         {
@@ -214,14 +225,14 @@ export function ComposerSurface(props: {
         glassEffectStyle="regular"
         pointerEvents="none"
         tintColor="transparent"
-        layout={layoutTransition}
+        layout={shellLayoutTransition}
         style={[{ position: "absolute", inset: 0 }, animatedShapeStyle]}
       >
         {null}
       </AnimatedGlassSurface>
       <Animated.View
         collapsable={false}
-        layout={layoutTransition}
+        layout={contentLayoutTransition}
         style={[props.style, animatedShapeStyle]}
       >
         {props.children}

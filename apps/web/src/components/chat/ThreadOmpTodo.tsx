@@ -4,6 +4,9 @@ import { useGT } from "gt-react";
 import { CheckIcon, ChevronDownIcon } from "lucide-react";
 import { useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { Button } from "../ui/button";
+import { AnimatedNumber } from "../ui/animated-number";
+import { getSpringWaapiTiming, prefersReducedMotion } from "~/lib/motion/springs";
+import { useSharedIndicator } from "~/lib/motion/useSharedIndicator";
 import { observeVisibleAnimation } from "~/lib/visibleAnimation";
 import "./threadOmpTodo.css";
 
@@ -175,6 +178,8 @@ export function ThreadOmpTodo({
   });
   const listId = useId();
   const triggerRef = useRef<HTMLButtonElement>(null);
+  const listContainerRef = useRef<HTMLDivElement>(null);
+  const activeRailRef = useRef<HTMLSpanElement>(null);
   const label = gt("To-do list");
   const statusLabels = {
     completed: gt("Completed"),
@@ -186,22 +191,29 @@ export function ThreadOmpTodo({
   const title = current?.title ?? statusLabels.completed;
   const titleRef = useRef<HTMLSpanElement>(null);
   const previousTitle = useRef(title);
+
+  useSharedIndicator({
+    containerRef: listContainerRef,
+    indicatorRef: activeRailRef,
+    activeSelector: 'li[aria-current="step"] [data-omp-todo-step]',
+    activeKey: expanded ? (current?.id ?? null) : null,
+    axis: "y",
+    preset: "snappy",
+    maxSquash: 0.14,
+  });
+
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Animate the changed step title once after DOM commit.
   useLayoutEffect(() => {
     const changed = previousTitle.current !== title;
     previousTitle.current = title;
-    if (
-      !changed ||
-      !titleRef.current ||
-      window.matchMedia("(prefers-reduced-motion: reduce)").matches
-    )
-      return;
+    if (!changed || !titleRef.current || prefersReducedMotion()) return;
+    const timing = getSpringWaapiTiming("snappy");
     const animation = titleRef.current.animate(
       [
-        { opacity: 0, transform: "translateY(9px)" },
-        { opacity: 1, transform: "translateY(0)" },
+        { opacity: 0, transform: "translate3d(0, 9px, 0)" },
+        { opacity: 1, transform: "translate3d(0, 0, 0)" },
       ],
-      { duration: 240, easing: "cubic-bezier(0.32, 0.72, 0, 1)" },
+      { duration: Math.min(240, timing.duration), easing: timing.easing },
     );
     return () => animation.cancel();
   }, [title]);
@@ -217,101 +229,108 @@ export function ThreadOmpTodo({
 
   return (
     <div className="mx-auto w-full max-w-(--chat-content-max-width) pb-1">
-      <section aria-label={label} data-omp-todo data-mode={mode}>
-        <button
-          ref={triggerRef}
-          type="button"
-          data-omp-todo-bar
-          aria-label={`${label} · ${title} · ${status} · ${completed}/${steps.length}`}
-          aria-expanded={expanded}
-          aria-controls={listId}
-          onClick={() => {
-            setExpanded(!expanded);
-            rememberExpanded(storageKey, !expanded);
-          }}
-        >
-          <TodoMark mode={mode} spinning={live && !expanded} draw={justFinished} />
-          <span data-omp-todo-title>
-            <span ref={titleRef} dir="auto">
-              {title}
-            </span>
-          </span>
-          <span data-omp-todo-segments aria-hidden>
-            {steps.map((step) => (
-              <i
-                key={step.id}
-                data-mode={
-                  step.status === "completed" ? "done" : step === current ? mode : "pending"
-                }
-              />
-            ))}
-          </span>
-          <span data-omp-todo-count>
-            {completed}/{steps.length}
-          </span>
-          <ChevronDownIcon size={13} aria-hidden data-omp-todo-chevron />
-        </button>
-        <div
-          id={listId}
-          data-omp-todo-body
-          data-expanded={expanded}
-          inert={!expanded}
-          aria-hidden={!expanded}
-        >
-          <div>
-            <div className="flex items-center gap-2 border-b border-border px-3 py-2">
-              <strong>{label}</strong>
-              <span data-omp-todo-count>
-                {completed}/{steps.length}
-              </span>
-              <Button
-                size="xs"
-                variant="ghost-muted"
-                className="ms-auto"
-                onClick={() => {
-                  triggerRef.current?.click();
-                  triggerRef.current?.focus();
-                }}
-              >
-                {gt("Collapse")}
-              </Button>
+      <section aria-label={label} data-omp-todo data-mode={mode} data-expanded={expanded}>
+        <div data-omp-todo-anchor>
+          <div data-omp-todo-shell data-expanded={expanded}>
+            <div
+              id={listId}
+              data-omp-todo-body
+              data-expanded={expanded}
+              inert={!expanded}
+              aria-hidden={!expanded}
+            >
+              <div>
+                <div className="flex items-center gap-2 border-b border-border/70 px-3.5 py-2">
+                  <strong>{label}</strong>
+                  <span data-omp-todo-count>
+                    <AnimatedNumber value={completed} />/{steps.length}
+                  </span>
+                  <Button
+                    size="xs"
+                    variant="ghost-muted"
+                    className="ms-auto"
+                    onClick={() => {
+                      triggerRef.current?.click();
+                      triggerRef.current?.focus();
+                    }}
+                  >
+                    {gt("Collapse")}
+                  </Button>
+                </div>
+                <div ref={listContainerRef} data-omp-todo-list-wrap>
+                  <span ref={activeRailRef} data-omp-todo-active-rail aria-hidden />
+                  <ol data-omp-todo-list>
+                    {steps.map((step) => (
+                      <TodoStepRow
+                        key={step.id}
+                        active={step === current}
+                        completed={step.status === "completed"}
+                        visible={expanded}
+                      >
+                        <div data-omp-todo-step>
+                          <TodoMark
+                            mode={
+                              step.status === "completed"
+                                ? "done"
+                                : step.status === "blocked"
+                                  ? "need"
+                                  : step === current
+                                    ? mode
+                                    : "pending"
+                            }
+                            spinning={step === current && live && expanded}
+                          />
+                          <span data-omp-todo-step-title dir="auto">
+                            {step.title}
+                          </span>
+                          <span data-omp-todo-status data-blocked={step.status === "blocked"}>
+                            {statusLabels[step.status]}
+                          </span>
+                        </div>
+                        {step.details ? (
+                          <p data-omp-todo-details dir="auto">
+                            {step.details}
+                          </p>
+                        ) : null}
+                      </TodoStepRow>
+                    ))}
+                  </ol>
+                </div>
+              </div>
             </div>
-            <ol data-omp-todo-list>
-              {steps.map((step) => (
-                <TodoStepRow
-                  key={step.id}
-                  active={step === current}
-                  completed={step.status === "completed"}
-                  visible={expanded}
-                >
-                  <div data-omp-todo-step>
-                    <TodoMark
-                      mode={
-                        step.status === "completed"
-                          ? "done"
-                          : step.status === "blocked"
-                            ? "need"
-                            : step === current
-                              ? mode
-                              : "pending"
-                      }
-                      spinning={step === current && live && expanded}
-                    />
-                    <span data-omp-todo-step-title dir="auto">
-                      {step.title}
-                    </span>
-                    <span data-omp-todo-status data-blocked={step.status === "blocked"}>
-                      {statusLabels[step.status]}
-                    </span>
-                  </div>
-                  {step.details ? (
-                    <p data-omp-todo-details dir="auto">
-                      {step.details}
-                    </p>
-                  ) : null}
-                </TodoStepRow>
-              ))}
-            </ol>
+            <button
+              ref={triggerRef}
+              type="button"
+              data-omp-todo-bar
+              aria-label={`${label} · ${title} · ${status} · ${completed}/${steps.length}`}
+              aria-expanded={expanded}
+              aria-controls={listId}
+              onClick={() => {
+                setExpanded(!expanded);
+                rememberExpanded(storageKey, !expanded);
+              }}
+            >
+              <TodoMark mode={mode} spinning={live && !expanded} draw={justFinished} />
+              <span data-omp-todo-title>
+                <span ref={titleRef} dir="auto">
+                  {title}
+                </span>
+              </span>
+              <span data-omp-todo-segments aria-hidden>
+                {steps.map((step) => (
+                  <i
+                    key={step.id}
+                    data-mode={
+                      step.status === "completed" ? "done" : step === current ? mode : "pending"
+                    }
+                  />
+                ))}
+              </span>
+              <span data-omp-todo-count>
+                <AnimatedNumber value={completed} />/{steps.length}
+              </span>
+              <ChevronDownIcon size={13} aria-hidden data-omp-todo-chevron />
+            </button>
           </div>
         </div>
       </section>

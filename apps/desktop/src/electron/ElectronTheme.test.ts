@@ -1,4 +1,5 @@
 import { assert, describe, it } from "@effect/vitest";
+import type { LinuxPortalAppearance } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import { vi } from "vite-plus/test";
 
@@ -77,5 +78,47 @@ describe("ElectronTheme", () => {
       yield* theme.setSource("system");
       assert.equal(nativeTheme.themeSource, "system");
     }),
+  );
+
+  it.effect(
+    "forwards 3-key Linux portal appearance updates and stops cleanly on Scope release",
+    () =>
+      Effect.gen(function* () {
+        nativeTheme.themeSource = "system";
+        let emitPortal: (appearance: LinuxPortalAppearance) => void = () => undefined;
+        let stopped = false;
+        const received: LinuxPortalAppearance[] = [];
+
+        yield* Effect.gen(function* () {
+          const theme = yield* ElectronTheme.makeWith(undefined, (onChange) => {
+            emitPortal = onChange;
+            return {
+              stop: () => {
+                stopped = true;
+              },
+            };
+          });
+          yield* theme.onLinuxPortalAppearanceChange((appearance) => {
+            received.push(appearance);
+          });
+          yield* theme.setSource("system");
+
+          emitPortal({
+            colorScheme: "dark",
+            accentColor: { r: 0.21, g: 0.52, b: 0.89 },
+            contrast: "high",
+          });
+
+          assert.equal(nativeTheme.themeSource, "dark");
+          assert.deepEqual(yield* theme.linuxPortalAppearance, {
+            colorScheme: "dark",
+            accentColor: { r: 0.21, g: 0.52, b: 0.89 },
+            contrast: "high",
+          });
+          assert.equal(received.length, 1);
+        }).pipe(Effect.scoped);
+
+        assert.isTrue(stopped);
+      }),
   );
 });

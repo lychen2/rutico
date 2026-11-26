@@ -33,6 +33,7 @@ import { AppState, useWindowDimensions } from "react-native";
 
 import { OverlayPortal } from "../../components/ui/OverlayPortal";
 import { useFormattingLocale } from "../../i18n/I18nProvider";
+import { triggerSemanticHaptic } from "../../lib/hapticChoreography";
 import { useAppearancePreferences } from "../settings/appearance/AppearancePreferencesProvider";
 import { useScaledTextRole } from "../settings/appearance/useScaledTextRole";
 import {
@@ -93,6 +94,7 @@ export function CustomSnoozeSheet(props: Props) {
         : { mode, amount: String(amount), unit };
     const snoozedUntil = resolveCustomSnooze(input, new Date());
     if (!snoozedUntil) {
+      triggerSemanticHaptic("reject");
       setError(
         mode === "date"
           ? gt("Choose a date and time in the future.")
@@ -100,6 +102,7 @@ export function CustomSnoozeSheet(props: Props) {
       );
       return;
     }
+    triggerSemanticHaptic("confirm");
     props.onSnooze(snoozedUntil);
     props.onClose();
   };
@@ -160,6 +163,7 @@ export function CustomSnoozeSheet(props: Props) {
                     options={modes.map((option) => ({ ...option, label: m(option.label) }))}
                     selected={mode}
                     onSelect={(value) => {
+                      triggerSemanticHaptic("segmentTick");
                       setMode(value);
                       setError(null);
                     }}
@@ -174,7 +178,10 @@ export function CustomSnoozeSheet(props: Props) {
                         { value: "time", label: pickerLabels.time },
                       ]}
                       selected={picker}
-                      onSelect={setPicker}
+                      onSelect={(next) => {
+                        triggerSemanticHaptic("segmentTick");
+                        setPicker(next);
+                      }}
                     />
                   </RNHostView>
                 ) : null}
@@ -188,6 +195,7 @@ export function CustomSnoozeSheet(props: Props) {
                     is24Hour={is24Hour}
                     colors={pickerColors}
                     onChange={(selected) => {
+                      triggerSemanticHaptic("clockTick");
                       setDate((current) =>
                         picker === "date"
                           ? applySnoozePickerDate(current, selected)
@@ -208,11 +216,22 @@ export function CustomSnoozeSheet(props: Props) {
                     modifiers={[fillMaxWidth()]}
                   >
                     <FilledTonalIconButton
-                      enabled={amount > 1}
-                      onClick={() => setAmount((current) => Math.max(1, current - 1))}
+                      enabled
+                      onClick={() => {
+                        if (amount <= 1) {
+                          triggerSemanticHaptic("reject");
+                          return;
+                        }
+                        const next = amount - 1;
+                        triggerSemanticHaptic(next === 1 ? "reject" : "clockTick");
+                        setAmount(next);
+                      }}
                       colors={{
                         containerColor: colors["--color-secondary"],
-                        contentColor: colors["--color-secondary-foreground"],
+                        contentColor:
+                          amount > 1
+                            ? colors["--color-secondary-foreground"]
+                            : colors["--color-foreground-muted"],
                       }}
                       modifiers={[size(48, 48), testID("snooze-decrease-duration")]}
                     >
@@ -222,11 +241,22 @@ export function CustomSnoozeSheet(props: Props) {
                       {String(amount)}
                     </Text>
                     <FilledTonalIconButton
-                      enabled={amount < 99}
-                      onClick={() => setAmount((current) => Math.min(99, current + 1))}
+                      enabled
+                      onClick={() => {
+                        if (amount >= 99) {
+                          triggerSemanticHaptic("reject");
+                          return;
+                        }
+                        const next = amount + 1;
+                        triggerSemanticHaptic(next === 99 ? "reject" : "clockTick");
+                        setAmount(next);
+                      }}
                       colors={{
                         containerColor: colors["--color-secondary"],
-                        contentColor: colors["--color-secondary-foreground"],
+                        contentColor:
+                          amount < 99
+                            ? colors["--color-secondary-foreground"]
+                            : colors["--color-foreground-muted"],
                       }}
                       modifiers={[size(48, 48), testID("snooze-increase-duration")]}
                     >
@@ -238,7 +268,10 @@ export function CustomSnoozeSheet(props: Props) {
                       variant="card"
                       options={units.map((option) => ({ ...option, label: m(option.label) }))}
                       selected={unit}
-                      onSelect={setUnit}
+                      onSelect={(next) => {
+                        triggerSemanticHaptic("segmentTick");
+                        setUnit(next);
+                      }}
                     />
                   </RNHostView>
                 </Column>

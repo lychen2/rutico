@@ -9,7 +9,7 @@ import { scopeProjectRef } from "@t3tools/client-runtime/environment";
 import { projectScriptCwd, projectScriptRuntimeEnv } from "@t3tools/shared/projectScripts";
 import { resolveTerminalSessionLabel } from "@t3tools/shared/terminalLabelsCopy";
 import { useMessages } from "gt-react";
-import { memo, useEffect } from "react";
+import { memo, useEffect, useState } from "react";
 import { useComposerDraftStore } from "../composerDraftStore";
 import { useStableCallback } from "../hooks/useStableCallback";
 import type { TerminalContextSelection } from "../lib/terminalContext";
@@ -119,7 +119,11 @@ export const PersistentThreadTerminalDrawer = memo(function PersistentThreadTerm
   const serverOrderedTerminalIds = drawerTerminalSessions.map(
     (session) => session.target.terminalId,
   );
+  const storeSetTerminalOpen = useTerminalUiStateStore((state) => state.setTerminalOpen);
   const storeSetTerminalHeight = useTerminalUiStateStore((state) => state.setTerminalHeight);
+  const storeSetTerminalGroupWeights = useTerminalUiStateStore(
+    (state) => state.setTerminalGroupWeights,
+  );
   const storeSplitTerminal = useTerminalUiStateStore((state) => state.splitTerminal);
   const storeSplitTerminalVertical = useTerminalUiStateStore(
     (state) => state.splitTerminalVertical,
@@ -234,6 +238,10 @@ export const PersistentThreadTerminalDrawer = memo(function PersistentThreadTerm
           onActiveTerminalChange={activateTerminal}
           onCloseTerminal={closeTerminal}
           onHeightChange={setTerminalHeight}
+          onCollapseDrawer={() => storeSetTerminalOpen(threadRef, false)}
+          onPaneWeightsChange={(groupId, weights) =>
+            storeSetTerminalGroupWeights(threadRef, groupId, weights)
+          }
           onAddTerminalContext={handleAddTerminalContext}
           terminalLabelsById={terminalLabelsById}
           terminalLaunchLocationsById={terminalLaunchLocationsById}
@@ -279,6 +287,13 @@ export const PersistentThreadTerminalPanel = memo(function PersistentThreadTermi
   closeShortcutLabel,
 }: PersistentThreadTerminalPanelProps) {
   const messages = useMessages();
+  const [panelPaneWeightsState, setPanelPaneWeightsState] = useState<{
+    key: string;
+    weights: number[] | undefined;
+  } | null>(null);
+  const panelPaneKey = surface.terminalIds.join(",");
+  const panelPaneWeights =
+    panelPaneWeightsState?.key === panelPaneKey ? panelPaneWeightsState.weights : undefined;
   const serverThread = useQuietThreadShell(threadRef);
   const draftThread = useComposerDraftStore((store) => store.getDraftThreadByRef(threadRef));
   const projectRef = serverThread
@@ -355,9 +370,13 @@ export const PersistentThreadTerminalPanel = memo(function PersistentThreadTermi
           id: surface.id,
           terminalIds: surface.terminalIds,
           ...(surface.splitDirection === "vertical" ? { splitDirection: "vertical" as const } : {}),
+          ...(panelPaneWeights ? { paneWeights: panelPaneWeights } : {}),
         },
       ]}
       activeTerminalGroupId={surface.id}
+      onPaneWeightsChange={(_groupId, weights) =>
+        setPanelPaneWeightsState({ key: panelPaneKey, weights })
+      }
       onSplitTerminal={onSplitTerminal}
       onSplitTerminalVertical={onSplitTerminalVertical}
       onNewTerminal={onNewTerminal}

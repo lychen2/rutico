@@ -160,4 +160,19 @@ describe("makeQuitShortcutHandler", () => {
     expect(harness.quit).not.toHaveBeenCalled();
     expect(harness.notifications).toEqual([DOUBLE_CLICK_DOWN, UP, DOUBLE_CLICK_DOWN]);
   });
+
+  it("emits committing state on Linux when Ctrl+Q reaches QUIT_HOLD_DURATION_MS", async () => {
+    const harness = makeHarness({ mode: "hold", platform: "linux" });
+    await harness.send(makeInput({ meta: false, control: true }));
+    await harness.holdFor(QUIT_HOLD_DURATION_MS + 100, { meta: false, control: true });
+
+    expect(harness.concealWindow).toHaveBeenCalledTimes(1);
+    expect(harness.notifications).toEqual([
+      { state: "down", mode: "hold" },
+      { state: "committing" },
+    ]);
+
+    await harness.send(makeInput({ type: "keyUp", meta: false, control: true }));
+    expect(harness.quit).toHaveBeenCalledTimes(1);
+  });
 });

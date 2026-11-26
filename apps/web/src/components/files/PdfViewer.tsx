@@ -270,10 +270,28 @@ export default function PdfViewer(props: {
   const [finding, setFinding] = useState(false);
   const [findError, setFindError] = useState<string | null>(null);
   const [match, setMatch] = useState(0);
+  const [scrubHudVisible, setScrubHudVisible] = useState(false);
+  const [scrubHudPinned, setScrubHudPinned] = useState(false);
   const scroll = useRef<HTMLDivElement>(null);
   const find = useRef<HTMLInputElement>(null);
+  const scrubHudTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const zoomAnchor = useRef<{ page: number; offset: number; width: number } | null>(null);
   const initialPage = initialView.page;
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Clears the auto-fading PDF page scrub HUD timer on unmount.
+  useEffect(
+    () => () => {
+      if (scrubHudTimer.current !== null) clearTimeout(scrubHudTimer.current);
+    },
+    [],
+  );
+  const revealScrubHud = () => {
+    setScrubHudVisible(true);
+    if (scrubHudTimer.current !== null) clearTimeout(scrubHudTimer.current);
+    scrubHudTimer.current = setTimeout(() => {
+      setScrubHudVisible(false);
+      scrubHudTimer.current = null;
+    }, 2000);
+  };
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Own the PDF fetch, load timeout, and pdf.js document task across source changes, retries, and unmounts.
   useEffect(() => {
     const controller = new AbortController();
@@ -387,6 +405,7 @@ export default function PdfViewer(props: {
   }, [pdf]);
   const showPage = (index: number) => {
     scroll.current?.scrollTo({ top: pdfPageScrollTop(offsets, index) });
+    revealScrubHud();
   };
   const changeZoom = (value: number | null) => {
     zoomAnchor.current = {
@@ -395,6 +414,7 @@ export default function PdfViewer(props: {
       width,
     };
     setZoom(value);
+    revealScrubHud();
   };
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Restore the DOM scroll anchor after a zoom or resize has committed the new page width.
   useLayoutEffect(() => {
@@ -567,71 +587,114 @@ export default function PdfViewer(props: {
         ) : null}
         {props.actions}
       </div>
-      <div
-        ref={scroll}
-        role="region"
-        aria-label={props.title}
-        tabIndex={0}
-        className="relative min-h-0 min-w-0 w-full flex-1 overflow-auto scrollbar-gutter-stable bg-muted/40"
-        onScroll={(event) => {
-          setScrolled({ top: event.currentTarget.scrollTop, width, pdf });
-          saveView(event.currentTarget);
-        }}
-        onKeyDown={(event) => {
-          if ((event.ctrlKey || event.metaKey) && event.key === "f") {
-            event.preventDefault();
-            event.stopPropagation();
-            find.current?.focus();
-          }
-        }}
-      >
-        {error ? (
-          <FileSurfaceFailure
-            message={error}
-            onRetry={() => {
-              setError(null);
-              setPdf(null);
-              setRevision((value) => value + 1);
-            }}
-          />
-        ) : !pdf ? (
-          <FileSurfaceLoading />
-        ) : (
+      <div className="relative flex min-h-0 min-w-0 flex-1 flex-col">
+        <div
+          ref={scroll}
+          role="region"
+          aria-label={props.title}
+          tabIndex={0}
+          className="relative min-h-0 min-w-0 w-full flex-1 overflow-auto scrollbar-gutter-stable bg-muted/40"
+          onScroll={(event) => {
+            setScrolled({ top: event.currentTarget.scrollTop, width, pdf });
+            saveView(event.currentTarget);
+            revealScrubHud();
+          }}
+          onKeyDown={(event) => {
+            if ((event.ctrlKey || event.metaKey) && event.key === "f") {
+              event.preventDefault();
+              event.stopPropagation();
+              find.current?.focus();
+            }
+          }}
+        >
+          {error ? (
+            <FileSurfaceFailure
+              message={error}
+              onRetry={() => {
+                setError(null);
+                setPdf(null);
+                setRevision((value) => value + 1);
+              }}
+            />
+          ) : !pdf ? (
+            <FileSurfaceLoading />
+          ) : (
+            <div
+              className="relative"
+              style={{
+                height: `max(${offsets.at(-1) ?? 0}px, calc(100% + ${(offsets.at(-2) ?? 16) - 16}px))`,
+                minWidth: width + 32,
+              }}
+            >
+              {visible.map(({ index, ratio }) => (
+                <div
+                  key={index}
+                  className="doc-paper-sheet absolute bg-white"
+                  style={
+                    {
+                      top: offsets[index],
+                      left: Math.max(16, (viewport.width - width) / 2),
+                      width,
+                      height: width * ratio,
+                      "--total-scale-factor": 1,
+                    } as CSSProperties
+                  }
+                >
+                  <PdfPage
+                    document={pdf}
+                    index={index}
+                    width={width}
+                    query={query}
+                    onSize={onSize}
+                    onError={setError}
+                    onPageLink={showPage}
+                    onOpenLink={props.onOpenLink}
+                  />
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+        {pdf ? (
           <div
-            className="relative"
-            style={{
-              height: `max(${offsets.at(-1) ?? 0}px, calc(100% + ${(offsets.at(-2) ?? 16) - 16}px))`,
-              minWidth: width + 32,
+            data-visible={scrubHudVisible || scrubHudPinned ? "true" : "false"}
+            className="doc-scrub-hud surface-optical-chrome surface-elevated-rim absolute bottom-3 left-1/2 z-20 flex -translate-x-1/2 items-center gap-2.5 rounded-full px-3 py-1.5 text-2xs text-foreground"
+            onPointerEnter={() => setScrubHudPinned(true)}
+            onPointerLeave={() => {
+              setScrubHudPinned(false);
+              revealScrubHud();
             }}
           >
-            {visible.map(({ index, ratio }) => (
-              <div
-                key={index}
-                className="absolute bg-white shadow-sm"
-                style={
-                  {
-                    top: offsets[index],
-                    left: Math.max(16, (viewport.width - width) / 2),
-                    width,
-                    height: width * ratio,
-                    "--total-scale-factor": 1,
-                  } as CSSProperties
-                }
-              >
-                <PdfPage
-                  document={pdf}
-                  index={index}
-                  width={width}
-                  query={query}
-                  onSize={onSize}
-                  onError={setError}
-                  onPageLink={showPage}
-                  onOpenLink={props.onOpenLink}
-                />
-              </div>
-            ))}
+            <span className="shrink-0 font-medium tabular-nums">
+              {gt("Page {current} / {count}", {
+                current: String(current + 1),
+                count: String(pdf.numPages),
+              })}
+            </span>
+            {pdf.numPages > 1 ? (
+              <input
+                type="range"
+                min={1}
+                max={pdf.numPages}
+                value={current + 1}
+                aria-label={gt("Jump to PDF page")}
+                onChange={(event) => showPage(Number(event.target.value) - 1)}
+                onFocus={() => setScrubHudPinned(true)}
+                onBlur={() => {
+                  setScrubHudPinned(false);
+                  revealScrubHud();
+                }}
+                className="h-1 w-24 cursor-pointer accent-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
+              />
+            ) : null}
+            <span aria-hidden="true" className="text-muted-foreground">
+              ·
+            </span>
+            <span className="shrink-0 text-muted-foreground tabular-nums">
+              {zoom === null ? gt("Fit") : `${Math.round(scale * 100)}%`}
+            </span>
           </div>
-        )}
+        ) : null}
       </div>
     </div>
   );

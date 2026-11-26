@@ -18,6 +18,21 @@ import kotlinx.coroutines.MainScope
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 
+/**
+ * Hysteresis for foldable hinge angle sensors (Pixel/Galaxy foldables rest near 175° when flat).
+ * Snapping bent at <= 170° and releasing at >= 175° prevents resting flap jitter.
+ */
+internal fun nextHingeBentState(currentlyBent: Boolean, angleDegrees: Float): Boolean {
+  if (!angleDegrees.isFinite()) return currentlyBent
+  return if (currentlyBent) angleDegrees < 175f else angleDegrees <= 170f
+}
+
+internal fun foldPostureForOrientation(orientation: FoldingFeature.Orientation): String =
+  if (orientation == FoldingFeature.Orientation.HORIZONTAL) "tabletop" else "book"
+
+internal fun foldOrientationName(orientation: FoldingFeature.Orientation): String =
+  if (orientation == FoldingFeature.Orientation.HORIZONTAL) "horizontal" else "vertical"
+
 class T3FoldPostureModule : Module() {
   override fun definition() = ModuleDefinition {
     Name("T3FoldPosture")
@@ -29,8 +44,9 @@ class T3FoldPostureModule : Module() {
 }
 
 /**
- * Reports a vertical hinge, in this view's dp coordinates, while the device is bent like a book.
- * The hinge sensor is only registered while a vertical fold is on screen.
+ * Reports vertical (book) and horizontal (tabletop) hinges in view & window dp coordinates
+ * while the device is bent. Never fabricates a hinge angle when no hardware sensor is present:
+ * falls back cleanly to FoldingFeature.State.HALF_OPENED without emitting a fake angle.
  */
 class T3FoldPostureView(
   context: Context,
@@ -48,6 +64,7 @@ class T3FoldPostureView(
   private var fold: FoldingFeature? = null
   private var listening = false
   private var bent = false
+  private var lastHingeAngle: Float? = null
   private var reported: Map<String, Any>? = null
 
   override fun onAttachedToWindow() {
@@ -62,9 +79,7 @@ class T3FoldPostureView(
     scope = MainScope().also { scope ->
       scope.launch {
         WindowInfoTracker.getOrCreate(activity).windowLayoutInfo(activity).collect { info ->
-          fold = info.displayFeatures.filterIsInstance<FoldingFeature>().firstOrNull {
-            it.orientation == FoldingFeature.Orientation.VERTICAL
-          }
+          fold = info.displayFeatures.filterIsInstance<FoldingFeature>().firstOrNull()
           listen(fold != null)
           report()
         }
@@ -86,10 +101,10 @@ class T3FoldPostureView(
   }
 
   override fun onSensorChanged(event: SensorEvent) {
-    // Pixel foldables report the hinge in 5° steps and rest at 175° when nearly flat. Snapping at
-    // 170° and releasing at 175° keeps a resting hinge from flapping the layout.
-    val angle = event.values[0]
-    bent = if (bent) angle < 175f else angle <= 170f
+    val angle = event.values.firstOrNull() ?: return
+    if (!angle.isFinite()) return
+    lastHingeAngle = angle
+    bent = nextHingeBentState(bent, angle)
     report()
   }
 
@@ -103,22 +118,44 @@ class T3FoldPostureView(
     } else {
       sensorManager.unregisterListener(this)
       bent = false
+      lastHingeAngle = null
     }
   }
 
   private fun report() {
     val feature = fold
-    // Without a hinge sensor, the platform's half-opened posture is the closest signal.
+    // Without a hinge angle sensor, the platform's HALF_OPENED posture is the closest real signal.
+    val hasSensor = hingeSensor != null
     val aligned = feature != null &&
-      if (hingeSensor != null) bent else feature.state == FoldingFeature.State.HALF_OPENED
-    val hinge = if (aligned && feature != null) {
+      if (hasSensor) {
+        bent || feature.state == FoldingFeature.State.HALF_OPENED
+      } else {
+        feature.state == FoldingFeature.State.HALF_OPENED
+      }
+    val hinge: Map<String, Any> = if (aligned && feature != null) {
       val origin = IntArray(2).also { getLocationInWindow(it) }
       val density = resources.displayMetrics.density
-      mapOf(
-        "x" to (feature.bounds.left - origin[0]) / density,
-        "windowX" to feature.bounds.left / density,
-        "width" to feature.bounds.width() / density
-      )
+      val payload = LinkedHashMap<String, Any>(12)
+      payload["orientation"] = foldOrientationName(feature.orientation)
+      payload["posture"] = foldPostureForOrientation(feature.orientation)
+      payload["state"] = if (feature.state == FoldingFeature.State.HALF_OPENED) {
+        "half_opened"
+      } else {
+        "flat"
+      }
+      payload["x"] = (feature.bounds.left - origin[0]) / density
+      payload["windowX"] = feature.bounds.left / density
+      payload["width"] = feature.bounds.width() / density
+      payload["y"] = (feature.bounds.top - origin[1]) / density
+      payload["windowY"] = feature.bounds.top / density
+      payload["height"] = feature.bounds.height() / density
+      payload["hasAngleSensor"] = hasSensor
+      // Only include angle when backed by a real hardware TYPE_HINGE_ANGLE reading.
+      val measuredAngle = if (hasSensor) lastHingeAngle else null
+      if (measuredAngle != null && measuredAngle.isFinite()) {
+        payload["angle"] = measuredAngle
+      }
+      payload
     } else {
       emptyMap()
     }

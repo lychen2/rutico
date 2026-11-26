@@ -72,6 +72,7 @@ import {
   FolderGit2Icon,
   FolderIcon,
   FolderPlusIcon,
+  GitBranchIcon,
   MessageSquareDashedIcon,
   LinkIcon,
   MessageSquareIcon,
@@ -238,7 +239,11 @@ import {
   type SearchOverlayMode,
 } from "./CommandPalette.logic";
 import { resolveEnvironmentOptionLabel } from "./BranchToolbar.logic";
-import { CommandPaletteContent, type PendingInputSelection } from "./CommandPaletteContent";
+import {
+  CommandPaletteContent,
+  type CommandViewTransitionDirection,
+  type PendingInputSelection,
+} from "./CommandPaletteContent";
 import {
   selectCommandPaletteClientSettings,
   useEnvironmentLookups,
@@ -263,7 +268,10 @@ import {
   useCommandPaletteThreadItems,
 } from "./CommandPaletteThreadItems";
 import { useCommandPaletteSettingsItems } from "./CommandPaletteSettingsItems";
-import { useCommandPaletteThemeItems } from "./CommandPaletteThemeItems";
+import {
+  useCommandPaletteThemeItems,
+  useCommandPaletteThemeLivePreview,
+} from "./CommandPaletteThemeItems";
 import {
   PORT_FORWARD_GROUP_PREFIX,
   useCommandPalettePortForwardItem,
@@ -304,6 +312,27 @@ import { SharedTooltipTrigger } from "./ui/shared-tooltip";
 const EMPTY_BROWSE_ENTRIES: FilesystemBrowseResult["entries"] = [];
 const ADD_PROJECT_ENTRY_GROUP = "add-project";
 const NEW_THREAD_IN_GROUP = "projects";
+
+function middleTruncatePath(rawPath: string, maxLength = 54): string {
+  if (rawPath.length <= maxLength) return rawPath;
+  const separator = rawPath.includes("\\") ? "\\" : "/";
+  const parts = rawPath.split(separator);
+  if (parts.length <= 2) {
+    const head = Math.max(10, Math.floor((maxLength - 1) * 0.45));
+    const tail = Math.max(10, maxLength - 1 - head);
+    return `${rawPath.slice(0, head)}…${rawPath.slice(-tail)}`;
+  }
+  const first = parts[0] === "" ? `${separator}${parts[1] ?? ""}` : (parts[0] ?? "");
+  const last = parts.at(-1) ?? "";
+  const secondLast = parts.length > 3 ? parts.at(-2) : null;
+  const suffix = secondLast ? `${secondLast}${separator}${last}` : last;
+  const combined = `${first}${separator}…${separator}${suffix}`;
+  if (combined.length <= maxLength) return combined;
+  const compact = `${first}${separator}…${separator}${last}`;
+  if (compact.length <= maxLength) return compact;
+  const tail = Math.max(14, maxLength - first.length - 3);
+  return `${first}${separator}…${last.slice(-tail)}`;
+}
 
 /** The submenu an open intent starts in; its groups resolve while rendering. */
 function openIntentView(
@@ -393,6 +422,7 @@ function CommandPaletteDialog(props: {
 
   return (
     <CommandDialogPopup
+      size={props.mode === "content" ? "wide" : "default"}
       aria-label={
         props.mode === "files"
           ? gt("File picker")
@@ -475,6 +505,14 @@ function OpenCommandPaletteDialog(props: {
   const deferredQuery = useDeferredValue(query);
   const isActionsOnly = deferredQuery.startsWith(">");
   const [highlightedItemValue, setHighlightedItemValue] = useState<string | null>(null);
+  const [viewTransition, setViewTransition] = useState<CommandViewTransitionDirection>("none");
+  const panelHeightRef = useRef<number | null>(null);
+  const consumePreviousPanelHeight = useStableCallback((nextHeight: number): number | null => {
+    const previous = panelHeightRef.current;
+    panelHeightRef.current = nextHeight;
+    return previous;
+  });
+  useCommandPaletteThemeLivePreview(highlightedItemValue);
   const resultListRef = useRef<LegendListRef | null>(null);
   // A pushed view drops the typed highlight until the user moves it again.
   const highlightClearedRef = useRef(viewStack.length > 0);
@@ -1016,6 +1054,7 @@ function OpenCommandPaletteDialog(props: {
 
   const pushPaletteView = useStableCallback((view: CommandPaletteView): void => {
     browseNavigation.invalidate();
+    setViewTransition("push");
     dispatchSearch({ type: "push", view });
     highlightClearedRef.current = true;
     setHighlightedItemValue(null);
@@ -1032,6 +1071,7 @@ function OpenCommandPaletteDialog(props: {
     } else if (newProjectFlow?.sourcesEnvironmentId) {
       setAddProjectEnvironmentId(newProjectFlow.sourcesEnvironmentId);
     }
+    setViewTransition("pop");
     dispatchSearch({ type: "back" });
     setHighlightedItemValue(null);
   });
@@ -3106,14 +3146,117 @@ function OpenCommandPaletteDialog(props: {
     </span>
   ) : null;
 
+  const viewContentKey = `${viewStack.length}-${browseGeneration}-${isBrowsing}-${newProjectFlow ? "new-project" : (addProjectCloneFlow?.step ?? "none")}`;
+  const heightBucket = resultRows.rows.length === 0 ? 0 : Math.min(8, resultRows.rows.length);
+  const activeHighlightedItem = findHighlightedCommandPaletteItem(
+    displayedGroups,
+    highlightedItemValue ?? (autoHighlightsFirstRow ? (resultRows.itemValues[0] ?? null) : null),
+  );
+  const inspectorMetadata = (() => {
+    if (!activeHighlightedItem) return null;
+    if (activeHighlightedItem.threadRef) {
+      const ref = activeHighlightedItem.threadRef;
+      const thread = threads.find(
+        (candidate) =>
+          candidate.environmentId === ref.environmentId && candidate.id === ref.threadId,
+      );
+      const project = thread
+        ? (projectByKey.get(`${thread.environmentId}:${thread.projectId}`) ?? null)
+        : null;
+      const location = projectEnvironmentLocationById.get(ref.environmentId);
+      const path = thread?.worktreePath ?? project?.workspaceRoot ?? null;
+      const branch = thread?.branch ?? null;
+      const envLabel = location?.label ?? environmentLabelById.get(ref.environmentId) ?? null;
+      if (!envLabel && !branch && !path) return null;
+      return {
+        machine: location?.machine ?? null,
+        envLabel,
+        branch,
+        path,
+      };
+    }
+    const projectPrefix = activeHighlightedItem.value.startsWith("project:")
+      ? "project:"
+      : activeHighlightedItem.value.startsWith("new-thread-in:") &&
+          activeHighlightedItem.value !== NEW_THREAD_NO_PROJECT_VALUE
+        ? "new-thread-in:"
+        : null;
+    if (projectPrefix) {
+      const projectKey = activeHighlightedItem.value.slice(projectPrefix.length);
+      const project = projectByKey.get(projectKey) ?? null;
+      if (!project) return null;
+      const location = projectEnvironmentLocationById.get(project.environmentId);
+      return {
+        machine: location?.machine ?? null,
+        envLabel: location?.label ?? environmentLabelById.get(project.environmentId) ?? null,
+        branch: null,
+        path: project.workspaceRoot,
+      };
+    }
+    return null;
+  })();
+  const inspectorFooter =
+    inspectorMetadata !== null ? (
+      <div
+        data-slot="command-inspector-footer"
+        className="flex items-center gap-2 border-t border-foreground/[0.06] bg-foreground/[0.02] px-3.5 py-1.5 text-xs text-muted-foreground"
+      >
+        {inspectorMetadata.envLabel ? (
+          <span className="inline-flex shrink-0 items-center gap-1 text-foreground/80">
+            {inspectorMetadata.machine ? (
+              <EnvironmentMachineIcon
+                aria-hidden="true"
+                kind={inspectorMetadata.machine}
+                className="size-3 shrink-0 text-icon-muted"
+              />
+            ) : null}
+            <span className="max-w-36 truncate">{inspectorMetadata.envLabel}</span>
+          </span>
+        ) : null}
+        {inspectorMetadata.branch ? (
+          <span className="inline-flex shrink-0 items-center gap-1 font-mono text-2xs text-foreground/75">
+            <GitBranchIcon aria-hidden="true" className="size-3 shrink-0 text-icon-muted" />
+            <span className="max-w-36 truncate">{inspectorMetadata.branch}</span>
+          </span>
+        ) : null}
+        {inspectorMetadata.path ? (
+          <span
+            className="min-w-0 flex-1 truncate font-mono text-2xs text-muted-foreground/85"
+            data-full-path={inspectorMetadata.path}
+          >
+            {middleTruncatePath(inspectorMetadata.path)}
+          </span>
+        ) : null}
+      </div>
+    ) : null;
+  const breadcrumbLabel = isSubmenu
+    ? newProjectFlow !== null
+      ? gt("New project")
+      : addProjectCloneFlow !== null
+        ? gt("Clone repository")
+        : currentView?.groups[0]?.label ||
+          (currentView?.groups[0]?.value === ADD_PROJECT_ENTRY_GROUP
+            ? gt("Add project")
+            : isBrowsing
+              ? gt("Browse folders")
+              : gt("Back"))
+    : undefined;
+
   return (
     <CommandPaletteContent
-      key={`${viewStack.length}-${browseGeneration}-${isBrowsing}-${newProjectFlow ? "new-project" : (addProjectCloneFlow?.step ?? "none")}`}
+      key={viewContentKey}
       aria-label={gt("Command palette")}
       autoHighlight={autoHighlightsFirstRow ? "always" : false}
+      breadcrumbLabel={breadcrumbLabel}
+      consumePreviousPanelHeight={consumePreviousPanelHeight}
       footerActionLabel={footerActionLabel}
       footerTrailing={footerTrailing}
+      heightBucket={heightBucket}
       inputAccessory={inputAccessory}
+      inspectorFooter={inspectorFooter}
+      onBack={popView}
+      viewTransition={viewTransition}
+      viewTransitionKey={viewContentKey}
       inputProps={{
         className: hasHighlightedNewProjectItem
           ? "*:data-[slot=autocomplete-input]:pe-38!"

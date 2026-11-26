@@ -185,7 +185,7 @@ function OfficePage(props: {
             ? gt("Slide {number}", { number: String(index + 1) })
             : gt("Page {number}", { number: String(index + 1) })
         }
-        className="relative shrink-0 shadow-md"
+        className="doc-paper-sheet relative shrink-0"
         style={{
           width: page.width * scale,
           height: page.height * scale,

@@ -31,8 +31,11 @@ import {
 } from "@react-navigation/native";
 import { useEffect, useRef, useState } from "react";
 import { Platform, Pressable, View } from "react-native";
+import Animated, { FadeInDown, ReduceMotion } from "react-native-reanimated";
 import { ScreenScrollView as ScrollView } from "../../components/ui/ScreenScrollView";
 import { KeyboardController, KeyboardStickyView } from "react-native-keyboard-controller";
+import { useReduceMotionEnabled } from "../../lib/appState";
+import { triggerSemanticHaptic } from "../../lib/hapticChoreography";
 
 import {
   AuthOrchestrationOperateScope,
@@ -111,6 +114,11 @@ import { readEnvironmentScope, useEnvironmentScope } from "../../state/session";
 // so the project and environment pickers move into the composer controls instead.
 const SHORT_DRAFT_VIEWPORT_HEIGHT = 380;
 const HEADING_PROJECT_SLOT = "\uE000";
+const DRAFT_HERO_ENTERING = FadeInDown.duration(180).reduceMotion(ReduceMotion.System);
+const DRAFT_PICKER_ENTERING = FadeInDown.delay(35).duration(180).reduceMotion(ReduceMotion.System);
+const DRAFT_CONTROLS_ENTERING = FadeInDown.delay(70)
+  .duration(180)
+  .reduceMotion(ReduceMotion.System);
 
 function NewTaskWorkspaceIcon(props: {
   readonly workspaceMode: "local" | "worktree";
@@ -170,6 +178,7 @@ export function NewTaskDraftScreen(props: {
 }) {
   const gt = useGT();
   const m = useMessages();
+  const reducedMotion = useReduceMotionEnabled();
   const [creationMetadata] = useState(makeTurnCommandMetadata);
   const projects = useProjects();
   const flow = useNewTaskFlow();
@@ -717,6 +726,7 @@ export function NewTaskDraftScreen(props: {
     const queued = await settlePromise(() => enqueueThreadOutboxMessage(message));
     flow.setSubmitting(false);
     if (AsyncResult.isFailure(queued)) {
+      triggerSemanticHaptic("reject");
       const error = squashAtomCommandFailure(queued);
       Dialog.alert(
         gt("Could not queue task"),
@@ -724,6 +734,7 @@ export function NewTaskDraftScreen(props: {
       );
       return null;
     }
+    triggerSemanticHaptic("confirm");
     promptInputRef.current?.blur();
     navigation.dispatch(
       CommonActions.setParams(
@@ -803,10 +814,15 @@ export function NewTaskDraftScreen(props: {
   const headingLead = headingBreak < 0 ? "" : headingBefore.slice(headingBreak + 1);
   const hero = flow.isScratchDraft ? (
     <View className="items-center gap-2 px-6" testID="new-task-hero">
-      <Text className="text-center text-2xl font-t3-medium tracking-tight text-foreground">
-        <T>What should we work on?</T>
-      </Text>
-      <View className="flex-row flex-wrap items-center justify-center gap-x-1">
+      <Animated.View entering={reducedMotion ? undefined : DRAFT_HERO_ENTERING}>
+        <Text className="text-center text-2xl font-t3-medium tracking-tight text-foreground">
+          <T>What should we work on?</T>
+        </Text>
+      </Animated.View>
+      <Animated.View
+        entering={reducedMotion ? undefined : DRAFT_PICKER_ENTERING}
+        className="flex-row flex-wrap items-center justify-center gap-x-1"
+      >
         <ComposerInlineControl
           accessibilityHint={gt("Opens the project picker")}
           accessibilityLabel={gt("No project")}
@@ -817,12 +833,15 @@ export function NewTaskDraftScreen(props: {
           onPress={chooseProject}
         />
         {environmentControl}
-      </View>
+      </Animated.View>
       {shareUnavailableNotice}
     </View>
   ) : (
     <View className="items-center gap-6 px-6" testID="new-task-hero">
-      <View className="w-full items-center gap-1.5">
+      <Animated.View
+        entering={reducedMotion ? undefined : DRAFT_HERO_ENTERING}
+        className="w-full items-center gap-1.5"
+      >
         <Text className="text-center text-2xl font-t3-medium tracking-tight text-foreground">
           {headingFirstLine}
         </Text>
@@ -849,9 +868,11 @@ export function NewTaskDraftScreen(props: {
             {headingAfter}
           </Text>
         </View>
-      </View>
+      </Animated.View>
 
-      {environmentControl}
+      <Animated.View entering={reducedMotion ? undefined : DRAFT_PICKER_ENTERING}>
+        {environmentControl}
+      </Animated.View>
       {shareUnavailableNotice}
     </View>
   );
@@ -960,7 +981,10 @@ export function NewTaskDraftScreen(props: {
         )}
         label={workspaceLabel}
         maxWidth="100%"
-        onPress={() => flow.setWorkspaceMode(flow.workspaceMode === "local" ? "worktree" : "local")}
+        onPress={() => {
+          triggerSemanticHaptic("contextClick");
+          flow.setWorkspaceMode(flow.workspaceMode === "local" ? "worktree" : "local");
+        }}
         showChevron={false}
       />
 
@@ -1034,7 +1058,11 @@ export function NewTaskDraftScreen(props: {
         </View>
       ) : null}
       {viewportHeight < SHORT_DRAFT_VIEWPORT_HEIGHT ? contextControls : null}
-      {flow.canChooseWorkspace ? workspaceControls : null}
+      {flow.canChooseWorkspace ? (
+        <Animated.View entering={reducedMotion ? undefined : DRAFT_CONTROLS_ENTERING}>
+          {workspaceControls}
+        </Animated.View>
+      ) : null}
     </View>
   );
 

@@ -14,7 +14,10 @@ import * as AsyncResult from "effect/reactivity/AsyncResult";
 import * as Cause from "effect/Cause";
 import { T, useGT, useMessages } from "gt-react";
 import { ChevronsDownUpIcon, ChevronsUpDownIcon } from "lucide-react";
-import { type Ref, useEffect, useEffectEvent, useRef, useState } from "react";
+import { type Ref, useEffect, useEffectEvent, useRef, useState, useSyncExternalStore } from "react";
+import { createPortal } from "react-dom";
+
+import { PierreEntryIcon } from "~/components/chat/PierreEntryIcon";
 
 import { Button } from "~/components/ui/button";
 import { InputGroup, InputGroupInput } from "~/components/ui/input-group";
@@ -31,10 +34,16 @@ import {
   PIERRE_TREE_UNSAFE_CSS,
   pierreTreeStyle,
   titleClippedPierreTreeRow,
+  usePierreTreeRailAndEdgeFade,
 } from "~/pierre-tree-theme";
 
 import { joinHostPath } from "./filePath";
-import { createFileTreeDragMentionController } from "./fileTreeDragMention";
+import {
+  attachFileTreeDragFlightElement,
+  createFileTreeDragMentionController,
+  getFileTreeDragFlightSnapshot,
+  subscribeFileTreeDragFlight,
+} from "./fileTreeDragMention";
 import {
   areAllDirectoriesExpanded,
   coalesceReentrantCalls,
@@ -162,6 +171,58 @@ function buildTreeEntries(
   // thousands, so expand all skips ignored folders. They still open by hand.
   const expandableDirectoryPaths = directories.filter((entry) => !entry.ignored).map(treePath);
   return { entries, entryKinds, treePaths, directoryPaths, expandableDirectoryPaths };
+}
+
+function FileTreeDragFlightCard(props: { readonly theme: "light" | "dark" }) {
+  const flight = useSyncExternalStore(
+    subscribeFileTreeDragFlight,
+    getFileTreeDragFlightSnapshot,
+    () => null,
+  );
+  if (flight === null || typeof document === "undefined") return null;
+
+  return createPortal(
+    <div
+      ref={attachFileTreeDragFlightElement}
+      aria-hidden="true"
+      data-slot="file-tree-drag-flight-card"
+      className="pointer-events-none fixed top-0 left-0 z-100 will-change-transform"
+      style={{
+        transform: `translate3d(${Math.round(flight.initialX + 14)}px, ${Math.round(flight.initialY + 14)}px, 0)`,
+      }}
+    >
+      <div className="drag-flight-card relative">
+        {flight.count >= 3 ? (
+          <div className="drag-flight-stack-card-2 pointer-events-none absolute inset-0 rounded-lg border border-border/75 bg-popover shadow-sm" />
+        ) : null}
+        {flight.count >= 2 ? (
+          <div className="drag-flight-stack-card-1 pointer-events-none absolute inset-0 rounded-lg border border-border/80 bg-popover shadow-md" />
+        ) : null}
+        <div className="surface-optical-chrome surface-elevated-rim relative flex max-w-72 items-center gap-2 rounded-lg px-2.5 py-1.5 text-xs">
+          <PierreEntryIcon
+            pathValue={flight.primary.path}
+            kind={flight.primary.kind}
+            theme={props.theme}
+            className="size-4 shrink-0"
+          />
+          <div className="flex min-w-0 flex-1 flex-col">
+            <span className="truncate font-medium text-foreground">{flight.primary.name}</span>
+            {flight.primary.directory ? (
+              <span className="truncate text-3xs text-muted-foreground">
+                {flight.primary.directory}
+              </span>
+            ) : null}
+          </div>
+          {flight.count > 1 ? (
+            <span className="shrink-0 rounded-full bg-primary px-1.5 py-0.5 font-mono text-3xs font-medium tabular-nums text-primary-foreground">
+              +{flight.count - 1}
+            </span>
+          ) : null}
+        </div>
+      </div>
+    </div>,
+    document.body,
+  );
 }
 
 // A symlink to its own parent lists itself as an only child without end.
@@ -377,6 +438,9 @@ export default function FileBrowserPanel({
     search.close();
   };
   const searchInputRef = useRef<HTMLInputElement>(null);
+  const treeStageRef = useRef<HTMLDivElement | null>(null);
+  const laserRailRef = useRef<HTMLDivElement | null>(null);
+  usePierreTreeRailAndEdgeFade(treeStageRef, laserRailRef);
   const focusSearch = () => {
     searchInputRef.current?.focus();
     searchInputRef.current?.select();
@@ -717,40 +781,57 @@ export default function FileBrowserPanel({
           </div>
         ) : null
       ) : (
-        <FileTree
-          model={model}
-          aria-label={gt("{projectName} files", { projectName })}
-          className="min-h-0 flex-1 overflow-hidden"
-          onClickCapture={(event) => {
-            if (
-              event.defaultPrevented ||
-              event.button !== 0 ||
-              event.ctrlKey ||
-              event.metaKey ||
-              event.shiftKey ||
-              event.altKey ||
-              dragMention.isDragInProgress()
-            ) {
-              return;
-            }
-            // Pierre emits no change for its sole selected row; read before the click to avoid double opens.
-            const selected = model.getSelectedPaths();
-            const path = selected.length === 1 ? selected[0] : undefined;
-            if (!path || entryKindsRef.current.get(path) !== "file") return;
-            const clickedSelectedRow = event.nativeEvent
-              .composedPath()
-              .some(
-                (node) =>
-                  node instanceof HTMLElement && node.getAttribute("data-item-path") === path,
-              );
-            if (!clickedSelectedRow) return;
-            treeSelectionPathRef.current = path;
-            onOpenFile(panelPath(path));
-          }}
-          style={pierreTreeStyle(resolvedTheme)}
-          onPointerOver={titleClippedPierreTreeRow}
-        />
+        <div
+          ref={treeStageRef}
+          data-pierre-tree-stage
+          data-more-above="false"
+          data-more-below="false"
+          className="pierre-tree-stage relative flex min-h-0 flex-1 flex-col overflow-hidden"
+          style={{ height: "100%" }}
+        >
+          <div
+            ref={laserRailRef}
+            aria-hidden="true"
+            data-slot="pierre-tree-laser-rail"
+            className="pointer-events-none absolute top-0 left-1 z-10 w-0.5 rounded-full bg-primary opacity-0 will-change-transform"
+            style={{ position: "absolute", top: 0, left: 4, pointerEvents: "none" }}
+          />
+          <FileTree
+            model={model}
+            aria-label={gt("{projectName} files", { projectName })}
+            className="min-h-0 flex-1 overflow-hidden"
+            onClickCapture={(event) => {
+              if (
+                event.defaultPrevented ||
+                event.button !== 0 ||
+                event.ctrlKey ||
+                event.metaKey ||
+                event.shiftKey ||
+                event.altKey ||
+                dragMention.isDragInProgress()
+              ) {
+                return;
+              }
+              // Pierre emits no change for its sole selected row; read before the click to avoid double opens.
+              const selected = model.getSelectedPaths();
+              const path = selected.length === 1 ? selected[0] : undefined;
+              if (!path || entryKindsRef.current.get(path) !== "file") return;
+              const clickedSelectedRow = event.nativeEvent
+                .composedPath()
+                .some(
+                  (node) =>
+                    node instanceof HTMLElement && node.getAttribute("data-item-path") === path,
+                );
+              if (!clickedSelectedRow) return;
+              treeSelectionPathRef.current = path;
+              onOpenFile(panelPath(path));
+            }}
+            style={pierreTreeStyle(resolvedTheme)}
+            onPointerOver={titleClippedPierreTreeRow}
+          />
+        </div>
       )}
+      <FileTreeDragFlightCard theme={resolvedTheme} />
     </div>
   );
 }

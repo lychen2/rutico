@@ -2,7 +2,7 @@ import "~/index.css";
 import { expect, it, vi } from "vite-plus/test";
 import { page } from "vite-plus/test/browser";
 import { render } from "../../../test/render";
-import { ScrollToEndButton } from "./TimelineOverlays";
+import { ScrollToEndButton, WorkspaceFileDropOverlay } from "./TimelineOverlays";
 
 it("keeps the jump button on the right of the composer lane at both widths", async () => {
   const jump = vi.fn();
@@ -42,4 +42,62 @@ it("keeps the jump button on the right of the composer lane at both widths", asy
     </div>,
   );
   expect(screen.container.querySelector('[data-scroll-to-end-indicator="true"]')).toBeNull();
+});
+
+it("morphs into an expanded live-status capsule while the agent is working and collapses when idle", async () => {
+  await using screen = await render(
+    <div className="fixed inset-0">
+      <div className="chat-composer-lane">
+        <div
+          data-testid="composer"
+          className="mx-auto h-10 w-full max-w-(--chat-content-max-width)"
+        />
+      </div>
+      <ScrollToEndButton bottom={16} summary={null} isWorking onScrollToEnd={() => {}} />
+    </div>,
+  );
+  const button = screen.getByRole("button", { name: /Scroll to end.*Thinking/ });
+  expect(button.element().getAttribute("data-scroll-to-end-expanded")).toBe("true");
+  expect(
+    screen.container.querySelector(
+      '[data-scroll-to-end-indicator="true"][data-scroll-to-end-live="true"]',
+    ),
+  ).not.toBeNull();
+
+  await screen.rerender(
+    <div className="fixed inset-0">
+      <div className="chat-composer-lane">
+        <div
+          data-testid="composer"
+          className="mx-auto h-10 w-full max-w-(--chat-content-max-width)"
+        />
+      </div>
+      <ScrollToEndButton bottom={16} summary={null} isWorking={false} onScrollToEnd={() => {}} />
+    </div>,
+  );
+  const collapsed = screen.getByRole("button", { name: "Scroll to end" });
+  expect(collapsed.element().getAttribute("data-scroll-to-end-expanded")).toBe("false");
+  expect(screen.container.querySelector('[data-scroll-to-end-indicator="true"]')).toBeNull();
+});
+
+it("renders the zero-blur dropzone corner reticle with live image/file counts", async () => {
+  await using screen = await render(
+    <div className="relative h-80 w-96">
+      <WorkspaceFileDropOverlay summary={{ total: 2, imageCount: 2, fileCount: 0 }} />
+    </div>,
+  );
+  const overlay = screen.container.querySelector<HTMLElement>(
+    '[data-chat-workspace-drop-overlay="true"]',
+  )!;
+  expect(overlay).not.toBeNull();
+  expect(getComputedStyle(overlay).backdropFilter).toBe("none");
+  expect(overlay.querySelectorAll("[data-dropzone-corner]").length).toBe(4);
+  expect(screen.getByRole("status").element().textContent).toContain("Drop to attach 2 images");
+
+  await screen.rerender(
+    <div className="relative h-80 w-96">
+      <WorkspaceFileDropOverlay summary={{ total: 3, imageCount: 1, fileCount: 2 }} />
+    </div>,
+  );
+  expect(screen.getByRole("status").element().textContent).toContain("Drop to attach 3 files");
 });

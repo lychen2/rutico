@@ -1,5 +1,6 @@
 import { thrownErrorMessage } from "@t3tools/client-runtime/errors";
 import { msg, T, useMessages } from "gt-react";
+import { CheckCircle2Icon, TriangleAlertIcon } from "lucide-react";
 import { useState } from "react";
 
 import {
@@ -94,12 +95,42 @@ export function CliCommandSettingsRow() {
                 ),
               );
 
+  const pathStatusBadge =
+    installed && !state.shadowedBy ? (
+      state.onPath ? (
+        <span
+          data-cli-path-status="ready"
+          className="cli-path-pill-settle inline-flex items-center gap-1 rounded-full border border-success/35 bg-success/10 px-2 py-0.5 text-2xs font-medium text-foreground"
+        >
+          <CheckCircle2Icon className="size-3 shrink-0 text-success" />
+          <T>Ready · on PATH</T>
+        </span>
+      ) : state.pathSetup?.added ? (
+        <span
+          data-cli-path-status="added"
+          className="cli-path-pill-settle inline-flex items-center gap-1 rounded-full border border-success/35 bg-success/10 px-2 py-0.5 text-2xs font-medium text-foreground"
+        >
+          <CheckCircle2Icon className="size-3 shrink-0 text-success" />
+          <span>{resolve(msg("Added to {file}", { file: state.pathSetup.file }))}</span>
+        </span>
+      ) : (
+        <span
+          data-cli-path-status="missing"
+          className="inline-flex items-center gap-1 rounded-full border border-warning/35 bg-warning/10 px-2 py-0.5 text-2xs font-medium text-warning-foreground"
+        >
+          <TriangleAlertIcon className="size-3 shrink-0" />
+          <T>Not on PATH</T>
+        </span>
+      )
+    ) : null;
+
   return (
     <SettingsRow
       {...searchableSetting("cli-command")}
       description={description}
       control={
-        <div className="flex gap-2">
+        <div className="flex flex-wrap items-center justify-end gap-2">
+          {pathStatusBadge}
           {state.pathSetup && !state.pathSetup.added ? (
             <Button size="sm" variant="outline" disabled={busy} onClick={() => run("addToPath")}>
               <T>Add to PATH</T>

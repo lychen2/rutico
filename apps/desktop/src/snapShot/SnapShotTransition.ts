@@ -7,7 +7,9 @@ const MIN_DURATION_MS = 280;
 const MAX_DURATION_MS = 680;
 const REDUCED_MOTION_DURATION_MS = 120;
 const DURATION_DISTANCE_SCALE = 2_000;
-const EASING = "cubic-bezier(.2,.8,.2,1)";
+// Expanded Wave 0 physical spring curve (`fluid`: duration 0.28s, bounce 0.12) safe for WAAPI.
+const EASING =
+  "linear(0, 0.0431, 0.1456, 0.2784, 0.4227, 0.5635, 0.6907, 0.7984, 0.8842, 0.9482, 0.9924, 1.0199, 1.0342, 1.0387, 1.0366, 1.0307, 1.0231, 1.0154, 1.0085, 1.0031, 0.9993, 0.997, 0.9961, 0.9962, 0.997, 0.998, 0.999, 0.9997, 1.0002, 1.0004, 1.0004, 1.0003, 1.0002, 1.0001, 1, 1)";
 const REDUCED_MOTION_EASING = "cubic-bezier(0,0,.58,1)";
 const DEFAULT_LIGHT_CARD_BACKGROUND = "#faf8fd";
 const DEFAULT_DARK_CARD_BACKGROUND = "#1a1727";
@@ -157,8 +159,9 @@ export function buildSnapShotTransitionHtml(
     : DEFAULT_LIGHT_CARD_BACKGROUND;
   return `<!doctype html><style>
 html,body{margin:0;width:100%;height:100%;overflow:hidden;background:transparent}
-#card{position:absolute;left:${source.x}px;top:${source.y}px;width:${source.width}px;height:${source.height}px;contain:strict;overflow:hidden;border-radius:12px;background:${initialCardBackground};box-shadow:0 24px 70px rgba(0,0,0,.24);transform-origin:center;will-change:transform}
-@media (prefers-color-scheme: dark){#card{background:${DEFAULT_DARK_CARD_BACKGROUND};box-shadow:0 24px 70px rgba(0,0,0,.48)}}
+#card{position:absolute;left:${source.x}px;top:${source.y}px;width:${source.width}px;height:${source.height}px;contain:strict;overflow:hidden;border-radius:12px;background:${initialCardBackground};box-shadow:inset 0 1px 0 rgba(255,255,255,.16),0 24px 70px rgba(0,0,0,.24);transform-origin:center;will-change:transform}
+@supports (corner-shape: superellipse(1.25)){#card{corner-shape:superellipse(1.25)}}
+@media (prefers-color-scheme: dark){#card{background:${DEFAULT_DARK_CARD_BACKGROUND};box-shadow:inset 0 1px 0 rgba(255,255,255,.14),0 24px 70px rgba(0,0,0,.48)}}
 #content{position:absolute;inset:0;overflow:hidden;border-radius:inherit;transform-origin:center;will-change:transform}
 #snapshot{position:absolute;inset:0;width:100%;height:100%;object-fit:fill;transform-origin:center;will-change:transform}
 #flash{position:absolute;inset:0;background:#fff;opacity:0;${flash ? "" : "display:none"}}

@@ -1,12 +1,15 @@
 import { thrownErrorMessage } from "@t3tools/client-runtime/errors";
 import { msg, T, useGT } from "gt-react";
+import { Grid2x2Icon, MoonIcon, SunIcon } from "lucide-react";
 import { useEffect, useState } from "react";
 
 import { m } from "~/i18n/messages";
 
 import { useTheme } from "~/hooks/useTheme";
 
-import { FileSurfaceLoading } from "./fileSurfaceChrome";
+import { FileSurfaceAction, FileSurfaceLoading } from "./fileSurfaceChrome";
+
+type FontBackdrop = "default" | "checkerboard" | "dark" | "light";
 
 const MAX_FONT_BYTES = 10 * 1024 * 1024;
 
@@ -49,6 +52,7 @@ export default function FontViewer(props: { readonly src: string; readonly name:
   const { resolvedTheme } = useTheme();
   const [data, setData] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [backdrop, setBackdrop] = useState<FontBackdrop>("default");
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Load the font from its URL and abort the request and timeout when the source changes or unmounts.
   useEffect(() => {
     const controller = new AbortController();
@@ -86,14 +90,50 @@ export default function FontViewer(props: { readonly src: string; readonly name:
     );
   if (!data) return <FileSurfaceLoading />;
   const tokens = getComputedStyle(document.documentElement);
-  const background = tokens.getPropertyValue("--background");
-  const foreground = tokens.getPropertyValue("--foreground");
+  const themeBackground = tokens.getPropertyValue("--background");
+  const themeForeground = tokens.getPropertyValue("--foreground");
+  const stageScheme = backdrop === "dark" ? "dark" : backdrop === "light" ? "light" : resolvedTheme;
+  const background =
+    backdrop === "dark" ? "#111317" : backdrop === "light" ? "#f6f7f9" : themeBackground;
+  const foreground =
+    backdrop === "dark" ? "#f2f4f8" : backdrop === "light" ? "#111317" : themeForeground;
+  const checkerboardCss =
+    backdrop === "checkerboard"
+      ? `background-image:conic-gradient(${resolvedTheme === "dark" ? "rgba(255,255,255,0.05)" : "rgba(0,0,0,0.045)"} 90deg,transparent 90deg 180deg,${resolvedTheme === "dark" ? "rgba(255,255,255,0.05)" : "rgba(0,0,0,0.045)"} 180deg 270deg,transparent 270deg);background-size:16px 16px;`
+      : "";
   const escapeHtml = (text: string) =>
     text.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;");
   const heading = escapeHtml(gt("Font preview"));
   const sample = escapeHtml(gt("The quick brown fox jumps over the lazy dog."));
-  const srcDoc = `<!doctype html><html><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; font-src data:; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'"><style>@font-face{font-family:preview;src:url('${data}')}html{color-scheme:${resolvedTheme};background:${background};color:${foreground}}body{margin:0;padding:32px;font-family:preview;overflow-wrap:anywhere}h1{font-size:40px;font-weight:normal}p{line-height:1.4}small{font:12px monospace;display:block;opacity:.6;margin-bottom:8px}</style></head><body><h1>${heading}</h1><p style="font-size:24px">ABCDEFGHIJKLMNOPQRSTUVWXYZ<br>abcdefghijklmnopqrstuvwxyz<br>0123456789 !?&amp;@#%(){}[]</p>${[12, 16, 24, 40, 64].map((size) => `<p style="font-size:${size}px"><small>${size} px</small>${sample}</p>`).join("")}</body></html>`;
+  const srcDoc = `<!doctype html><html><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; font-src data:; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'"><style>@font-face{font-family:preview;src:url('${data}')}html{color-scheme:${stageScheme};background:${background};color:${foreground};${checkerboardCss}}body{margin:0;padding:32px;font-family:preview;overflow-wrap:anywhere}h1{font-size:40px;font-weight:normal}p{line-height:1.4}small{font:12px monospace;display:block;opacity:.6;margin-bottom:8px}</style></head><body><h1>${heading}</h1><p style="font-size:24px">ABCDEFGHIJKLMNOPQRSTUVWXYZ<br>abcdefghijklmnopqrstuvwxyz<br>0123456789 !?&amp;@#%(){}[]</p>${[12, 16, 24, 40, 64].map((size) => `<p style="font-size:${size}px"><small>${size} px</small>${sample}</p>`).join("")}</body></html>`;
+  const toggleBackdrop = (next: Exclude<FontBackdrop, "default">) =>
+    setBackdrop((current) => (current === next ? "default" : next));
   return (
-    <iframe title={props.name} srcDoc={srcDoc} sandbox="" className="min-h-0 flex-1 border-0" />
+    <div className="flex min-h-0 flex-1 flex-col">
+      <div className="flex min-h-9 shrink-0 items-center justify-end gap-1 border-b border-border/60 px-3 py-1 text-xs text-muted-foreground">
+        <FileSurfaceAction
+          label={gt("Checkerboard backdrop")}
+          pressed={backdrop === "checkerboard"}
+          onPress={() => toggleBackdrop("checkerboard")}
+        >
+          <Grid2x2Icon className="size-3.5" />
+        </FileSurfaceAction>
+        <FileSurfaceAction
+          label={gt("Dark backdrop")}
+          pressed={backdrop === "dark"}
+          onPress={() => toggleBackdrop("dark")}
+        >
+          <MoonIcon className="size-3.5" />
+        </FileSurfaceAction>
+        <FileSurfaceAction
+          label={gt("Light backdrop")}
+          pressed={backdrop === "light"}
+          onPress={() => toggleBackdrop("light")}
+        >
+          <SunIcon className="size-3.5" />
+        </FileSurfaceAction>
+      </div>
+      <iframe title={props.name} srcDoc={srcDoc} sandbox="" className="min-h-0 flex-1 border-0" />
+    </div>
   );
 }

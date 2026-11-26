@@ -1,0 +1,877 @@
+/* ==========================================================================
+   Stage 2 Lanes 2W-A & 2W-B — Workspace, Diff, Terminal & Device Motion Stylesheet
+   Reserved modular stylesheet pre-imported by index.css for conflict-free
+   parallel Stage 2 edits.
+   ========================================================================== */
+
+/* --------------------------------------------------------------------------
+   D17 / C054: Floating Hunk Navigation HUD
+   -------------------------------------------------------------------------- */
+
+.diff-hunk-hud {
+  transition:
+    opacity var(--duration-micro) ease-out,
+    transform var(--duration-snappy) var(--spring-snappy);
+}
+
+@starting-style {
+  .diff-hunk-hud {
+    opacity: 0;
+    transform: translate3d(0, 6px, 0) scale(0.96);
+  }
+}
+
+.diff-hunk-hud-progress {
+  transition: transform var(--duration-snappy) var(--spring-snappy);
+  will-change: transform;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .diff-hunk-hud,
+  .diff-hunk-hud-progress {
+    transition: none;
+  }
+}
+
+/* --------------------------------------------------------------------------
+   D17 / C055: Origin-Top Spring-Bloom Diff Review Composer & Commit Pulse
+   -------------------------------------------------------------------------- */
+
+.diff-comment-draft-bloom {
+  transform-origin: top center;
+  transition:
+    opacity 160ms ease-out,
+    transform 200ms var(--spring-snappy);
+}
+
+@starting-style {
+  .diff-comment-draft-bloom {
+    opacity: 0;
+    transform: translate3d(0, -6px, 0) scale(0.975);
+  }
+}
+
+@keyframes diff-comment-commit-beam {
+  0% {
+    opacity: 0.95;
+    transform: scaleY(0);
+  }
+  55% {
+    opacity: 0.95;
+    transform: scaleY(1);
+  }
+  100% {
+    opacity: 0;
+    transform: scaleY(1);
+  }
+}
+
+.diff-comment-card-settled::before {
+  content: "";
+  position: absolute;
+  inset-block: 0;
+  inset-inline-start: -2px;
+  width: 2.5px;
+  background: var(--primary);
+  pointer-events: none;
+  transform-origin: top center;
+  animation: diff-comment-commit-beam 260ms var(--spring-snappy) forwards;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .diff-comment-draft-bloom {
+    transition: none;
+  }
+
+  .diff-comment-card-settled::before {
+    animation: none;
+    opacity: 0;
+  }
+}
+
+/* --------------------------------------------------------------------------
+   D18 / C058: Pierre FileTree Tip 008 Dynamic Scroll-Edge Fade & Laser Rail
+   -------------------------------------------------------------------------- */
+
+.pierre-tree-stage[data-more-above="true"][data-more-below="false"] {
+  -webkit-mask-image: linear-gradient(to bottom, transparent 0px, black 18px, black 100%);
+  mask-image: linear-gradient(to bottom, transparent 0px, black 18px, black 100%);
+}
+
+.pierre-tree-stage[data-more-above="false"][data-more-below="true"] {
+  -webkit-mask-image: linear-gradient(
+    to bottom,
+    black 0%,
+    black calc(100% - 18px),
+    transparent 100%
+  );
+  mask-image: linear-gradient(to bottom, black 0%, black calc(100% - 18px), transparent 100%);
+}
+
+.pierre-tree-stage[data-more-above="true"][data-more-below="true"] {
+  -webkit-mask-image: linear-gradient(
+    to bottom,
+    transparent 0px,
+    black 18px,
+    black calc(100% - 18px),
+    transparent 100%
+  );
+  mask-image: linear-gradient(
+    to bottom,
+    transparent 0px,
+    black 18px,
+    black calc(100% - 18px),
+    transparent 100%
+  );
+}
+
+/* --------------------------------------------------------------------------
+   D18 / C059: Velocity-Tilted Multi-File Stack Drag Flight Card
+   -------------------------------------------------------------------------- */
+
+.drag-flight-card {
+  transform-origin: 18% 22%;
+  transition:
+    opacity var(--duration-micro) ease-out,
+    transform var(--duration-snappy) var(--spring-snappy);
+}
+
+@starting-style {
+  .drag-flight-card {
+    opacity: 0;
+    transform: scale(0.92);
+  }
+}
+
+.drag-flight-stack-card-1 {
+  transform: translate3d(3px, 4px, 0) rotate(2.4deg);
+}
+
+.drag-flight-stack-card-2 {
+  transform: translate3d(-3px, 7px, 0) rotate(-3.2deg);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .drag-flight-card {
+    transition: none;
+  }
+}
+
+/* --------------------------------------------------------------------------
+   D18 / C060: Search Context Radar Peek Pane & Target Amber Lock Band
+   -------------------------------------------------------------------------- */
+
+.search-context-target-band {
+  background-color: color-mix(in oklch, var(--warning, #d97706) 11%, transparent);
+  border-inline-start-color: color-mix(in oklch, var(--warning, #d97706) 80%, transparent);
+}
+
+.search-context-target-num {
+  color: var(--warning-foreground, var(--warning, #b45309));
+}
+
+.search-context-pane-body {
+  transition: opacity var(--duration-micro) ease-out;
+}
+
+@starting-style {
+  .search-context-pane-body {
+    opacity: 0.45;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .search-context-pane-body {
+    transition: none;
+  }
+}
+
+/* --------------------------------------------------------------------------
+   D19 / C061: Magnetic Split Dividers & Cursor-Tracked Optical Ratio HUD
+   -------------------------------------------------------------------------- */
+
+.resize-divider-handle[data-resizing="true"] .resize-divider-rail {
+  background-color: color-mix(in oklch, var(--primary) 70%, transparent);
+}
+
+.resize-divider-handle[data-snapped="true"] .resize-divider-rail {
+  width: 2px;
+  background-color: var(--primary);
+}
+
+.resize-divider-handle[data-snapped="true"] .resize-divider-pill {
+  opacity: 1;
+  background-color: var(--primary);
+  transform: translate(-50%, -50%) scaleY(1.45);
+}
+
+.resize-ratio-hud {
+  transition:
+    opacity var(--duration-micro) ease-out,
+    border-color var(--duration-micro) ease-out,
+    color var(--duration-micro) ease-out;
+}
+
+.resize-ratio-hud[data-visible="true"] {
+  opacity: 1;
+}
+
+.resize-ratio-hud[data-snapped="true"] {
+  border-color: color-mix(in oklch, var(--primary) 65%, var(--border));
+  color: var(--primary);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .resize-ratio-hud {
+    transition: none;
+  }
+}
+
+/* --------------------------------------------------------------------------
+   D19 / C062: RightPanelTabs Live Audio Equalizer Bars
+   -------------------------------------------------------------------------- */
+
+@keyframes tab-audio-eq-pulse {
+  0%,
+  100% {
+    transform: scaleY(0.32);
+  }
+  45% {
+    transform: scaleY(1);
+  }
+  75% {
+    transform: scaleY(0.56);
+  }
+}
+
+.tab-audio-eq {
+  contain: layout style;
+}
+
+.tab-audio-eq-bar {
+  transform-origin: bottom center;
+  animation: tab-audio-eq-pulse 780ms ease-in-out infinite;
+  animation-play-state: var(--visible-animation-state, paused);
+  will-change: var(--visible-animation-will-change, auto);
+}
+
+.tab-audio-eq-bar-1 {
+  animation-delay: 0ms;
+}
+
+.tab-audio-eq-bar-2 {
+  animation-delay: -260ms;
+  animation-duration: 640ms;
+}
+
+.tab-audio-eq-bar-3 {
+  animation-delay: -520ms;
+  animation-duration: 860ms;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tab-audio-eq-bar {
+    animation: none;
+  }
+  .tab-audio-eq-bar-1 {
+    transform: scaleY(0.55);
+  }
+  .tab-audio-eq-bar-2 {
+    transform: scaleY(0.95);
+  }
+  .tab-audio-eq-bar-3 {
+    transform: scaleY(0.7);
+  }
+}
+
+/* --------------------------------------------------------------------------
+   D19 / C063: RightPanel Maximize Spatial Recess & Bento Surface Launcher
+   -------------------------------------------------------------------------- */
+
+[data-right-panel-expanding="true"] > :not([data-preview-panel-mode="inline"]) {
+  transform: scale(0.992);
+  transform-origin: center left;
+  transition: transform 240ms var(--spring-gentle);
+}
+
+.bento-launcher-card {
+  transition:
+    background-color var(--duration-micro) ease-out,
+    border-color var(--duration-micro) ease-out,
+    transform var(--duration-snappy) var(--spring-snappy);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-right-panel-expanding="true"] > :not([data-preview-panel-mode="inline"]),
+  .bento-launcher-card {
+    transform: none;
+    transition: none;
+  }
+}
+
+/* --------------------------------------------------------------------------
+   D20 / C064: Elastic Android-First Browser Device Frame & Breakpoint HUD
+   -------------------------------------------------------------------------- */
+
+.browser-device-frame-morph {
+  transition:
+    left 240ms var(--spring-gentle),
+    top 240ms var(--spring-gentle),
+    width 240ms var(--spring-gentle),
+    height 240ms var(--spring-gentle),
+    border-radius 240ms var(--spring-gentle);
+}
+
+.browser-viewport-hud[data-snapped="true"] {
+  border-color: color-mix(in oklch, var(--primary) 65%, var(--border));
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .browser-device-frame-morph {
+    transition: none;
+  }
+}
+
+/* --------------------------------------------------------------------------
+   D20 / C065: AgentBrowserCursor Spring Trajectory & Dual-Ring Shockwave
+   -------------------------------------------------------------------------- */
+
+.agent-cursor-track {
+  transition:
+    opacity var(--duration-micro) ease-out,
+    transform 210ms var(--spring-fluid);
+}
+
+.agent-cursor-pill {
+  transform-origin: top left;
+  transition:
+    opacity 160ms ease-out,
+    transform 180ms var(--spring-snappy);
+}
+
+@keyframes agent-cursor-press {
+  0% {
+    transform: scale(1);
+  }
+  38% {
+    transform: scale(0.86);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+@keyframes agent-cursor-ring-outer {
+  0% {
+    opacity: 0.9;
+    transform: scale(0.45);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(2.35);
+  }
+}
+
+@keyframes agent-cursor-ring-inner {
+  0% {
+    opacity: 0.95;
+    transform: scale(0.5);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(1.6);
+  }
+}
+
+.agent-cursor-click-press {
+  animation: agent-cursor-press 220ms var(--spring-snappy) both;
+}
+
+.agent-cursor-shockwave-outer {
+  animation: agent-cursor-ring-outer 380ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.agent-cursor-shockwave-inner {
+  animation: agent-cursor-ring-inner 260ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .agent-cursor-track,
+  .agent-cursor-pill {
+    transition: none;
+  }
+
+  .agent-cursor-click-press,
+  .agent-cursor-shockwave-outer,
+  .agent-cursor-shockwave-inner {
+    animation: none;
+  }
+}
+
+/* --------------------------------------------------------------------------
+   D20 / C066: Preview Shutter Flash, Recording Dot & Live Local Server Dot
+   -------------------------------------------------------------------------- */
+
+@keyframes preview-shutter-edge-flash {
+  0% {
+    opacity: 0.9;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
+.preview-shutter-flash {
+  box-shadow:
+    inset 0 0 0 2px rgb(255 255 255 / 0.85),
+    inset 0 0 32px rgb(255 255 255 / 0.42);
+  background-color: rgb(255 255 255 / 0.18);
+  animation: preview-shutter-edge-flash 180ms ease-out forwards;
+}
+
+@keyframes preview-status-breathe {
+  0%,
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.48;
+    transform: scale(0.86);
+  }
+}
+
+.preview-recording-dot,
+.preview-server-live-dot {
+  animation: preview-status-breathe 1.6s ease-in-out infinite;
+  animation-play-state: var(--visible-animation-state, paused);
+}
+
+.preview-url-overlay-active input[data-preview-url-input] {
+  color: transparent;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .preview-shutter-flash,
+  .preview-recording-dot,
+  .preview-server-live-dot {
+    animation: none;
+  }
+  .preview-shutter-flash {
+    opacity: 0;
+  }
+}
+
+/* --------------------------------------------------------------------------
+   D20 / C067: Mini-Player 4-Corner Velocity Throw & Origin-Top-Right Pill
+   -------------------------------------------------------------------------- */
+
+.mini-player-corner-throw {
+  transition:
+    left 280ms var(--spring-gentle),
+    top 280ms var(--spring-gentle);
+}
+
+.mini-player-dock-handoff {
+  transition:
+    left 140ms var(--spring-snappy),
+    opacity 130ms ease-out;
+}
+
+.mini-player-control-pill {
+  transition:
+    opacity var(--duration-micro) ease-out,
+    transform var(--duration-snappy) var(--spring-snappy);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mini-player-corner-throw,
+  .mini-player-dock-handoff,
+  .mini-player-control-pill {
+    transition: none;
+  }
+}
+
+/* --------------------------------------------------------------------------
+   D21 / C068: Android 3D Hardware Stage, Tactile Nav Pulse & Tools Drawer
+   -------------------------------------------------------------------------- */
+
+.device-3d-stage-backdrop {
+  background-image: radial-gradient(
+    ellipse 72% 64% at 50% 48%,
+    color-mix(in oklch, var(--foreground) 5%, transparent) 0%,
+    transparent 68%
+  );
+}
+
+.device-3d-contact-shadow {
+  background: radial-gradient(
+    ellipse at center,
+    color-mix(in oklch, var(--foreground) 16%, transparent) 0%,
+    transparent 72%
+  );
+}
+
+@keyframes device-rail-nav-tap {
+  0% {
+    transform: scale(1);
+    color: var(--primary);
+  }
+  40% {
+    transform: scale(0.88);
+    color: var(--primary);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+.device-rail-nav-pulse {
+  animation: device-rail-nav-tap 160ms var(--spring-snappy) both;
+}
+
+.device-tools-drawer {
+  transition:
+    opacity 180ms ease-out,
+    transform 220ms var(--spring-snappy);
+}
+
+@starting-style {
+  .device-tools-drawer {
+    opacity: 0;
+    transform: translate3d(16px, 0, 0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .device-rail-nav-pulse {
+    animation: none;
+  }
+  .device-tools-drawer {
+    transition: none;
+  }
+}
+
+/* --------------------------------------------------------------------------
+   D21 / C069: Android Foldable Hinge Telemetry & Settle Pulse
+   -------------------------------------------------------------------------- */
+
+@keyframes device-fold-pending-ring {
+  0%,
+  100% {
+    border-color: color-mix(in oklch, var(--primary) 35%, var(--border));
+    box-shadow: 0 0 0 1px color-mix(in oklch, var(--primary) 12%, transparent);
+  }
+  50% {
+    border-color: color-mix(in oklch, var(--primary) 78%, var(--border));
+    box-shadow: 0 0 0 2px color-mix(in oklch, var(--primary) 22%, transparent);
+  }
+}
+
+@keyframes device-fold-settled-ring {
+  0% {
+    border-color: color-mix(in oklch, var(--success) 75%, var(--border));
+    box-shadow: 0 0 0 2px color-mix(in oklch, var(--success) 24%, transparent);
+  }
+  100% {
+    border-color: var(--border);
+    box-shadow: 0 0 0 0 transparent;
+  }
+}
+
+.device-fold-pending {
+  animation: device-fold-pending-ring 1100ms ease-in-out infinite;
+  animation-play-state: var(--visible-animation-state, paused);
+}
+
+.device-fold-settled {
+  animation: device-fold-settled-ring 650ms ease-out both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .device-fold-pending,
+  .device-fold-settled {
+    animation: none;
+  }
+}
+
+/* --------------------------------------------------------------------------
+   D21 / C070: Document Paper Elevation, Auto-Fading Scrub HUD & Sheet Fade
+   -------------------------------------------------------------------------- */
+
+.doc-paper-sheet {
+  box-shadow:
+    0 1px 2px color-mix(in oklch, var(--foreground) 8%, transparent),
+    0 8px 24px -6px color-mix(in oklch, var(--foreground) 14%, transparent),
+    0 0 0 1px color-mix(in oklch, var(--foreground) 7%, transparent);
+}
+
+.doc-scrub-hud {
+  opacity: 0;
+  pointer-events: none;
+  transform: translate3d(0, 6px, 0);
+  transition:
+    opacity 180ms ease-out,
+    transform 200ms var(--spring-snappy);
+}
+
+.doc-scrub-hud[data-visible="true"] {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translate3d(0, 0, 0);
+}
+
+.spreadsheet-sheet-fade {
+  transition: opacity 140ms ease-out;
+}
+
+@starting-style {
+  .spreadsheet-sheet-fade {
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .doc-scrub-hud,
+  .spreadsheet-sheet-fade {
+    transition: none;
+  }
+}
+
+/* --------------------------------------------------------------------------
+   D21 / C071: Optical Media Stage Backdrops & Pan Interaction
+   -------------------------------------------------------------------------- */
+
+.media-stage-checkerboard {
+  background-color: var(--background);
+  background-image: conic-gradient(
+    color-mix(in oklch, var(--foreground) 5%, transparent) 90deg,
+    transparent 90deg 180deg,
+    color-mix(in oklch, var(--foreground) 5%, transparent) 180deg 270deg,
+    transparent 270deg
+  );
+  background-size: 16px 16px;
+}
+
+.media-stage-dark {
+  background-color: #111317;
+  color: #f2f4f8;
+}
+
+.media-stage-light {
+  background-color: #f6f7f9;
+  color: #111317;
+}
+
+.media-stage-pannable[data-panning="true"],
+.media-stage-pannable[data-panning="true"] * {
+  cursor: grabbing;
+  user-select: none;
+}
+
+/* --------------------------------------------------------------------------
+   D22 / C072: Terminal Drawer Spring Snap & Live Cols×Rows Resize HUD
+   -------------------------------------------------------------------------- */
+
+.terminal-drawer-shell[data-drawer-snapping="true"] {
+  transition: height 220ms var(--spring-snappy);
+}
+
+.terminal-resize-hud {
+  opacity: 0;
+  transform: translate3d(0, -4px, 0) scale(0.96);
+  transition:
+    opacity 120ms ease-out,
+    transform 160ms var(--spring-snappy),
+    border-color 120ms ease-out,
+    color 120ms ease-out;
+}
+
+.terminal-resize-hud[data-visible="true"] {
+  opacity: 1;
+  transform: translate3d(0, 0, 0) scale(1);
+}
+
+.terminal-resize-hud[data-snapped] {
+  border-color: color-mix(in oklch, var(--primary) 55%, var(--border));
+}
+
+.terminal-resize-hud[data-collapsing="true"] {
+  border-color: color-mix(in oklch, var(--destructive) 65%, var(--border));
+  color: var(--destructive);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .terminal-drawer-shell[data-drawer-snapping="true"],
+  .terminal-resize-hud {
+    transition: none;
+  }
+}
+
+/* --------------------------------------------------------------------------
+   D22 / C073: Draggable Terminal Split Dividers & Smooth Pane Reveal
+   -------------------------------------------------------------------------- */
+
+.terminal-split-pane {
+  transition: opacity 160ms ease-out;
+}
+
+@starting-style {
+  .terminal-split-pane {
+    opacity: 0;
+  }
+}
+
+.terminal-split-divider[data-dragging="true"] .terminal-split-divider-bar {
+  background-color: color-mix(in oklch, var(--primary) 85%, transparent);
+}
+
+.terminal-split-divider[data-snapped="true"] .terminal-split-divider-bar {
+  background-color: var(--primary);
+  box-shadow: 0 0 0 1px color-mix(in oklch, var(--primary) 35%, transparent);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .terminal-split-pane {
+    transition: none;
+  }
+}
+
+/* --------------------------------------------------------------------------
+   D22 / C074: Terminal Selection Pill, Link Hover Pill & Activity Heartbeat
+   -------------------------------------------------------------------------- */
+
+.terminal-selection-pill,
+.terminal-link-pill {
+  transition:
+    opacity 130ms ease-out,
+    transform 160ms var(--spring-snappy);
+}
+
+@starting-style {
+  .terminal-selection-pill,
+  .terminal-link-pill {
+    opacity: 0;
+    transform: translate3d(0, 4px, 0) scale(0.96);
+  }
+}
+
+@keyframes terminal-activity-breathe {
+  0%,
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.42;
+    transform: scale(0.8);
+  }
+}
+
+.terminal-activity-pulse {
+  animation: terminal-activity-breathe 1.3s ease-in-out infinite;
+  animation-play-state: var(--visible-animation-state, paused);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .terminal-selection-pill,
+  .terminal-link-pill {
+    transition: none;
+  }
+  .terminal-activity-pulse {
+    animation: none;
+  }
+}
+
+/* --------------------------------------------------------------------------
+   D22 / C075: Linux Clipboard Micro-Pulse, Build Hairline & CLI PATH Pill
+   -------------------------------------------------------------------------- */
+
+@keyframes terminal-clipboard-enter {
+  0% {
+    opacity: 0;
+    transform: translate3d(0, 6px, 0) scale(0.94);
+  }
+  100% {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+}
+
+.terminal-clipboard-pulse {
+  animation: terminal-clipboard-enter 160ms var(--spring-snappy) both;
+}
+
+@keyframes terminal-copy-ring {
+  0% {
+    box-shadow: inset 0 0 0 2px color-mix(in oklch, var(--primary) 55%, transparent);
+    opacity: 1;
+  }
+  100% {
+    box-shadow: inset 0 0 0 2px color-mix(in oklch, var(--primary) 0%, transparent);
+    opacity: 0;
+  }
+}
+
+.terminal-copy-flash {
+  animation: terminal-copy-ring 160ms ease-out both;
+}
+
+@keyframes terminal-build-hairline-sweep {
+  0% {
+    transform: translate3d(-45%, 0, 0) scaleX(0.35);
+    opacity: 0.35;
+  }
+  50% {
+    opacity: 0.85;
+  }
+  100% {
+    transform: translate3d(145%, 0, 0) scaleX(0.45);
+    opacity: 0.35;
+  }
+}
+
+.terminal-build-hairline {
+  height: 1.5px;
+  overflow: hidden;
+  background-color: color-mix(in oklch, var(--primary) 16%, transparent);
+}
+
+.terminal-build-hairline::after {
+  content: "";
+  display: block;
+  width: 55%;
+  height: 100%;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    color-mix(in oklch, var(--primary) 75%, transparent),
+    transparent
+  );
+  animation: terminal-build-hairline-sweep 1.35s ease-in-out infinite;
+  animation-play-state: var(--visible-animation-state, paused);
+}
+
+.cli-path-pill-settle {
+  transition:
+    opacity 160ms ease-out,
+    transform 180ms var(--spring-snappy);
+}
+
+@starting-style {
+  .cli-path-pill-settle {
+    opacity: 0;
+    transform: scale(0.94);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .terminal-clipboard-pulse,
+  .terminal-copy-flash,
+  .terminal-build-hairline::after {
+    animation: none;
+  }
+  .cli-path-pill-settle {
+    transition: none;
+  }
+}

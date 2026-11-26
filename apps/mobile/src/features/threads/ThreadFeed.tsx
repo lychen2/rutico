@@ -190,12 +190,18 @@ import { flattenThemeColor, themeColorWithContrast } from "../../lib/mobileTheme
 import { PresentationSource } from "../../components/ui/NativePresentation";
 import { NativeScrollViewMarker } from "../../native/NativeScrollViewMarker";
 import Animated, {
+  cancelAnimation,
   FadeIn,
-  FadeInDown,
   FadeOut,
   ReduceMotion,
   type SharedValue,
+  useAnimatedStyle,
+  useReducedMotion,
+  useSharedValue,
+  withSpring,
+  withTiming,
 } from "react-native-reanimated";
+import { SPRING_SPATIAL_SNAPPY, TIMING_QUICK_FADE } from "../../lib/mobileMotion";
 import { useUniwindTheme } from "../../lib/useUniwindTheme";
 import { FONT_FAMILIES } from "../../lib/fontFamilies";
 import { scopedThreadKey } from "../../lib/scopedEntities";
@@ -372,11 +378,118 @@ const FEED_PADDING_TOP = 12;
 const VIEWED_IMAGE_GAP = 8;
 const USER_BUBBLE_HORIZONTAL_PADDING = 3.5 * 3.5;
 const ASSISTANT_ROW_HORIZONTAL_PADDING = 3.5;
-// Virtualization remounts old rows; only newly created content should replay an entrance.
+// Virtualization remounts old rows; only newly created content should replay an entrance,
+// and each message ID may animate at most once (Astra P1-10 virtualized identity guardrail).
 const FRESH_ENTRY_WINDOW_MS = 3_000;
+const MAX_TRACKED_LAUNCH_KEYS = 240;
+const playedMessageLaunchKeys = new Set<string>();
+const ASSISTANT_MESSAGE_FADE_TIMING = {
+  duration: 220,
+  reduceMotion: ReduceMotion.System,
+} as const;
+
 function isFreshTimestamp(input: string): boolean {
   const timestamp = Date.parse(input);
   return Number.isFinite(timestamp) && Date.now() - timestamp < FRESH_ENTRY_WINDOW_MS;
+}
+
+function claimMessageLaunchAnimation(launchKey: string): boolean {
+  if (playedMessageLaunchKeys.has(launchKey)) return false;
+  if (playedMessageLaunchKeys.size >= MAX_TRACKED_LAUNCH_KEYS) {
+    const oldest = playedMessageLaunchKeys.values().next().value;
+    if (oldest !== undefined) playedMessageLaunchKeys.delete(oldest);
+  }
+  playedMessageLaunchKeys.add(launchKey);
+  return true;
+}
+
+function OptimisticPromptLaunchRow(props: {
+  readonly launchKey: string;
+  readonly eligible: boolean;
+  readonly className: string;
+  readonly children: ReactNode;
+}) {
+  const reducedMotion = useReducedMotion();
+  const launchY = useSharedValue(0);
+  const launchScale = useSharedValue(1);
+  const launchOpacity = useSharedValue(1);
+
+  // Cancel and reset shared values whenever LegendList recycles this row to a different message ID.
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- resets and runs ID-deduped optimistic prompt launch spring on row identity change
+  useLayoutEffect(() => {
+    cancelAnimation(launchY);
+    cancelAnimation(launchScale);
+    cancelAnimation(launchOpacity);
+
+    if (!props.eligible || reducedMotion || !claimMessageLaunchAnimation(props.launchKey)) {
+      launchY.set(0);
+      launchScale.set(1);
+      launchOpacity.set(1);
+      return;
+    }
+
+    launchY.set(16);
+    launchScale.set(0.96);
+    launchOpacity.set(0);
+    launchY.set(withSpring(0, SPRING_SPATIAL_SNAPPY));
+    launchScale.set(withSpring(1, SPRING_SPATIAL_SNAPPY));
+    launchOpacity.set(withTiming(1, TIMING_QUICK_FADE));
+
+    return () => {
+      cancelAnimation(launchY);
+      cancelAnimation(launchScale);
+      cancelAnimation(launchOpacity);
+    };
+  }, [launchOpacity, launchScale, launchY, props.eligible, props.launchKey, reducedMotion]);
+
+  const launchStyle = useAnimatedStyle(() => ({
+    opacity: launchOpacity.get(),
+    transform: [{ translateY: launchY.get() }, { scale: launchScale.get() }],
+  }));
+
+  return (
+    <Animated.View className={props.className} style={launchStyle}>
+      {props.children}
+    </Animated.View>
+  );
+}
+
+function AssistantMessageLaunchRow(props: {
+  readonly launchKey: string;
+  readonly eligible: boolean;
+  readonly className: string;
+  readonly children: ReactNode;
+}) {
+  const reducedMotion = useReducedMotion();
+  const launchOpacity = useSharedValue(1);
+
+  // Claim inside useLayoutEffect (never during render) and cancel/reset on LegendList recycling.
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- resets and runs ID-deduped assistant message entrance fade on committed row identity change
+  useLayoutEffect(() => {
+    cancelAnimation(launchOpacity);
+
+    if (!props.eligible || reducedMotion || !claimMessageLaunchAnimation(props.launchKey)) {
+      launchOpacity.set(1);
+      return;
+    }
+
+    launchOpacity.set(0);
+    launchOpacity.set(withTiming(1, ASSISTANT_MESSAGE_FADE_TIMING));
+
+    return () => {
+      cancelAnimation(launchOpacity);
+    };
+  }, [launchOpacity, props.eligible, props.launchKey, reducedMotion]);
+
+  const launchStyle = useAnimatedStyle(() => ({
+    opacity: launchOpacity.get(),
+  }));
+
+  return (
+    <Animated.View className={props.className} style={launchStyle}>
+      {props.children}
+    </Animated.View>
+  );
 }
 
 export interface ThreadFeedHistoryControls {
@@ -2394,7 +2507,9 @@ function renderFeedEntry(
       );
     }
     if (isUser) {
-      const enterAnimated = isFreshTimestamp(message.createdAt);
+      const enterAnimated =
+        isFreshTimestamp(message.createdAt) || entry.pendingMessage !== undefined;
+      const launchKey = `${props.threadId}:user:${message.id}`;
       const foldRowId = presentation.attribution === "agent" ? `agent:${message.id}` : null;
       // A linked environment's agent sent it from a thread there.
       const senderRef =
@@ -2449,10 +2564,11 @@ function renderFeedEntry(
           presentation.text.trim().length > 0 ||
           visibleAttachments.length + pendingBubbleAttachments.length > 0);
       return (
-        <Animated.View
+        <OptimisticPromptLaunchRow
           // A prompt sits close to its own response; the answer's margin separates turns.
+          launchKey={launchKey}
+          eligible={enterAnimated}
           className={cn("items-end", props.userMessageGrouping.groupedWithNext ? "mb-1" : "mb-2")}
-          {...(enterAnimated ? { entering: FadeInDown.duration(220) } : {})}
         >
           {presentation.attribution === "t3code" ? (
             <Text className="mb-1 pr-1 font-t3-medium text-2xs text-foreground-muted opacity-60">
@@ -2716,7 +2832,7 @@ function renderFeedEntry(
               ) : null}
             </View>
           ) : null}
-        </Animated.View>
+        </OptimisticPromptLaunchRow>
       );
     }
 
@@ -2724,16 +2840,17 @@ function renderFeedEntry(
       return null;
     }
 
-    const enterAnimated = isFreshTimestamp(message.createdAt);
+    const assistantLaunchKey = `${props.threadId}:assistant:${message.id}`;
     return (
-      <Animated.View
+      <AssistantMessageLaunchRow
+        launchKey={assistantLaunchKey}
+        eligible={isFreshTimestamp(message.createdAt)}
         className={cn(
           showAssistantMeta && !(message.runId && props.failedRunIds.has(message.runId))
             ? "mb-5 px-1"
             : "mb-1 px-1",
           hasWideBlock && "w-full",
         )}
-        {...(enterAnimated ? { entering: FadeIn.duration(220) } : {})}
       >
         {renderedText.trim().length > 0 ? (
           <MarkdownImageAvailableWidthContext value={props.markdownContentWidth}>
@@ -2781,7 +2898,7 @@ function renderFeedEntry(
             </Text>
           </View>
         ) : null}
-      </Animated.View>
+      </AssistantMessageLaunchRow>
     );
   }
 

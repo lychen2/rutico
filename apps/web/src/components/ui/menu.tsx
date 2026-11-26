@@ -1,12 +1,18 @@
 import { Menu as MenuPrimitive } from "@base-ui/react/menu";
 import { CheckIcon, ChevronRightIcon, SearchIcon } from "lucide-react";
+import { useRef, type PointerEvent as ReactPointerEvent } from "react";
 import type * as React from "react";
 
 import { cn } from "~/lib/utils";
 import { buttonVariants } from "./button";
 import { renderClosingPositioner } from "./closing-positioner";
+import { FloatingHighlight, isPointInSafeTriangle, type Point2D } from "./floating-highlight";
 import { Input, type InputProps } from "./input";
 import { Spinner } from "./spinner";
+
+const SUBMENU_OPEN_DELAY_MS = 220;
+const SUBMENU_CLOSE_DELAY_MS = 360;
+const SAFE_TRIANGLE_MAX_HOLD_MS = 1200;
 
 const Menu = MenuPrimitive.Root;
 
@@ -40,6 +46,46 @@ function MenuPopup({
   keepMounted?: boolean;
   width?: "default" | "content";
 }) {
+  const prevPointerRef = useRef<Point2D | null>(null);
+  const safeHoldStartedAtRef = useRef<number | null>(null);
+
+  // Tip 002 safe-triangle guard: suppress stray pointerover on sibling rows while the cursor
+  // travels diagonally toward an open nested submenu popup (bounded by 1200ms safety release).
+  const handlePointerMoveCapture = (event: ReactPointerEvent<HTMLDivElement>) => {
+    const current: Point2D = { x: event.clientX, y: event.clientY };
+    const previous = prevPointerRef.current;
+    prevPointerRef.current = current;
+    if (!previous) return;
+
+    const openSubTrigger = event.currentTarget.querySelector<HTMLElement>(
+      '[data-slot="menu-sub-trigger"][data-popup-open]',
+    );
+    const subPopup = document.querySelector<HTMLElement>(
+      '[data-slot="menu-sub-content"]:not([data-ending-style])',
+    );
+    if (!openSubTrigger || !subPopup) {
+      safeHoldStartedAtRef.current = null;
+      return;
+    }
+
+    const now = event.timeStamp;
+    const targetIsSibling =
+      event.target instanceof Node &&
+      !openSubTrigger.contains(event.target) &&
+      !subPopup.contains(event.target);
+    if (
+      targetIsSibling &&
+      isPointInSafeTriangle(current, previous, subPopup.getBoundingClientRect())
+    ) {
+      if (safeHoldStartedAtRef.current === null) safeHoldStartedAtRef.current = now;
+      if (now - safeHoldStartedAtRef.current < SAFE_TRIANGLE_MAX_HOLD_MS) {
+        event.stopPropagation();
+      }
+      return;
+    }
+    safeHoldStartedAtRef.current = null;
+  };
+
   return (
     <MenuPrimitive.Portal keepMounted={keepMounted}>
       <MenuPrimitive.Positioner
@@ -55,7 +101,7 @@ function MenuPopup({
       >
         <MenuPrimitive.Popup
           className={cn(
-            "dropdown-glass relative flex origin-(--transform-origin) rounded-lg shadow-[0_16px_40px_-18px_rgb(0_0_0/55%)] outline-none transition-[scale,opacity,translate] duration-180 ease-(--ease-spring-snappy) data-starting-style:scale-[0.95] data-starting-style:opacity-0 data-[side=bottom]:data-starting-style:-translate-y-1 data-[side=top]:data-starting-style:translate-y-1 data-[side=left]:data-starting-style:translate-x-1 data-[side=right]:data-starting-style:-translate-x-1 data-[side=inline-start]:data-starting-style:translate-x-1 data-[side=inline-end]:data-starting-style:-translate-x-1 data-ending-style:duration-120 data-ending-style:ease-(--ease-exit) data-ending-style:scale-[0.97] data-ending-style:opacity-0 data-instant:duration-0 motion-reduce:transition-none focus:outline-none dark:shadow-[0_18px_44px_-18px_rgb(0_0_0/80%)]",
+            "dropdown-glass surface-elevated-rim relative flex origin-(--transform-origin) rounded-(--radius-concentric-menu) shadow-[0_16px_40px_-18px_rgb(0_0_0/55%)] outline-none transition-[scale,opacity,translate] duration-150 ease-(--ease-spring-snappy) data-starting-style:scale-[0.95] data-starting-style:opacity-0 data-[side=bottom]:data-starting-style:-translate-y-1 data-[side=top]:data-starting-style:translate-y-1 data-[side=left]:data-starting-style:translate-x-1 data-[side=right]:data-starting-style:-translate-x-1 data-[side=inline-start]:data-starting-style:translate-x-1 data-[side=inline-end]:data-starting-style:-translate-x-1 data-ending-style:duration-100 data-ending-style:ease-(--ease-exit) data-ending-style:scale-[0.97] data-ending-style:opacity-0 data-instant:duration-0 motion-reduce:transition-none focus:outline-none dark:shadow-[0_18px_44px_-18px_rgb(0_0_0/80%)]",
             // Electron drag hit-testing ignores z-index; opt portaled menus out to keep overlapping rows
             // hoverable.
             "[-webkit-app-region:no-drag]",
@@ -66,7 +112,17 @@ function MenuPopup({
           data-slot="menu-popup"
           {...props}
         >
-          <div className="max-h-(--available-height) w-full overflow-y-auto p-1">{children}</div>
+          <div
+            onPointerMoveCapture={handlePointerMoveCapture}
+            onPointerLeave={() => {
+              prevPointerRef.current = null;
+              safeHoldStartedAtRef.current = null;
+            }}
+            className="relative max-h-(--available-height) w-full overflow-y-auto p-1"
+          >
+            <FloatingHighlight />
+            {children}
+          </div>
         </MenuPrimitive.Popup>
       </MenuPrimitive.Positioner>
     </MenuPrimitive.Portal>
@@ -131,7 +187,7 @@ function MenuItem({
   return (
     <MenuPrimitive.Item
       className={cn(
-        "[&>svg]:-mx-0.5 flex min-h-8 cursor-pointer select-none items-center gap-2 rounded-sm px-2 py-1 text-base text-foreground outline-none transition-[background-color,color,scale] duration-150 ease-(--ease-spring-snappy) active:duration-75 active:ease-out active:not-data-disabled:scale-[0.975] active:not-data-disabled:bg-foreground/10 dark:active:not-data-disabled:bg-foreground/14 motion-reduce:transition-none motion-reduce:active:scale-100 data-disabled:pointer-events-none data-disabled:cursor-not-allowed data-highlighted:bg-accent data-inset:ps-8 data-[variant=destructive]:text-destructive-foreground data-highlighted:text-accent-foreground data-disabled:opacity-64 sm:min-h-7 sm:text-sm [&>svg:not([class*='opacity-'])]:opacity-80 [&>svg:not([class*='size-'])]:size-4.5 sm:[&>svg:not([class*='size-'])]:size-4 [&>svg:not([class*='text-'])]:text-muted-foreground data-[variant=destructive]:[&>svg:not([class*='text-'])]:text-current [&>svg]:pointer-events-none [&>svg]:shrink-0",
+        "[&>svg]:-mx-0.5 flex min-h-8 cursor-pointer select-none items-center gap-2 rounded-(--radius-concentric-menu-inner) px-2 py-1 text-base text-foreground outline-none transition-[background-color,color,scale] duration-150 ease-(--ease-spring-snappy) active:duration-75 active:ease-out active:not-data-disabled:scale-[0.975] active:not-data-disabled:bg-foreground/10 dark:active:not-data-disabled:bg-foreground/14 motion-reduce:transition-none motion-reduce:active:scale-100 data-disabled:pointer-events-none data-disabled:cursor-not-allowed data-highlighted:bg-accent data-inset:ps-8 data-[variant=destructive]:text-destructive-foreground data-highlighted:text-accent-foreground data-disabled:opacity-64 sm:min-h-7 sm:text-sm [&>svg:not([class*='opacity-'])]:opacity-80 [&>svg:not([class*='size-'])]:size-4.5 sm:[&>svg:not([class*='size-'])]:size-4 [&>svg:not([class*='text-'])]:text-muted-foreground data-[variant=destructive]:[&>svg:not([class*='text-'])]:text-current [&>svg]:pointer-events-none [&>svg]:shrink-0",
         variant === "ghost" &&
           buttonVariants({
             variant: "ghost",
@@ -329,6 +385,8 @@ function MenuSubTrigger({
   className,
   inset,
   density = "default",
+  delay = SUBMENU_OPEN_DELAY_MS,
+  closeDelay = SUBMENU_CLOSE_DELAY_MS,
   children,
   ...props
 }: MenuPrimitive.SubmenuTrigger.Props & {
@@ -337,9 +395,11 @@ function MenuSubTrigger({
 }) {
   return (
     <MenuPrimitive.SubmenuTrigger
+      delay={delay}
+      closeDelay={closeDelay}
       className={cn(
         // Exclude the last SVG so leading-icon margin rules cannot remove the chevron's ms-auto alignment.
-        "group/sub [&>svg:not(:last-child)]:-mx-0.5 flex min-h-8 cursor-pointer select-none items-center gap-2 rounded-sm px-2 py-1 text-base text-foreground outline-none transition-[background-color,color,scale] duration-120 ease-out active:not-data-disabled:scale-[0.99] motion-reduce:transition-none motion-reduce:active:scale-100 data-disabled:cursor-not-allowed data-disabled:pointer-events-none data-highlighted:bg-accent data-popup-open:bg-accent data-inset:ps-8 data-highlighted:text-accent-foreground data-popup-open:text-accent-foreground data-disabled:opacity-64 sm:min-h-7 sm:text-sm [&_svg:not([class*='size-'])]:size-4.5 sm:[&_svg:not([class*='size-'])]:size-4 [&_svg:not([class*='text-'])]:text-muted-foreground [&>svg:not(:last-child):not([class*='opacity-'])]:opacity-80 [&_svg]:pointer-events-none [&>svg]:shrink-0",
+        "group/sub relative z-[1] [&>svg:not(:last-child)]:-mx-0.5 flex min-h-8 cursor-pointer select-none items-center gap-2 rounded-(--radius-concentric-menu-inner) px-2 py-1 text-base text-foreground outline-none transition-[background-color,color,scale] duration-120 ease-out active:not-data-disabled:scale-[0.99] motion-reduce:transition-none motion-reduce:active:scale-100 data-disabled:cursor-not-allowed data-disabled:pointer-events-none data-highlighted:bg-accent data-popup-open:bg-accent data-inset:ps-8 data-highlighted:text-accent-foreground data-popup-open:text-accent-foreground data-disabled:opacity-64 sm:min-h-7 sm:text-sm [&_svg:not([class*='size-'])]:size-4.5 sm:[&_svg:not([class*='size-'])]:size-4 [&_svg:not([class*='text-'])]:text-muted-foreground [&>svg:not(:last-child):not([class*='opacity-'])]:opacity-80 [&_svg]:pointer-events-none [&>svg]:shrink-0",
         density === "touch" && "min-h-10 sm:min-h-10",
         className,
       )}

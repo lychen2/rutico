@@ -17,17 +17,18 @@
 .plan-capsule,
 .plan-summary {
   --plan-width: 440px;
-  --plan-ease-open: cubic-bezier(0.32, 0.72, 0, 1);
-  --plan-ease-close: cubic-bezier(0.4, 0, 0.2, 1);
+  --plan-ease-open: var(--spring-spatial, cubic-bezier(0.32, 0.72, 0, 1));
+  --plan-ease-close: var(--spring-snappy, cubic-bezier(0.4, 0, 0.2, 1));
   --plan-ease-swap: cubic-bezier(0.22, 1, 0.36, 1);
-  --plan-open: 360ms;
-  --plan-close: 240ms;
-  --plan-detail-open: 320ms;
-  --plan-detail-close: 220ms;
+  --plan-open: 340ms;
+  --plan-close: 220ms;
+  --plan-detail-open: 300ms;
+  --plan-detail-close: 200ms;
   --plan-fade-in: 200ms;
   --plan-fade-out: 140ms;
   --plan-shift: 8px;
   --plan-accent: var(--primary);
+  --plan-rim-color: color-mix(in oklch, var(--primary) 42%, var(--contrast-foreground));
   --plan-accent-text: color-mix(in srgb, var(--primary) 60%, var(--foreground));
   --plan-warn-text: color-mix(in srgb, var(--warning) 40%, var(--foreground));
   --plan-err-text: color-mix(in srgb, var(--destructive) 50%, var(--foreground));
@@ -44,10 +45,9 @@
   min-width: 0;
   pointer-events: auto;
   /* No end fill: a filling opacity animation makes this element a backdrop root, and the card's
-     backdrop-filter would then blur nothing behind it. */
+     backdrop-filter would then blur nothing behind it. Width snaps instantly; GPU FLIP animates it. */
   animation: plan-appear var(--plan-fade-in) var(--plan-ease-swap) backwards;
   transition:
-    width var(--plan-close) var(--plan-ease-close),
     opacity var(--plan-fade-in) var(--plan-ease-swap),
     transform var(--plan-fade-in) var(--plan-ease-swap),
     visibility 0s;
@@ -62,11 +62,6 @@
 }
 .plan-capsule[data-open="true"] {
   --plan-width: 600px;
-  transition:
-    width var(--plan-open) var(--plan-ease-open),
-    opacity var(--plan-fade-in) var(--plan-ease-swap),
-    transform var(--plan-fade-in) var(--plan-ease-swap),
-    visibility 0s;
 }
 .plan-capsule[data-visible="false"] {
   opacity: 0;
@@ -74,16 +69,20 @@
   visibility: hidden;
   pointer-events: none;
   transition:
-    width 0s,
     opacity var(--plan-fade-out) var(--plan-ease-close),
     transform var(--plan-fade-out) var(--plan-ease-close),
     visibility 0s var(--plan-fade-out);
 }
 .plan-capsule[data-mode="need"] {
   --plan-hint: var(--warning);
+  --plan-rim-color: color-mix(in oklch, var(--warning) 62%, var(--contrast-foreground));
 }
 .plan-capsule[data-mode="problem"] {
   --plan-hint: var(--destructive);
+  --plan-rim-color: color-mix(in oklch, var(--destructive) 64%, var(--contrast-foreground));
+}
+.plan-capsule[data-mode="done"] {
+  --plan-rim-color: color-mix(in oklch, var(--success) 56%, var(--contrast-foreground));
 }
 @keyframes plan-appear {
   from {
@@ -95,6 +94,7 @@
   position: relative;
   overflow: hidden;
   border-radius: 20px;
+  transform-origin: 0 0;
   background: color-mix(in srgb, var(--card) 92%, transparent);
   -webkit-backdrop-filter: blur(min(var(--glass-blur, 10px), 10px))
     saturate(var(--glass-saturation, 1.08));
@@ -103,6 +103,32 @@
     0 0 0 1px var(--border),
     inset 0 1px 0 color-mix(in srgb, var(--background) 40%, transparent),
     0 6px 18px -10px rgb(0 0 0 / 0.16);
+}
+/* Mode-tinted top specular rim along the top curvature (0 extra blur). */
+.plan-card::before {
+  content: "";
+  position: absolute;
+  inset-inline: 14px;
+  top: 0;
+  height: 1px;
+  border-radius: 999px;
+  pointer-events: none;
+  z-index: 2;
+  opacity: 0.65;
+  background: linear-gradient(90deg, transparent 0%, var(--plan-rim-color) 50%, transparent 100%);
+  transition: opacity 240ms ease-out;
+}
+@supports (corner-shape: superellipse(1.25)) {
+  .plan-card,
+  .plan-shadow,
+  .plan-hint,
+  .plan-bar,
+  .plan-summary {
+    corner-shape: superellipse(1.25);
+  }
+  .plan-stage-row {
+    corner-shape: superellipse(1.25);
+  }
 }
 @media (prefers-reduced-transparency: reduce) {
   .plan-card {
@@ -116,6 +142,7 @@
   position: absolute;
   inset: 0;
   border-radius: 20px;
+  transform-origin: 0 0;
   box-shadow:
     0 2px 6px rgb(0 0 0 / 0.06),
     0 22px 48px -14px rgb(0 0 0 / 0.26);
@@ -164,6 +191,7 @@
   display: flex;
   flex-direction: column;
   max-height: clamp(150px, calc(100dvh - 300px), 480px);
+  transform-origin: 0 0;
   opacity: 0;
   visibility: hidden;
   transition:
@@ -224,6 +252,7 @@
   height: 40px;
   padding: 0 14px 0 12px;
   border-radius: 20px;
+  transform-origin: 0 0;
   text-align: left;
   cursor: pointer;
   transition:
@@ -276,7 +305,14 @@
   stroke-dasharray: var(--plan-percent, 0) 100;
   transform: rotate(-90deg);
   transform-origin: 9px 9px;
-  transition: stroke-dasharray 400ms var(--plan-ease-open);
+  transition: stroke-dasharray 380ms var(--plan-ease-open);
+}
+.plan-ring-bloom {
+  stroke: var(--success);
+  stroke-width: 1.5;
+  opacity: 0;
+  transform-origin: 9px 9px;
+  pointer-events: none;
 }
 .plan-ring-dash {
   stroke: var(--warning);
@@ -287,6 +323,7 @@
 .plan-ring .plan-ring-fill {
   fill: var(--success);
   opacity: 0;
+  transform-origin: 9px 9px;
 }
 .plan-ring-check {
   stroke: #fff;
@@ -294,6 +331,45 @@
   stroke-linecap: round;
   stroke-linejoin: round;
   opacity: 0;
+}
+.plan-ring[data-just-completed="true"] .plan-ring-bloom {
+  animation: plan-ring-bloom 420ms cubic-bezier(0.22, 1, 0.36, 1) 1 both;
+}
+.plan-ring[data-just-completed="true"] .plan-ring-fill {
+  animation: plan-ring-fill-pop 280ms var(--spring-bouncy, cubic-bezier(0.22, 1.24, 0.36, 1)) 1 both;
+}
+.plan-ring[data-just-completed="true"] .plan-ring-check {
+  stroke-dasharray: 100;
+  animation: plan-check-draw 240ms var(--spring-snappy, cubic-bezier(0.22, 1, 0.36, 1)) 60ms 1 both;
+}
+@keyframes plan-ring-bloom {
+  0% {
+    opacity: 0.72;
+    transform: scale(0.88);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(1.72);
+  }
+}
+@keyframes plan-ring-fill-pop {
+  0% {
+    transform: scale(0.82);
+  }
+  60% {
+    transform: scale(1.06);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+@keyframes plan-check-draw {
+  from {
+    stroke-dashoffset: 100;
+  }
+  to {
+    stroke-dashoffset: 0;
+  }
 }
 .plan-ring-alert {
   stroke: var(--destructive);
@@ -349,13 +425,17 @@
 @keyframes plan-title-in {
   from {
     opacity: 0;
-    transform: translateY(var(--plan-shift));
+    transform: translate3d(0, 10px, 0) scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) scale(1);
   }
 }
 @keyframes plan-title-out {
   to {
     opacity: 0;
-    transform: translateY(calc(var(--plan-shift) * -0.75));
+    transform: translate3d(0, -8px, 0) scale(0.985);
   }
 }
 .plan-pill {
@@ -488,6 +568,10 @@ button.plan-stage-row:active {
   background: var(--foreground);
   border-color: var(--foreground);
 }
+.plan-stage-mark[data-just-done="true"] svg path {
+  stroke-dasharray: 100;
+  animation: plan-check-draw 220ms var(--spring-snappy, cubic-bezier(0.22, 1, 0.36, 1)) both;
+}
 .plan-stage-mark[data-status="run"] {
   border-color: var(--plan-accent);
   background: radial-gradient(circle, var(--plan-accent) 38%, transparent 42%);
@@ -585,6 +669,9 @@ html[data-theme-id="porcelain"] .plan-card {
   -webkit-backdrop-filter: none;
   backdrop-filter: none;
   box-shadow: 0 0 0 1px var(--border);
+}
+html[data-theme-id="porcelain"] .plan-card::before {
+  display: none;
 }
 html[data-theme-id="porcelain"] .plan-shadow {
   box-shadow: 0 8px 24px -16px rgb(0 0 0 / 0.2);
@@ -752,11 +839,25 @@ html[data-theme-id="porcelain"] .plan-summary {
   font-family: var(--font-mono);
   flex-wrap: wrap;
 }
+.plan-stage[data-open="true"] .plan-tool-chip[data-chip-stagger="true"] {
+  animation: plan-chip-in 200ms var(--spring-snappy, cubic-bezier(0.22, 1, 0.36, 1))
+    var(--plan-chip-delay, 0ms) both;
+}
+@keyframes plan-chip-in {
+  from {
+    opacity: 0;
+    transform: translate3d(-4px, 3px, 0);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
 .plan-tool-tag {
   font-family: var(--font-sans);
   font-size: 10.5px;
   padding: 1px 6px;
-  border-radius: 5px;
+  border-radius: 8px;
   background: var(--secondary);
   color: var(--plan-muted);
   white-space: nowrap;
@@ -787,11 +888,36 @@ html[data-theme-id="porcelain"] .plan-summary {
   background: transparent;
   color: inherit;
   font: inherit;
-  padding: 0;
+  padding: 1px 4px;
+  margin: -1px -2px;
+  border-radius: 6px;
   cursor: pointer;
   text-decoration: none;
+  transition:
+    background-color 140ms ease-out,
+    color 140ms ease-out,
+    transform 160ms var(--spring-snappy, ease-out);
 }
 .plan-tool-file:hover {
   color: var(--foreground);
-  text-decoration: underline;
+  background: color-mix(in srgb, var(--foreground) 7%, transparent);
+  text-decoration: none;
+}
+.plan-tool-file:active {
+  transform: scale(0.97);
+}
+@media (prefers-reduced-motion: reduce) {
+  .plan-ring[data-just-completed="true"] .plan-ring-bloom,
+  .plan-ring[data-just-completed="true"] .plan-ring-fill,
+  .plan-ring[data-just-completed="true"] .plan-ring-check,
+  .plan-stage-mark[data-just-done="true"] svg path,
+  .plan-stage[data-open="true"] .plan-tool-chip[data-chip-stagger="true"] {
+    animation: none;
+  }
+  .plan-tool-file {
+    transition: none;
+  }
+  .plan-tool-file:active {
+    transform: none;
+  }
 }

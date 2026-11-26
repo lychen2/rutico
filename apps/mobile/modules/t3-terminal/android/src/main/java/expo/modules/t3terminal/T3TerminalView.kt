@@ -41,6 +41,7 @@ class T3TerminalView(context: Context, appContext: AppContext) : ExpoView(contex
   private val onInput by EventDispatcher()
   private val onResize by EventDispatcher()
   private val onCapture by EventDispatcher()
+  private val onFontSizeZoom by EventDispatcher()
   var captureRequest: Double = 0.0
     set(value) {
       if (field == value || value <= 0) return
@@ -65,6 +66,7 @@ class T3TerminalView(context: Context, appContext: AppContext) : ExpoView(contex
       onCapture(mapOf("text" to text))
     }
   private var terminalHandle = 0L
+  private var lastSnapshotBytes: ByteArray? = null
   private var fedBuffer = ""
   private var streamedOutput: TerminalOutputBuffer? = null
   private var cols = 0
@@ -101,6 +103,7 @@ class T3TerminalView(context: Context, appContext: AppContext) : ExpoView(contex
 
   var fontSize: Float = 10f
     set(value) {
+      if (field == value) return
       field = value
       terminalCanvas.fontSizeSp = value
       inputView.textSize = max(value, 13f)
@@ -184,9 +187,35 @@ class T3TerminalView(context: Context, appContext: AppContext) : ExpoView(contex
       if (terminalHandle != 0L) {
         GhosttyBridge.nativeScroll(terminalHandle, delta)
         renderSnapshot()
+      } else {
+        false
       }
     }
-    terminalCanvas.onCellMetricsChanged = { emitResize() }
+    terminalCanvas.onCellMetricsChanged = {
+      if (!terminalCanvas.isPinchZooming) {
+        emitResize()
+      }
+    }
+    terminalCanvas.onPinchZoomChange = { zoomedSp, isFinal ->
+      val estimatedCols = (terminalCanvas.usableWidth() / terminalCanvas.cellWidthPx)
+        .toInt()
+        .coerceIn(2, 400)
+      val estimatedRows = (terminalCanvas.usableHeight() / terminalCanvas.cellHeightPx)
+        .toInt()
+        .coerceIn(2, 200)
+      if (isFinal) {
+        inputView.textSize = max(zoomedSp, 13f)
+        emitResize()
+      }
+      onFontSizeZoom(
+        mapOf(
+          "fontSize" to zoomedSp.toDouble(),
+          "cols" to estimatedCols,
+          "rows" to estimatedRows,
+          "final" to isFinal,
+        ),
+      )
+    }
     terminalCanvas.selectionDelegate = object : TerminalSelectionDelegate {
       override fun selectWordAt(col: Int, row: Int): Boolean {
         if (terminalHandle == 0L) return false
@@ -262,6 +291,7 @@ class T3TerminalView(context: Context, appContext: AppContext) : ExpoView(contex
     terminalCanvas.onScrollRows = null
     terminalCanvas.onRequestKeyboard = null
     terminalCanvas.onCellMetricsChanged = null
+    terminalCanvas.onPinchZoomChange = null
     terminalCanvas.selectionDelegate = null
     destroyTerminal()
   }
@@ -412,6 +442,7 @@ class T3TerminalView(context: Context, appContext: AppContext) : ExpoView(contex
     if (terminalHandle == 0L) return
     GhosttyBridge.nativeDestroy(terminalHandle)
     terminalHandle = 0L
+    lastSnapshotBytes = null
     fedBuffer = ""
     terminalCanvas.resetSelectionState()
   }
@@ -465,11 +496,13 @@ class T3TerminalView(context: Context, appContext: AppContext) : ExpoView(contex
     }
   }
 
-  private fun renderSnapshot() {
-    if (terminalHandle == 0L) return
-    TerminalFrame.decode(
-      GhosttyBridge.nativeSnapshot(terminalHandle)
-    )?.let(terminalCanvas::setFrame)
+  private fun renderSnapshot(): Boolean {
+    if (terminalHandle == 0L) return false
+    val bytes = GhosttyBridge.nativeSnapshot(terminalHandle)
+    val changed = lastSnapshotBytes?.contentEquals(bytes) != true
+    lastSnapshotBytes = bytes
+    TerminalFrame.decode(bytes)?.let(terminalCanvas::setFrame)
+    return changed
   }
 
   private fun emitResponse(response: ByteArray) {

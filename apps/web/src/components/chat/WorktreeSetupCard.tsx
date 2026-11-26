@@ -4,14 +4,12 @@ import { type WorktreeSetupSnapshot, type WorktreeSetupStage } from "@t3tools/co
 import { worktreeSetupStageLabel } from "@t3tools/client-runtime/contract-labels";
 import { formatDuration } from "@t3tools/shared/orchestrationTimingCopy";
 import {
-  CheckIcon,
   CircleAlertIcon,
   CircleIcon,
   LaptopIcon,
   MinusIcon,
   TerminalIcon,
   XIcon,
-  ChevronDownIcon,
   ChevronRightIcon,
 } from "lucide-react";
 import { useState, type ReactNode } from "react";
@@ -64,11 +62,36 @@ function Elapsed({
   return live ? <LiveElapsed startedAt={startedAt} /> : null;
 }
 
-function StageIcon({ status }: { status: WorktreeSetupStage["status"] }) {
+function StageIcon({
+  status,
+  justCompleted = false,
+}: {
+  status: WorktreeSetupStage["status"];
+  justCompleted?: boolean;
+}) {
   const className = "size-4 shrink-0 stroke-2";
   switch (status) {
     case "done":
-      return <CheckIcon aria-hidden className={className} />;
+      return (
+        <svg
+          aria-hidden="true"
+          viewBox="0 0 16 16"
+          fill="none"
+          data-worktree-stage-check="true"
+          data-just-completed={justCompleted ? "true" : undefined}
+          className="size-4 shrink-0 text-success-foreground"
+        >
+          <path
+            d="M3.5 8.4l2.9 2.9 6.1-6.4"
+            stroke="currentColor"
+            strokeWidth="1.9"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            pathLength={100}
+            data-worktree-check-path="true"
+          />
+        </svg>
+      );
     case "running":
       return <Spinner size="md" className="shrink-0" />;
     case "failed":
@@ -173,6 +196,12 @@ function StageRow({
 }) {
   const gt = useGT();
   const m = useMessages();
+  const [previousStatus, setPreviousStatus] = useState(stage.status);
+  const [justCompleted, setJustCompleted] = useState(false);
+  if (previousStatus !== stage.status) {
+    setPreviousStatus(stage.status);
+    setJustCompleted(previousStatus !== "done" && stage.status === "done");
+  }
   const label =
     stage.id === "setup-script" && scriptName ? scriptName : worktreeSetupStageLabel(stage.id, m);
   const running = stage.status === "running";
@@ -190,7 +219,7 @@ function StageRow({
       data-worktree-setup-status={stage.status}
       icon={
         <span className={cn("text-icon-muted", stage.status === "pending" && "opacity-40")}>
-          <StageIcon status={stage.status} />
+          <StageIcon status={stage.status} justCompleted={justCompleted} />
         </span>
       }
       label={
@@ -380,7 +409,13 @@ export function WorktreeSetupCard({
           aria-expanded={detailsOpen}
           onClick={() => setDetailsOpen((open) => !open)}
         >
-          {detailsOpen ? <ChevronDownIcon aria-hidden /> : <ChevronRightIcon aria-hidden />}
+          <ChevronRightIcon
+            aria-hidden
+            className={cn(
+              "transition-transform duration-200 ease-(--ease-spring-snappy) motion-reduce:transition-none",
+              detailsOpen && "rotate-90",
+            )}
+          />
           <T>Details</T>
         </Button>
         {showTerminal ? (

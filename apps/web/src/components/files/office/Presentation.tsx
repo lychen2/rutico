@@ -24,7 +24,25 @@ export default function Presentation(props: {
   const [opened, setOpened] = useState<Opened>();
   const [page, setPage] = useState(0);
   const [failed, setFailed] = useState<Record<number, boolean>>({});
+  const [scrubHudVisible, setScrubHudVisible] = useState(false);
+  const [scrubHudPinned, setScrubHudPinned] = useState(false);
+  const scrubHudTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const scroll = useRef<((index: number, y?: number) => void) | null>(null);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Clears the auto-fading slide scrub HUD timer on unmount.
+  useEffect(
+    () => () => {
+      if (scrubHudTimer.current !== null) clearTimeout(scrubHudTimer.current);
+    },
+    [],
+  );
+  const revealScrubHud = () => {
+    setScrubHudVisible(true);
+    if (scrubHudTimer.current !== null) clearTimeout(scrubHudTimer.current);
+    scrubHudTimer.current = setTimeout(() => {
+      setScrubHudVisible(false);
+      scrubHudTimer.current = null;
+    }, 2000);
+  };
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Open and paint slides through a worker whose requests and lifetime belong to this presentation.
   useEffect(() => {
     const controller = new AbortController();
@@ -100,6 +118,7 @@ export default function Presentation(props: {
   const select = (index: number) => {
     setPage(index);
     scroll.current?.(index);
+    revealScrubHud();
   };
   return (
     <div className="flex min-h-0 flex-1 flex-col">
@@ -125,50 +144,104 @@ export default function Presentation(props: {
           <ChevronRightIcon className="size-3.5" />
         </FileSurfaceAction>
       </div>
-      <OfficePages
-        pages={opened.slides}
-        paint={opened.paint}
-        kind="slide"
-        scrollRef={scroll}
-        onPageChange={setPage}
-        onError={onError}
-        overlay={(index) => (
-          <>
-            {opened.slides[index]?.hidden ? (
-              <div className="pointer-events-none absolute inset-0 bg-white/50" />
-            ) : null}
-            {failed[index] ? (
-              <p
-                role="status"
-                className="absolute inset-0 flex items-center justify-center bg-background/80 p-4 text-xs text-foreground"
-              >
-                <T>This slide could not be drawn.</T>
-              </p>
-            ) : null}
-          </>
-        )}
-        footer={(index) => {
-          const slide = opened.slides[index];
-          return slide?.notes || slide?.hidden ? (
-            <div className="space-y-1 text-xs text-muted-foreground">
-              {slide.hidden ? (
-                <p>
-                  <T>Hidden slide</T>
-                </p>
+      <div className="relative flex min-h-0 flex-1 flex-col">
+        <OfficePages
+          pages={opened.slides}
+          paint={opened.paint}
+          kind="slide"
+          scrollRef={scroll}
+          onPageChange={(nextPage) => {
+            setPage(nextPage);
+            revealScrubHud();
+          }}
+          onError={onError}
+          overlay={(index) => (
+            <>
+              {opened.slides[index]?.hidden ? (
+                <div className="pointer-events-none absolute inset-0 bg-white/50" />
               ) : null}
-              {slide.notes ? (
+              {failed[index] ? (
                 <p
-                  role="note"
-                  aria-label={gt("Speaker notes")}
-                  className="select-text whitespace-pre-wrap break-words"
+                  role="status"
+                  className="absolute inset-0 flex items-center justify-center bg-background/80 p-4 text-xs text-foreground"
                 >
-                  {slide.notes}
+                  <T>This slide could not be drawn.</T>
                 </p>
               ) : null}
-            </div>
-          ) : null;
-        }}
-      />
+            </>
+          )}
+          footer={(index) => {
+            const slide = opened.slides[index];
+            return slide?.notes || slide?.hidden ? (
+              <div className="space-y-1 text-xs text-muted-foreground">
+                {slide.hidden ? (
+                  <p>
+                    <T>Hidden slide</T>
+                  </p>
+                ) : null}
+                {slide.notes ? (
+                  <p
+                    role="note"
+                    aria-label={gt("Speaker notes")}
+                    className="select-text whitespace-pre-wrap break-words"
+                  >
+                    {slide.notes}
+                  </p>
+                ) : null}
+              </div>
+            ) : null;
+          }}
+        />
+        {opened.slides.length > 1 ? (
+          <div
+            data-visible={scrubHudVisible || scrubHudPinned ? "true" : "false"}
+            className="doc-scrub-hud surface-optical-chrome surface-elevated-rim absolute bottom-3 left-1/2 z-20 flex -translate-x-1/2 items-center gap-2 rounded-full px-3 py-1.5 text-2xs text-foreground"
+            onPointerEnter={() => setScrubHudPinned(true)}
+            onPointerLeave={() => {
+              setScrubHudPinned(false);
+              revealScrubHud();
+            }}
+          >
+            <span className="shrink-0 font-medium tabular-nums">
+              {`${page + 1} / ${opened.slides.length}`}
+            </span>
+            {opened.slides.length <= 16 ? (
+              <div className="flex items-center gap-1">
+                {opened.slides.map((_slide, index) => (
+                  <button
+                    // oxlint-disable-next-line react/no-array-index-key -- Slide ordinals are stable for an opened presentation.
+                    key={index}
+                    type="button"
+                    aria-label={gt("Slide {number}", { number: String(index + 1) })}
+                    aria-current={index === page ? "true" : undefined}
+                    onClick={() => select(index)}
+                    className={
+                      index === page
+                        ? "h-1.5 w-4 cursor-pointer rounded-full bg-primary transition-[width,background-color] duration-150 ease-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset motion-reduce:transition-none"
+                        : "size-1.5 cursor-pointer rounded-full bg-muted-foreground/45 transition-[width,background-color] duration-150 ease-out hover:bg-foreground/75 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset motion-reduce:transition-none"
+                    }
+                  />
+                ))}
+              </div>
+            ) : (
+              <input
+                type="range"
+                min={1}
+                max={opened.slides.length}
+                value={page + 1}
+                aria-label={gt("Jump to slide")}
+                onChange={(event) => select(Number(event.target.value) - 1)}
+                onFocus={() => setScrubHudPinned(true)}
+                onBlur={() => {
+                  setScrubHudPinned(false);
+                  revealScrubHud();
+                }}
+                className="h-1 w-24 cursor-pointer accent-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
+              />
+            )}
+          </div>
+        ) : null}
+      </div>
     </div>
   );
 }

@@ -4,7 +4,14 @@ import { describe, expect, it, vi } from "vite-plus/test";
 import "~/index.css";
 
 import { render } from "../../../test/render";
-import { Sidebar, SidebarProvider, SidebarRail, SidebarTrigger, useSidebar } from "./sidebar";
+import {
+  Sidebar,
+  SidebarContent,
+  SidebarProvider,
+  SidebarRail,
+  SidebarTrigger,
+  useSidebar,
+} from "./sidebar";
 
 function CollapseFromInside() {
   const { setOpen } = useSidebar();
@@ -213,6 +220,64 @@ describe("Sidebar", () => {
       ).toBe(0);
     },
   );
+
+  it("magnetically snaps SidebarRail to 256px within ±8px and bypasses snap with Alt", async () => {
+    await page.viewport(1280, 800);
+    const onResize = vi.fn();
+    await using screen = await render(<Harness onResize={onResize} />, {
+      router: false /* no routes involved */,
+    });
+    const sidebar = screen.container.querySelector<HTMLElement>('[data-slot="sidebar"]')!;
+    const container = sidebar.querySelector<HTMLElement>('[data-slot="sidebar-container"]')!;
+    const rail = sidebar.querySelector<HTMLElement>('[data-sidebar="rail"]')!;
+    const pointer = {
+      bubbles: true,
+      cancelable: true,
+      pointerId: 1,
+      button: 0,
+      pointerType: "mouse",
+    };
+
+    // Start at default 256px; move +5px (261px -> within 256±8 -> snaps to 256px with data-snapped="true").
+    rail.dispatchEvent(new PointerEvent("pointerdown", { ...pointer, clientX: 256 }));
+    rail.dispatchEvent(new PointerEvent("pointermove", { ...pointer, clientX: 261 }));
+    await vi.waitFor(() => expect(rail.dataset.snapped).toBe("true"));
+    expect(container.getBoundingClientRect().width).toBe(256);
+
+    // Holding Alt bypasses the magnetic snap detent and tracks 261px directly.
+    rail.dispatchEvent(new PointerEvent("pointermove", { ...pointer, clientX: 261, altKey: true }));
+    await vi.waitFor(() => expect(container.getBoundingClientRect().width).toBe(261));
+    expect(rail.dataset.snapped).toBeUndefined();
+
+    rail.dispatchEvent(new PointerEvent("pointerup", { ...pointer, clientX: 261, altKey: true }));
+    expect(onResize).toHaveBeenLastCalledWith(261);
+  });
+
+  it("tracks Tip 008 dynamic scroll-edge fade attributes on SidebarContent", async () => {
+    await page.viewport(1280, 400);
+    await using screen = await render(
+      <SidebarProvider defaultOpen>
+        <Sidebar collapsible="offcanvas">
+          <SidebarContent>
+            <div style={{ height: "1200px" }}>Scrollable threads</div>
+          </SidebarContent>
+        </Sidebar>
+      </SidebarProvider>,
+      { router: false /* no routes involved */ },
+    );
+
+    const scrollArea = screen.container.querySelector<HTMLElement>(
+      '[data-slot="sidebar-scroll-area"]',
+    )!;
+    const viewport = scrollArea.querySelector<HTMLElement>('[data-slot="scroll-area-viewport"]')!;
+    await vi.waitFor(() => expect(scrollArea.dataset.moreBelow).toBe("true"));
+    expect(scrollArea.dataset.moreAbove).toBe("false");
+
+    viewport.scrollTop = 120;
+    viewport.dispatchEvent(new Event("scroll"));
+    await vi.waitFor(() => expect(scrollArea.dataset.moreAbove).toBe("true"));
+    expect(scrollArea.dataset.moreBelow).toBe("true");
+  });
 });
 
 it("restores collapsed and expanded desktop state after remounting", async () => {
@@ -320,4 +385,87 @@ it("opens the mobile sheet without a transition while panel animations are off",
   const popup = document.querySelector<HTMLElement>('[data-mobile="true"][data-sidebar="sidebar"]');
   expect(popup).not.toBeNull();
   expect(getComputedStyle(popup!).transitionDuration).toBe("0s");
+});
+
+it("dismisses the mobile sheet when dragged past the threshold and snaps back on short drags", async () => {
+  await page.viewport(390, 844);
+  await using screen = await render(
+    <SidebarProvider>
+      <Sidebar>
+        <span>Draggable sidebar</span>
+      </Sidebar>
+      <SidebarTrigger />
+      <MobileSheetMountedProbe />
+    </SidebarProvider>,
+    { router: false /* no routes involved */ },
+  );
+
+  await userEvent.click(screen.getByRole("button", { name: "Toggle Sidebar" }));
+  const sheetMounted = screen.getByLabelText("Sheet mounted");
+  await expect.element(sheetMounted).toHaveTextContent("true");
+
+  const popup = document.querySelector<HTMLElement>(
+    '[data-mobile="true"][data-sidebar="sidebar"]',
+  )!;
+  const rect = popup.getBoundingClientRect();
+
+  // Short drag (< 35%) snaps back and keeps the sheet open.
+  popup.dispatchEvent(
+    new PointerEvent("pointerdown", {
+      bubbles: true,
+      button: 0,
+      pointerId: 11,
+      clientX: rect.right - 20,
+      clientY: rect.top + 80,
+    }),
+  );
+  popup.dispatchEvent(
+    new PointerEvent("pointermove", {
+      bubbles: true,
+      button: 0,
+      pointerId: 11,
+      clientX: rect.right - 48,
+      clientY: rect.top + 80,
+    }),
+  );
+  popup.dispatchEvent(
+    new PointerEvent("pointerup", {
+      bubbles: true,
+      button: 0,
+      pointerId: 11,
+      clientX: rect.right - 48,
+      clientY: rect.top + 80,
+    }),
+  );
+  await expect.element(sheetMounted).toHaveTextContent("true");
+
+  // Drag past 35% of sheet width dismisses the mobile sidebar cleanly.
+  popup.dispatchEvent(
+    new PointerEvent("pointerdown", {
+      bubbles: true,
+      button: 0,
+      pointerId: 12,
+      clientX: rect.right - 20,
+      clientY: rect.top + 80,
+    }),
+  );
+  popup.dispatchEvent(
+    new PointerEvent("pointermove", {
+      bubbles: true,
+      button: 0,
+      pointerId: 12,
+      clientX: rect.right - 20 - rect.width * 0.55,
+      clientY: rect.top + 80,
+    }),
+  );
+  popup.dispatchEvent(
+    new PointerEvent("pointerup", {
+      bubbles: true,
+      button: 0,
+      pointerId: 12,
+      clientX: rect.right - 20 - rect.width * 0.55,
+      clientY: rect.top + 80,
+    }),
+  );
+  await expect.element(sheetMounted).toHaveTextContent("false");
 });

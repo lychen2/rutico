@@ -1,12 +1,15 @@
 import { describe, expect, it } from "vite-plus/test";
 
 import {
+  BROWSER_GOLDEN_BREAKPOINTS,
   resizeBrowserViewportFromRail,
   resolveBrowserViewportLayout,
   resolveBrowserViewportTransform,
   resolveFittedBrowserViewport,
   resolveHiddenBrowserViewportFitScale,
   resolveHiddenBrowserViewportSize,
+  resolveViewportBreakpointLabel,
+  snapBrowserViewportWidth,
 } from "./browserViewportLayout";
 
 describe("resolveBrowserViewportLayout", () => {
@@ -98,5 +101,28 @@ describe("resolveBrowserViewportTransform", () => {
     expect(values?.slice(4, 6)).toEqual([0, 0.6]);
     expect(Math.hypot(...(values?.slice(0, 3) ?? []))).toBeCloseTo(1);
     expect(Math.hypot(...(values?.slice(4, 7) ?? []))).toBeCloseTo(1);
+  });
+});
+
+describe("snapBrowserViewportWidth and resolveViewportBreakpointLabel", () => {
+  it("snaps within ±8px across Android and Tailwind golden breakpoints and honors Alt bypass", () => {
+    for (const bp of BROWSER_GOLDEN_BREAKPOINTS) {
+      expect(snapBrowserViewportWidth(bp + 6)).toEqual({ width: bp, snapped: true });
+      expect(snapBrowserViewportWidth(bp - 8)).toEqual({ width: bp, snapped: true });
+      expect(snapBrowserViewportWidth(bp + 6, { bypassSnap: true })).toEqual({
+        width: bp + 6,
+        snapped: false,
+      });
+    }
+    expect(snapBrowserViewportWidth(500)).toEqual({ width: 500, snapped: false });
+  });
+
+  it("maps viewport widths to concise breakpoint labels", () => {
+    expect(resolveViewportBreakpointLabel(344)).toBe("xs");
+    expect(resolveViewportBreakpointLabel(412)).toBe("sm");
+    expect(resolveViewportBreakpointLabel(768)).toBe("md");
+    expect(resolveViewportBreakpointLabel(1024)).toBe("lg");
+    expect(resolveViewportBreakpointLabel(1280)).toBe("xl");
+    expect(resolveViewportBreakpointLabel(1600)).toBe("2xl");
   });
 });

@@ -99,6 +99,11 @@ import {
 import { environmentServerConfigsAtom } from "../../state/server";
 import { threadEnvironment } from "../../state/threads";
 import { runMobileComposerTransition } from "./draftHeroTransition";
+import {
+  captureComposerLaunchOriginRect,
+  recordUserMessageLaunchOrigin,
+  userMessageLaunchKey,
+} from "./optimisticUserMessages";
 import { useClientSettingsHydrated } from "../../hooks/useSettings";
 import { useStableCallback } from "../../hooks/useStableCallback";
 import { environmentPresentations } from "../../state/presentation";
@@ -1445,6 +1450,15 @@ export function useComposerSend(input: ComposerSendInput) {
     // message is never shown, so tracking them would keep them alive past the thread.
     if (currentRouteThreadKeyRef.current === routeThreadKey) {
       optimisticBlobPreviews.track(optimisticMessage);
+      if (!isDraftHeroState) {
+        const launchOrigin = captureComposerLaunchOriginRect();
+        if (launchOrigin !== null) {
+          recordUserMessageLaunchOrigin(
+            userMessageLaunchKey(routeThreadKey, messageIdForSend),
+            launchOrigin,
+          );
+        }
+      }
     } else {
       optimisticBlobPreviews.release(optimisticMessage);
     }

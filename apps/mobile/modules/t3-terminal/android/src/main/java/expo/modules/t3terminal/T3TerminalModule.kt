@@ -73,7 +73,7 @@ class T3TerminalModule : Module() {
       Prop("sharedGrid") { view: T3TerminalView, sharedGrid: List<Int> ->
         view.sharedGrid = sharedGrid
       }
-      Events("onInput", "onResize", "onCapture")
+      Events("onInput", "onResize", "onCapture", "onFontSizeZoom")
 
       OnViewDidUpdateProps { view: T3TerminalView ->
         view.applyPendingBuffer()

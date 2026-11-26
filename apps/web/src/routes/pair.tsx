@@ -5,6 +5,7 @@ import {
   PairingPendingSurface,
   PairingRouteSurface,
 } from "../components/auth/PairingRouteSurface";
+import "~/styles/pairing-motion.css";
 
 export const Route = createFileRoute("/pair")({
   beforeLoad: async ({ context }) => {
@@ -39,20 +40,26 @@ function PairRouteView() {
   }
 
   if (authGateState.status === "hosted-pairing") {
-    return <HostedPairingRouteSurface />;
+    return (
+      <div data-slot="pairing-route-stage" className="h-full">
+        <HostedPairingRouteSurface />
+      </div>
+    );
   }
 
   return (
-    <PairingRouteSurface
-      auth={authGateState.auth}
-      onAuthenticated={() => {
-        // Recreate the connection so WebSocket and cached scopes use the new pairing cookie.
-        router.history.replace("/");
-        router.history.flush();
-        window.location.reload();
-      }}
-      {...(authGateState.errorMessage ? { initialErrorMessage: authGateState.errorMessage } : {})}
-    />
+    <div data-slot="pairing-route-stage" className="h-full">
+      <PairingRouteSurface
+        auth={authGateState.auth}
+        onAuthenticated={() => {
+          // Recreate the connection so WebSocket and cached scopes use the new pairing cookie.
+          router.history.replace("/");
+          router.history.flush();
+          window.location.reload();
+        }}
+        {...(authGateState.errorMessage ? { initialErrorMessage: authGateState.errorMessage } : {})}
+      />
+    </div>
   );
 }
 

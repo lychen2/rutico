@@ -3,6 +3,7 @@ import { uiText as copy } from "~/i18n";
 // One accent ramp on greys, real data only.
 import type { EnvironmentId, UsageProviderKind, UsageSummaryInput } from "@t3tools/contracts";
 import {
+  enumerateDays,
   enumerateHourStarts,
   formatCount,
   formatPercent,
@@ -15,13 +16,30 @@ import {
   isModelCostUnknown,
   type MergedUsage,
 } from "@t3tools/shared/usageMerge";
-import { Fragment, useId, useLayoutEffect, useRef, useState, type ReactNode } from "react";
+import {
+  Fragment,
+  useEffect,
+  useId,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type PointerEvent as ReactPointerEvent,
+  type ReactNode,
+} from "react";
 
 import { observeResize } from "~/lib/observeResize";
 import { ProviderInstanceIcon } from "../chat/ProviderInstanceIcon";
 import { Tooltip, TooltipPopup, TooltipProvider, TooltipTrigger } from "../ui/tooltip";
 import { UsageDetailsSheet } from "./UsageDetailsSheet";
 import { UsageCount } from "./UsageMotion";
+import {
+  clampChartPointerFraction,
+  fractionToBucketIndex,
+  normalizeBrushRange,
+  summarizeBrushRange,
+  type BrushIndexRange,
+} from "./usageChartBrush.logic";
+import { previousUsageWindow } from "./usagePreviousWindow";
 import { useUiText } from "~/i18n/useUiText";
 import { scopeUsageEnvironments, mergeUsageEnvironments } from "./usageAnalysis";
 import { useUsage, type EnvironmentUsageStatus } from "../../state/usage";
@@ -243,6 +261,10 @@ export function UsageActivityHeatmap({
   const text = useUiText();
   const [view, setView] = useState("grid");
   const [hovered, setHovered] = useState<{ label: string; value: number } | null>(null);
+  const heatGridRef = useRef<HTMLDivElement>(null);
+  const heatReadoutRef = useRef<HTMLSpanElement>(null);
+  const heatActiveNodesRef = useRef<HTMLElement[]>([]);
+  const heatLastKeyRef = useRef<string | null>(null);
   const merged = mergeUsageEnvironments(
     scopeUsageEnvironments(usage.selectedEnvironments, hiddenProviders, selectedProvider ?? null),
   );
@@ -294,24 +316,128 @@ export function UsageActivityHeatmap({
     value: grid.reduce((sum, row) => sum + (row[hour] ?? 0), 0),
   }));
   const format = metric === "cost" ? formatUsd : formatTokens;
+  const defaultFootText = pending ? copy("Loading….") : heatSummary(grid, weekdayOf);
+  const openCellInSheet = (row: number, hour: number) => {
+    const day = days[row];
+    const value = grid[row]?.[hour] ?? 0;
+    if (day !== undefined) {
+      setView("grid");
+      setHovered({ label: `${day} ${String(hour).padStart(2, "0")}:00`, value });
+    }
+    setOpen(true);
+  };
+  // Single-delegation zero-setState scrubbing: toggle data attributes and readout directly on DOM refs.
+  const clearInlineHeatDom = () => {
+    const gridEl = heatGridRef.current;
+    if (gridEl) delete gridEl.dataset.scrubbing;
+    for (const node of heatActiveNodesRef.current) {
+      delete node.dataset.active;
+      delete node.dataset.crosshair;
+      delete node.dataset.activeRow;
+    }
+    heatActiveNodesRef.current = [];
+    heatLastKeyRef.current = null;
+    if (heatReadoutRef.current) {
+      heatReadoutRef.current.textContent = defaultFootText;
+    }
+  };
+  const syncInlineHeatDom = (cell: HTMLElement | null) => {
+    if (cell === null) {
+      if (heatLastKeyRef.current !== null) clearInlineHeatDom();
+      return;
+    }
+    const row = cell.dataset.row;
+    const hour = cell.dataset.hour;
+    if (row === undefined || hour === undefined) return;
+    const nextKey = `${row}:${hour}`;
+    if (heatLastKeyRef.current === nextKey) return;
+    clearInlineHeatDom();
+    const gridEl = heatGridRef.current;
+    if (!gridEl) return;
+    gridEl.dataset.scrubbing = "true";
+    const touched: HTMLElement[] = [cell];
+    cell.dataset.active = "true";
+    const rowEl = cell.parentElement;
+    if (rowEl) {
+      rowEl.dataset.activeRow = "true";
+      touched.push(rowEl);
+    }
+    const crosshairNodes = gridEl.querySelectorAll<HTMLElement>(
+      `[data-row="${row}"],[data-hour="${hour}"]`,
+    );
+    for (const node of crosshairNodes) {
+      if (node === cell) continue;
+      node.dataset.crosshair = "true";
+      touched.push(node);
+    }
+    heatActiveNodesRef.current = touched;
+    heatLastKeyRef.current = nextKey;
+    if (heatReadoutRef.current) {
+      heatReadoutRef.current.textContent = cell.dataset.readout ?? defaultFootText;
+    }
+  };
+  const openDelegatedCell = (target: EventTarget | null) => {
+    const cell = (target as HTMLElement | null)?.closest<HTMLElement>("[data-row]");
+    if (!cell) return;
+    const row = Number(cell.dataset.row);
+    const hour = Number(cell.dataset.hour);
+    if (Number.isInteger(row) && Number.isInteger(hour)) {
+      openCellInSheet(row, hour);
+    }
+  };
   const heatGrid = (
     <div
+      ref={heatGridRef}
       className="usage-heat-grid"
       role="img"
       aria-label={copy("Hourly usage over the last 7 days")}
+      onPointerOver={(event) => {
+        const cell = (event.target as HTMLElement | null)?.closest<HTMLElement>("[data-row]");
+        if (cell) syncInlineHeatDom(cell);
+      }}
+      onPointerLeave={() => syncInlineHeatDom(null)}
+      onFocus={(event) => {
+        const cell = (event.target as HTMLElement | null)?.closest<HTMLElement>("[data-row]");
+        if (cell) syncInlineHeatDom(cell);
+      }}
+      onBlur={(event) => {
+        if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
+          syncInlineHeatDom(null);
+        }
+      }}
+      onClick={(event) => openDelegatedCell(event.target)}
+      onKeyDown={(event) => {
+        if (event.key !== "Enter" && event.key !== " ") return;
+        const cell = (event.target as HTMLElement | null)?.closest<HTMLElement>("[data-row]");
+        if (!cell) return;
+        event.preventDefault();
+        openDelegatedCell(cell);
+      }}
     >
-      {grid.map((cells, row) => (
-        <div className="usage-heat-row" key={days[row]}>
-          <span>{copy(WEEKDAYS[weekdayOf[row] ?? 0] ?? "")}</span>
-          {HOURS.map((hour) => (
-            <i
-              key={hour}
-              data-level={level(cells[hour] ?? 0)}
-              style={{ animationDelay: `${(row * 24 + hour) * 7}ms` }}
-            />
-          ))}
-        </div>
-      ))}
+      {grid.map((cells, row) => {
+        const dayText = copy(WEEKDAYS[weekdayOf[row] ?? 0] ?? "");
+        return (
+          <div className="usage-heat-row" key={days[row]}>
+            <span>{dayText}</span>
+            {HOURS.map((hour) => {
+              const value = cells[hour] ?? 0;
+              const label = `${dayText} ${String(hour).padStart(2, "0")}:00 · ${format(value)}`;
+              return (
+                <i
+                  key={hour}
+                  tabIndex={0}
+                  data-level={level(value)}
+                  data-row={row}
+                  data-hour={hour}
+                  data-readout={label}
+                  aria-label={label}
+                  style={{ animationDelay: `${(row * 24 + hour) * 7}ms` }}
+                />
+              );
+            })}
+          </div>
+        );
+      })}
     </div>
   );
   return (
@@ -328,7 +454,9 @@ export function UsageActivityHeatmap({
         </div>
         {heatGrid}
         <div className="usage-heat-foot">
-          <span>{pending ? copy("Loading….") : heatSummary(grid, weekdayOf)}</span>
+          <span ref={heatReadoutRef} className="tabular-nums" role="status">
+            {defaultFootText}
+          </span>
           <span className="usage-heat-legend" aria-hidden>
             {copy("Less")}
             {[0, 1, 2, 3, 4, 5].map((value) => (
@@ -999,22 +1127,33 @@ function V9ActivityHeatmapCard({
   metric,
   selectedProvider,
   referenceTime,
+  heatmapWindow,
 }: {
   readonly environmentIds: ReadonlySet<EnvironmentId>;
   readonly hiddenProviders: ReadonlySet<UsageProviderKind>;
   readonly metric: "cost" | "tokens";
   readonly selectedProvider: UsageProviderKind | null;
   readonly referenceTime?: string;
+  readonly heatmapWindow?: UsageSummaryInput;
 }) {
   const text = useUiText();
-  const [window] = useState(() =>
-    makeWindow(7, referenceTime === undefined ? undefined : new Date(referenceTime), "hour"),
+  const [window] = useState(
+    () =>
+      heatmapWindow ??
+      makeWindow(7, referenceTime === undefined ? undefined : new Date(referenceTime), "hour"),
   );
   const usage = useUsage(window, environmentIds, hiddenProviders);
   const [sheetOpen, setSheetOpen] = useState(false);
   const [sheetView, setSheetView] = useState("grid");
-  const [sheetHovered, setSheetHovered] = useState<{ label: string; value: number } | null>(null);
-  const [dotReadout, setDotReadout] = useState<string | null>(null);
+  const [sheetHovered, setSheetHovered] = useState<{
+    readonly label: string;
+    readonly value: number | null;
+  } | null>(null);
+  const hmGridRef = useRef<HTMLDivElement>(null);
+  const hmReadoutRef = useRef<HTMLSpanElement>(null);
+  const hmActiveNodesRef = useRef<HTMLElement[]>([]);
+  const hmActiveHourAxisRef = useRef<HTMLElement | null>(null);
+  const hmLastKeyRef = useRef<string | null>(null);
 
   const scoped = scopeUsageEnvironments(
     usage.selectedEnvironments,
@@ -1022,6 +1161,7 @@ function V9ActivityHeatmapCard({
     selectedProvider,
   );
   const merged = mergeUsageEnvironments(scoped);
+  const hasMeasuredSummary = scoped.some((env) => env.summary !== null);
 
   const timeZone = window.timeZone;
   const dayFormat = new Intl.DateTimeFormat("en-CA", {
@@ -1044,10 +1184,16 @@ function V9ActivityHeatmapCard({
     const dayKey = dayFormat.format(at);
     const hr = Number.parseInt(hourFormat.format(at), 10) % 24;
     if (!allDaysOrdered.includes(dayKey)) allDaysOrdered.push(dayKey);
-    coveredSlots.add(`${dayKey}#${hr}`);
+    if (hasMeasuredSummary) {
+      coveredSlots.add(`${dayKey}#${hr}`);
+    }
   }
   // Keep the 7 most recent calendar days so the matrix stays a clean 7×24 grid like V9.
-  const days = allDaysOrdered.slice(-7);
+  const lastDay = allDaysOrdered.at(-1) ?? window.untilDay;
+  const lastDayMs = Date.parse(`${lastDay}T00:00:00Z`);
+  const days = Number.isFinite(lastDayMs)
+    ? enumerateDays(new Date(lastDayMs - 6 * 86_400_000).toISOString().slice(0, 10), lastDay)
+    : allDaysOrdered.slice(-7);
   const weekdayOf = days.map((day) => new Date(`${day}T12:00:00Z`).getUTCDay());
   const grid = days.map(() => Array.from({ length: 24 }, () => 0));
   const hitGrid = days.map(() => Array.from({ length: 24 }, () => ({ cached: 0, input: 0 })));
@@ -1129,6 +1275,87 @@ function V9ActivityHeatmapCard({
   const sheetLevel = (value: number) =>
     value <= 0 || peak <= 0 || value / peak < 0.03 ? 0 : Math.max(1, Math.ceil((value / peak) * 5));
 
+  // Single-delegation zero-setState scrubbing for V9 7x24 dot matrix.
+  const clearV9HeatDom = () => {
+    const gridEl = hmGridRef.current;
+    if (gridEl) delete gridEl.dataset.scrubbing;
+    for (const node of hmActiveNodesRef.current) {
+      delete node.dataset.active;
+      delete node.dataset.crosshair;
+      delete node.dataset.activeAxis;
+    }
+    hmActiveNodesRef.current = [];
+    if (hmActiveHourAxisRef.current) {
+      hmActiveHourAxisRef.current.textContent =
+        hmActiveHourAxisRef.current.dataset.defaultLabel ?? "";
+      hmActiveHourAxisRef.current = null;
+    }
+    hmLastKeyRef.current = null;
+    if (hmReadoutRef.current) {
+      hmReadoutRef.current.textContent = defaultReadout;
+    }
+  };
+  const syncV9HeatDom = (dot: HTMLElement | null) => {
+    if (dot === null) {
+      if (hmLastKeyRef.current !== null) clearV9HeatDom();
+      return;
+    }
+    const row = dot.dataset.row;
+    const hour = dot.dataset.hour;
+    if (row === undefined || hour === undefined) return;
+    const nextKey = `${row}:${hour}`;
+    if (hmLastKeyRef.current === nextKey) return;
+    clearV9HeatDom();
+    const gridEl = hmGridRef.current;
+    if (!gridEl) return;
+    gridEl.dataset.scrubbing = "true";
+    const touched: HTMLElement[] = [dot];
+    dot.dataset.active = "true";
+    const crosshairNodes = gridEl.querySelectorAll<HTMLElement>(
+      `[data-ctv9="hm-dot"][data-row="${row}"],[data-ctv9="hm-dot"][data-hour="${hour}"]`,
+    );
+    for (const node of crosshairNodes) {
+      if (node === dot) continue;
+      node.dataset.crosshair = "true";
+      touched.push(node);
+    }
+    const rowAxis = gridEl.querySelector<HTMLElement>(`[data-axis-row="${row}"]`);
+    if (rowAxis) {
+      rowAxis.dataset.activeAxis = "true";
+      touched.push(rowAxis);
+    }
+    const hourAxis = gridEl.querySelector<HTMLElement>(`[data-axis-hour="${hour}"]`);
+    if (hourAxis) {
+      hourAxis.dataset.activeAxis = "true";
+      hourAxis.textContent = hour;
+      hmActiveHourAxisRef.current = hourAxis;
+      touched.push(hourAxis);
+    }
+    hmActiveNodesRef.current = touched;
+    hmLastKeyRef.current = nextKey;
+    if (hmReadoutRef.current) {
+      hmReadoutRef.current.textContent = dot.dataset.readout ?? defaultReadout;
+    }
+  };
+  const missingDataLabel = text("{day} {hour} · Missing data", { day: "", hour: "" })
+    .replace(/^\s*·\s*/, "")
+    .trim();
+
+  const openDelegatedV9Cell = (target: EventTarget | null) => {
+    const dot = (target as HTMLElement | null)?.closest<HTMLElement>('[data-ctv9="hm-dot"]');
+    if (!dot) return;
+    const row = Number(dot.dataset.row);
+    const hour = Number(dot.dataset.hour);
+    const day = days[row];
+    if (!Number.isInteger(row) || !Number.isInteger(hour) || day === undefined) return;
+    const covered = coveredSlots.has(`${day}#${hour}`);
+    const val = grid[row]?.[hour] ?? 0;
+    const hrText = `${String(hour).padStart(2, "0")}:00`;
+    setSheetView("grid");
+    setSheetHovered({ label: `${day} ${hrText}`, value: covered ? val : null });
+    setSheetOpen(true);
+  };
+
   return (
     <>
       <section data-ctv9="card" data-layout="col-between" data-usage-card>
@@ -1138,30 +1365,69 @@ function V9ActivityHeatmapCard({
               {metric === "cost" ? text("7×24 cost activity") : text("7×24 token activity")}
             </span>
             <span data-ctv9="spacer" />
-            <span data-ctv9="card-sub" data-ctv9-num>
-              {dotReadout ?? defaultReadout}
+            <span ref={hmReadoutRef} data-ctv9="card-sub" data-ctv9-num>
+              {defaultReadout}
             </span>
             <button type="button" data-ctv9="hm-expand-btn" onClick={() => setSheetOpen(true)}>
               {copy("Expand")}
             </button>
           </div>
           <div
+            ref={hmGridRef}
             data-ctv9="hm-grid"
             role="img"
             aria-label={copy("Hourly usage over the last 7 days")}
-            onMouseLeave={() => setDotReadout(null)}
+            onPointerOver={(event) => {
+              const dot = (event.target as HTMLElement | null)?.closest<HTMLElement>(
+                '[data-ctv9="hm-dot"]',
+              );
+              if (dot) syncV9HeatDom(dot);
+            }}
+            onPointerLeave={() => syncV9HeatDom(null)}
+            onFocus={(event) => {
+              const dot = (event.target as HTMLElement | null)?.closest<HTMLElement>(
+                '[data-ctv9="hm-dot"]',
+              );
+              if (dot) syncV9HeatDom(dot);
+            }}
+            onBlur={(event) => {
+              if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
+                syncV9HeatDom(null);
+              }
+            }}
+            onClick={(event) => openDelegatedV9Cell(event.target)}
+            onKeyDown={(event) => {
+              if (event.key !== "Enter" && event.key !== " ") return;
+              const dot = (event.target as HTMLElement | null)?.closest<HTMLElement>(
+                '[data-ctv9="hm-dot"]',
+              );
+              if (!dot) return;
+              event.preventDefault();
+              openDelegatedV9Cell(dot);
+            }}
           >
             <div />
-            {HOURS.map((hour) => (
-              <div key={hour} data-ctv9="hm-axis-lbl" data-ctv9-num>
-                {hour % 4 === 0 ? hour : ""}
-              </div>
-            ))}
+            {HOURS.map((hour) => {
+              const defaultLabel = hour % 4 === 0 ? String(hour) : "";
+              return (
+                <div
+                  key={hour}
+                  data-ctv9="hm-axis-lbl"
+                  data-axis-hour={hour}
+                  data-default-label={defaultLabel}
+                  data-ctv9-num
+                >
+                  {defaultLabel}
+                </div>
+              );
+            })}
             {days.map((day, row) => {
               const dLabel = weekdayLabel(row);
               return (
                 <Fragment key={day}>
-                  <div data-ctv9="hm-lbl">{dLabel}</div>
+                  <div data-ctv9="hm-lbl" data-axis-row={row}>
+                    {dLabel}
+                  </div>
                   {HOURS.map((hour) => {
                     const hrText = `${String(hour).padStart(2, "0")}:00`;
                     const covered = coveredSlots.has(`${day}#${hour}`);
@@ -1174,9 +1440,13 @@ function V9ActivityHeatmapCard({
                       return (
                         <div
                           key={hour}
+                          tabIndex={0}
                           data-ctv9="hm-dot"
                           data-hm-state="missing"
-                          onMouseEnter={() => setDotReadout(info)}
+                          data-row={row}
+                          data-hour={hour}
+                          data-readout={info}
+                          aria-label={info}
                         />
                       );
                     }
@@ -1188,9 +1458,13 @@ function V9ActivityHeatmapCard({
                       return (
                         <div
                           key={hour}
+                          tabIndex={0}
                           data-ctv9="hm-dot"
                           data-hm-state="zero"
-                          onMouseEnter={() => setDotReadout(info)}
+                          data-row={row}
+                          data-hour={hour}
+                          data-readout={info}
+                          aria-label={info}
                         />
                       );
                     }
@@ -1222,10 +1496,14 @@ function V9ActivityHeatmapCard({
                     return (
                       <div
                         key={hour}
+                        tabIndex={0}
                         data-ctv9="hm-dot"
                         data-lv={lv}
                         data-hm-state="active"
-                        onMouseEnter={() => setDotReadout(info)}
+                        data-row={row}
+                        data-hour={hour}
+                        data-readout={info}
+                        aria-label={info}
                       />
                     );
                   })}
@@ -1283,12 +1561,27 @@ function V9ActivityHeatmapCard({
           <Toggle value="week">{text("By weekday")}</Toggle>
           <Toggle value="day">{text("Time of day")}</Toggle>
         </ToggleGroup>
-        <div className="usage-readout" data-usage-readout role="status">
+        <div
+          className="usage-readout"
+          data-usage-readout
+          data-hm-state={
+            sheetHovered
+              ? sheetHovered.value === null
+                ? "missing"
+                : sheetHovered.value <= 0
+                  ? "zero"
+                  : "active"
+              : undefined
+          }
+          role="status"
+        >
           <div>
             <span>{sheetHovered?.label ?? text("Hover over an hour to see its usage")}</span>
             <strong>
               {sheetHovered
-                ? format(sheetHovered.value)
+                ? sheetHovered.value === null
+                  ? missingDataLabel
+                  : format(sheetHovered.value)
                 : text("7-day total: {value}", {
                     value: format(grid.flat().reduce((a, b) => a + b, 0)),
                   })}
@@ -1308,44 +1601,63 @@ function V9ActivityHeatmapCard({
                     <text x={0} y={r * 30 + 20}>
                       {weekdayLabel(r)}
                     </text>
-                    {row.map((value, h) => (
-                      <rect
-                        key={HOURS[h]}
-                        data-heat-cell
-                        data-value={value}
-                        x={40 + h * (632 / 24) + 1.5}
-                        y={r * 30 + 4}
-                        width={632 / 24 - 3}
-                        height={24}
-                        rx={5}
-                        fill={
-                          sheetLevel(value) === 0
-                            ? "var(--muted)"
-                            : accentTier(4 - Math.min(4, sheetLevel(value)))
-                        }
-                        stroke={
-                          sheetHovered?.label === `${days[r]} ${String(h).padStart(2, "0")}:00`
-                            ? "var(--foreground)"
-                            : "none"
-                        }
-                        strokeWidth={1.5}
-                        tabIndex={0}
-                        role="img"
-                        aria-label={`${days[r]} ${h}:00 · ${format(value)}`}
-                        onMouseEnter={() =>
-                          setSheetHovered({
-                            label: `${days[r]} ${String(h).padStart(2, "0")}:00`,
-                            value,
-                          })
-                        }
-                        onFocus={() =>
-                          setSheetHovered({
-                            label: `${days[r]} ${String(h).padStart(2, "0")}:00`,
-                            value,
-                          })
-                        }
-                      />
-                    ))}
+                    {row.map((value, h) => {
+                      const day = days[r]!;
+                      const hrText = `${String(h).padStart(2, "0")}:00`;
+                      const cellLabel = `${day} ${hrText}`;
+                      const covered = coveredSlots.has(`${day}#${h}`);
+                      const cellState = !covered ? "missing" : value <= 0 ? "zero" : "active";
+                      const isSelected = sheetHovered?.label === cellLabel;
+                      return (
+                        <rect
+                          key={HOURS[h]}
+                          data-heat-cell
+                          data-hm-state={cellState}
+                          data-value={covered ? value : undefined}
+                          x={40 + h * (632 / 24) + 1.5}
+                          y={r * 30 + 4}
+                          width={632 / 24 - 3}
+                          height={24}
+                          rx={5}
+                          fill={
+                            !covered
+                              ? "transparent"
+                              : sheetLevel(value) === 0
+                                ? "var(--muted)"
+                                : accentTier(4 - Math.min(4, sheetLevel(value)))
+                          }
+                          stroke={
+                            isSelected
+                              ? "var(--foreground)"
+                              : !covered
+                                ? "var(--muted-foreground)"
+                                : "none"
+                          }
+                          strokeDasharray={!covered && !isSelected ? "3 2" : undefined}
+                          strokeOpacity={!covered && !isSelected ? 0.55 : undefined}
+                          strokeWidth={isSelected ? 1.5 : !covered ? 1 : 0}
+                          tabIndex={0}
+                          role="img"
+                          aria-label={
+                            covered
+                              ? `${cellLabel} · ${format(value)}`
+                              : `${cellLabel} · ${missingDataLabel}`
+                          }
+                          onMouseEnter={() =>
+                            setSheetHovered({
+                              label: cellLabel,
+                              value: covered ? value : null,
+                            })
+                          }
+                          onFocus={() =>
+                            setSheetHovered({
+                              label: cellLabel,
+                              value: covered ? value : null,
+                            })
+                          }
+                        />
+                      );
+                    })}
                   </g>
                 ))}
                 {[0, 6, 12, 18].map((hour) => (
@@ -1424,6 +1736,7 @@ interface V9CostDashboardProps {
   readonly hiddenProviders: ReadonlySet<UsageProviderKind>;
   readonly rankedProviders: readonly UsageProviderKind[];
   readonly shownWindow: UsageSummaryInput;
+  readonly previousWindow?: UsageSummaryInput;
   readonly periods: readonly string[];
   readonly hourly: boolean;
   readonly formatPeriod: (period: string) => string;
@@ -1440,6 +1753,7 @@ interface V9CostDashboardProps {
   readonly chatGptAction?: ReactNode;
   readonly loading?: boolean;
   readonly heatmapReferenceTime?: string;
+  readonly heatmapWindow?: UsageSummaryInput;
 }
 
 /** V9 TAB 6: Dedicated Cost Page. */
@@ -1451,6 +1765,8 @@ export function V9CostDashboard({
   environmentIds,
   hiddenProviders,
   rankedProviders,
+  shownWindow,
+  previousWindow,
   periods,
   hourly,
   formatPeriod,
@@ -1467,10 +1783,33 @@ export function V9CostDashboard({
   chatGptAction,
   loading = false,
   heatmapReferenceTime,
+  heatmapWindow,
 }: V9CostDashboardProps) {
   const text = useUiText();
   const areaGradId = useId();
   const [hoveredIndex, setHoveredIndex] = useState<number | null>(null);
+  const [brushRange, setBrushRange] = useState<BrushIndexRange | null>(null);
+  const brushWindowKey = `${shownWindow.sinceDay}:${shownWindow.untilDay}:${shownWindow.sinceTime ?? ""}:${shownWindow.untilTime ?? ""}`;
+  const [brushKey, setBrushKey] = useState(brushWindowKey);
+  if (brushKey !== brushWindowKey) {
+    setBrushKey(brushWindowKey);
+    setBrushRange(null);
+  }
+  const heroStageRef = useRef<HTMLDivElement | null>(null);
+  const heroSvgRef = useRef<SVGSVGElement | null>(null);
+  const heroCrosshairRef = useRef<HTMLDivElement | null>(null);
+  const heroBrushPreviewRef = useRef<HTMLDivElement | null>(null);
+  const heroDragRef = useRef<{
+    readonly pointerId: number;
+    readonly startX: number;
+    readonly anchorIndex: number;
+    focusIndex: number;
+    isBrushing: boolean;
+  } | null>(null);
+  const heroDragCleanupRef = useRef<(() => void) | null>(null);
+  const suppressBarClickRef = useRef(false);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- releases temporary window pointer listeners if unmounted mid-drag
+  useEffect(() => () => heroDragCleanupRef.current?.(), []);
   const [insightOpen, setInsightOpen] = useState(true);
   const [rankTab, setRankTab] = useState<"model" | "project" | "hour">("model");
   const [rankExpanded, setRankExpanded] = useState(false);
@@ -1486,9 +1825,12 @@ export function V9CostDashboard({
 
   const filteredPrevious =
     previous && selectedProvider !== null
-      ? mergeUsageEnvironments(
-          scopeUsageEnvironments(priorEnvironments, hiddenProviders, selectedProvider),
-        )
+      ? priorEnvironments.length > 0 &&
+        priorEnvironments.every((env) => env.summary !== null && !env.error && !env.isPending)
+        ? mergeUsageEnvironments(
+            scopeUsageEnvironments(priorEnvironments, hiddenProviders, selectedProvider),
+          )
+        : undefined
       : previous;
 
   const byPeriod = new Map<string, { costUsd: number; totalTokens: number }>();
@@ -1539,16 +1881,191 @@ export function V9CostDashboard({
     .map((p, i) => `${i === 0 ? "M" : "L"} ${p[0].toFixed(2)} ${p[1].toFixed(2)}`)
     .join(" ");
 
+  const resolvedPreviousWindow = previousWindow ?? previousUsageWindow(shownWindow);
+  const previousPeriods = hourly
+    ? resolvedPreviousWindow.sinceTime && resolvedPreviousWindow.untilTime
+      ? enumerateHourStarts(resolvedPreviousWindow.sinceTime, resolvedPreviousWindow.untilTime)
+      : []
+    : enumerateDays(resolvedPreviousWindow.sinceDay, resolvedPreviousWindow.untilDay);
+  const previousByPeriod = new Map<string, number>();
+  if (filteredPrevious) {
+    if (hourly) {
+      for (const entry of filteredPrevious.hourly) {
+        previousByPeriod.set(
+          entry.hourStart,
+          (previousByPeriod.get(entry.hourStart) ?? 0) + entry.costUsd,
+        );
+      }
+    } else {
+      for (const entry of filteredPrevious.daily) {
+        previousByPeriod.set(entry.day, (previousByPeriod.get(entry.day) ?? 0) + entry.costUsd);
+      }
+    }
+  }
+  const previousCostValues =
+    filteredPrevious !== undefined && previousPeriods.length === chartRows.length
+      ? previousPeriods.map((period) => previousByPeriod.get(period) ?? 0)
+      : undefined;
+
+  const activeBrush =
+    brushRange === null || brushRange.endIndex >= chartRows.length
+      ? null
+      : summarizeBrushRange(
+          chartRows.map((row) => row.costUsd),
+          previousCostValues,
+          brushRange.startIndex,
+          brushRange.endIndex,
+        );
+
+  const hideHeroOverlayDom = () => {
+    if (heroCrosshairRef.current) heroCrosshairRef.current.style.opacity = "0";
+  };
+
+  const hideHeroBrushPreviewDom = () => {
+    const preview = heroBrushPreviewRef.current;
+    if (!preview) return;
+    preview.style.opacity = "0";
+    preview.style.clipPath = "inset(0 100% 0 0 round 6px)";
+  };
+
+  const clearHeroDragListeners = () => {
+    heroDragCleanupRef.current?.();
+    heroDragCleanupRef.current = null;
+  };
+
+  const heroPlotXMetrics = (clientX: number) => {
+    const stage = heroStageRef.current;
+    if (!stage || chartRows.length === 0) return null;
+    const bounds = stage.getBoundingClientRect();
+    if (bounds.width <= 0) return null;
+    const ctm = heroSvgRef.current?.getScreenCTM?.();
+    const plotClientLeft =
+      ctm && Number.isFinite(ctm.a) && ctm.a > 0
+        ? ctm.a * L + ctm.e
+        : bounds.left + (L / 1040) * bounds.width;
+    const plotWidthPx =
+      ctm && Number.isFinite(ctm.a) && ctm.a > 0 ? ctm.a * CW : (CW / 1040) * bounds.width;
+    const plotLeftPx = plotClientLeft - bounds.left;
+    const fraction = clampChartPointerFraction(clientX, plotClientLeft, plotWidthPx);
+    const localX = plotLeftPx + fraction * plotWidthPx;
+    const index = fractionToBucketIndex(fraction, chartRows.length);
+    return { localX, index, stageWidth: bounds.width };
+  };
+
+  const handleHeroPointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (event.button !== 0 || chartRows.length < 2) return;
+    const metrics = heroPlotXMetrics(event.clientX);
+    if (!metrics) return;
+    clearHeroDragListeners();
+    suppressBarClickRef.current = false;
+    const pointerId = event.pointerId;
+    heroDragRef.current = {
+      pointerId,
+      startX: metrics.localX,
+      anchorIndex: metrics.index,
+      focusIndex: metrics.index,
+      isBrushing: false,
+    };
+    const handleWindowEnd = (windowEvent: PointerEvent) => {
+      if (windowEvent.pointerId !== pointerId) return;
+      clearHeroDragListeners();
+      const drag = heroDragRef.current;
+      if (drag === null || drag.pointerId !== pointerId) return;
+      heroDragRef.current = null;
+      hideHeroBrushPreviewDom();
+    };
+    globalThis.window.addEventListener("pointerup", handleWindowEnd);
+    globalThis.window.addEventListener("pointercancel", handleWindowEnd);
+    heroDragCleanupRef.current = () => {
+      globalThis.window.removeEventListener("pointerup", handleWindowEnd);
+      globalThis.window.removeEventListener("pointercancel", handleWindowEnd);
+    };
+  };
+
+  const handleHeroPointerMove = (event: ReactPointerEvent<HTMLDivElement>) => {
+    const metrics = heroPlotXMetrics(event.clientX);
+    if (!metrics) return;
+    if (heroCrosshairRef.current) {
+      heroCrosshairRef.current.style.transform = `translate3d(${metrics.localX.toFixed(1)}px, 0, 0)`;
+      heroCrosshairRef.current.style.opacity = "1";
+    }
+    const drag = heroDragRef.current;
+    if (drag !== null) {
+      if (drag.pointerId !== event.pointerId) return;
+      if (!drag.isBrushing && Math.abs(metrics.localX - drag.startX) >= 6) {
+        drag.isBrushing = true;
+        try {
+          event.currentTarget.setPointerCapture?.(event.pointerId);
+        } catch {
+          // Synthetic pointer events without an active pointer may reject capture.
+        }
+      }
+      if (drag.isBrushing) {
+        drag.focusIndex = metrics.index;
+        const preview = heroBrushPreviewRef.current;
+        if (preview) {
+          const left = Math.min(drag.startX, metrics.localX);
+          const rightEdge = Math.max(drag.startX, metrics.localX);
+          const right = Math.max(0, metrics.stageWidth - Math.max(left + 2, rightEdge));
+          preview.style.clipPath = `inset(0 ${right.toFixed(1)}px 0 ${left.toFixed(1)}px round 6px)`;
+          preview.style.opacity = "1";
+        }
+      }
+      return;
+    }
+    setHoveredIndex((current) => (current === metrics.index ? current : metrics.index));
+  };
+
+  const finishHeroPointer = (event: ReactPointerEvent<HTMLDivElement>, cancelled: boolean) => {
+    const drag = heroDragRef.current;
+    if (drag === null || drag.pointerId !== event.pointerId) return;
+    clearHeroDragListeners();
+    heroDragRef.current = null;
+    hideHeroBrushPreviewDom();
+    if (event.currentTarget.hasPointerCapture?.(event.pointerId)) {
+      event.currentTarget.releasePointerCapture?.(event.pointerId);
+    }
+    if (cancelled) return;
+    if (drag.isBrushing) {
+      suppressBarClickRef.current = true;
+      const normalized = normalizeBrushRange(drag.anchorIndex, drag.focusIndex, chartRows.length);
+      if (normalized && normalized.startIndex !== normalized.endIndex) {
+        setBrushRange(normalized);
+      }
+    }
+  };
+
   const hoveredRow = hoveredIndex === null ? undefined : chartRows[hoveredIndex];
-  const readoutText = hoveredRow
-    ? text("{period} · Est. {cost} · {tokens} tokens", {
-        period: hoveredRow.label,
-        cost: formatUsd(hoveredRow.costUsd),
-        tokens: formatTokens(hoveredRow.totalTokens),
-      })
-    : hourly
-      ? text("Hover chart for hourly details")
-      : text("Hover chart for daily details");
+  const formatBrushDelta = (delta: number) => {
+    const rounded = Math.round(Math.abs(delta) * 10) / 10;
+    const magnitude = Number.isInteger(rounded) ? String(rounded) : rounded.toFixed(1);
+    return `${delta >= 0 ? "+" : "−"}${magnitude}%`;
+  };
+  const baseBrushReadout =
+    activeBrush !== null &&
+    chartRows[activeBrush.startIndex] !== undefined &&
+    chartRows[activeBrush.endIndex] !== undefined
+      ? text("{start} – {end} · {total} ({average} avg)", {
+          start: chartRows[activeBrush.startIndex]!.label,
+          end: chartRows[activeBrush.endIndex]!.label,
+          total: formatUsd(activeBrush.total),
+          average: formatUsd(activeBrush.average),
+        })
+      : null;
+  const readoutText =
+    baseBrushReadout !== null
+      ? activeBrush?.deltaPercent !== null && activeBrush?.deltaPercent !== undefined
+        ? `${baseBrushReadout} · ${formatBrushDelta(activeBrush.deltaPercent)} ${text("vs previous")}`
+        : baseBrushReadout
+      : hoveredRow
+        ? text("{period} · Est. {cost} · {tokens} tokens", {
+            period: hoveredRow.label,
+            cost: formatUsd(hoveredRow.costUsd),
+            tokens: formatTokens(hoveredRow.totalTokens),
+          })
+        : hourly
+          ? text("Hover chart for hourly details")
+          : text("Hover chart for daily details");
 
   const periodRows = providerTotals(
     selectedPeriod === null
@@ -1708,11 +2225,12 @@ export function V9CostDashboard({
             <div data-ctv9="hero-readout-pill" data-ctv9-num data-usage-readout role="status">
               {readoutText}
             </div>
-            {selectedProvider !== null || selectedPeriod !== null ? (
+            {selectedProvider !== null || selectedPeriod !== null || activeBrush !== null ? (
               <button
                 type="button"
                 data-ctv9="chip-btn"
                 onClick={() => {
+                  setBrushRange(null);
                   onSelectProvider(null);
                   onSelectPeriod(null);
                 }}
@@ -1723,141 +2241,211 @@ export function V9CostDashboard({
           </div>
         </div>
 
-        <svg
-          data-ctv9="hero-chart-svg"
-          viewBox="0 0 1040 184"
-          role="img"
-          aria-label={copy("Cost trend. Hover for period details.")}
-          onMouseLeave={() => setHoveredIndex(null)}
+        <div
+          ref={heroStageRef}
+          data-ctv9="hero-chart-stage"
+          onPointerDown={handleHeroPointerDown}
+          onPointerMove={handleHeroPointerMove}
+          onPointerUp={(event) => finishHeroPointer(event, false)}
+          onPointerCancel={(event) => finishHeroPointer(event, true)}
+          onClickCapture={(event) => {
+            if (suppressBarClickRef.current) {
+              suppressBarClickRef.current = false;
+              event.stopPropagation();
+            }
+          }}
+          onDoubleClick={() => setBrushRange(null)}
+          onMouseLeave={() => {
+            if (heroDragRef.current === null) {
+              setHoveredIndex(null);
+              hideHeroOverlayDom();
+            }
+          }}
         >
-          {[0, 1, 2, 3].map((i) => {
-            const y = B - (i / 3) * CH;
-            const v = (i / 3) * maxV;
-            return (
-              <g key={i}>
-                <line x1={L} y1={y} x2={R} y2={y} stroke="var(--hair)" />
-                <text
-                  x={L - 8}
-                  y={y + 3.5}
-                  textAnchor="end"
-                  fontSize="10.5"
-                  fill="var(--fg-3)"
-                  data-ctv9-num
-                >
-                  {formatAxisUsd(v, maxV)}
-                </text>
-              </g>
-            );
-          })}
+          <div ref={heroBrushPreviewRef} aria-hidden="true" data-ctv9="hero-brush-preview" />
+          <div ref={heroCrosshairRef} aria-hidden="true" data-ctv9="hero-crosshair" />
+          <svg
+            ref={heroSvgRef}
+            data-ctv9="hero-chart-svg"
+            viewBox="0 0 1040 184"
+            role="img"
+            aria-label={copy("Cost trend. Hover for period details.")}
+          >
+            {[0, 1, 2, 3].map((i) => {
+              const y = B - (i / 3) * CH;
+              const v = (i / 3) * maxV;
+              return (
+                <g key={i}>
+                  <line x1={L} y1={y} x2={R} y2={y} stroke="var(--hair)" />
+                  <text
+                    x={L - 8}
+                    y={y + 3.5}
+                    textAnchor="end"
+                    fontSize="10.5"
+                    fill="var(--fg-3)"
+                    data-ctv9-num
+                  >
+                    {formatAxisUsd(v, maxV)}
+                  </text>
+                </g>
+              );
+            })}
 
-          {chartStyle === "bar" ? (
-            <g data-v9-cost-bars>
-              {chartRows.map((row, i) => {
-                const cx = L + (i + 0.5) * slotW;
-                const bh = row.costUsd > 0 ? Math.max(3, (row.costUsd / maxV) * CH) : 0;
-                const sel = selectedPeriod === row.period;
-                const op = selectedPeriod !== null && !sel ? 0.32 : 1;
-                const showTick = i % labelEvery === 0 || sel;
-                return (
-                  <g
-                    key={row.period}
-                    data-ctv9="chart-col-g"
-                    data-period={row.period}
-                    opacity={op}
-                    onMouseEnter={() => setHoveredIndex(i)}
-                    onClick={() => onSelectPeriod(sel ? null : row.period)}
-                  >
-                    <rect x={L + i * slotW} y={T} width={slotW} height={CH} fill="transparent" />
-                    {bh > 0 ? (
-                      <rect
-                        x={cx - bw / 2}
-                        y={B - bh}
-                        width={bw}
-                        height={bh}
-                        rx={5}
-                        fill="var(--ac)"
-                      />
-                    ) : null}
-                    {showTick ? (
-                      <text
-                        x={cx}
-                        y={B + 18}
-                        textAnchor="middle"
-                        fontSize="10.5"
-                        fill={sel ? "var(--fg)" : "var(--fg-3)"}
-                        fontWeight={sel ? 700 : 400}
-                        data-ctv9-num
-                      >
-                        {row.label}
-                      </text>
-                    ) : null}
-                  </g>
-                );
-              })}
-            </g>
-          ) : (
-            <g data-v9-cost-area>
-              <defs>
-                <linearGradient id={areaGradId} x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor="var(--ac)" stopOpacity={0.26} />
-                  <stop offset="100%" stopColor="var(--ac)" stopOpacity={0.01} />
-                </linearGradient>
-              </defs>
-              {areaPoints.length >= 2 ? (
-                <>
-                  <path
-                    d={`${areaLineD} L ${areaPoints.at(-1)![0].toFixed(2)} ${B} L ${areaPoints[0]![0].toFixed(2)} ${B} Z`}
-                    fill={`url(#${areaGradId})`}
-                  />
-                  <path
-                    d={areaLineD}
-                    fill="none"
-                    stroke="var(--ac)"
-                    strokeWidth={2.2}
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  />
-                </>
-              ) : null}
-              {areaPoints.map((pt, i) => {
-                const row = chartRows[i]!;
-                const sel = selectedPeriod === row.period;
-                const showTick = i % labelEvery === 0 || sel;
-                return (
-                  <g
-                    key={row.period}
-                    data-ctv9="chart-col-g"
-                    data-period={row.period}
-                    onMouseEnter={() => setHoveredIndex(i)}
-                    onClick={() => onSelectPeriod(sel ? null : row.period)}
-                  >
-                    <circle cx={pt[0]} cy={pt[1]} r={sel ? 5 : 2.8} fill="var(--ac)" />
-                    <rect
-                      x={pt[0] - slotW / 2}
-                      y={T}
-                      width={slotW}
-                      height={CH}
-                      fill="transparent"
+            {activeBrush !== null ? (
+              <rect
+                data-ctv9="hero-brush-band"
+                x={L + activeBrush.startIndex * slotW}
+                y={T}
+                width={Math.max(4, (activeBrush.endIndex - activeBrush.startIndex + 1) * slotW)}
+                height={CH}
+                rx={6}
+                fill="var(--ac-soft)"
+                stroke="var(--ac)"
+                strokeOpacity={0.45}
+                strokeWidth={1}
+              />
+            ) : null}
+
+            {chartStyle === "bar" ? (
+              <g data-v9-cost-bars data-chart-morph="bar">
+                {chartRows.map((row, i) => {
+                  const cx = L + (i + 0.5) * slotW;
+                  const bh = row.costUsd > 0 ? Math.max(3, (row.costUsd / maxV) * CH) : 0;
+                  const sel = selectedPeriod === row.period;
+                  const inBrush =
+                    activeBrush !== null &&
+                    i >= activeBrush.startIndex &&
+                    i <= activeBrush.endIndex;
+                  const op =
+                    activeBrush !== null
+                      ? inBrush
+                        ? 1
+                        : 0.28
+                      : selectedPeriod !== null && !sel
+                        ? 0.32
+                        : 1;
+                  const showTick = i % labelEvery === 0 || sel;
+                  return (
+                    <g
+                      key={row.period}
+                      data-ctv9="chart-col-g"
+                      data-period={row.period}
+                      opacity={op}
+                      onMouseEnter={() => {
+                        if (heroDragRef.current !== null) return;
+                        setHoveredIndex(i);
+                      }}
+                      onClick={() => {
+                        if (suppressBarClickRef.current) {
+                          suppressBarClickRef.current = false;
+                          return;
+                        }
+                        setBrushRange(null);
+                        onSelectPeriod(sel ? null : row.period);
+                      }}
+                    >
+                      <rect x={L + i * slotW} y={T} width={slotW} height={CH} fill="transparent" />
+                      {bh > 0 ? (
+                        <rect
+                          x={cx - bw / 2}
+                          y={B - bh}
+                          width={bw}
+                          height={bh}
+                          rx={5}
+                          fill="var(--ac)"
+                        />
+                      ) : null}
+                      {showTick ? (
+                        <text
+                          x={cx}
+                          y={B + 18}
+                          textAnchor="middle"
+                          fontSize="10.5"
+                          fill={sel ? "var(--fg)" : "var(--fg-3)"}
+                          fontWeight={sel ? 700 : 400}
+                          data-ctv9-num
+                        >
+                          {row.label}
+                        </text>
+                      ) : null}
+                    </g>
+                  );
+                })}
+              </g>
+            ) : (
+              <g data-v9-cost-area data-chart-morph="area">
+                <defs>
+                  <linearGradient id={areaGradId} x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor="var(--ac)" stopOpacity={0.26} />
+                    <stop offset="100%" stopColor="var(--ac)" stopOpacity={0.01} />
+                  </linearGradient>
+                </defs>
+                {areaPoints.length >= 2 ? (
+                  <>
+                    <path
+                      d={`${areaLineD} L ${areaPoints.at(-1)![0].toFixed(2)} ${B} L ${areaPoints[0]![0].toFixed(2)} ${B} Z`}
+                      fill={`url(#${areaGradId})`}
                     />
-                    {showTick ? (
-                      <text
-                        x={pt[0]}
-                        y={B + 18}
-                        textAnchor="middle"
-                        fontSize="10.5"
-                        fill={sel ? "var(--fg)" : "var(--fg-3)"}
-                        fontWeight={sel ? 700 : 400}
-                        data-ctv9-num
-                      >
-                        {row.label}
-                      </text>
-                    ) : null}
-                  </g>
-                );
-              })}
-            </g>
-          )}
-        </svg>
+                    <path
+                      d={areaLineD}
+                      fill="none"
+                      stroke="var(--ac)"
+                      strokeWidth={2.2}
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    />
+                  </>
+                ) : null}
+                {areaPoints.map((pt, i) => {
+                  const row = chartRows[i]!;
+                  const sel = selectedPeriod === row.period;
+                  const showTick = i % labelEvery === 0 || sel;
+                  return (
+                    <g
+                      key={row.period}
+                      data-ctv9="chart-col-g"
+                      data-period={row.period}
+                      onMouseEnter={() => {
+                        if (heroDragRef.current !== null) return;
+                        setHoveredIndex(i);
+                      }}
+                      onClick={() => {
+                        if (suppressBarClickRef.current) {
+                          suppressBarClickRef.current = false;
+                          return;
+                        }
+                        setBrushRange(null);
+                        onSelectPeriod(sel ? null : row.period);
+                      }}
+                    >
+                      <circle cx={pt[0]} cy={pt[1]} r={sel ? 5 : 2.8} fill="var(--ac)" />
+                      <rect
+                        x={pt[0] - slotW / 2}
+                        y={T}
+                        width={slotW}
+                        height={CH}
+                        fill="transparent"
+                      />
+                      {showTick ? (
+                        <text
+                          x={pt[0]}
+                          y={B + 18}
+                          textAnchor="middle"
+                          fontSize="10.5"
+                          fill={sel ? "var(--fg)" : "var(--fg-3)"}
+                          fontWeight={sel ? 700 : 400}
+                          data-ctv9-num
+                        >
+                          {row.label}
+                        </text>
+                      ) : null}
+                    </g>
+                  );
+                })}
+              </g>
+            )}
+          </svg>
+        </div>
       </section>
 
       <div data-ctv9="two-col-eq">
@@ -2064,6 +2652,7 @@ export function V9CostDashboard({
           metric="cost"
           selectedProvider={selectedProvider}
           {...(heatmapReferenceTime !== undefined ? { referenceTime: heatmapReferenceTime } : {})}
+          {...(heatmapWindow !== undefined ? { heatmapWindow } : {})}
         />
 
         <section data-ctv9="card" data-usage-card>
@@ -2175,6 +2764,7 @@ interface V9TokensDashboardProps {
   readonly onSelectModel: (key: string) => void;
   readonly loading?: boolean;
   readonly heatmapReferenceTime?: string;
+  readonly heatmapWindow?: UsageSummaryInput;
 }
 
 function summarizeThroughputRate(
@@ -2210,10 +2800,16 @@ export function V9TokensDashboard({
   onSelectModel,
   loading = false,
   heatmapReferenceTime,
+  heatmapWindow,
 }: V9TokensDashboardProps) {
   const text = useUiText();
   const [hoveredIndex, setHoveredIndex] = useState<number | null>(null);
+  const [isolatedLayer, setIsolatedLayer] = useState<"cache" | "fresh" | "output" | null>(null);
   const [rankExpanded, setRankExpanded] = useState(false);
+
+  const toggleTokenLayer = (layer: "cache" | "fresh" | "output") => {
+    setIsolatedLayer((current) => (current === layer ? null : layer));
+  };
 
   const scopedEnvs = scopeUsageEnvironments(
     selectedEnvironments,
@@ -2253,7 +2849,15 @@ export function V9TokensDashboard({
     };
   });
 
-  const maxRaw = Math.max(...chartRows.map((row) => row.total), 0);
+  const activeRowTotal = (row: (typeof chartRows)[number]) =>
+    isolatedLayer === "cache"
+      ? row.cache
+      : isolatedLayer === "fresh"
+        ? row.fresh
+        : isolatedLayer === "output"
+          ? row.out
+          : row.total;
+  const maxRaw = Math.max(...chartRows.map(activeRowTotal), 0);
   const maxV = (maxRaw > 0 ? maxRaw : 1) * 1.12;
   const slotW = CW / Math.max(1, chartRows.length);
   const bw = Math.min(26, slotW * 0.62);
@@ -2264,6 +2868,14 @@ export function V9TokensDashboard({
       : Math.max(1, Math.ceil(chartRows.length / 8));
 
   const hoveredRow = hoveredIndex === null ? undefined : chartRows[hoveredIndex];
+  const isolatedHeroTotal =
+    isolatedLayer === "cache"
+      ? cacheTok
+      : isolatedLayer === "fresh"
+        ? freshTok
+        : isolatedLayer === "output"
+          ? outTok
+          : totalTok;
   const readoutText = hoveredRow
     ? text("{period} · Total {total} (Cache {cache} / Fresh {fresh} / Out {output})", {
         period: hoveredRow.label,
@@ -2272,9 +2884,20 @@ export function V9TokensDashboard({
         fresh: formatTokens(hoveredRow.fresh),
         output: formatTokens(hoveredRow.out),
       })
-    : hourly
-      ? text("Hover stacked bars for hourly token breakdown")
-      : text("Hover stacked bars for daily token breakdown");
+    : isolatedLayer !== null
+      ? text("{layer} · {value} ({share})", {
+          layer:
+            isolatedLayer === "cache"
+              ? copy("Cache read")
+              : isolatedLayer === "fresh"
+                ? text("Fresh input")
+                : text("Model output"),
+          value: formatTokens(isolatedHeroTotal),
+          share: formatPercent(totalTok > 0 ? isolatedHeroTotal / totalTok : 0),
+        })
+      : hourly
+        ? text("Hover stacked bars for hourly token breakdown")
+        : text("Hover stacked bars for daily token breakdown");
 
   const labelContext = piLabelContext(selectedEnvironments);
   const scopePillText = `${selectedProvider === null ? copy("All providers") : usageSeriesLabel(selectedProvider, labelContext)}${
@@ -2338,7 +2961,7 @@ export function V9TokensDashboard({
               </span>
             </div>
             <div data-ctv9="hero-big-num" data-ctv9-num>
-              <UsageCount value={totalTok} format={formatTokens} />
+              <UsageCount value={isolatedHeroTotal} format={formatTokens} />
             </div>
             <div data-ctv9="hero-subline">
               <span data-ctv9="badge" data-tone="ok" data-ctv9-num>
@@ -2403,16 +3026,19 @@ export function V9TokensDashboard({
             );
           })}
 
-          <g data-v9-token-bars>
+          <g data-v9-token-bars data-isolated-layer={isolatedLayer ?? undefined}>
             {chartRows.map((row, i) => {
               const cx = L + (i + 0.5) * slotW;
               const x = cx - bw / 2;
               const sel = selectedPeriod === row.period;
               const op = selectedPeriod !== null && !sel ? 0.32 : 1;
               const showTick = i % labelEvery === 0 || sel;
-              const hC = row.cache > 0 ? Math.max(2, (row.cache / maxV) * CH) : 0;
-              const hI = row.fresh > 0 ? Math.max(1.5, (row.fresh / maxV) * CH) : 0;
-              const hO = row.out > 0 ? Math.max(1.5, (row.out / maxV) * CH) : 0;
+              const showCache = isolatedLayer === null || isolatedLayer === "cache";
+              const showFresh = isolatedLayer === null || isolatedLayer === "fresh";
+              const showOut = isolatedLayer === null || isolatedLayer === "output";
+              const hC = showCache && row.cache > 0 ? Math.max(2, (row.cache / maxV) * CH) : 0;
+              const hI = showFresh && row.fresh > 0 ? Math.max(1.5, (row.fresh / maxV) * CH) : 0;
+              const hO = showOut && row.out > 0 ? Math.max(1.5, (row.out / maxV) * CH) : 0;
               const gap1 = hC > 0 && hI > 0 ? 1.5 : 0;
               const gap2 = (hC > 0 || hI > 0) && hO > 0 ? 1.5 : 0;
               const yC = B - hC;
@@ -2428,15 +3054,36 @@ export function V9TokensDashboard({
                   onClick={() => onSelectPeriod(sel ? null : row.period)}
                 >
                   <rect x={L + i * slotW} y={T} width={slotW} height={CH} fill="transparent" />
-                  {hC > 0 ? (
-                    <rect x={x} y={yC} width={bw} height={hC} rx={4} fill="var(--ac)" />
-                  ) : null}
-                  {hI > 0 ? (
-                    <rect x={x} y={yI} width={bw} height={hI} rx={3} fill="var(--ac-2)" />
-                  ) : null}
-                  {hO > 0 ? (
-                    <rect x={x} y={yO} width={bw} height={hO} rx={3} fill="var(--ac-3)" />
-                  ) : null}
+                  <rect
+                    data-layer-seg="cache"
+                    x={x}
+                    y={yC}
+                    width={bw}
+                    height={hC}
+                    rx={4}
+                    fill="var(--ac)"
+                    opacity={hC > 0 ? 1 : 0}
+                  />
+                  <rect
+                    data-layer-seg="fresh"
+                    x={x}
+                    y={yI}
+                    width={bw}
+                    height={hI}
+                    rx={3}
+                    fill="var(--ac-2)"
+                    opacity={hI > 0 ? 1 : 0}
+                  />
+                  <rect
+                    data-layer-seg="output"
+                    x={x}
+                    y={yO}
+                    width={bw}
+                    height={hO}
+                    rx={3}
+                    fill="var(--ac-3)"
+                    opacity={hO > 0 ? 1 : 0}
+                  />
                   {showTick ? (
                     <text
                       x={cx}
@@ -2456,19 +3103,31 @@ export function V9TokensDashboard({
           </g>
         </svg>
 
-        <div data-ctv9="tok-legend">
-          <span data-ctv9="tok-legend-item">
-            <i data-ctv9="tok-legend-swatch" data-layer="cache" />
-            {copy("Cache read")}
-          </span>
-          <span data-ctv9="tok-legend-item">
-            <i data-ctv9="tok-legend-swatch" data-layer="fresh" />
-            {text("Fresh input")}
-          </span>
-          <span data-ctv9="tok-legend-item">
-            <i data-ctv9="tok-legend-swatch" data-layer="output" />
-            {text("Model output")}
-          </span>
+        <div data-ctv9="tok-legend" role="group" aria-label={copy("Token layers")}>
+          {(
+            [
+              ["cache", copy("Cache read")],
+              ["fresh", text("Fresh input")],
+              ["output", text("Model output")],
+            ] as const
+          ).map(([layer, label]) => {
+            const active = isolatedLayer === layer;
+            const dim = isolatedLayer !== null && !active;
+            return (
+              <button
+                key={layer}
+                type="button"
+                data-ctv9="tok-legend-item"
+                aria-pressed={active}
+                data-active={active ? "true" : undefined}
+                data-dim={dim ? "true" : undefined}
+                onClick={() => toggleTokenLayer(layer)}
+              >
+                <i data-ctv9="tok-legend-swatch" data-layer={layer} />
+                {label}
+              </button>
+            );
+          })}
         </div>
       </section>
 
@@ -2680,6 +3339,7 @@ export function V9TokensDashboard({
           metric="tokens"
           selectedProvider={selectedProvider}
           {...(heatmapReferenceTime !== undefined ? { referenceTime: heatmapReferenceTime } : {})}
+          {...(heatmapWindow !== undefined ? { heatmapWindow } : {})}
         />
 
         <section data-ctv9="card" data-usage-card>

@@ -147,6 +147,8 @@ import { readLocalApi } from "../localApi";
 import { appAtomRegistry } from "../rpc/atomRegistry";
 import { hostEnvironmentIdAtom } from "../state/primaryEnvironment";
 import { cn } from "../lib/utils";
+import { prefersReducedMotion } from "../lib/motion/springs";
+import { observeVisibleAnimation } from "../lib/visibleAnimation";
 import { resolveRemoteOpenState, useRemoteOpenResolution } from "../remoteOpen";
 import { rightPanelHostRef, useRightPanelStore } from "../rightPanelStore";
 import { useOpenIssueLink } from "../lib/openIssueLink";
@@ -2112,6 +2114,96 @@ function ChatMarkdown({
     insights: renderInsights && text.includes("★ Insight"),
   });
   const blocks = streamingBlocks ?? [text];
+  const activeTailRef = useRef<HTMLElement | null>(null);
+  const settleTimerRef = useRef<number | null>(null);
+  const wasStreamingRef = useRef(false);
+
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- tags the active splitMarkdownBlocks tail DOM node in place without wrapper debris and binds offscreen animation gating
+  useLayoutEffect(() => {
+    const clearSettleTimer = () => {
+      if (settleTimerRef.current !== null) {
+        window.clearTimeout(settleTimerRef.current);
+        settleTimerRef.current = null;
+      }
+    };
+    const clearTailAttributes = (element: HTMLElement | null) => {
+      if (!element) return;
+      element.removeAttribute("data-streaming-tail");
+      element.removeAttribute("data-streaming-frontier");
+    };
+
+    const root = markdownRef.current;
+    const streamingActive = componentState.isStreaming && !inline;
+    if (!root || !streamingActive) {
+      clearSettleTimer();
+      const previousTail = activeTailRef.current;
+      activeTailRef.current = null;
+      const settleTarget =
+        previousTail && previousTail.isConnected
+          ? previousTail
+          : root?.lastElementChild instanceof HTMLElement
+            ? root.lastElementChild
+            : null;
+      if (previousTail && previousTail !== settleTarget) {
+        clearTailAttributes(previousTail);
+      }
+      const shouldSettle =
+        wasStreamingRef.current && settleTarget !== null && !prefersReducedMotion();
+      wasStreamingRef.current = false;
+      if (shouldSettle) {
+        settleTarget.removeAttribute("data-streaming-frontier");
+        settleTarget.setAttribute("data-streaming-tail", "settling");
+        activeTailRef.current = settleTarget;
+        settleTimerRef.current = window.setTimeout(() => {
+          settleTimerRef.current = null;
+          clearTailAttributes(settleTarget);
+          if (activeTailRef.current === settleTarget) {
+            activeTailRef.current = null;
+          }
+        }, 180);
+      } else {
+        clearTailAttributes(settleTarget);
+      }
+      return clearSettleTimer;
+    }
+
+    clearSettleTimer();
+    wasStreamingRef.current = true;
+    const candidate = root.lastElementChild;
+    const nextTail = candidate instanceof HTMLElement ? candidate : null;
+    const previousTail = activeTailRef.current;
+    if (previousTail && previousTail !== nextTail) {
+      clearTailAttributes(previousTail);
+    }
+    activeTailRef.current = nextTail;
+    if (!nextTail) return;
+
+    nextTail.setAttribute("data-streaming-tail", "true");
+    if (previousTail !== nextTail && blocks.length > 1) {
+      nextTail.setAttribute("data-streaming-frontier", "enter");
+    }
+    const stopVisible = observeVisibleAnimation(nextTail);
+    return () => {
+      stopVisible?.();
+      clearSettleTimer();
+    };
+  }, [blocks.length, componentState.isStreaming, inline, markdownRef]);
+
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- removes transient streaming attributes if the markdown block unmounts mid-stream or mid-settle
+  useEffect(() => {
+    return () => {
+      if (settleTimerRef.current !== null) {
+        window.clearTimeout(settleTimerRef.current);
+        settleTimerRef.current = null;
+      }
+      const tail = activeTailRef.current;
+      if (tail) {
+        tail.removeAttribute("data-streaming-tail");
+        tail.removeAttribute("data-streaming-frontier");
+        activeTailRef.current = null;
+      }
+    };
+  }, []);
 
   return (
     <Root

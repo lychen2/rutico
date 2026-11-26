@@ -8,7 +8,14 @@ import {
 import { isShownUnderParent } from "@t3tools/client-runtime/state/threads";
 import type { AnyRouter } from "@tanstack/react-router";
 import { parseThreadKey, threadKey } from "@t3tools/client-runtime/state/entities";
-import type { EnvironmentId, OrchestrationV2ThreadShell, ThreadId } from "@t3tools/contracts";
+import type {
+  DesktopTrayAgentStatus,
+  DesktopTrayState,
+  DesktopTrayThreadItem,
+  EnvironmentId,
+  OrchestrationV2ThreadShell,
+  ThreadId,
+} from "@t3tools/contracts";
 import { monitorHoldsWakeCompletion } from "@t3tools/shared/orchestrationV2PendingBackgroundWork";
 import type { ClientSettings } from "@t3tools/contracts/settings";
 import * as Option from "effect/Option";
@@ -26,10 +33,13 @@ import { environmentSummaries } from "../state/presentation";
 import { environmentShell } from "../state/shell";
 import { environmentThreadShells } from "../state/threads";
 import {
+  closeNativeNotification,
   hasDesktopNotifications,
   hasNotificationSound,
   playNotificationSound,
+  requestWindowAttention,
   setNotificationBadge,
+  setTaskbarProgress,
   threadNotificationTag,
   unlockNotificationAudio,
 } from "../threadNotifications";
@@ -71,7 +81,128 @@ export function startThreadNotifications(
     string,
     { environmentId: EnvironmentId; threadId: ThreadId; notification: Notification }
   >();
+  const pendingNative = new Map<string, { environmentId: EnvironmentId; threadId: ThreadId }>();
   const watched = new Map<EnvironmentId, WatchedEnvironment>();
+  let lastTraySignature = "";
+  let clearGeneration = 0;
+  let disposed = false;
+
+  const totalPendingBadgeCount = () => pending.size + pendingNative.size;
+
+  // Shared hidden-thread predicate used across normal notifications, tray aggregation, and cleanup.
+  // While any environment hides tags, a thread outside the live list (archived) cannot be judged,
+  // so it is treated as hidden too.
+  const createHiddenThreadPredicate = () => {
+    const hidden = registry.get(environmentThreadShells.hiddenThreadKeysAtom);
+    const live = registry.get(environmentThreadShells.anyEnvironmentHidingAtom)
+      ? new Set(registry.get(environmentThreadShells.threadRefsAtom).map(threadKey))
+      : null;
+    return (key: string) => hidden.has(key) || (live !== null && !live.has(key));
+  };
+
+  const trayStatusForThread = (state: NotificationState): DesktopTrayAgentStatus => {
+    if (state.status === "approval" || state.status === "input" || state.status === "request") {
+      return "approval";
+    }
+    if (state.status === "failed" || state.status === "limited") {
+      return "error";
+    }
+    if (state.status === "working" || state.status === "preparing" || state.status === "waiting") {
+      return "running";
+    }
+    if (state.settled) {
+      return "completed";
+    }
+    return "idle";
+  };
+
+  const syncDesktopTray = () => {
+    const setTrayState = window.desktopBridge?.setTrayState;
+    if (typeof setTrayState !== "function") return;
+
+    const isHidden = createHiddenThreadPredicate();
+    let runningCount = 0;
+    let approvalCount = 0;
+    let errorCount = 0;
+    const rankedThreads: Array<{
+      readonly priority: number;
+      readonly item: DesktopTrayThreadItem;
+    }> = [];
+
+    for (const [environmentId, entry] of watched) {
+      for (const state of entry.previous.values()) {
+        if (state.thread.archivedAt !== null) continue;
+        if (isHidden(threadKey({ environmentId, threadId: state.thread.id }))) continue;
+        const itemStatus = trayStatusForThread(state);
+        if (itemStatus === "approval") {
+          approvalCount += 1;
+          rankedThreads.push({
+            priority: 4,
+            item: {
+              environmentId,
+              threadId: state.thread.id,
+              title: state.thread.title.slice(0, 120),
+              status: itemStatus,
+            },
+          });
+        } else if (itemStatus === "error") {
+          errorCount += 1;
+          rankedThreads.push({
+            priority: 3,
+            item: {
+              environmentId,
+              threadId: state.thread.id,
+              title: state.thread.title.slice(0, 120),
+              status: itemStatus,
+            },
+          });
+        } else if (itemStatus === "running") {
+          runningCount += 1;
+          rankedThreads.push({
+            priority: 2,
+            item: {
+              environmentId,
+              threadId: state.thread.id,
+              title: state.thread.title.slice(0, 120),
+              status: itemStatus,
+            },
+          });
+        }
+      }
+    }
+
+    rankedThreads.sort((left, right) => right.priority - left.priority);
+    const threads = rankedThreads.slice(0, 5).map((entry) => entry.item);
+    const unreadCount = totalPendingBadgeCount();
+    const status: DesktopTrayAgentStatus =
+      approvalCount > 0
+        ? "approval"
+        : errorCount > 0
+          ? "error"
+          : runningCount > 0
+            ? "running"
+            : unreadCount > 0
+              ? "completed"
+              : "idle";
+
+    if (runningCount > 0) {
+      setTaskbarProgress({ progress: 2, mode: "indeterminate" });
+    } else {
+      setTaskbarProgress({ progress: -1, mode: "none" });
+    }
+
+    const payload: DesktopTrayState = {
+      status,
+      runningCount,
+      approvalCount,
+      unreadCount,
+      threads,
+    };
+    const signature = JSON.stringify(payload);
+    if (signature === lastTraySignature) return;
+    lastTraySignature = signature;
+    void setTrayState(payload).catch(() => undefined);
+  };
 
   const trackNotification = (
     environmentId: EnvironmentId,
@@ -80,7 +211,8 @@ export function startThreadNotifications(
   ) => {
     pending.get(notification.tag)?.notification.close();
     pending.set(notification.tag, { environmentId, threadId, notification });
-    setNotificationBadge(pending.size);
+    setNotificationBadge(totalPendingBadgeCount());
+    syncDesktopTray();
   };
   // Toast ids by thread key, so hiding or opening a thread, or removing its environment, closes them.
   const openToasts = new Map<string, Array<ToastId>>();
@@ -110,24 +242,32 @@ export function startThreadNotifications(
   // A notification shown before the tag filter turned on must not stay on screen. While hiding,
   // one whose thread left the live list (archived) cannot be judged, so it closes too.
   const closeHiddenPending = () => {
-    const hidden = registry.get(environmentThreadShells.hiddenThreadKeysAtom);
-    const live = registry.get(environmentThreadShells.anyEnvironmentHidingAtom)
-      ? new Set(registry.get(environmentThreadShells.threadRefsAtom).map(threadKey))
-      : null;
-    const shouldClose = (key: string) => hidden.has(key) || (live !== null && !live.has(key));
+    const shouldClose = createHiddenThreadPredicate();
     closeToasts(shouldClose);
-    const count = pending.size;
+    const beforeCount = totalPendingBadgeCount();
     for (const [tag, entry] of pending) {
       if (!shouldClose(threadKey(entry))) continue;
       entry.notification.close();
       pending.delete(tag);
     }
-    if (count !== pending.size) setNotificationBadge(pending.size);
+    for (const [tag, entry] of pendingNative) {
+      if (!shouldClose(threadKey(entry))) continue;
+      pendingNative.delete(tag);
+      closeNativeNotification(tag);
+    }
+    if (beforeCount !== totalPendingBadgeCount()) {
+      setNotificationBadge(totalPendingBadgeCount());
+    }
+    syncDesktopTray();
   };
   const clearPending = () => {
+    clearGeneration += 1;
     for (const { notification } of pending.values()) notification.close();
     pending.clear();
+    for (const tag of pendingNative.keys()) closeNativeNotification(tag);
+    pendingNative.clear();
     setNotificationBadge(0);
+    syncDesktopTray();
   };
 
   const present = (
@@ -136,12 +276,8 @@ export function startThreadNotifications(
     kind: ThreadNotificationKind,
   ) => {
     const { thread, status } = state;
-    if (
-      registry
-        .get(environmentThreadShells.hiddenThreadKeysAtom)
-        .has(threadKey({ environmentId, threadId: thread.id }))
-    )
-      return;
+    const key = threadKey({ environmentId, threadId: thread.id });
+    if (createHiddenThreadPredicate()(key)) return;
     const { notificationMode: mode, inAppNotificationsEnabled } = getClientSettings();
     const active = activeThread();
     const title =
@@ -204,32 +340,82 @@ export function startThreadNotifications(
     }
     if (
       !hasDesktopNotifications(mode) ||
-      (document.visibilityState === "visible" && document.hasFocus()) ||
-      typeof Notification === "undefined" ||
-      Notification.permission !== "granted"
-    )
+      (document.visibilityState === "visible" && document.hasFocus())
+    ) {
       return;
-    try {
-      const notification = new Notification(title, {
-        body: thread.title,
-        tag: threadNotificationTag(environmentId, thread.id),
-        silent: true,
-        // Windows drops clicks after a toast moves into Notification Center.
-        requireInteraction: kind === "completion" && isWindowsPlatform(navigator.platform),
-      });
-      trackNotification(environmentId, thread.id, notification);
-      notification.addEventListener("click", () => {
-        notification.close();
-        window.focus();
-        void window.desktopBridge?.revealWindow().catch(() => undefined);
-        void router.navigate({
-          to: "/$environmentId/$threadId",
-          params: { environmentId, threadId: thread.id },
-        });
-      });
-    } catch {
-      // Some browsers expose Notification but reject desktop presentation.
     }
+
+    const urgency = status === "approval" || status === "failed" ? "critical" : "normal";
+    requestWindowAttention(urgency);
+
+    const tag = threadNotificationTag(environmentId, thread.id);
+    const presentWebNotification = () => {
+      if (typeof Notification === "undefined" || Notification.permission !== "granted") return;
+      try {
+        const notification = new Notification(title, {
+          body: thread.title,
+          tag,
+          silent: true,
+          // Windows drops clicks after a toast moves into Notification Center.
+          requireInteraction: kind === "completion" && isWindowsPlatform(navigator.platform),
+        });
+        trackNotification(environmentId, thread.id, notification);
+        notification.addEventListener("click", () => {
+          notification.close();
+          window.focus();
+          void window.desktopBridge?.revealWindow().catch(() => undefined);
+          void router.navigate({
+            to: "/$environmentId/$threadId",
+            params: { environmentId, threadId: thread.id },
+          });
+        });
+      } catch {
+        // Some browsers expose Notification but reject desktop presentation.
+      }
+    };
+
+    const bridge = window.desktopBridge;
+    if (
+      bridge?.getClientPlatform() === "linux" &&
+      typeof bridge.showNativeNotification === "function"
+    ) {
+      const generation = clearGeneration;
+      const shouldDiscardNativeResult = () =>
+        disposed ||
+        clearGeneration !== generation ||
+        !watched.has(environmentId) ||
+        createHiddenThreadPredicate()(key);
+      void bridge
+        .showNativeNotification({
+          title,
+          body: thread.title.slice(0, 500),
+          tag,
+          urgency,
+          environmentId,
+          threadId: thread.id,
+        })
+        .then((shown) => {
+          if (shown) {
+            if (shouldDiscardNativeResult()) {
+              closeNativeNotification(tag);
+              return;
+            }
+            pendingNative.set(tag, { environmentId, threadId: thread.id });
+            setNotificationBadge(totalPendingBadgeCount());
+            syncDesktopTray();
+          } else if (!shouldDiscardNativeResult()) {
+            presentWebNotification();
+          }
+        })
+        .catch(() => {
+          if (!shouldDiscardNativeResult()) {
+            presentWebNotification();
+          }
+        });
+      return;
+    }
+
+    presentWebNotification();
   };
 
   const observeThreads = (
@@ -311,6 +497,7 @@ export function startThreadNotifications(
         snoozed: isSnoozedForNotification(state.thread, state.completedAt, now),
       });
     }
+    syncDesktopTray();
   };
 
   const watchEnvironment = (environmentId: EnvironmentId): WatchedEnvironment => {
@@ -362,8 +549,9 @@ export function startThreadNotifications(
 
   const syncEnvironments = () => {
     const { notificationMode, inAppNotificationsEnabled } = getClientSettings();
-    const enabled = notificationMode !== "off" || inAppNotificationsEnabled;
-    if (!enabled) closeToasts(() => true);
+    const trayEnabled = typeof window.desktopBridge?.setTrayState === "function";
+    const enabled = notificationMode !== "off" || inAppNotificationsEnabled || trayEnabled;
+    if (notificationMode === "off" && !inAppNotificationsEnabled) closeToasts(() => true);
     const environmentIds = enabled ? registry.get(environmentSummaries.environmentIdsAtom) : [];
     const activeIds = new Set(environmentIds);
     for (const [environmentId, entry] of watched) {
@@ -374,18 +562,27 @@ export function startThreadNotifications(
     for (const environmentId of environmentIds) {
       if (!watched.has(environmentId)) watched.set(environmentId, watchEnvironment(environmentId));
     }
+    syncDesktopTray();
   };
 
   const pruneRemovedEnvironments = () => {
     const activeIds = new Set(registry.get(environmentSummaries.environmentIdsAtom));
     closeToasts((key) => !activeIds.has(parseThreadKey(key).environmentId));
-    const count = pending.size;
+    const beforeCount = totalPendingBadgeCount();
     for (const [tag, entry] of pending) {
       if (activeIds.has(entry.environmentId)) continue;
       entry.notification.close();
       pending.delete(tag);
     }
-    if (count !== pending.size) setNotificationBadge(pending.size);
+    for (const [tag, entry] of pendingNative) {
+      if (activeIds.has(entry.environmentId)) continue;
+      pendingNative.delete(tag);
+      closeNativeNotification(tag);
+    }
+    if (beforeCount !== totalPendingBadgeCount()) {
+      setNotificationBadge(totalPendingBadgeCount());
+    }
+    syncDesktopTray();
   };
 
   // Listeners that only exist for some notification modes, rebuilt when the mode changes.
@@ -443,6 +640,7 @@ export function startThreadNotifications(
   onSettings();
 
   return () => {
+    disposed = true;
     unsubscribeSettings();
     unsubscribeEnvironmentIds();
     for (const unsubscribe of unsubscribeHidden) unsubscribe();

@@ -12,12 +12,14 @@ import {
 } from "react";
 
 import { getCommandPaletteOpener } from "../commandPaletteStore";
+import { useSpecularPointer } from "../lib/motion/useSpecularPointer";
 import { useNativeTitlebarHeight } from "../lib/windowControlsOverlay";
 import { requestWorkspaceFocus } from "../lib/workspaceFocus";
 import { useCloseAppModal } from "./sidebar/mainAppLocation";
 import { GlobalVoiceInputIndicator } from "./chat/GlobalVoiceInputIndicator";
 import { Button } from "./ui/button";
 import { DialogBackdrop } from "./ui/dialog";
+import { useSpatialModalDepth } from "./ui/dialog-styles";
 import { SharedTooltipTrigger } from "./ui/shared-tooltip";
 
 /**
@@ -42,6 +44,8 @@ export function AppRouteModal({
   // On close, return focus to the opener only after a keyboard close; after a pointer close it
   // would paint a focus ring.
   const popupRef = useRef<HTMLDivElement>(null);
+  useSpecularPointer(popupRef);
+  useSpatialModalDepth(open);
   const [opener] = useState(
     () =>
       getCommandPaletteOpener() ??
@@ -136,7 +140,7 @@ export function AppRouteModal({
             aria-label={label}
             data-slot="dialog-popup"
             data-app-modal=""
-            className="relative flex size-full min-h-0 min-w-0 flex-col overflow-hidden bg-background max-sm:pt-(--app-modal-top-inset) max-sm:pb-safe text-foreground outline-none transition-[opacity,scale] duration-150 ease-out [-webkit-app-region:no-drag] data-ending-style:scale-[0.985] data-ending-style:opacity-0 data-starting-style:scale-[0.985] data-starting-style:opacity-0 sm:max-h-[60rem] sm:max-w-[80rem] sm:rounded-2xl sm:border sm:shadow-2xl/40"
+            className="surface-elevated-rim surface-specular-prism relative flex size-full min-h-0 min-w-0 flex-col overflow-hidden bg-background max-sm:pt-(--app-modal-top-inset) max-sm:pb-safe text-foreground outline-none transition-[opacity,scale,translate] duration-260 ease-(--spring-spatial) data-ending-style:duration-150 data-ending-style:ease-(--ease-exit) data-instant:duration-0 motion-reduce:transition-none [-webkit-app-region:no-drag] data-ending-style:scale-[0.985] data-ending-style:opacity-0 data-starting-style:translate-y-2 data-starting-style:scale-[0.975] data-starting-style:opacity-0 sm:max-h-[60rem] sm:max-w-[80rem] sm:rounded-2xl sm:border sm:shadow-2xl/40"
           >
             {/* The emptied strip still moves the window, as the titlebar it replaces does. */}
             <div

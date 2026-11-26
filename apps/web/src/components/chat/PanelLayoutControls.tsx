@@ -1,13 +1,8 @@
-import {
-  PanelBottomIcon,
-  PanelRightIcon,
-  SquareMenuIcon,
-  Maximize2Icon,
-  Minimize2Icon,
-} from "lucide-react";
+import { PanelBottomIcon, PanelRightIcon, SquareMenuIcon } from "lucide-react";
 import { useGT } from "gt-react";
 import { memo, type ReactNode, useLayoutEffect, useRef } from "react";
 
+import { MorphingIcon } from "~/components/ui/morphing-icon";
 import { cn } from "~/lib/utils";
 
 import type { ThreadPanelPresentation } from "../../rightPanelLayout";
@@ -170,7 +165,7 @@ export const RightPanelMaximizeControl = memo(function RightPanelMaximizeControl
           variant="ghost"
           size="sm"
         >
-          {maximized ? <Minimize2Icon className="size-4" /> : <Maximize2Icon className="size-4" />}
+          <MorphingIcon variant={maximized ? "restore" : "maximize"} className="size-4" />
         </Toggle>
       }
       label={label}

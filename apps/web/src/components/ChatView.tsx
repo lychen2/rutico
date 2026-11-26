@@ -217,7 +217,10 @@ import { GuestPendingMessages } from "./chat/GuestShareControls";
 import { useDeviceState } from "~/state/device";
 import { BranchToolbar, type BranchToolbarHandle } from "./BranchToolbar";
 import { ComposerContextPermissions } from "./ComposerContextPermissions";
-import { makeWorkspaceFileDropHandlers } from "./chat/workspaceFileDrop";
+import {
+  makeWorkspaceFileDropHandlers,
+  type WorkspaceFileDragSummary,
+} from "./chat/workspaceFileDrop";
 import { isEditableFocused } from "../lib/editableFocus";
 import { DEFAULT_RESOLVED_KEYBINDINGS } from "@t3tools/shared/keybindings";
 import { shortcutLabelForCommand } from "../keybindings";
@@ -306,7 +309,7 @@ import {
 } from "../state/entities";
 import { useEnvironmentShellHasSnapshot } from "../state/shell";
 import { ChatComposer, type ChatComposerHandle } from "./chat/ChatComposer";
-import { DraftHeroHeadline } from "./chat/DraftHeroHeadline";
+import { DraftHeroHeadline, DraftHeroStarterPills } from "./chat/DraftHeroHeadline";
 import { ExpandedImageDialogHost, openExpandedImagePreview } from "./chat/ExpandedImageDialog";
 import {
   BranchRestoreConfirmHost,
@@ -413,6 +416,7 @@ import { currentRoundActivity } from "./chat/currentRoundActivity";
 import { selectOmpTodo, ThreadOmpTodo, withoutOmpTodoSnapshots } from "./chat/ThreadOmpTodo";
 import { TaskPlanCapsule } from "./chat/TaskPlanCapsule";
 import { TaskPlanSummary } from "./chat/TaskPlanSummary";
+import type { FlipRect } from "~/lib/motion/flip";
 import { antigravityTaskTrail } from "./chat/antigravityTaskTrail";
 import styles from "./chat/taskPlanCapsule.module.css";
 import { ThreadNow } from "./chat/ThreadNow";
@@ -721,6 +725,12 @@ export default function ChatView(props: ChatViewProps) {
     return accepted;
   });
   const [isWorkspaceFileDragActive, setIsWorkspaceFileDragActive] = useState(false);
+  const [workspaceDropSummary, setWorkspaceDropSummary] = useState<WorkspaceFileDragSummary | null>(
+    null,
+  );
+  const workspaceDropOverlayRef = useRef<HTMLDivElement>(null);
+  const workspaceDropFrameRef = useRef<number | null>(null);
+  const workspaceDropCoordsRef = useRef<{ readonly x: number; readonly y: number } | null>(null);
   const [optimisticBlobPreviews] = useState(createOptimisticBlobPreviews);
   const [heldOptimisticUserMessages, setHeldOptimisticUserMessages] = useState(() =>
     emptyOptimisticUserMessages(threadId),
@@ -766,14 +776,24 @@ export default function ChatView(props: ChatViewProps) {
   if (workspaceFileDragRoute !== workspaceFileDragRouteKey) {
     setWorkspaceFileDragRoute(workspaceFileDragRouteKey);
     setIsWorkspaceFileDragActive(false);
+    setWorkspaceDropSummary(null);
   }
 
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- window dragend listener that clears the workspace file drag state
   useEffect(() => {
     if (!isWorkspaceFileDragActive) return;
-    const clearWorkspaceFileDrag = () => setIsWorkspaceFileDragActive(false);
+    const clearWorkspaceFileDrag = () => {
+      setIsWorkspaceFileDragActive(false);
+      setWorkspaceDropSummary(null);
+    };
     window.addEventListener("dragend", clearWorkspaceFileDrag);
-    return () => window.removeEventListener("dragend", clearWorkspaceFileDrag);
+    return () => {
+      window.removeEventListener("dragend", clearWorkspaceFileDrag);
+      if (workspaceDropFrameRef.current !== null) {
+        window.cancelAnimationFrame(workspaceDropFrameRef.current);
+        workspaceDropFrameRef.current = null;
+      }
+    };
   }, [isWorkspaceFileDragActive]);
   const prefersPlanSidebarSheet = useMediaQuery(RIGHT_PANEL_INLINE_LAYOUT_MEDIA_QUERY);
   const isMobileViewport = useMediaQuery("max-sm");
@@ -1695,8 +1715,23 @@ export default function ChatView(props: ChatViewProps) {
       : null;
   const taskTrailKey = taskTrail === null ? null : `${routeThreadKey}:${taskTrail.key}`;
   const [dismissedTaskTrailKey, setDismissedTaskTrailKey] = useState<string | null>(null);
+  const taskTrailHandoffRef = useRef<{
+    readonly key: string;
+    readonly rect: FlipRect;
+  } | null>(null);
   const showTaskSummary = taskTrail?.complete === true && dismissedTaskTrailKey === taskTrailKey;
-  const dismissTaskTrail = useStableCallback(() => setDismissedTaskTrailKey(taskTrailKey));
+  const dismissTaskTrail = useStableCallback((handoffRect?: FlipRect) => {
+    if (taskTrailKey !== null && handoffRect !== undefined) {
+      taskTrailHandoffRef.current = { key: taskTrailKey, rect: handoffRect };
+    }
+    setDismissedTaskTrailKey(taskTrailKey);
+  });
+  const consumeTaskTrailHandoffRect = useStableCallback((): FlipRect | null => {
+    const pending = taskTrailHandoffRef.current;
+    if (pending === null || pending.key !== taskTrailKey) return null;
+    taskTrailHandoffRef.current = null;
+    return pending.rect;
+  });
   const extensionStatuses = deriveProviderExtensionStatuses(serverProjection);
   const ompTodo = serverProjection ? selectOmpTodo(serverProjection) : null;
 
@@ -3450,6 +3485,7 @@ export default function ChatView(props: ChatViewProps) {
             key={taskTrailKey}
             progress={taskTrail}
             onOpenFile={openFileSurfaceStable}
+            consumeHandoffRect={consumeTaskTrailHandoffRect}
           />
         ) : null}
         {pendingHandoff === null ? null : (
@@ -3625,14 +3661,40 @@ export default function ChatView(props: ChatViewProps) {
     setDragActive: setIsWorkspaceFileDragActive,
     addFiles: addDroppedFilesToComposer,
     addFolders: addDroppedFoldersToComposer,
+    onDragSummary: (next) => {
+      setWorkspaceDropSummary((current) =>
+        current?.total === next?.total &&
+        current?.imageCount === next?.imageCount &&
+        current?.fileCount === next?.fileCount
+          ? current
+          : next,
+      );
+    },
   });
+  const syncWorkspaceDropPointer = (event: React.DragEvent<HTMLElement>) => {
+    if (!event.dataTransfer.types.includes("Files")) return;
+    const rect = event.currentTarget.getBoundingClientRect();
+    workspaceDropCoordsRef.current = {
+      x: Math.round(event.clientX - rect.left),
+      y: Math.round(event.clientY - rect.top),
+    };
+    if (workspaceDropFrameRef.current !== null) return;
+    workspaceDropFrameRef.current = window.requestAnimationFrame(() => {
+      workspaceDropFrameRef.current = null;
+      const overlay = workspaceDropOverlayRef.current;
+      const pending = workspaceDropCoordsRef.current;
+      if (!overlay || !pending) return;
+      overlay.style.setProperty("--drop-x", `${pending.x}px`);
+      overlay.style.setProperty("--drop-y", `${pending.y}px`);
+    });
+  };
 
   const content = (
     <div
       ref={setWorkspaceLayoutElement}
       className={cn(
         "relative flex min-h-0 min-w-0 flex-1 overflow-hidden",
-        embedded ? "bg-background/88 backdrop-blur-md" : "bg-transparent",
+        embedded ? "surface-optical-chrome" : "bg-transparent",
       )}
     >
       {embedded ? null : (
@@ -3663,7 +3725,7 @@ export default function ChatView(props: ChatViewProps) {
             ref={threadPanelPopoverAnchorRef}
             data-chat-header
             className={cn(
-              "relative bg-background/68 backdrop-blur-md [[data-panel-animations=true]_&]:motion-safe:transition-[padding-left] [[data-panel-animations=true]_&]:motion-safe:duration-(--panel-animation-duration) [[data-panel-animations=true]_&]:motion-safe:ease-(--ease-spring-gentle)",
+              "surface-optical-chrome relative [[data-panel-animations=true]_&]:motion-safe:transition-[padding-left] [[data-panel-animations=true]_&]:motion-safe:duration-(--panel-animation-duration) [[data-panel-animations=true]_&]:motion-safe:ease-(--ease-spring-gentle)",
               isElectron
                 ? cn(
                     "drag-region flex h-[var(--workspace-topbar-height)] min-h-[var(--workspace-topbar-height)] shrink-0 items-center px-3 sm:px-5",
@@ -3717,13 +3779,24 @@ export default function ChatView(props: ChatViewProps) {
             detailsCardTopInset={isThreadFindActive ? THREAD_FIND_BAR_RESERVED_HEIGHT : 0}
             composerOverlayElement={isDraftHeroState ? null : composerOverlayElement}
             data-chat-workspace-drop-target="true"
-            onDragEnter={workspaceFileDropHandlers.onDragEnter}
-            onDragOver={workspaceFileDropHandlers.onDragOver}
+            onDragEnter={(event) => {
+              syncWorkspaceDropPointer(event);
+              workspaceFileDropHandlers.onDragEnter(event);
+            }}
+            onDragOver={(event) => {
+              syncWorkspaceDropPointer(event);
+              workspaceFileDropHandlers.onDragOver(event);
+            }}
             onDragLeave={workspaceFileDropHandlers.onDragLeave}
             onDrop={workspaceFileDropHandlers.onDrop}
           >
             <ThreadFind onClose={focusComposerStable} />
-            {isWorkspaceFileDragActive ? <WorkspaceFileDropOverlay /> : null}
+            {isWorkspaceFileDragActive ? (
+              <WorkspaceFileDropOverlay
+                overlayRef={workspaceDropOverlayRef}
+                summary={workspaceDropSummary}
+              />
+            ) : null}
             <ChatBannerLane
               environmentId={activeThread.environmentId}
               providerStatus={visibleProviderStatus}
@@ -3874,6 +3947,7 @@ export default function ChatView(props: ChatViewProps) {
                   <ScrollToEndButton
                     bottom={scrollToEndClearance + 4}
                     summary={scrollToEndSummary}
+                    isWorking={isWorking}
                     onScrollToEnd={() => scrollToEnd(true)}
                   />
                 )}
@@ -3892,6 +3966,7 @@ export default function ChatView(props: ChatViewProps) {
               }}
               inert={isRevertingCheckpoint}
               data-chat-composer-overlay="true"
+              data-draft-hero-overlay={isDraftHeroState ? "true" : undefined}
               className={
                 isDraftHeroState
                   ? "pointer-events-none absolute inset-0 z-20 flex items-center [@media(max-height:34rem)]:items-end"
@@ -4245,12 +4320,30 @@ export default function ChatView(props: ChatViewProps) {
                           </div>
                         </div>
                       </ComposerSurface.Shell>
-                      {isDraftHeroState && composerBannerItems.length > 0 ? (
-                        // Out of flow, like the headline, so a notice never moves the centered composer.
-                        // Short windows pin the composer to the bottom, where an out-of-flow notice
-                        // would fall off-screen, so there it takes space and lifts the composer.
-                        <div className="absolute inset-x-0 top-full flex flex-col gap-1 pt-4 [@media(max-height:34rem)]:static">
-                          <ComposerBannerStack items={composerBannerItems} detached />
+                      {isDraftHeroState && (composerBannerItems.length > 0 || draftId !== null) ? (
+                        // Out of flow, like the headline, so notices and starters never shift the centered composer.
+                        // Short windows pin the composer to the bottom, where out-of-flow notices take space.
+                        <div className="absolute inset-x-0 top-full flex flex-col gap-2 pt-3 [@media(max-height:34rem)]:static">
+                          {draftId !== null ? (
+                            <div className="[@media(max-height:34rem)]:hidden">
+                              <DraftHeroStarterPills
+                                draftId={draftId}
+                                isGitRepo={isGitRepo}
+                                activeBranch={activeThreadBranch ?? null}
+                                activeProjectTitle={activeProject?.title ?? null}
+                                isScratchDraft={activeProject?.isScratch === true}
+                                onSelectStarter={(starterPrompt) => {
+                                  useComposerDraftStore
+                                    .getState()
+                                    .setPrompt(draftId, starterPrompt);
+                                  scheduleComposerFocusStable();
+                                }}
+                              />
+                            </div>
+                          ) : null}
+                          {composerBannerItems.length > 0 ? (
+                            <ComposerBannerStack items={composerBannerItems} detached />
+                          ) : null}
                         </div>
                       ) : null}
                     </div>

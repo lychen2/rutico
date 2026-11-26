@@ -2,6 +2,7 @@ import type { ScopedThreadRef } from "@t3tools/contracts";
 import { msg, useMessages } from "gt-react";
 
 import type { MessageResolver } from "../../i18n/messages";
+import { observeVisibleAnimation } from "~/lib/visibleAnimation";
 import { DiscoveryListRow } from "../ui/discovery-list";
 
 import { PreviewFaviconIcon } from "./PreviewFaviconIcon";
@@ -19,7 +20,16 @@ export function PreviewLocalServerCard({ threadRef, server, onOpen }: Props) {
   return (
     <DiscoveryListRow
       onClick={onOpen}
-      icon={<PreviewFaviconIcon threadRef={threadRef} url={server.requestedUrl} />}
+      icon={
+        <span className="relative inline-flex shrink-0 items-center justify-center">
+          <PreviewFaviconIcon threadRef={threadRef} url={server.requestedUrl} />
+          <span
+            ref={observeVisibleAnimation}
+            aria-hidden="true"
+            className="preview-server-live-dot absolute -right-0.5 -bottom-0.5 size-1.5 rounded-full bg-success ring-1 ring-background"
+          />
+        </span>
+      }
       title={subtitle}
       description={`${server.host}:${server.port}`}
     />

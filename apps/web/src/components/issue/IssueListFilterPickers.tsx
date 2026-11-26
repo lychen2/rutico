@@ -75,7 +75,11 @@ export function IssueFiltersMenu(props: {
           <T>Filters</T>
         </span>
         {count > 0 ? (
-          <span className="rounded-full bg-muted px-1.5 text-xs text-muted-foreground tabular-nums">
+          <span
+            key={count}
+            data-slot="issue-filter-count"
+            className="rounded-full bg-primary/15 px-1.5 text-xs font-medium text-primary ring-1 ring-inset ring-primary/25 tabular-nums"
+          >
             {count}
           </span>
         ) : null}

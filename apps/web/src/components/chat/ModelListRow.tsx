@@ -1,12 +1,13 @@
 import { type ProviderDriverKind, type ProviderInstanceId } from "@t3tools/contracts";
 import { T, useGT } from "gt-react";
-import { memo } from "react";
+import { memo, useRef } from "react";
 import { CheckIcon, StarIcon } from "lucide-react";
 import { getDisplayModelName } from "./providerIconUtils";
 import { ComboboxItem } from "../ui/combobox";
 import { Button } from "../ui/button";
 import { Badge } from "../ui/badge";
 import { Kbd } from "../ui/kbd";
+import { getSpringWaapiTiming, prefersReducedMotion } from "~/lib/motion/springs";
 import { cn } from "~/lib/utils";
 import { modelPickerModelKey } from "./modelPickerKeys";
 import { ProviderInstanceIcon } from "./ProviderInstanceIcon";
@@ -38,10 +39,24 @@ export const ModelListRow = memo(function ModelListRow(props: {
   onToggleFavorite: (instanceId: ProviderInstanceId, slug: string) => void;
 }) {
   const gt = useGT();
+  const starRef = useRef<SVGSVGElement>(null);
   const model = {
     slug: props.slug,
     name: props.name,
     subProvider: props.subProvider,
+  };
+  const playStarBurst = () => {
+    const icon = starRef.current;
+    if (!icon || prefersReducedMotion() || typeof icon.animate !== "function") return;
+    const timing = getSpringWaapiTiming("bouncy");
+    icon.animate(
+      [
+        { transform: "scale(0.72) rotate(-14deg)" },
+        { transform: "scale(1.26) rotate(8deg)" },
+        { transform: "scale(1) rotate(0deg)" },
+      ],
+      { duration: Math.min(260, timing.duration), easing: timing.easing },
+    );
   };
 
   const row = (
@@ -111,6 +126,7 @@ export const ModelListRow = memo(function ModelListRow(props: {
               variant="ghost-muted"
               onClick={(event) => {
                 event.stopPropagation();
+                playStarBurst();
                 props.onToggleFavorite(props.instanceId, props.slug);
               }}
               onKeyDown={(event) => {
@@ -120,6 +136,7 @@ export const ModelListRow = memo(function ModelListRow(props: {
               aria-label={props.isFavorite ? gt("Remove from favorites") : gt("Add to favorites")}
             >
               <StarIcon
+                ref={starRef}
                 className={cn(
                   "size-3.5 sm:size-3",
                   props.isFavorite && "fill-current text-warning",
@@ -139,8 +156,24 @@ export const ModelListRow = memo(function ModelListRow(props: {
               <span aria-hidden="true">·</span>
             ) : null}
             {props.remainingQuota !== null ? (
-              <span className={props.remainingQuota < 15 ? "text-warning" : undefined}>
-                {gt("{remaining}% left", { remaining: props.remainingQuota })}
+              <span className="inline-flex items-center gap-1">
+                <span
+                  aria-hidden="true"
+                  data-quota-gauge="true"
+                  className="inline-block h-1.5 w-6 overflow-hidden rounded-full bg-foreground/12"
+                >
+                  <span
+                    data-quota-gauge-fill="true"
+                    data-quota-low={props.remainingQuota < 15 ? "true" : undefined}
+                    className="block size-full origin-left rounded-full"
+                    style={{
+                      transform: `scaleX(${Math.max(0, Math.min(100, props.remainingQuota)) / 100})`,
+                    }}
+                  />
+                </span>
+                <span className={props.remainingQuota < 15 ? "text-warning" : undefined}>
+                  {gt("{remaining}% left", { remaining: props.remainingQuota })}
+                </span>
               </span>
             ) : null}
           </span>

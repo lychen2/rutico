@@ -1,3 +1,4 @@
+import * as Haptics from "expo-haptics";
 import { useGT } from "gt-react-native";
 import { useAndroidFloatingTabs } from "../../settings/appearance/AppearancePreferencesProvider";
 import { WorkspaceNoTabs } from "./WorkspaceNoTabs";
@@ -62,6 +63,9 @@ function WorkspaceRoot() {
       enabled.includes("threads") &&
       workspace.state.tabs[tab].searchMode === "resting",
     () => {
+      void Haptics.performAndroidHapticsAsync(Haptics.AndroidHaptics.Segment_Tick).catch(
+        () => undefined,
+      );
       selectTab("threads");
       return true;
     },

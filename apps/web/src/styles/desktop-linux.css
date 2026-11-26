@@ -1,0 +1,464 @@
+/* ==========================================================================
+   Stage 2 Lane 2L — Linux Desktop Chrome, Wayland/X11 & Portal Material Stylesheet
+   Reserved modular stylesheet pre-imported by index.css for conflict-free
+   parallel Stage 2 edits.
+   ========================================================================== */
+
+/* ==========================================================================
+   D30 / C096: Zero-Pop In-Window Boot Curtain & First-Frame Settle
+   ========================================================================== */
+
+#boot-curtain[data-boot-curtain="dismiss"] {
+  opacity: 0;
+  transition: opacity 220ms var(--spring-fluid, cubic-bezier(0.23, 1, 0.32, 1));
+  will-change: opacity;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  html[data-boot-transition="entering"] #root {
+    transform: scale(1.012);
+    transform-origin: center center;
+  }
+
+  html[data-boot-transition="settling"] #root {
+    transform: scale(1);
+    transform-origin: center center;
+    transition: transform 220ms var(--spring-fluid, cubic-bezier(0.23, 1, 0.32, 1));
+    will-change: transform;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #boot-curtain {
+    display: none;
+    transition: none;
+  }
+
+  html[data-boot-transition] #root {
+    transform: none;
+    transition: none;
+  }
+}
+
+/* ==========================================================================
+   D30 / C097: .electron-linux Real 40px titleBarOverlay Chrome, Tiling-WM
+   Adaptive Geometry, No-Drag Safety, and Maximized Corner Flattening
+   ========================================================================== */
+
+html.electron-linux {
+  --linux-overlay-height: 40px;
+}
+
+/* Align topbar to Electron's real 40px titleBarOverlay height on Linux WCO sessions. */
+html.electron-linux.wco {
+  --workspace-topbar-height: max(
+    var(--linux-overlay-height, 40px),
+    env(titlebar-area-height, 40px)
+  );
+}
+
+/* Tiling WMs without native WCO reclaim the full topbar width cleanly. */
+html.electron-linux[data-linux-tiling-wm="true"]:not(.wco) {
+  --workspace-native-controls-inset: 0px;
+}
+
+/* Every interactive control inside a Linux drag region must opt out of window dragging. */
+html.electron-linux
+  .drag-region
+  :is(button, a, input, textarea, select, [role="button"], [role="tab"], [data-no-drag]) {
+  -webkit-app-region: no-drag;
+}
+
+/* Flatten outer shell corners when maximized, fullscreen, or tiled edge-to-edge on Linux. */
+html.electron-linux:is(
+    [data-window-maximized="true"],
+    [data-window-fullscreen="true"],
+    [data-linux-tiling-wm="true"]
+  )
+  :is(#root, [data-slot="sidebar-wrapper"], [data-slot="sidebar-inset"]) {
+  border-radius: 0;
+}
+
+/* Fallback Linux CSD controls (rendered strictly when native titleBarOverlay is absent). */
+.linux-window-controls {
+  -webkit-app-region: no-drag;
+}
+
+.linux-window-control-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  color: var(--muted-foreground);
+  -webkit-app-region: no-drag;
+  transition:
+    background-color 140ms var(--spring-snappy, ease-out),
+    color 140ms var(--spring-snappy, ease-out),
+    transform 120ms var(--spring-micro, ease-out);
+}
+
+.linux-window-control-btn:hover {
+  background-color: color-mix(in oklch, var(--foreground) 8%, transparent);
+  color: var(--foreground);
+}
+
+.linux-window-control-btn[data-window-control="close"]:hover {
+  background-color: color-mix(in oklch, var(--destructive, #e5484d) 85%, transparent);
+  color: #ffffff;
+}
+
+.linux-window-control-btn:active {
+  transform: scale(0.94);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .linux-window-control-btn {
+    transition: none;
+  }
+  .linux-window-control-btn:active {
+    transform: none;
+  }
+}
+
+/* ==========================================================================
+   D30 / C098: XDG Desktop Portal Accent Color & High-Contrast Integration
+   ========================================================================== */
+
+html.electron-linux[data-linux-portal-accent="true"]:not([data-theme-id]) {
+  --primary: var(--linux-portal-accent);
+  --primary-foreground: var(--linux-portal-accent-foreground);
+  --ring: var(--linux-portal-ring);
+  --accent: var(--linux-portal-accent-surface);
+  --accent-foreground: var(--linux-portal-accent-surface-foreground);
+}
+
+html.electron-linux[data-linux-portal-contrast="high"] {
+  --border-width-hairline: 1.5px;
+}
+
+html.electron-linux[data-linux-portal-contrast="high"] :focus-visible {
+  outline-width: 2px;
+  outline-offset: 2px;
+}
+
+/* ==========================================================================
+   D30 / C099: Unfocused Linux Window Semantic Material Dimming & Optical Zoom HUD
+   Pure semantic CSS custom properties — zero whole-tree filter().
+   ========================================================================== */
+
+html.electron-linux {
+  --linux-focus-bevel-opacity: 1;
+  --linux-focus-chrome-opacity: 1;
+  --linux-focus-accent-mix: 100%;
+}
+
+html.electron-linux[data-desktop-window-focused="false"] {
+  --linux-focus-bevel-opacity: 0.36;
+  --linux-focus-chrome-opacity: 0.78;
+  --linux-focus-accent-mix: 68%;
+  --toolbar-border: color-mix(in oklch, var(--border) 64%, transparent);
+  --sidebar-border: color-mix(in oklch, var(--border) 62%, transparent);
+}
+
+html.electron-linux[data-desktop-window-focused]
+  :is(
+    .drag-region,
+    [data-app-sidebar] [data-slot="sidebar-header"],
+    [data-app-sidebar] [data-slot="sidebar-footer"],
+    [data-workspace-header]
+  ) {
+  transition:
+    opacity 140ms var(--spring-fluid, cubic-bezier(0.23, 1, 0.32, 1)),
+    border-color 140ms var(--spring-fluid, cubic-bezier(0.23, 1, 0.32, 1)),
+    color 140ms var(--spring-fluid, cubic-bezier(0.23, 1, 0.32, 1));
+}
+
+html.electron-linux[data-desktop-window-focused="false"]
+  :is(
+    .drag-region:not([data-app-sidebar] *) > *,
+    [data-app-sidebar] [data-slot="sidebar-header"],
+    [data-app-sidebar] [data-slot="sidebar-footer"]
+  ) {
+  opacity: var(--linux-focus-chrome-opacity);
+}
+
+html.electron-linux[data-desktop-window-focused="false"] .linux-window-control-btn {
+  opacity: 0.65;
+}
+
+.t3-zoom-hud {
+  position: fixed;
+  top: calc(var(--workspace-topbar-height, 40px) + 12px);
+  right: 16px;
+  z-index: 90;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px 6px 12px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 550;
+  letter-spacing: -0.01em;
+  color: var(--foreground);
+  box-shadow:
+    inset 0 1px 0 color-mix(in oklch, #ffffff 14%, transparent),
+    0 10px 28px -8px color-mix(in oklch, #000000 32%, transparent);
+  opacity: 0;
+  transform: translate3d(0, -6px, 0) scale(0.96);
+  pointer-events: none;
+  transition:
+    opacity 180ms var(--spring-snappy, cubic-bezier(0.23, 1, 0.32, 1)),
+    transform 220ms var(--spring-snappy, cubic-bezier(0.23, 1, 0.32, 1));
+  will-change: transform, opacity;
+}
+
+.t3-zoom-hud[data-visible="true"] {
+  opacity: 1;
+  transform: translate3d(0, 0, 0) scale(1);
+  pointer-events: auto;
+}
+
+.t3-zoom-hud-dpi {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 6px;
+  border-radius: 999px;
+  font-size: 10.5px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--muted-foreground);
+  background-color: color-mix(in oklch, var(--foreground) 7%, transparent);
+}
+
+.t3-zoom-hud-reset {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 22px;
+  padding: 0 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--foreground);
+  background-color: color-mix(in oklch, var(--foreground) 10%, transparent);
+  cursor: pointer;
+  transition:
+    background-color 120ms ease-out,
+    transform 100ms ease-out;
+}
+
+.t3-zoom-hud-reset:hover {
+  background-color: color-mix(in oklch, var(--foreground) 16%, transparent);
+}
+
+.t3-zoom-hud-reset:active {
+  transform: scale(0.95);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html.electron-linux[data-desktop-window-focused]
+    :is(
+      .drag-region,
+      [data-app-sidebar] [data-slot="sidebar-header"],
+      [data-app-sidebar] [data-slot="sidebar-footer"],
+      [data-workspace-header]
+    ),
+  .t3-zoom-hud,
+  .t3-zoom-hud-reset {
+    transition: none;
+  }
+
+  .t3-zoom-hud {
+    transform: none;
+  }
+}
+
+/* ==========================================================================
+   D30 / C100: Kinetic Radial QuitHold HUD, 90ms Linux Exit Curtain &
+   Primary Selection / Paste-as-Text Caret Confirmation Pulse
+   ========================================================================== */
+
+.t3-quit-hold-hud {
+  transition:
+    transform 180ms var(--spring-snappy, cubic-bezier(0.23, 1, 0.32, 1)),
+    opacity 120ms ease-out;
+  will-change: transform, opacity;
+}
+
+.t3-quit-hold-hud[data-holding="true"] {
+  transform: scale(0.965);
+}
+
+.t3-quit-hold-hud[data-committing="true"] {
+  opacity: 0;
+  transform: scale(0.94);
+  transition:
+    opacity 90ms ease-out,
+    transform 90ms ease-out;
+}
+
+.t3-quit-radial-progress {
+  stroke-dashoffset: 94.25;
+  transition: stroke-dashoffset 220ms var(--spring-snappy, cubic-bezier(0.23, 1, 0.32, 1));
+}
+
+.t3-quit-radial-progress[data-mode="hold"][data-holding="true"] {
+  animation: t3-quit-radial-fill 1200ms linear forwards;
+}
+
+.t3-quit-radial-progress[data-committing="true"] {
+  stroke-dashoffset: 0;
+  animation: none;
+}
+
+.t3-quit-radial-progress[data-mode="double-click"] {
+  stroke-dashoffset: 47.12;
+  animation: t3-quit-double-pulse 500ms var(--spring-snappy, ease-out) 1;
+}
+
+@keyframes t3-quit-radial-fill {
+  from {
+    stroke-dashoffset: 94.25;
+  }
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+@keyframes t3-quit-double-pulse {
+  0% {
+    stroke-dashoffset: 94.25;
+    opacity: 0.45;
+  }
+  55% {
+    stroke-dashoffset: 42;
+    opacity: 1;
+  }
+  100% {
+    stroke-dashoffset: 47.12;
+    opacity: 0.9;
+  }
+}
+
+.t3-linux-exit-curtain {
+  background-color: var(--background);
+  animation: t3-linux-exit-fade 90ms ease-out forwards;
+  will-change: opacity;
+}
+
+@keyframes t3-linux-exit-fade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.t3-paste-pulse {
+  position: fixed;
+  z-index: 120;
+  width: 22px;
+  height: 22px;
+  margin-left: -11px;
+  margin-top: -11px;
+  border-radius: 999px;
+  pointer-events: none;
+  border: 1.5px solid color-mix(in oklch, var(--primary) 72%, transparent);
+  background: color-mix(in oklch, var(--primary) 16%, transparent);
+  animation: t3-paste-caret-pulse 280ms var(--spring-snappy, cubic-bezier(0.23, 1, 0.32, 1))
+    forwards;
+  will-change: transform, opacity;
+}
+
+@keyframes t3-paste-caret-pulse {
+  0% {
+    opacity: 0.85;
+    transform: scale(0.45);
+  }
+  65% {
+    opacity: 0.42;
+    transform: scale(1.18);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(1.45);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .t3-quit-hold-hud,
+  .t3-quit-hold-hud[data-holding="true"],
+  .t3-quit-hold-hud[data-committing="true"] {
+    transform: none;
+    transition: none;
+  }
+
+  .t3-quit-radial-progress,
+  .t3-quit-radial-progress[data-mode="hold"][data-holding="true"],
+  .t3-quit-radial-progress[data-mode="double-click"] {
+    animation: none;
+    transition: none;
+    stroke-dashoffset: 24;
+  }
+
+  .t3-linux-exit-curtain {
+    animation: none;
+    opacity: 1;
+  }
+
+  .t3-paste-pulse {
+    display: none;
+  }
+}
+
+/* ==========================================================================
+   D31 / C104: 4-Tier Capability-Graded Linux SnapShot In-Composer Landing
+   ========================================================================== */
+
+[data-snapshot-landed="true"] {
+  transform-origin: center center;
+  animation: t3-snapshot-land-squircle 450ms var(--spring-bouncy, cubic-bezier(0.23, 1, 0.32, 1))
+    both;
+  will-change: transform, box-shadow;
+}
+
+@supports (corner-shape: superellipse(1.25)) {
+  [data-snapshot-landed="true"] {
+    corner-shape: superellipse(1.25);
+  }
+}
+
+@keyframes t3-snapshot-land-squircle {
+  0% {
+    transform: scale(0.92);
+    box-shadow: 0 0 0 0 color-mix(in oklch, var(--primary) 0%, transparent);
+  }
+  42% {
+    transform: scale(1.03);
+    box-shadow: 0 0 0 2px color-mix(in oklch, var(--primary) 62%, transparent);
+  }
+  100% {
+    transform: scale(1);
+    box-shadow: 0 0 0 0 color-mix(in oklch, var(--primary) 0%, transparent);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-snapshot-landed="true"] {
+    animation: t3-snapshot-land-reduced 120ms ease-out both;
+    will-change: opacity;
+  }
+}
+
+@keyframes t3-snapshot-land-reduced {
+  from {
+    opacity: 0.72;
+  }
+  to {
+    opacity: 1;
+  }
+}

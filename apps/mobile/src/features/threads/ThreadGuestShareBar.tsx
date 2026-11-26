@@ -1,4 +1,5 @@
 import { useAtomValue } from "@effect/atom-react";
+import { useIsFocused } from "@react-navigation/native";
 import { errorDisplayMessage } from "@t3tools/client-runtime/errors";
 import {
   type AtomCommandResult,
@@ -15,13 +16,23 @@ import {
 import { Atom } from "effect/reactivity";
 import { msg, useGT } from "gt-react-native";
 import { type ReactNode, useEffect, useMemo, useState } from "react";
-import { View } from "react-native";
+import { Animated as RNAnimated, useAnimatedValue, View } from "react-native";
+import Reanimated, {
+  useAnimatedStyle,
+  useReducedMotion,
+  useSharedValue,
+  withSpring,
+} from "react-native-reanimated";
 
 import { Button } from "../../components/ui/Button";
 import { AppText as Text } from "../../components/ui/AppText";
 import { SymbolView } from "../../components/ui/AppSymbol";
 import * as Dialog from "../../components/ui/Dialog";
 import { m } from "../../i18n/messages";
+import { useAppActive } from "../../lib/appState";
+import { cn } from "../../lib/cn";
+import { triggerSemanticHaptic } from "../../lib/hapticChoreography";
+import { SPRING_SPATIAL_SNAPPY, startNativePulseLoop } from "../../lib/mobileMotion";
 import { useEnvironmentScope } from "../../state/session";
 import { environmentThreadDetails, threadEnvironment } from "../../state/threads";
 import { useAtomCommand } from "../../state/use-atom-command";
@@ -55,6 +66,42 @@ function alertOnFailure(failureTitle: string, result: AtomCommandResult<unknown,
   }
 }
 
+function GuestSharePresenceDot(props: { readonly tone: "live" | "pending" | "expired" }) {
+  const appActive = useAppActive();
+  const isFocused = useIsFocused();
+  const reducedMotion = useReducedMotion();
+  const pulse = useAnimatedValue(0, { useNativeDriver: true });
+  const shouldPulse = props.tone !== "expired" && appActive && isFocused && !reducedMotion;
+
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- drives continuous guest presence dot via RN Animated native driver (obeys DISABLE_COMMIT_PAUSING_MECHANISM)
+  useEffect(
+    () => startNativePulseLoop(pulse, { active: shouldPulse, duration: 1600, mode: "expand" }),
+    [pulse, shouldPulse],
+  );
+
+  const haloScale = pulse.interpolate({ inputRange: [0, 1], outputRange: [1, 2.1] });
+  const haloOpacity = pulse.interpolate({ inputRange: [0, 1], outputRange: [0.55, 0] });
+  const dotClass =
+    props.tone === "pending"
+      ? "bg-warning-foreground"
+      : props.tone === "live"
+        ? "bg-adaptive-emerald-600-400"
+        : "bg-foreground-muted/50";
+
+  return (
+    <View className="size-3.5 items-center justify-center">
+      {shouldPulse ? (
+        <RNAnimated.View
+          pointerEvents="none"
+          className={cn("absolute size-2.5 rounded-full", dotClass)}
+          style={{ opacity: haloOpacity, transform: [{ scale: haloScale }] }}
+        />
+      ) : null}
+      <View className={cn("size-2 rounded-full", dotClass)} />
+    </View>
+  );
+}
+
 /**
  * Owner controls for a guest link, above the composer: who the link is for and a way to stop
  * sharing. Links are created from the thread's menu, see `ThreadGuestShareSheet`. Waiting
@@ -74,6 +121,8 @@ export function ThreadGuestShareBar(props: {
   // Keyed by the expiry, so a replaced link (even one already expired) gets its own timer.
   const [expiredAt, setExpiredAt] = useState<string | null>(null);
   const expiresAt = share?.expiresAt;
+  const slideProgress = useSharedValue(0);
+
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- arms a timer that flips the share label when the guest link expires
   useEffect(() => {
     if (expiresAt === undefined) return;
@@ -83,8 +132,27 @@ export function ThreadGuestShareBar(props: {
     );
     return () => clearTimeout(timer);
   }, [expiresAt]);
+
+  const barVisible = threadRef !== null && share !== null;
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- slides the active guest collaboration bar into view with Reanimated 4 springs
+  useEffect(() => {
+    slideProgress.set(withSpring(barVisible ? 1 : 0, SPRING_SPATIAL_SNAPPY));
+  }, [barVisible, slideProgress]);
+
+  const barStyle = useAnimatedStyle(() => ({
+    opacity: slideProgress.get(),
+    transform: [{ translateY: (1 - slideProgress.get()) * -10 }],
+  }));
+
   if (threadRef === null || !share) return null;
 
+  const isExpired = expiredAt === share.expiresAt;
+  const pendingCount = share.messages.filter((message) => message.status === "pending").length;
+  const tone: "live" | "pending" | "expired" = isExpired
+    ? "expired"
+    : pendingCount > 0
+      ? "pending"
+      : "live";
   const disabled = busy || !props.canOperateThread;
   const stopSharing = () =>
     Dialog.confirm({
@@ -100,23 +168,44 @@ export function ThreadGuestShareBar(props: {
           input: { threadId: threadRef.threadId },
         }).then((result) => {
           setBusy(false);
+          if (result._tag === "Success") {
+            triggerSemanticHaptic("toggleOff");
+          }
           alertOnFailure(gt("Could not stop sharing"), result);
         });
       },
     });
 
   return (
-    <View className="flex-row items-center gap-2 px-4 pb-2">
+    <Reanimated.View
+      collapsable={false}
+      style={barStyle}
+      className="mx-3 mb-2 flex-row items-center gap-2 rounded-2xl border border-border-subtle bg-grouped-card px-3 py-1.5"
+    >
+      <GuestSharePresenceDot tone={tone} />
       <SymbolView name="person.2" size={12} tintColorClassName="accent-foreground-muted" />
-      <Text className="min-w-0 flex-1 text-xs text-foreground-muted" numberOfLines={1}>
-        {expiredAt === share.expiresAt
+      <Text
+        className="min-w-0 flex-1 text-xs font-t3-medium text-foreground-muted"
+        numberOfLines={1}
+      >
+        {isExpired
           ? gt("Guest link expired")
           : share.guestName === null
             ? gt("Guest link active")
             : gt("{guestName} is a guest", { guestName: share.guestName })}
       </Text>
+      {pendingCount > 0 && !isExpired ? (
+        <View className="rounded-full border border-warning-foreground/35 bg-warning-foreground/12 px-2 py-0.5">
+          <Text
+            className="font-mono text-2xs font-t3-bold text-warning-foreground"
+            style={{ fontVariant: ["tabular-nums"] }}
+          >
+            {gt("{count} waiting", { count: pendingCount })}
+          </Text>
+        </View>
+      ) : null}
       <Button label={gt("Stop sharing")} tone="text" disabled={disabled} onPress={stopSharing} />
-    </View>
+    </Reanimated.View>
   );
 }
 
@@ -155,6 +244,9 @@ export function ThreadGuestPendingMessage(props: {
       },
     });
     setBusy(false);
+    if (result._tag === "Success") {
+      triggerSemanticHaptic(decision === "send" ? "confirm" : "reject");
+    }
     alertOnFailure(
       decision === "send"
         ? gt("Could not send guest message")
@@ -166,7 +258,13 @@ export function ThreadGuestPendingMessage(props: {
   return (
     <View className="items-end pb-5">
       <GuestMessageName name={guestName} />
-      <View className={GUEST_PENDING_BUBBLE_CLASS_NAME} style={{ maxWidth: props.bubbleMaxWidth }}>
+      <View
+        className={cn(
+          GUEST_PENDING_BUBBLE_CLASS_NAME,
+          "border-warning-foreground/50 bg-warning-foreground/[0.06]",
+        )}
+        style={{ maxWidth: props.bubbleMaxWidth }}
+      >
         {message.text ? (
           <Text selectable className="text-base text-foreground">
             {message.text}

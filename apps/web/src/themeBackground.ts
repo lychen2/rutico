@@ -10,6 +10,8 @@ import { environmentSession } from "./state/session";
 import { getCustomThemes } from "./themePalette";
 
 const THEME_BACKGROUND_VARIABLE = "--theme-background-image";
+const THEME_BACKGROUND_PREV_VARIABLE = "--theme-background-image-prev";
+const CROSSFADE_DURATION_MS = 360;
 const RETRY_DELAYS_MS = [1_000, 2_000, 4_000, 8_000];
 
 // The editor's draft preview replaces the root's theme id, so retries track this instead.
@@ -17,13 +19,75 @@ let appliedThemeId: string | undefined;
 let shownKey: string | null = null;
 let loading: AbortController | null = null;
 let objectUrl: string | null = null;
+let previousObjectUrl: string | null = null;
+let crossfadeTimer: ReturnType<typeof setTimeout> | null = null;
+
+function clearPendingCrossfade(): void {
+  if (crossfadeTimer !== null) {
+    clearTimeout(crossfadeTimer);
+    crossfadeTimer = null;
+  }
+  if (previousObjectUrl !== null) {
+    URL.revokeObjectURL(previousObjectUrl);
+    previousObjectUrl = null;
+  }
+  if (typeof document !== "undefined") {
+    const root = document.documentElement;
+    root.style.removeProperty(THEME_BACKGROUND_PREV_VARIABLE);
+    delete root.dataset.themeBackgroundCrossfade;
+  }
+}
 
 function show(nextUrl: string | null): void {
   const root = document.documentElement;
-  if (nextUrl === null) root.style.removeProperty(THEME_BACKGROUND_VARIABLE);
-  else root.style.setProperty(THEME_BACKGROUND_VARIABLE, `url("${nextUrl}")`);
-  if (objectUrl !== null) URL.revokeObjectURL(objectUrl);
+  if (nextUrl === null) {
+    clearPendingCrossfade();
+    root.style.removeProperty(THEME_BACKGROUND_VARIABLE);
+    if (objectUrl !== null) URL.revokeObjectURL(objectUrl);
+    objectUrl = null;
+    return;
+  }
+
+  // Double-buffer crossfade: retain previous decoded image during the 360ms GPU dissolve,
+  // then safely revoke its blob URL once the fade completes.
+  const outgoingUrl = objectUrl;
+  clearPendingCrossfade();
   objectUrl = nextUrl;
+
+  if (outgoingUrl !== null) {
+    previousObjectUrl = outgoingUrl;
+    root.style.setProperty(THEME_BACKGROUND_PREV_VARIABLE, `url("${outgoingUrl}")`);
+    root.dataset.themeBackgroundCrossfade = "active";
+    root.style.setProperty(THEME_BACKGROUND_VARIABLE, `url("${nextUrl}")`);
+    crossfadeTimer = setTimeout(() => {
+      crossfadeTimer = null;
+      if (previousObjectUrl === outgoingUrl) {
+        URL.revokeObjectURL(outgoingUrl);
+        previousObjectUrl = null;
+      }
+      if (typeof document !== "undefined") {
+        document.documentElement.style.removeProperty(THEME_BACKGROUND_PREV_VARIABLE);
+        delete document.documentElement.dataset.themeBackgroundCrossfade;
+      }
+    }, CROSSFADE_DURATION_MS);
+    return;
+  }
+
+  root.style.setProperty(THEME_BACKGROUND_VARIABLE, `url("${nextUrl}")`);
+}
+
+async function decodeBlobImage(url: string, signal: AbortSignal): Promise<void> {
+  if (signal.aborted || typeof Image === "undefined") return;
+  const img = new Image();
+  img.decoding = "async";
+  img.src = url;
+  if (typeof img.decode === "function") {
+    try {
+      await img.decode();
+    } catch {
+      // Fall through so partially supported environments still render the blob.
+    }
+  }
 }
 
 async function loadBackground(
@@ -48,12 +112,19 @@ async function loadBackground(
   const response = await fetch(url, { signal });
   if (!response.ok) return null;
   const image = await response.blob();
-  return image.type.startsWith("image/") ? URL.createObjectURL(image) : null;
+  if (!image.type.startsWith("image/")) return null;
+  const blobUrl = URL.createObjectURL(image);
+  await decodeBlobImage(blobUrl, signal);
+  if (signal.aborted) {
+    URL.revokeObjectURL(blobUrl);
+    return null;
+  }
+  return blobUrl;
 }
 
 /**
  * Sets `--theme-background-image` to the image published beside `themeId`, or clears it.
- * The image is copied into a blob URL once per revision, so the signed URL may expire.
+ * Double-buffers switches via `image.decode()` so switching wallpapers never flashes blank.
  */
 export function applyThemeBackground(themeId: string | undefined): void {
   if (typeof document === "undefined") return;
@@ -73,9 +144,12 @@ export function applyThemeBackground(themeId: string | undefined): void {
   shownKey = key;
   loading?.abort();
   loading = null;
-  // The previous image must not show under the next theme while it loads.
-  show(null);
-  if (environmentId === null || themeId === undefined || key === null) return;
+  // Clear immediately when switching to a theme with no published background; when another
+  // background is incoming, keep the previous buffer live until `image.decode()` resolves.
+  if (environmentId === null || themeId === undefined || key === null) {
+    show(null);
+    return;
+  }
   const controller = new AbortController();
   loading = controller;
   let retries = 0;

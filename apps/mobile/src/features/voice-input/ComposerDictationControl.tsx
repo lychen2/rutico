@@ -1,7 +1,14 @@
 import type { VoiceInputPhase, VoiceInputState } from "@t3tools/client-runtime/voice-input";
 import { useGT } from "gt-react-native";
 import { memo, useState, type ReactNode } from "react";
-import { Linking, Pressable, Text as SystemText, View, type LayoutChangeEvent } from "react-native";
+import {
+  Linking,
+  Platform,
+  Pressable,
+  Text as SystemText,
+  View,
+  type LayoutChangeEvent,
+} from "react-native";
 import Animated, {
   Easing,
   FadeIn,
@@ -10,6 +17,7 @@ import Animated, {
   useAnimatedStyle,
   useDerivedValue,
   useReducedMotion,
+  withSpring,
   withTiming,
   type EntryExitAnimationFunction,
   type SharedValue,
@@ -20,6 +28,7 @@ import { AppText as Text } from "../../components/ui/AppText";
 import { SymbolView, type AppSymbolName } from "../../components/ui/AppSymbol";
 import { useAndroidControlSizing } from "../../components/ui/useAndroidControlSizing";
 import { cn } from "../../lib/cn";
+import { SPRING_EFFECTS_FAST } from "../../lib/mobileMotion";
 import type { VoiceComposerPresentation } from "./voiceInputPresentation";
 import { VOICE_WAVEFORM_SAMPLE_COUNT } from "./voiceInputMetering";
 
@@ -151,19 +160,32 @@ const WaveformBar = memo(function WaveformBar(props: {
   readonly audioLevels: SharedValue<ReadonlyArray<number>>;
   readonly sampleIndex: number;
   readonly height?: number;
+  readonly weight?: number;
+  readonly reducedMotion?: boolean;
 }) {
-  const { audioLevels, sampleIndex } = props;
+  const { audioLevels, sampleIndex, reducedMotion = false } = props;
   const height = props.height ?? WAVEFORM_BAR_HEIGHT;
+  const weight = props.weight ?? 1;
   const animatedStyle = useAnimatedStyle(() => {
-    const level = audioLevels.value[sampleIndex] ?? 0;
+    const levels = audioLevels.get();
+    const rawLevel = levels[sampleIndex] ?? 0;
+    const level = Math.max(0, Math.min(1, rawLevel * weight));
+    const targetScale =
+      (WAVEFORM_MIN_BAR_HEIGHT + level * (height - WAVEFORM_MIN_BAR_HEIGHT)) / height;
+    if (reducedMotion) {
+      return {
+        opacity: 0.35 + level * 0.65,
+        transform: [{ scaleY: Math.max(0.28, targetScale) }],
+      };
+    }
     return {
-      opacity: withTiming(0.22 + level * 0.78, WAVEFORM_TIMING),
+      opacity: withTiming(0.24 + level * 0.76, WAVEFORM_TIMING),
       transform: [
         {
-          scaleY: withTiming(
-            (WAVEFORM_MIN_BAR_HEIGHT + level * (height - WAVEFORM_MIN_BAR_HEIGHT)) / height,
-            WAVEFORM_TIMING,
-          ),
+          scaleY:
+            Platform.OS === "android"
+              ? withSpring(targetScale, SPRING_EFFECTS_FAST)
+              : withTiming(targetScale, WAVEFORM_TIMING),
         },
       ],
     };
@@ -177,12 +199,94 @@ const WaveformBar = memo(function WaveformBar(props: {
   );
 });
 
+const REACTIVE_SPRING_BARS = [
+  { id: "spectrum-0", weight: 0.68, offset: 0 },
+  { id: "spectrum-1", weight: 0.9, offset: 1 },
+  { id: "spectrum-2", weight: 1.0, offset: 2 },
+  { id: "spectrum-3", weight: 0.9, offset: 3 },
+  { id: "spectrum-4", weight: 0.68, offset: 4 },
+] as const;
+const REACTIVE_SPRING_BAR_HEIGHT = 18;
+
+/**
+ * 5-bar real-time dB spring spectrum driven directly from the audioLevels SharedValue
+ * with zero React re-renders; degrades cleanly to static level indicators under ReduceMotion.
+ */
+export const ReactiveSpringWaveform = memo(function ReactiveSpringWaveform(props: {
+  readonly audioLevels: SharedValue<ReadonlyArray<number>>;
+  readonly height?: number;
+  readonly barClassName?: string;
+}) {
+  const reducedMotion = useReducedMotion();
+  const height = props.height ?? REACTIVE_SPRING_BAR_HEIGHT;
+
+  return (
+    <View
+      accessibilityElementsHidden
+      importantForAccessibility="no-hide-descendants"
+      className="flex-row items-center gap-[3px]"
+      style={{ height }}
+    >
+      {REACTIVE_SPRING_BARS.map((bar) => (
+        <ReactiveSpectrumBar
+          key={bar.id}
+          audioLevels={props.audioLevels}
+          sampleIndex={Math.max(0, VOICE_WAVEFORM_SAMPLE_COUNT - 5 + bar.offset)}
+          height={height}
+          weight={bar.weight}
+          reducedMotion={reducedMotion}
+          barClassName={props.barClassName}
+        />
+      ))}
+    </View>
+  );
+});
+
+const ReactiveSpectrumBar = memo(function ReactiveSpectrumBar(props: {
+  readonly audioLevels: SharedValue<ReadonlyArray<number>>;
+  readonly sampleIndex: number;
+  readonly height: number;
+  readonly weight: number;
+  readonly reducedMotion: boolean;
+  readonly barClassName?: string;
+}) {
+  const { audioLevels, sampleIndex, height, weight, reducedMotion } = props;
+  const animatedStyle = useAnimatedStyle(() => {
+    const levels = audioLevels.get();
+    const rawLevel = levels[sampleIndex] ?? 0;
+    const weighted = Math.max(0, Math.min(1, rawLevel * weight));
+    const minFraction = 0.22;
+    const targetScale = minFraction + weighted * (1 - minFraction);
+    if (reducedMotion) {
+      return {
+        opacity: 0.4 + weighted * 0.6,
+        transform: [{ scaleY: Math.max(0.32, Math.round(targetScale * 4) / 4) }],
+      };
+    }
+    return {
+      opacity: withSpring(0.35 + weighted * 0.65, SPRING_EFFECTS_FAST),
+      transform: [{ scaleY: withSpring(targetScale, SPRING_EFFECTS_FAST) }],
+    };
+  });
+
+  return (
+    <Animated.View
+      className={cn("w-[3px] rounded-full bg-primary", props.barClassName)}
+      style={[{ height }, animatedStyle]}
+    />
+  );
+});
+
 const COMPACT_WAVEFORM_BAR_COUNT = 8;
 const COMPACT_WAVEFORM_BAR_HEIGHT = 14;
 
 export const CompactVoiceWaveform = memo(function CompactVoiceWaveform(props: {
   readonly audioLevels: SharedValue<ReadonlyArray<number>>;
 }) {
+  const reducedMotion = useReducedMotion();
+  if (Platform.OS === "android") {
+    return <ReactiveSpringWaveform audioLevels={props.audioLevels} height={14} />;
+  }
   return (
     <View
       accessibilityElementsHidden
@@ -196,6 +300,7 @@ export const CompactVoiceWaveform = memo(function CompactVoiceWaveform(props: {
           audioLevels={props.audioLevels}
           height={COMPACT_WAVEFORM_BAR_HEIGHT}
           sampleIndex={VOICE_WAVEFORM_SAMPLE_COUNT - COMPACT_WAVEFORM_BAR_COUNT + index}
+          reducedMotion={reducedMotion}
         />
       ))}
     </View>

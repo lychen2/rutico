@@ -7,15 +7,25 @@ import {
   RNHostView,
   Text,
 } from "@expo/ui/jetpack-compose";
-import { defaultMinSize, padding, size, width } from "@expo/ui/jetpack-compose/modifiers";
+import {
+  clip,
+  defaultMinSize,
+  padding,
+  Shapes,
+  size,
+  width,
+} from "@expo/ui/jetpack-compose/modifiers";
 import type { MenuAction } from "@react-native-menu/menu";
 import { Pressable } from "react-native";
 import { resolveScaledTextRole } from "../../lib/appearancePreferences";
+import { MOBILE_SHAPE } from "../../lib/designTokens";
 
 import { useAndroidControlSizing } from "./useAndroidControlSizing";
 import { useAppearancePreferences } from "../../features/settings/appearance/AppearancePreferencesProvider";
 import type { MenuPopupProps } from "./MenuPopup";
 import { isAppSymbolName, SymbolView, type AppSymbolName } from "./AppSymbol.android";
+
+const roundedCornerShape = Shapes.RoundedCorner;
 
 // The Compose glyph host consumes touches; run the action here and keep accessibility on the row.
 function MenuIcon(props: {
@@ -64,8 +74,17 @@ export function MenuPopupItems(
   const caption = resolveScaledTextRole("caption", appearance.baseFontSize);
   const foreground = colors["--color-foreground"];
   const muted = colors["--color-foreground-muted"];
+  // Concentric Material 3 geometry: 16dp outer shell, 6dp horizontal inset -> 10dp inner row highlight.
+  const rowHorizontalInset = Math.round(6 * scale);
+  const innerRadius = Math.round(MOBILE_SHAPE.menuInner * scale);
+  const innerItemWidth = Math.max(96, props.menuWidth - rowHorizontalInset * 2);
   // A fixed native item height clips wrapped labels; a minimum lets each row grow.
-  const itemModifiers = [width(props.menuWidth), defaultMinSize({ minHeight: menuItemHeight })];
+  const itemModifiers = [
+    padding(rowHorizontalInset, Math.round(1 * scale), rowHorizontalInset, Math.round(1 * scale)),
+    clip(roundedCornerShape(innerRadius)),
+    width(innerItemWidth),
+    defaultMinSize({ minHeight: menuItemHeight }),
+  ];
   return (
     <>
       {props.parent ? (
@@ -152,6 +171,8 @@ export function MenuPopupItems(
 
 export function MenuPopup(props: MenuPopupProps) {
   const { themeVariables: colors } = useAppearancePreferences();
+  const { scale } = useAndroidControlSizing();
+  const outerCornerRadius = Math.round(MOBILE_SHAPE.menuOuter * scale);
   const items = <MenuPopupItems {...props} />;
   if (props.inline) {
     return (
@@ -175,7 +196,12 @@ export function MenuPopup(props: MenuPopupProps) {
         height: props.anchor.height,
       }}
     >
-      <DropdownMenu expanded onDismissRequest={props.onClose} color={colors["--color-card-alt"]}>
+      <DropdownMenu
+        expanded
+        onDismissRequest={props.onClose}
+        color={colors["--color-card-alt"]}
+        cornerRadius={outerCornerRadius}
+      >
         <DropdownMenu.Trigger>
           <Box modifiers={[size(props.anchor.width, props.anchor.height)]} />
         </DropdownMenu.Trigger>

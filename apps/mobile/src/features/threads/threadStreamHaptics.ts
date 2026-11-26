@@ -4,8 +4,10 @@ import type { EnvironmentThread } from "@t3tools/client-runtime/state/shell";
 import type { ScopedThreadRef } from "@t3tools/contracts";
 import { Atom } from "effect/reactivity";
 import * as Haptics from "expo-haptics";
+import { Platform } from "react-native";
 
 import { isAppActive } from "../../lib/appState";
+import { triggerSemanticHaptic } from "../../lib/hapticChoreography";
 import { environmentThreadDetails } from "../../state/threads";
 
 export interface StreamingMessageMark {
@@ -42,6 +44,38 @@ function hasCompletedAssistantMessage(
   return false;
 }
 
+function countCompletedToolItems(thread: EnvironmentThread | null): number {
+  const items = thread?.projection.turnItems ?? [];
+  let completed = 0;
+  for (let index = 0; index < items.length; index += 1) {
+    const candidate = items[index] as {
+      readonly item?: { readonly type?: string; readonly status?: string };
+    };
+    const item = candidate?.item;
+    if (
+      item &&
+      item.status === "completed" &&
+      item.type !== "assistant_message" &&
+      item.type !== "user_message" &&
+      item.type !== "reasoning"
+    ) {
+      completed += 1;
+    }
+  }
+  return completed;
+}
+
+function latestFailedRunId(thread: EnvironmentThread | null): string | null {
+  const runs = thread?.projection.runs ?? [];
+  for (let index = runs.length - 1; index >= 0; index -= 1) {
+    const run = runs[index];
+    if (run?.status === "failed") {
+      return String(run.id);
+    }
+  }
+  return null;
+}
+
 /**
  * A new stream always ticks; growth of the same stream ticks at most once per
  * throttle window, so a fast stream reads as texture rather than a buzz.
@@ -68,27 +102,104 @@ export function shouldFireStreamCompleteHaptic(input: {
   return input.previous !== null && input.latest === null && input.completedMessagePresent;
 }
 
+/** Fires when a newly completed tool activity arrives during an active thread session. */
+export function shouldFireToolCompleteHaptic(input: {
+  readonly previousCompletedCount: number;
+  readonly currentCompletedCount: number;
+}): boolean {
+  return input.currentCompletedCount > input.previousCompletedCount;
+}
+
+/** Fires once when a new run transitions into a failed state. */
+export function shouldFireRunFailedHaptic(input: {
+  readonly previousFailedRunId: string | null;
+  readonly latestFailedRunId: string | null;
+}): boolean {
+  return input.latestFailedRunId !== null && input.latestFailedRunId !== input.previousFailedRunId;
+}
+
+function fireStreamTokenHaptic(): void {
+  if (Platform.OS === "android") {
+    triggerSemanticHaptic("clockTick", { throttle: false });
+    return;
+  }
+  void Haptics.selectionAsync().catch(() => undefined);
+}
+
+function fireToolCompleteHaptic(): void {
+  if (Platform.OS === "android") {
+    triggerSemanticHaptic("segmentTick", { throttle: false });
+    return;
+  }
+  void Haptics.selectionAsync().catch(() => undefined);
+}
+
+function fireTurnCompleteHaptic(): void {
+  if (Platform.OS === "android") {
+    triggerSemanticHaptic("confirm", { throttle: false });
+    return;
+  }
+  void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => undefined);
+}
+
+function fireRunFailedHaptic(): void {
+  if (Platform.OS === "android") {
+    triggerSemanticHaptic("reject", { throttle: false });
+    return;
+  }
+  void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error).catch(() => undefined);
+}
+
 const streamHapticsFamily = Atom.family((key: string) => {
   const ref = parseThreadKey(key);
   return Atom.make((get) => {
-    // The first snapshot only seeds the mark: opening a thread mid-stream is silent.
+    // The first snapshot only seeds the marks: opening a thread mid-stream is silent.
     let seeded = false;
     let previous: StreamingMessageMark | null = null;
+    let previousCompletedTools = 0;
+    let previousFailedRunId: string | null = null;
     let lastTickAt = 0;
     // `subscribe`, not `get`: a rebuild per streaming tick would reset the mark.
     get.subscribe(
       environmentThreadDetails.threadAtom(ref),
       (thread) => {
         const latest = latestStreamingAssistantMessage(thread);
+        const completedTools = countCompletedToolItems(thread);
+        const failedRunId = latestFailedRunId(thread);
         const now = Date.now();
         const prior = previous;
+        const priorTools = previousCompletedTools;
+        const priorFailedRunId = previousFailedRunId;
         const wasSeeded = seeded;
+
         seeded = true;
         previous = latest;
+        previousCompletedTools = completedTools;
+        previousFailedRunId = failedRunId;
+
         if (!wasSeeded || !isAppActive()) return;
+
+        if (
+          shouldFireRunFailedHaptic({
+            previousFailedRunId: priorFailedRunId,
+            latestFailedRunId: failedRunId,
+          })
+        ) {
+          fireRunFailedHaptic();
+          return;
+        }
         if (shouldTickStreamHaptic({ previous: prior, latest, lastTickAt, now })) {
           lastTickAt = now;
-          void Haptics.selectionAsync().catch(() => undefined);
+          fireStreamTokenHaptic();
+          return;
+        }
+        if (
+          shouldFireToolCompleteHaptic({
+            previousCompletedCount: priorTools,
+            currentCompletedCount: completedTools,
+          })
+        ) {
+          fireToolCompleteHaptic();
           return;
         }
         if (
@@ -99,7 +210,7 @@ const streamHapticsFamily = Atom.family((key: string) => {
             completedMessagePresent: hasCompletedAssistantMessage(thread, prior.id),
           })
         ) {
-          void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => undefined);
+          fireTurnCompleteHaptic();
         }
       },
       { immediate: true },

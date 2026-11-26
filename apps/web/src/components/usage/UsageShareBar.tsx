@@ -1,6 +1,8 @@
 import { useUiText } from "~/i18n/useUiText";
 import { formatPercent } from "@t3tools/shared/usageFormat";
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
+
+import { cn } from "~/lib/utils";
 import { SharedTooltipTrigger } from "../ui/shared-tooltip";
 
 export interface ShareSegment {
@@ -21,49 +23,74 @@ export function UsageShareBar({
   readonly aside?: ReactNode;
 }) {
   const uiText = useUiText();
+  const [hoveredLabel, setHoveredLabel] = useState<string | null>(null);
   const visible = segments.filter((segment) => segment.value > 0);
   const total = visible.reduce((sum, segment) => sum + segment.value, 0);
   if (total <= 0) return null;
 
   return (
-    <div className="flex min-w-0 flex-col gap-2.5">
+    <div className="flex min-w-0 flex-col gap-2.5" onMouseLeave={() => setHoveredLabel(null)}>
       <div className="flex items-baseline justify-between gap-3">
         <h3 className="text-sm font-medium text-foreground">{uiText(label)}</h3>
         {aside}
       </div>
       {/* The legend below carries every figure; the bar's tooltips are pointer-only. */}
       <div aria-hidden className="flex h-2 gap-0.5">
-        {visible.map((segment) => (
-          <SharedTooltipTrigger
-            key={uiText(segment.label)}
-            render={
-              <div
-                className="h-full min-w-1 rounded-xs first:rounded-l-full last:rounded-r-full"
-                style={{ flex: `${segment.value} 1 0`, backgroundColor: segment.color }}
-              />
-            }
-            label={
-              <>
-                {uiText(segment.label)} · {format(segment.value)} ·{" "}
-                {formatPercent(segment.value / total)}
-              </>
-            }
-          />
-        ))}
+        {visible.map((segment) => {
+          const segmentKey = uiText(segment.label);
+          const isHovered = hoveredLabel === segmentKey;
+          const isDimmed = hoveredLabel !== null && !isHovered;
+          return (
+            <SharedTooltipTrigger
+              key={segmentKey}
+              render={
+                <div
+                  onMouseEnter={() => setHoveredLabel(segmentKey)}
+                  className={cn(
+                    "h-full min-w-1 rounded-xs transition-[flex-grow,opacity,transform] duration-(--duration-fluid) ease-(--spring-fluid) first:rounded-l-full last:rounded-r-full motion-reduce:transition-none",
+                    isHovered && "scale-y-125",
+                    isDimmed && "opacity-40",
+                  )}
+                  style={{ flex: `${segment.value} 1 0`, backgroundColor: segment.color }}
+                />
+              }
+              label={
+                <>
+                  {segmentKey} · {format(segment.value)} · {formatPercent(segment.value / total)}
+                </>
+              }
+            />
+          );
+        })}
       </div>
       <ul aria-label={label} className="flex flex-wrap gap-x-4 gap-y-1 text-xs">
-        {visible.map((segment) => (
-          <li key={uiText(segment.label)} className="flex items-center gap-1.5">
-            <span
-              aria-hidden
-              className="size-2 rounded-xs"
-              style={{ backgroundColor: segment.color }}
-            />
-            <span className="text-muted-foreground">{uiText(segment.label)}</span>{" "}
-            <span className="text-foreground tabular-nums">{format(segment.value)}</span>
-            <span className="sr-only">, {formatPercent(segment.value / total)}</span>
-          </li>
-        ))}
+        {visible.map((segment) => {
+          const segmentKey = uiText(segment.label);
+          const isHovered = hoveredLabel === segmentKey;
+          const isDimmed = hoveredLabel !== null && !isHovered;
+          return (
+            <li
+              key={segmentKey}
+              onMouseEnter={() => setHoveredLabel(segmentKey)}
+              className={cn(
+                "flex items-center gap-1.5 transition-opacity duration-150 motion-reduce:transition-none",
+                isDimmed && "opacity-45",
+              )}
+            >
+              <span
+                aria-hidden
+                className={cn(
+                  "size-2 rounded-xs transition-transform duration-150 motion-reduce:transition-none",
+                  isHovered && "scale-125",
+                )}
+                style={{ backgroundColor: segment.color }}
+              />
+              <span className="text-muted-foreground">{segmentKey}</span>{" "}
+              <span className="text-foreground tabular-nums">{format(segment.value)}</span>
+              <span className="sr-only">, {formatPercent(segment.value / total)}</span>
+            </li>
+          );
+        })}
       </ul>
     </div>
   );

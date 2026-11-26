@@ -20,21 +20,38 @@ function viewportSnapshot(viewport: VisualViewport) {
 export function createSoftwareKeyboardStore(win: KeyboardWindow | undefined, isDesktop: boolean) {
   const listeners = new Set<() => void>();
   let viewportOpen = false;
+  let viewportInsetPx = 0;
   const viewport = isDesktop ? undefined : win?.visualViewport;
   const keyboard = isDesktop ? undefined : win?.navigator.virtualKeyboard;
   let previous = viewport ? viewportSnapshot(viewport) : undefined;
 
+  // Single-path resolution (Astra P1-6): never sum VirtualKeyboard and visualViewport insets.
+  // When VirtualKeyboard is in overlay mode or actively reports height, it is the sole source.
+  const isNativeOverlayPath = () =>
+    Boolean(keyboard && (keyboard.overlaysContent || keyboard.boundingRect.height > 0));
+
+  const getInsetPx = (): number => {
+    if (isDesktop || !win) return 0;
+    if (isNativeOverlayPath()) {
+      return Math.max(0, Math.round(keyboard!.boundingRect.height));
+    }
+    return viewportOpen ? viewportInsetPx : 0;
+  };
+
   const getSnapshot = () => {
-    // Chromium can expose the API while withholding geometry outside overlay mode.
-    // Keep the browser's automatic viewport resizing instead of enabling overlays.
-    if (keyboard && (keyboard.overlaysContent || keyboard.boundingRect.height > 0)) {
-      return keyboard.boundingRect.height > 0;
+    if (isNativeOverlayPath()) {
+      return keyboard!.boundingRect.height > 0;
     }
     return viewportOpen;
   };
 
   const notify = () => {
     for (const listener of listeners) listener();
+  };
+
+  const computeViewportInset = (current: ReturnType<typeof viewportSnapshot>) => {
+    if (!win) return 0;
+    return Math.max(0, Math.round(win.innerHeight - current.height * current.scale));
   };
 
   const onViewportResize = () => {
@@ -47,12 +64,16 @@ export function createSoftwareKeyboardStore(win: KeyboardWindow | undefined, isD
       : 0;
     if (Math.abs(current.height - win.innerHeight / current.scale) <= 1) {
       viewportOpen = false;
+      viewportInsetPx = 0;
     } else if (
       !viewportOpen &&
       previous?.width === current.width &&
       scaledHeightDifference > KEYBOARD_THRESHOLD
     ) {
       viewportOpen = true;
+      viewportInsetPx = computeViewportInset(current);
+    } else if (viewportOpen) {
+      viewportInsetPx = computeViewportInset(current);
     }
     previous = current;
     notify();
@@ -64,7 +85,9 @@ export function createSoftwareKeyboardStore(win: KeyboardWindow | undefined, isD
       if (viewport) {
         previous = viewportSnapshot(viewport);
         // A composer can mount after the keyboard has already opened.
-        viewportOpen = win.innerHeight - previous.height * previous.scale > KEYBOARD_THRESHOLD;
+        const initialDiff = win.innerHeight - previous.height * previous.scale;
+        viewportOpen = initialDiff > KEYBOARD_THRESHOLD;
+        viewportInsetPx = viewportOpen ? Math.max(0, Math.round(initialDiff)) : 0;
         viewport.addEventListener("resize", onViewportResize);
       }
       keyboard?.addEventListener("geometrychange", notify);
@@ -79,5 +102,29 @@ export function createSoftwareKeyboardStore(win: KeyboardWindow | undefined, isD
     };
   };
 
-  return { getSnapshot, subscribe };
+  return { getSnapshot, getInsetPx, subscribe };
+}
+
+/**
+ * Publishes the active software keyboard pixel inset to `--software-keyboard-inset` on
+ * `documentElement` so bottom sheets and mobile dialogs avoid Android Gboard without double-lifting.
+ */
+export function syncDocumentSoftwareKeyboardInset(
+  store: ReturnType<typeof createSoftwareKeyboardStore>,
+  doc: Pick<Document, "documentElement"> | undefined = globalThis.document,
+): () => void {
+  if (!doc?.documentElement?.style) return () => {};
+  const root = doc.documentElement;
+  const apply = () => {
+    const insetPx = store.getInsetPx();
+    root.style.setProperty("--software-keyboard-inset", `${insetPx}px`);
+    root.dataset.softwareKeyboardOpen = store.getSnapshot() ? "true" : "false";
+  };
+  const unsubscribe = store.subscribe(apply);
+  apply();
+  return () => {
+    unsubscribe();
+    root.style.setProperty("--software-keyboard-inset", "0px");
+    delete root.dataset.softwareKeyboardOpen;
+  };
 }

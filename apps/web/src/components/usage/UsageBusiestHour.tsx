@@ -32,7 +32,10 @@ export function UsageBusiestHour({
   const format = useUsageDateFormat();
   const window = windows[reading.index];
   return (
-    <>
+    <span
+      className="tabular-nums transition-opacity duration-150 motion-reduce:transition-none"
+      data-usage-busiest-hour={window ? "loading" : "ready"}
+    >
       {window
         ? uiText("Loading hourly usage…")
         : reading.incomplete
@@ -59,7 +62,7 @@ export function UsageBusiestHour({
           }
         />
       ) : null}
-    </>
+    </span>
   );
 }
 

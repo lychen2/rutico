@@ -68,6 +68,15 @@ const reactTests = [
   "src/features/devices/device-stream.browser.test.ts",
   "src/features/keyboard/keyboardControllerState.test.tsx",
   "src/features/voice-input/useVoiceInputController.test.tsx",
+  "src/features/threads/PendingApprovalCard.test.tsx",
+];
+
+const androidReactTests = [
+  "src/features/pull-requests/PullRequestMergeControls.test.tsx",
+  "src/features/layout/AdaptiveWorkspaceLayout.tabletop.test.tsx",
+  "src/features/home/HomeScreen.pullToCreate.test.tsx",
+  "src/features/threads/ThreadWorkbenchTerminalPane.pinchZoom.test.tsx",
+  "src/features/layout/AndroidPaseoPanels.predictiveBack.test.tsx",
 ];
 
 const sourceRoot = `${normalizePath(NodeURL.fileURLToPath(new URL("./src", import.meta.url)))}/`;
@@ -100,6 +109,60 @@ export const initializeGT = () => {};
 export const GTProvider = (props) => props.children;
 `;
 
+function createReactProject(name: string, platform: "ios" | "android", include: string[]) {
+  return {
+    extends: true as const,
+    plugins: [
+      {
+        name: `mobile-release-react-compiler-${name}-${platform}`,
+        enforce: "pre" as const,
+        async transform(code: string, id: string) {
+          if (
+            !normalizePath(id).startsWith(sourceRoot) ||
+            !/\.tsx?$/.test(id) ||
+            /\.test\.tsx?$/.test(id)
+          ) {
+            return;
+          }
+          const result = await babel.transformAsync(code, {
+            ...babelConfig,
+            presets: babelConfig.presets.map(([presetName, options]: [string, object]) => [
+              require.resolve(presetName),
+              // Vite runs in Node; inline Babel helpers instead of Metro runtime imports.
+              { ...options, enableBabelRuntime: false },
+            ]),
+            filename: id,
+            babelrc: false,
+            configFile: false,
+            sourceMaps: true,
+            caller: {
+              name: "metro",
+              bundler: "metro",
+              platform,
+              isDev: false,
+              isServer: false,
+              isNodeModule: false,
+              supportsStaticESM: true,
+              supportsReactCompiler: true,
+            },
+          });
+          if (result?.code) return { code: result.code, map: result.map };
+        },
+      },
+    ],
+    test: {
+      name,
+      include,
+      // Native components mock React Native and render through react-dom in these tests.
+      environment: "jsdom" as const,
+      setupFiles: [
+        "../../packages/shared/src/testing/providerEnv.ts",
+        "../../packages/shared/src/testing/gitEnv.ts",
+      ],
+    },
+  };
+}
+
 export default defineConfig({
   plugins: [
     {
@@ -125,7 +188,7 @@ export default defineConfig({
         test: {
           name: "unit",
           include: ["**/*.test.{ts,tsx,mjs}"],
-          exclude: ["**/node_modules/**", ...reactTests],
+          exclude: ["**/node_modules/**", ...reactTests, ...androidReactTests],
           setupFiles: [
             "../../packages/shared/src/testing/longTempDir.ts",
             "../../packages/shared/src/testing/providerEnv.ts",
@@ -133,57 +196,8 @@ export default defineConfig({
           ],
         },
       },
-      {
-        extends: true,
-        plugins: [
-          {
-            name: `mobile-release-react-compiler-${testPlatform}`,
-            enforce: "pre",
-            async transform(code, id) {
-              if (
-                !normalizePath(id).startsWith(sourceRoot) ||
-                !/\.tsx?$/.test(id) ||
-                /\.test\.tsx?$/.test(id)
-              ) {
-                return;
-              }
-              const result = await babel.transformAsync(code, {
-                ...babelConfig,
-                presets: babelConfig.presets.map(([name, options]: [string, object]) => [
-                  require.resolve(name),
-                  // Vite runs in Node; inline Babel helpers instead of Metro runtime imports.
-                  { ...options, enableBabelRuntime: false },
-                ]),
-                filename: id,
-                babelrc: false,
-                configFile: false,
-                sourceMaps: true,
-                caller: {
-                  name: "metro",
-                  bundler: "metro",
-                  platform: testPlatform,
-                  isDev: false,
-                  isServer: false,
-                  isNodeModule: false,
-                  supportsStaticESM: true,
-                  supportsReactCompiler: true,
-                },
-              });
-              if (result?.code) return { code: result.code, map: result.map };
-            },
-          },
-        ],
-        test: {
-          name: "react",
-          include: reactTests,
-          // Native components mock React Native and render through react-dom in these tests.
-          environment: "jsdom",
-          setupFiles: [
-            "../../packages/shared/src/testing/providerEnv.ts",
-            "../../packages/shared/src/testing/gitEnv.ts",
-          ],
-        },
-      },
+      createReactProject("react", testPlatform, reactTests),
+      createReactProject("react-android", "android", androidReactTests),
     ],
   },
 });

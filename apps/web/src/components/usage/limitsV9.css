@@ -1297,6 +1297,25 @@ html:root
 [data-lv9-root] [data-lv9~="gantt-svg"] text {
   font-family: inherit;
 }
+@keyframes lv9NowBeaconPulse {
+  0%,
+  100% {
+    transform: scale(0.92);
+    opacity: 0.24;
+  }
+  50% {
+    transform: scale(1.4);
+    opacity: 0.56;
+  }
+}
+@media (prefers-reduced-motion: no-preference) {
+  [data-lv9-root] [data-timeline-now-beacon] {
+    transform-box: fill-box;
+    transform-origin: center;
+    animation: lv9NowBeaconPulse 2.2s ease-in-out infinite;
+    animation-play-state: var(--visible-animation-state, running);
+  }
+}
 
 /* ---------- V4 stardust orbit energy gauge ---------- */
 [data-lv9-root] [data-lv9~="v4-orbit-compare-box"] {

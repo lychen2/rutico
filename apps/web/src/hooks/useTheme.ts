@@ -1,9 +1,12 @@
 import { pipe } from "effect/Function";
-import type { DesktopBridge } from "@t3tools/contracts";
+import type { DesktopBridge, LinuxPortalAppearance } from "@t3tools/contracts";
 import { safeErrorLogAttributes } from "@t3tools/client-runtime/errors";
 import * as Schema from "effect/Schema";
 import { useSyncExternalStore } from "react";
+import { applyLinuxPortalContrast } from "../appearanceContrast";
+import { runThemeViewTransition } from "../lib/motion/themeTransition";
 import {
+  applyLinuxPortalAccent,
   applyThemePalette,
   CUSTOM_THEMES_STORAGE_KEY,
   invalidateCustomThemes,
@@ -128,7 +131,41 @@ let lastSnapshot: ThemeSnapshot | null = null;
 let snapshotStale = true;
 let lastDesktopTheme: "light" | "dark" | "system" | null = null;
 let lastAppliedTheme: Omit<ThemeSnapshot, "resolvedTheme"> | null = null;
+let lastLinuxPortalAppearance: LinuxPortalAppearance | null = null;
 let themeStorageReadFailure: ThemeStorageError | null = null;
+
+function readInitialLinuxPortalAppearance(): LinuxPortalAppearance | null {
+  if (typeof window === "undefined") return null;
+  const bridge = window.desktopBridge;
+  if (typeof bridge?.getLinuxPortalAppearance !== "function") return null;
+  try {
+    return bridge.getLinuxPortalAppearance();
+  } catch {
+    return null;
+  }
+}
+
+function linuxPortalAppearanceSignature(appearance: LinuxPortalAppearance | null): string {
+  if (!appearance) return "";
+  const accent = appearance.accentColor
+    ? `${appearance.accentColor.r.toFixed(4)},${appearance.accentColor.g.toFixed(4)},${appearance.accentColor.b.toFixed(4)}`
+    : "";
+  return `${appearance.colorScheme ?? ""}|${accent}|${appearance.contrast ?? ""}`;
+}
+
+function syncLinuxPortalDom(resolvedAppearance: ThemeAppearance): void {
+  if (typeof document === "undefined") return;
+  const root = document.documentElement;
+  if (!root?.style) return;
+  const usingCustomOrNamedTheme = Boolean(root.dataset.themeId);
+  applyLinuxPortalAccent(
+    root,
+    lastLinuxPortalAppearance?.accentColor ?? null,
+    resolvedAppearance,
+    !usingCustomOrNamedTheme,
+  );
+  applyLinuxPortalContrast(root, lastLinuxPortalAppearance?.contrast ?? null);
+}
 
 function emitChange() {
   snapshotStale = true;
@@ -136,6 +173,8 @@ function emitChange() {
 }
 
 function getSystemDark() {
+  if (lastLinuxPortalAppearance?.colorScheme === "dark") return true;
+  if (lastLinuxPortalAppearance?.colorScheme === "light") return false;
   return (
     typeof window !== "undefined" &&
     typeof window.matchMedia === "function" &&
@@ -303,7 +342,10 @@ export function syncBrowserChromeTheme() {
   }
 }
 
-function applyTheme(theme: Theme, { suppressTransitions = false, preservePreview = true } = {}) {
+function applyTheme(
+  theme: Theme,
+  { suppressTransitions = false, preservePreview = true, animateTransition = false } = {},
+) {
   if (typeof document === "undefined" || typeof window === "undefined") return;
   if (preservePreview && document.documentElement.dataset?.themeId === THEME_PREVIEW_ID) {
     return;
@@ -323,9 +365,6 @@ function applyTheme(theme: Theme, { suppressTransitions = false, preservePreview
     return;
   }
 
-  if (suppressTransitions) {
-    document.documentElement.classList.add("no-transitions");
-  }
   const resolvedAppearance = resolveThemeAppearance(
     theme,
     systemDark,
@@ -333,11 +372,25 @@ function applyTheme(theme: Theme, { suppressTransitions = false, preservePreview
     appearanceMode,
     themeHalves,
   );
-  applyThemePalette(resolveThemeHalf(theme, themeHalves, resolvedAppearance), resolvedAppearance);
-  document.documentElement.classList.toggle("dark", resolvedAppearance === "dark");
+  const commitThemeDom = () => {
+    applyThemePalette(resolveThemeHalf(theme, themeHalves, resolvedAppearance), resolvedAppearance);
+    document.documentElement.classList.toggle("dark", resolvedAppearance === "dark");
+    syncLinuxPortalDom(resolvedAppearance);
+    syncBrowserChromeTheme();
+  };
+
   lastAppliedTheme = { theme, systemDark, followSystem, appearanceMode, themeHalves };
-  syncBrowserChromeTheme();
   syncDesktopTheme(theme, followSystem, appearanceMode);
+
+  if (animateTransition) {
+    runThemeViewTransition(commitThemeDom);
+    return;
+  }
+
+  if (suppressTransitions) {
+    document.documentElement.classList.add("no-transitions");
+  }
+  commitThemeDom();
   if (suppressTransitions) {
     // Force a reflow so the no-transitions class takes effect before removal
     void document.documentElement.offsetHeight;
@@ -392,6 +445,7 @@ function syncDesktopTheme(
 }
 
 if (typeof document !== "undefined" && typeof window !== "undefined") {
+  lastLinuxPortalAppearance = readInitialLinuxPortalAppearance();
   applyTheme(getStored());
 }
 
@@ -441,6 +495,35 @@ function handleSystemAppearanceChange() {
   emitChange();
 }
 
+function handleLinuxPortalAppearanceChange(nextAppearance: LinuxPortalAppearance) {
+  const prevSignature = linuxPortalAppearanceSignature(lastLinuxPortalAppearance);
+  const nextSignature = linuxPortalAppearanceSignature(nextAppearance);
+  if (prevSignature === nextSignature) return;
+  const hadInitial = lastLinuxPortalAppearance !== null;
+  lastLinuxPortalAppearance = nextAppearance;
+
+  const storedTheme = getStored();
+  const appearanceMode = readAppearanceModePreference(storedTheme);
+  const followSystem = appearanceMode === "system";
+  const themeHalves = readStoredThemeHalves();
+  const resolvedAppearance = resolveThemeAppearance(
+    storedTheme,
+    followSystem ? getSystemDark() : false,
+    followSystem,
+    appearanceMode,
+    themeHalves,
+  );
+  // Invalidate lastAppliedTheme so accent/contrast updates repaint cleanly with a View Transition.
+  lastAppliedTheme = null;
+  if (hadInitial) {
+    applyTheme(storedTheme, { suppressTransitions: true, animateTransition: true });
+  } else {
+    applyTheme(storedTheme, { suppressTransitions: true });
+  }
+  syncLinuxPortalDom(resolvedAppearance);
+  emitChange();
+}
+
 function handleStorageChange(e: StorageEvent) {
   if (e.key === STORAGE_KEY) {
     themeStorageReadFailure = null;
@@ -471,9 +554,14 @@ function subscribe(listener: () => void): () => void {
     const mq = typeof window.matchMedia === "function" ? window.matchMedia(MEDIA_QUERY) : null;
     mq?.addEventListener("change", handleSystemAppearanceChange);
     window.addEventListener("storage", handleStorageChange);
+    const removePortalListener =
+      typeof window.desktopBridge?.onLinuxPortalAppearanceChange === "function"
+        ? window.desktopBridge.onLinuxPortalAppearanceChange(handleLinuxPortalAppearanceChange)
+        : null;
     removeWindowListeners = () => {
       mq?.removeEventListener("change", handleSystemAppearanceChange);
       window.removeEventListener("storage", handleStorageChange);
+      removePortalListener?.();
     };
   }
 
@@ -550,7 +638,7 @@ export function setTheme(next: Theme): boolean {
     });
     return false;
   }
-  applyTheme(next, { suppressTransitions: true });
+  applyTheme(next, { suppressTransitions: true, animateTransition: true });
   emitChange();
   return true;
 }
@@ -575,7 +663,7 @@ export function setAppearanceMode(nextAppearanceMode: ThemePreferenceMode): bool
     return false;
   }
   themeStorageReadFailure = null;
-  applyTheme(getStored(), { suppressTransitions: true });
+  applyTheme(getStored(), { suppressTransitions: true, animateTransition: true });
   emitChange();
   return true;
 }
@@ -605,7 +693,7 @@ function setThemeHalf(appearance: ThemeAppearance, themeId: string | null): bool
     });
     return false;
   }
-  applyTheme(getStored(), { suppressTransitions: true });
+  applyTheme(getStored(), { suppressTransitions: true, animateTransition: true });
   emitChange();
   return true;
 }
@@ -627,7 +715,7 @@ function clearThemeHalves(): boolean {
     });
     return false;
   }
-  applyTheme(getStored(), { suppressTransitions: true });
+  applyTheme(getStored(), { suppressTransitions: true, animateTransition: true });
   emitChange();
   return true;
 }

@@ -6,8 +6,14 @@ import {
   DesktopEnvironmentBootstrapSchema,
   DesktopMediaReadSchema,
   DesktopThemeSchema,
+  DesktopTrayStateSchema,
+  DesktopWindowZoomStateSchema,
   EDITORS,
   EditorId,
+  LinuxPortalAppearanceSchema,
+  LinuxWindowControlActionSchema,
+  LinuxWindowStateSchema,
+  MainWindowZoomDirectionSchema,
   PickedThemeFileSchema,
   PickFolderOptionsSchema,
   PRIMARY_LOCAL_ENVIRONMENT_ID,
@@ -43,6 +49,13 @@ import * as ElectronMenu from "../../electron/ElectronMenu.ts";
 import * as ElectronShell from "../../electron/ElectronShell.ts";
 import * as ElectronTheme from "../../electron/ElectronTheme.ts";
 import * as ElectronWindow from "../../electron/ElectronWindow.ts";
+import * as DesktopTray from "../../window/DesktopTray.ts";
+import * as DesktopWindow from "../../window/DesktopWindow.ts";
+import {
+  buildDesktopWindowZoomState,
+  buildLinuxWindowState,
+  resolveLinuxWindowNativeWco,
+} from "../../window/DesktopWindow.ts";
 import * as Electron from "electron";
 import { msg } from "gt-i18n";
 import * as MacPermissions from "../../permissions/MacPermissions.ts";
@@ -126,6 +139,126 @@ export const getWindowFullscreenState = DesktopIpc.makeSyncIpcMethod({
     const electronWindow = yield* ElectronWindow.ElectronWindow;
     const window = yield* electronWindow.currentMainOrFirst;
     return Option.isSome(window) && window.value.isFullScreen();
+  }),
+});
+
+export const getLinuxWindowState = DesktopIpc.makeSyncIpcMethod({
+  channel: IpcChannels.GET_LINUX_WINDOW_STATE_CHANNEL,
+  result: Schema.NullOr(LinuxWindowStateSchema),
+  handler: Effect.fn("desktop.ipc.window.getLinuxWindowState")(function* () {
+    const environment = yield* DesktopEnvironment.DesktopEnvironment;
+    if (environment.platform !== "linux") {
+      return null;
+    }
+    const hostEnv = yield* HostProcess.Environment;
+    const electronWindow = yield* ElectronWindow.ElectronWindow;
+    const window = yield* electronWindow.currentMainOrFirst;
+    if (Option.isNone(window) || window.value.isDestroyed()) {
+      return null;
+    }
+    return buildLinuxWindowState(window.value, hostEnv, resolveLinuxWindowNativeWco(window.value));
+  }),
+});
+
+export const performLinuxWindowControlAction = DesktopIpc.makeIpcMethod({
+  channel: IpcChannels.LINUX_WINDOW_CONTROL_ACTION_CHANNEL,
+  payload: LinuxWindowControlActionSchema,
+  result: Schema.Void,
+  handler: Effect.fn("desktop.ipc.window.performLinuxWindowControlAction")(
+    function* (action, event) {
+      const environment = yield* DesktopEnvironment.DesktopEnvironment;
+      if (environment.platform !== "linux") return;
+      const electronWindow = yield* ElectronWindow.ElectronWindow;
+      const main = yield* electronWindow.main;
+      if (
+        event === undefined ||
+        Option.isNone(main) ||
+        main.value.isDestroyed() ||
+        main.value.webContents.id !== event.sender.id
+      ) {
+        return;
+      }
+      const window = main.value;
+      if (action === "minimize") {
+        window.minimize();
+      } else if (action === "maximize-toggle") {
+        if (window.isMaximized()) {
+          window.unmaximize();
+        } else {
+          window.maximize();
+        }
+      } else if (action === "close") {
+        window.close();
+      }
+    },
+  ),
+});
+
+export const getLinuxPortalAppearance = DesktopIpc.makeSyncIpcMethod({
+  channel: IpcChannels.GET_LINUX_PORTAL_APPEARANCE_CHANNEL,
+  result: Schema.NullOr(LinuxPortalAppearanceSchema),
+  handler: Effect.fn("desktop.ipc.window.getLinuxPortalAppearance")(function* () {
+    const environment = yield* DesktopEnvironment.DesktopEnvironment;
+    if (environment.platform !== "linux") {
+      return null;
+    }
+    const electronTheme = yield* ElectronTheme.ElectronTheme;
+    return yield* electronTheme.linuxPortalAppearance;
+  }),
+});
+
+export const getWindowZoomState = DesktopIpc.makeSyncIpcMethod({
+  channel: IpcChannels.GET_WINDOW_ZOOM_STATE_CHANNEL,
+  result: Schema.NullOr(DesktopWindowZoomStateSchema),
+  handler: Effect.fn("desktop.ipc.window.getWindowZoomState")(function* () {
+    const electronWindow = yield* ElectronWindow.ElectronWindow;
+    const window = yield* electronWindow.currentMainOrFirst;
+    if (Option.isNone(window) || window.value.isDestroyed()) {
+      return null;
+    }
+    return buildDesktopWindowZoomState(window.value);
+  }),
+});
+
+export const setWindowZoom = DesktopIpc.makeIpcMethod({
+  channel: IpcChannels.SET_WINDOW_ZOOM_CHANNEL,
+  payload: MainWindowZoomDirectionSchema,
+  result: Schema.Void,
+  handler: Effect.fn("desktop.ipc.window.setWindowZoom")(function* (direction, event) {
+    const electronWindow = yield* ElectronWindow.ElectronWindow;
+    const main = yield* electronWindow.main;
+    if (
+      event === undefined ||
+      Option.isNone(main) ||
+      main.value.isDestroyed() ||
+      main.value.webContents.id !== event.sender.id
+    ) {
+      return;
+    }
+    const desktopWindow = yield* DesktopWindow.DesktopWindow;
+    yield* desktopWindow.zoomMain(direction);
+  }),
+});
+
+export const setTrayState = DesktopIpc.makeIpcMethod({
+  channel: IpcChannels.SET_TRAY_STATE_CHANNEL,
+  payload: DesktopTrayStateSchema,
+  result: Schema.Void,
+  handler: Effect.fn("desktop.ipc.window.setTrayState")(function* (state, event) {
+    const electronWindow = yield* ElectronWindow.ElectronWindow;
+    const main = yield* electronWindow.main;
+    if (
+      event === undefined ||
+      Option.isNone(main) ||
+      main.value.isDestroyed() ||
+      main.value.webContents.id !== event.sender.id
+    ) {
+      return;
+    }
+    const tray = yield* Effect.serviceOption(DesktopTray.DesktopTray);
+    if (Option.isSome(tray)) {
+      yield* tray.value.updateState(state);
+    }
   }),
 });
 

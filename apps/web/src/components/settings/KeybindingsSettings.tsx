@@ -46,7 +46,8 @@ import {
 import { isElectron } from "../../env";
 import { useOpenInPreferredEditor } from "../../editorPreferences";
 import { formatShortcutKeyParts, formatShortcutLabel } from "../../keybindings";
-import { cn } from "../../lib/utils";
+import { cn, isMacPlatform } from "../../lib/utils";
+import { observeVisibleAnimation } from "~/lib/visibleAnimation";
 import { serverEnvironment } from "../../state/server";
 import { useSettingsScope } from "./SettingsScopeContext";
 import { useClientSettings } from "../../hooks/useSettings";
@@ -85,11 +86,12 @@ import {
   commandLabel,
   DEFAULT_WHEN_VARIABLE,
   isKnownWhenVariable,
-  keybindingConflictLabels,
+  keybindingConflicts,
   keybindingFromKeyboardEvent,
   parseWhenExpressionDraft,
   groupKeybindingRows,
   type KeybindingCommandOption,
+  type KeybindingConflict,
   type KeybindingGroup,
   type KeybindingRow,
   type WhenVariableOption,
@@ -112,6 +114,64 @@ function KeybindingPill({ shortcut }: { shortcut: KeybindingShortcut }) {
         <Kbd key={index === parts.length - 1 ? "key" : part}>{part}</Kbd>
       ))}
     </KbdGroup>
+  );
+}
+
+interface HeldModifiersState {
+  readonly ctrl: boolean;
+  readonly shift: boolean;
+  readonly alt: boolean;
+  readonly meta: boolean;
+}
+
+const EMPTY_HELD_MODIFIERS: HeldModifiersState = {
+  ctrl: false,
+  shift: false,
+  alt: false,
+  meta: false,
+};
+
+function heldModifiersFromEvent(event: KeyboardEvent<HTMLInputElement>): HeldModifiersState {
+  return {
+    ctrl: event.ctrlKey,
+    shift: event.shiftKey,
+    alt: event.altKey,
+    meta: event.metaKey,
+  };
+}
+
+function LiveModifierKeycaps({ held }: { held: HeldModifiersState }) {
+  const gt = useGT();
+  const isMac = isMacPlatform(navigator.platform);
+  const superLabel = gt("Super", { $context: "Linux or Windows Super/Meta modifier key" });
+  const caps = isMac
+    ? [
+        { id: "meta", label: "⌘", pressed: held.meta },
+        { id: "shift", label: "⇧", pressed: held.shift },
+        { id: "alt", label: "⌥", pressed: held.alt },
+        { id: "ctrl", label: "⌃", pressed: held.ctrl },
+      ]
+    : [
+        { id: "ctrl", label: "Ctrl", pressed: held.ctrl },
+        { id: "shift", label: "Shift", pressed: held.shift },
+        { id: "alt", label: "Alt", pressed: held.alt },
+        { id: "meta", label: superLabel, pressed: held.meta },
+      ];
+  return (
+    <span aria-hidden className="inline-flex items-center gap-1">
+      <span
+        ref={observeVisibleAnimation}
+        data-slot="keybinding-record-dot"
+        className="size-1.5 shrink-0 rounded-full bg-destructive"
+      />
+      <KbdGroup>
+        {caps.map((cap) => (
+          <Kbd key={cap.id} data-slot="keycap-live" data-pressed={cap.pressed ? "true" : undefined}>
+            {cap.label}
+          </Kbd>
+        ))}
+      </KbdGroup>
+    </span>
   );
 }
 
@@ -272,9 +332,16 @@ function UnknownWhenVariableWarning({
   );
 }
 
-function KeybindingConflictWarning({ labels }: { labels: ReadonlyArray<string> }) {
+function KeybindingConflictWarning({
+  conflicts,
+  onJumpToCommand,
+}: {
+  conflicts: ReadonlyArray<KeybindingConflict>;
+  onJumpToCommand?: (command: KeybindingCommand) => void;
+}) {
   const gt = useGT();
-  if (labels.length === 0) return null;
+  if (conflicts.length === 0) return null;
+  const labels = conflicts.map((conflict) => conflict.label);
   const description =
     labels.length === 1
       ? gt("Conflicts with {command}.", { command: labels[0] })
@@ -282,10 +349,49 @@ function KeybindingConflictWarning({ labels }: { labels: ReadonlyArray<string> }
         ? gt("Conflicts with {commands}, and more.", { commands: labels.slice(0, 3).join(", ") })
         : gt("Conflicts with {commands}.", { commands: labels.slice(0, 3).join(", ") });
 
+  if (!onJumpToCommand) {
+    return (
+      <WarningTooltipIcon label={description}>
+        {description} <T>The most recent matching binding wins when both conditions can apply.</T>
+      </WarningTooltipIcon>
+    );
+  }
+
   return (
-    <WarningTooltipIcon label={description}>
-      {description} <T>The most recent matching binding wins when both conditions can apply.</T>
-    </WarningTooltipIcon>
+    <Popover>
+      <PopoverTrigger
+        render={
+          <button
+            type="button"
+            aria-label={description}
+            className="inline-flex size-5 shrink-0 cursor-pointer items-center justify-center rounded-sm text-warning outline-none transition-colors hover:bg-warning/10 focus-visible:ring-3 focus-visible:ring-inset focus-visible:ring-warning/25"
+          />
+        }
+      >
+        <TriangleAlertIcon className="size-3.5" />
+      </PopoverTrigger>
+      <PopoverContent align="end" sideOffset={6} className="w-72">
+        <div className="space-y-2 text-xs">
+          <p className="font-medium text-foreground">{description}</p>
+          <p className="text-muted-foreground">
+            <T>The most recent matching binding wins when both conditions can apply.</T>
+          </p>
+          <div className="flex flex-wrap gap-1 pt-0.5">
+            {conflicts.slice(0, 3).map((conflict) => (
+              <Button
+                key={conflict.command}
+                type="button"
+                size="xs"
+                variant="outline"
+                onClick={() => onJumpToCommand(conflict.command)}
+              >
+                {gt("Jump to {command}", { command: conflict.label })}
+              </Button>
+            ))}
+          </div>
+        </div>
+      </PopoverContent>
+    </Popover>
   );
 }
 
@@ -695,7 +801,7 @@ function WhenExpressionBuilder({
           </div>
         )}
         {parseError ? (
-          <div className="pointer-events-none absolute inset-0 flex items-center justify-center rounded-lg border border-destructive/30 bg-background/75 p-4 text-center text-xs text-destructive backdrop-blur-xs">
+          <div className="pointer-events-none absolute inset-0 flex items-center justify-center rounded-lg border border-destructive/30 bg-background/94 p-4 text-center text-xs text-destructive ring-1 ring-inset ring-destructive/20">
             <T>Fix the expression above to continue editing visually.</T>
           </div>
         ) : null}
@@ -757,7 +863,7 @@ function useKeybindingRowEditor({
   const { keyDraft, whenDraft, isRecording, isWhenDraftValid } = draft;
   const whenDraftExpression = whenAstToExpression(whenDraft);
   const isDirty = keyDraft !== row.key || whenDraftExpression !== row.when;
-  const conflictLabels = keybindingConflictLabels(
+  const conflicts = keybindingConflicts(
     allRows,
     {
       rowId: row.id,
@@ -822,7 +928,7 @@ function useKeybindingRowEditor({
     isWhenDraftValid,
     whenDraftExpression,
     isDirty,
-    conflictLabels,
+    conflicts,
     setDraft,
     setKeyDraft,
     save,
@@ -840,6 +946,7 @@ interface KeybindingRowActions {
   onReset: (row: KeybindingRow) => void;
   onUnassign: (row: KeybindingRow) => void;
   onRemove: (row: KeybindingRow) => void;
+  onJumpToCommand: (command: KeybindingCommand) => void;
 }
 
 type KeybindingRowProps = KeybindingRowActions & {
@@ -864,6 +971,7 @@ function KeybindingKeyControl({
     isRecording,
     isDirty,
     isWhenDraftValid,
+    conflicts,
     setDraft,
     setKeyDraft,
     save,
@@ -872,7 +980,9 @@ function KeybindingKeyControl({
   } = editor;
   const gt = useGT();
   const m = useMessages();
+  const [heldModifiers, setHeldModifiers] = useState<HeldModifiersState>(EMPTY_HELD_MODIFIERS);
   const showPill = !isRecording && keyDraft === row.key && row.key.length > 0 && !isDirty;
+  const shakeConflict = isDirty && conflicts.length > 0;
 
   return (
     <>
@@ -889,7 +999,10 @@ function KeybindingKeyControl({
         <button
           ref={pillRef}
           type="button"
-          onClick={() => setDraft({ isRecording: true })}
+          onClick={() => {
+            setHeldModifiers(EMPTY_HELD_MODIFIERS);
+            setDraft({ isRecording: true });
+          }}
           aria-label={gt("Edit shortcut for {command}: {shortcut}", {
             command: commandLabel(row.command, m),
             shortcut: row.isUnassigned
@@ -910,20 +1023,37 @@ function KeybindingKeyControl({
           )}
         </button>
       ) : (
-        <Input
-          data-keybinding-capture=""
-          autoFocus={isRecording}
-          aria-label={gt("Keybinding for {command}", { command: commandLabel(row.command, m) })}
-          value={isRecording ? "" : keyDraft}
-          placeholder={isRecording ? gt("Press shortcut") : gt("Unassigned")}
-          size="sm"
-          font="mono"
-          className="w-44"
-          onFocus={() => setDraft({ isRecording: true })}
-          onBlur={() => setDraft({ isRecording: false })}
-          onChange={(event) => setKeyDraft(event.currentTarget.value)}
-          onKeyDown={captureKeybinding}
-        />
+        <span
+          key={shakeConflict ? `conflict:${keyDraft}` : "idle"}
+          data-slot={shakeConflict ? "keybinding-conflict-shake" : undefined}
+          className="inline-flex flex-wrap items-center justify-end gap-1.5"
+        >
+          {isRecording ? <LiveModifierKeycaps held={heldModifiers} /> : null}
+          <Input
+            data-keybinding-capture=""
+            autoFocus={isRecording}
+            aria-label={gt("Keybinding for {command}", { command: commandLabel(row.command, m) })}
+            value={isRecording ? "" : keyDraft}
+            placeholder={isRecording ? gt("Press shortcut") : gt("Unassigned")}
+            size="sm"
+            font="mono"
+            className="w-44"
+            onFocus={() => {
+              setHeldModifiers(EMPTY_HELD_MODIFIERS);
+              setDraft({ isRecording: true });
+            }}
+            onBlur={() => {
+              setHeldModifiers(EMPTY_HELD_MODIFIERS);
+              setDraft({ isRecording: false });
+            }}
+            onChange={(event) => setKeyDraft(event.currentTarget.value)}
+            onKeyDown={(event) => {
+              setHeldModifiers(heldModifiersFromEvent(event));
+              captureKeybinding(event);
+            }}
+            onKeyUp={(event) => setHeldModifiers(heldModifiersFromEvent(event))}
+          />
+        </span>
       )}
     </>
   );
@@ -1098,8 +1228,18 @@ function KeybindingHoverRowMenu(props: {
 }
 
 function KeybindingSettingsRow(props: KeybindingRowProps) {
-  const { row, isSaving, anchorId, allRows, variables, onSave, onReset, onUnassign, onRemove } =
-    props;
+  const {
+    row,
+    isSaving,
+    anchorId,
+    allRows,
+    variables,
+    onSave,
+    onReset,
+    onUnassign,
+    onRemove,
+    onJumpToCommand,
+  } = props;
   const editor = useKeybindingRowEditor({ row, allRows, onSave });
 
   return (
@@ -1116,7 +1256,10 @@ function KeybindingSettingsRow(props: KeybindingRowProps) {
       }
       control={
         <div className="flex flex-wrap items-center justify-end gap-1.5">
-          <KeybindingConflictWarning labels={editor.conflictLabels} />
+          <KeybindingConflictWarning
+            conflicts={editor.conflicts}
+            onJumpToCommand={onJumpToCommand}
+          />
           <KeybindingHoverRowMenu
             row={row}
             isSaving={isSaving}
@@ -1153,7 +1296,7 @@ function useNewKeybindingDraft({
   });
   const { keyDraft, whenDraft, isRecording, isWhenDraftValid } = draft;
   const whenDraftExpression = whenAstToExpression(whenDraft);
-  const conflictLabels = keybindingConflictLabels(
+  const conflicts = keybindingConflicts(
     allRows,
     {
       rowId: "new",
@@ -1199,7 +1342,7 @@ function useNewKeybindingDraft({
     whenDraft,
     whenDraftExpression,
     isRecording,
-    conflictLabels,
+    conflicts,
     commandLabelText,
     canSave,
     setDraft,
@@ -1217,6 +1360,7 @@ interface NewKeybindingProps {
   isSaving: boolean;
   onSave: (input: ServerUpsertKeybindingInput) => void;
   onCancel: () => void;
+  onJumpToCommand: (command: KeybindingCommand) => void;
 }
 
 function NewKeybindingCommandSelect({
@@ -1305,25 +1449,44 @@ function NewKeybindingKeyInput({
   className?: string | undefined;
 }) {
   const gt = useGT();
+  const [heldModifiers, setHeldModifiers] = useState<HeldModifiersState>(EMPTY_HELD_MODIFIERS);
+  const shakeConflict = draft.keyDraft.length > 0 && draft.conflicts.length > 0;
   return (
-    <Input
-      data-keybinding-capture=""
-      autoFocus={autoFocus}
-      aria-label={
-        draft.commandLabelText === null
-          ? gt("Keybinding for new keybinding")
-          : gt("Keybinding for {command}", { command: draft.commandLabelText })
-      }
-      value={draft.isRecording ? "" : draft.keyDraft}
-      placeholder={draft.isRecording ? gt("Press shortcut") : gt("Unassigned")}
-      size="sm"
-      font="mono"
-      className={className}
-      onFocus={() => draft.setDraft({ isRecording: true })}
-      onBlur={() => draft.setDraft({ isRecording: false })}
-      onChange={(event) => draft.setDraft({ keyDraft: event.currentTarget.value })}
-      onKeyDown={draft.captureKeybinding}
-    />
+    <span
+      key={shakeConflict ? `conflict:${draft.keyDraft}` : "idle"}
+      data-slot={shakeConflict ? "keybinding-conflict-shake" : undefined}
+      className="inline-flex flex-wrap items-center gap-1.5"
+    >
+      {draft.isRecording ? <LiveModifierKeycaps held={heldModifiers} /> : null}
+      <Input
+        data-keybinding-capture=""
+        autoFocus={autoFocus}
+        aria-label={
+          draft.commandLabelText === null
+            ? gt("Keybinding for new keybinding")
+            : gt("Keybinding for {command}", { command: draft.commandLabelText })
+        }
+        value={draft.isRecording ? "" : draft.keyDraft}
+        placeholder={draft.isRecording ? gt("Press shortcut") : gt("Unassigned")}
+        size="sm"
+        font="mono"
+        className={className}
+        onFocus={() => {
+          setHeldModifiers(EMPTY_HELD_MODIFIERS);
+          draft.setDraft({ isRecording: true });
+        }}
+        onBlur={() => {
+          setHeldModifiers(EMPTY_HELD_MODIFIERS);
+          draft.setDraft({ isRecording: false });
+        }}
+        onChange={(event) => draft.setDraft({ keyDraft: event.currentTarget.value })}
+        onKeyDown={(event) => {
+          setHeldModifiers(heldModifiersFromEvent(event));
+          draft.captureKeybinding(event);
+        }}
+        onKeyUp={(event) => setHeldModifiers(heldModifiersFromEvent(event))}
+      />
+    </span>
   );
 }
 
@@ -1383,7 +1546,7 @@ function NewKeybindingCancelIcon({
 }
 
 function NewKeybindingSettingsRow(props: NewKeybindingProps) {
-  const { commandOptions, allRows, variables, isSaving, onSave, onCancel } = props;
+  const { commandOptions, allRows, variables, isSaving, onSave, onCancel, onJumpToCommand } = props;
   const draft = useNewKeybindingDraft({ allRows, onSave });
   const gt = useGT();
 
@@ -1407,7 +1570,10 @@ function NewKeybindingSettingsRow(props: NewKeybindingProps) {
             allRows={allRows}
             className="w-56"
           />
-          <KeybindingConflictWarning labels={draft.conflictLabels} />
+          <KeybindingConflictWarning
+            conflicts={draft.conflicts}
+            onJumpToCommand={onJumpToCommand}
+          />
           <NewKeybindingKeyInput draft={draft} className="w-44" />
           <Button size="sm" disabled={isSaving || !draft.canSave} onClick={draft.save}>
             {isSaving ? gt("Saving") : gt("Save", { $context: "verb" })}
@@ -1673,6 +1839,28 @@ export function KeybindingsSettingsPanel() {
 
   const cancelAdd = () => setIsAddingBinding(false);
 
+  const jumpToCommand = (command: KeybindingCommand) => {
+    const anchorId = keybindingSearchAnchorId(command);
+    if (query.trim().length > 0) {
+      flushSync(() => setQuery(""));
+    }
+    const target = document.getElementById(anchorId);
+    if (!target) return;
+    const prefersReducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    target.scrollIntoView({
+      behavior: prefersReducedMotion ? "auto" : "smooth",
+      block: "center",
+    });
+    target.focus({ preventScroll: true });
+    target.classList.remove("settings-search-target-pulse");
+    if (prefersReducedMotion) return;
+    void target.offsetWidth;
+    target.classList.add("settings-search-target-pulse");
+    target.addEventListener("blur", () => target.classList.remove("settings-search-target-pulse"), {
+      once: true,
+    });
+  };
+
   const rowActions: KeybindingRowActions = {
     allRows,
     variables: whenVariables,
@@ -1680,6 +1868,7 @@ export function KeybindingsSettingsPanel() {
     onReset: resetKeybinding,
     onUnassign: unassignKeybinding,
     onRemove: removeKeybinding,
+    onJumpToCommand: jumpToCommand,
   };
 
   return (
@@ -1738,6 +1927,7 @@ export function KeybindingsSettingsPanel() {
               isSaving={savingCommand !== null}
               onSave={saveKeybinding}
               onCancel={cancelAdd}
+              onJumpToCommand={jumpToCommand}
             />
           </SettingsGroup>
         ) : null}

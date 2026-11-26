@@ -18,6 +18,7 @@ import { useScaledTextRole } from "../../features/settings/appearance/useScaledT
 import { msg, useGT } from "gt-react-native";
 import { useSyncExternalStore } from "react";
 import { m } from "../../i18n/messages";
+import { triggerSemanticHaptic } from "../../lib/hapticChoreography";
 import { themeColorWithContrast } from "../../lib/mobileTheme";
 import type { Alert, AlertButton } from "react-native";
 import type { ConfirmDialogRequest, TextInputDialogRequest } from "./Dialog.types";
@@ -182,7 +183,13 @@ function DialogPresentation(props: DialogPresentationProps) {
     return (
       <Component
         key={index}
-        onClick={() => (props.alertActions ? props.onAlertAction?.(action) : action.onPress?.())}
+        onClick={() => {
+          triggerSemanticHaptic(
+            isDestructive ? "reject" : action.style === "cancel" ? "toggleOff" : "contextClick",
+          );
+          if (props.alertActions) props.onAlertAction?.(action);
+          else action.onPress?.();
+        }}
         colors={{
           containerColor: isDestructive
             ? destructiveFill

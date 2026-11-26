@@ -133,6 +133,155 @@ function spotlightRect(element: Element): {
   };
 }
 
+type Rgba = readonly [number, number, number, number];
+type Rgb = readonly [number, number, number];
+type ContrastGrade = "AAA" | "AA" | "AA Large" | "Fail";
+
+function parseCssAlpha(rawAlpha: string | undefined): number {
+  if (rawAlpha === undefined) return 1;
+  return rawAlpha.endsWith("%") ? Number.parseFloat(rawAlpha) / 100 : Number.parseFloat(rawAlpha);
+}
+
+function parseCssRgb(color: string): Rgba | null {
+  const rgbMatch = color.match(
+    /^rgba?\(\s*([\d.]+)(?:[\s,]+)([\d.]+)(?:[\s,]+)([\d.]+)(?:[\s,/]+([\d.]+%?))?\s*\)$/i,
+  );
+  if (rgbMatch) {
+    const r = Number.parseFloat(rgbMatch[1]!);
+    const g = Number.parseFloat(rgbMatch[2]!);
+    const b = Number.parseFloat(rgbMatch[3]!);
+    const a = parseCssAlpha(rgbMatch[4]);
+    if ([r, g, b, a].some((channel) => Number.isNaN(channel))) return null;
+    return [r, g, b, Math.max(0, Math.min(1, a))];
+  }
+  const srgbMatch = color.match(
+    /^color\(\s*srgb\s+([\d.]+)\s+([\d.]+)\s+([\d.]+)(?:\s*\/\s*([\d.]+%?))?\s*\)$/i,
+  );
+  if (srgbMatch) {
+    const r = Number.parseFloat(srgbMatch[1]!) * 255;
+    const g = Number.parseFloat(srgbMatch[2]!) * 255;
+    const b = Number.parseFloat(srgbMatch[3]!) * 255;
+    const a = parseCssAlpha(srgbMatch[4]);
+    if ([r, g, b, a].some((channel) => Number.isNaN(channel))) return null;
+    return [r, g, b, Math.max(0, Math.min(1, a))];
+  }
+  return null;
+}
+
+function compositeOver(top: Rgba, bottom: Rgb): Rgb {
+  const alpha = Math.max(0, Math.min(1, top[3]));
+  return [
+    top[0] * alpha + bottom[0] * (1 - alpha),
+    top[1] * alpha + bottom[1] * (1 - alpha),
+    top[2] * alpha + bottom[2] * (1 - alpha),
+  ];
+}
+
+function relativeLuminance([r, g, b]: Rgb): number {
+  const toLinear = (channel: number) => {
+    const normalized = Math.max(0, Math.min(1, channel / 255));
+    return normalized <= 0.04045 ? normalized / 12.92 : ((normalized + 0.055) / 1.055) ** 2.4;
+  };
+  return 0.2126 * toLinear(r) + 0.7152 * toLinear(g) + 0.0722 * toLinear(b);
+}
+
+function isLargeTextStyle(style: CSSStyleDeclaration): boolean {
+  const fontSize = Number.parseFloat(style.fontSize);
+  if (!Number.isFinite(fontSize)) return false;
+  if (fontSize >= 24) return true;
+  const rawWeight = style.fontWeight.trim().toLowerCase();
+  const fontWeight = rawWeight === "bold" ? 700 : Number.parseFloat(rawWeight);
+  return fontSize >= 18.66 && Number.isFinite(fontWeight) && fontWeight >= 700;
+}
+
+function resolveElementContrast(element: Element): {
+  readonly ratio: number;
+  readonly grade: ContrastGrade;
+  readonly badge: string;
+} | null {
+  const elementStyle = window.getComputedStyle(element);
+  const fg = parseCssRgb(elementStyle.color);
+  if (!fg || fg[3] <= 0) return null;
+
+  const layers: Array<{ readonly bg: Rgba | null; readonly opacity: number }> = [];
+  let current: Element | null = element;
+  let hasOpaqueBase = false;
+  while (current) {
+    const style = current === element ? elementStyle : window.getComputedStyle(current);
+    const bg = parseCssRgb(style.backgroundColor);
+    const parsedOpacity = Number.parseFloat(style.opacity);
+    const opacity = Number.isFinite(parsedOpacity) ? Math.max(0, Math.min(1, parsedOpacity)) : 1;
+    if (opacity <= 0) return null;
+    layers.push({ bg, opacity });
+    if (bg && bg[3] >= 1 && opacity >= 1) {
+      hasOpaqueBase = true;
+      break;
+    }
+    current = current.parentElement;
+  }
+
+  let baseIndex = layers.length - 1;
+  if (!hasOpaqueBase) {
+    baseIndex = -1;
+    for (let index = layers.length - 1; index >= 0; index -= 1) {
+      const candidate = layers[index]!.bg;
+      if (candidate && candidate[3] >= 0.85) {
+        baseIndex = index;
+        break;
+      }
+    }
+    if (baseIndex < 0) return null;
+  }
+
+  const baseBg = layers[baseIndex]!.bg!;
+  const backdropBefore: Array<Rgb> = new Array(baseIndex + 1);
+  let resolvedBg: Rgb = [baseBg[0], baseBg[1], baseBg[2]];
+  backdropBefore[baseIndex] = resolvedBg;
+  for (let index = baseIndex - 1; index >= 0; index -= 1) {
+    backdropBefore[index] = resolvedBg;
+    const layer = layers[index]!;
+    if (layer.bg && layer.bg[3] > 0) {
+      resolvedBg = compositeOver(
+        [layer.bg[0], layer.bg[1], layer.bg[2], layer.bg[3] * layer.opacity],
+        resolvedBg,
+      );
+    }
+  }
+
+  const elementLayer = layers[0]!;
+  const elementInnerBg =
+    baseIndex === 0
+      ? resolvedBg
+      : elementLayer.bg && elementLayer.bg[3] > 0
+        ? compositeOver(elementLayer.bg, backdropBefore[0]!)
+        : backdropBefore[0]!;
+  let resolvedFg = compositeOver(fg, elementInnerBg);
+  for (let index = 0; index < baseIndex; index += 1) {
+    const layer = layers[index]!;
+    if (layer.opacity < 1) {
+      resolvedFg = compositeOver(
+        [resolvedFg[0], resolvedFg[1], resolvedFg[2], layer.opacity],
+        backdropBefore[index]!,
+      );
+    }
+  }
+
+  const fgLum = relativeLuminance(resolvedFg);
+  const bgLum = relativeLuminance(resolvedBg);
+  const ratio = (Math.max(fgLum, bgLum) + 0.05) / (Math.min(fgLum, bgLum) + 0.05);
+  if (!Number.isFinite(ratio) || ratio < 1.05) return null;
+
+  const largeText = isLargeTextStyle(elementStyle);
+  const grade: ContrastGrade =
+    ratio >= 7 ? "AAA" : ratio >= 4.5 ? "AA" : largeText && ratio >= 3 ? "AA Large" : "Fail";
+  const rounded = ratio.toFixed(1);
+  return {
+    ratio,
+    grade,
+    badge: `${grade} ${rounded}:1`,
+  };
+}
+
 export function showThemeInspectorHover(inspection: ThemeElementInspection, label: string): void {
   const rectangle = spotlightRect(inspection.element);
   if (!rectangle) {
@@ -141,24 +290,52 @@ export function showThemeInspectorHover(inspection: ThemeElementInspection, labe
   }
 
   let hover = document.getElementById(THEME_HOVER_ID);
+  const created = !hover;
   if (!hover) {
     hover = document.createElement("div");
     hover.id = THEME_HOVER_ID;
     hover.setAttribute("aria-hidden", "true");
     const tokenLabel = document.createElement("span");
     tokenLabel.dataset.themeInspectorHoverLabel = "";
+    const textSpan = document.createElement("span");
+    textSpan.dataset.themeInspectorHoverText = "";
+    const contrastSpan = document.createElement("span");
+    contrastSpan.dataset.themeInspectorHoverContrast = "";
+    tokenLabel.append(textSpan, contrastSpan);
     hover.append(tokenLabel);
     document.body.append(hover);
   }
 
-  hover.style.left = `${rectangle.x}px`;
-  hover.style.top = `${rectangle.y}px`;
+  hover.style.left = "0px";
+  hover.style.top = "0px";
+  hover.style.transform = `translate3d(${rectangle.x}px, ${rectangle.y}px, 0)`;
   hover.style.width = `${rectangle.width}px`;
   hover.style.height = `${rectangle.height}px`;
   hover.style.borderRadius = `${rectangle.radius}px`;
   hover.dataset.placement = rectangle.y < 32 ? "below" : "above";
-  const tokenLabel = hover.querySelector<HTMLElement>("[data-theme-inspector-hover-label]");
-  if (tokenLabel) tokenLabel.textContent = label;
+  const textSpan = hover.querySelector<HTMLElement>("[data-theme-inspector-hover-text]");
+  if (textSpan) textSpan.textContent = label;
+  const contrastSpan = hover.querySelector<HTMLElement>("[data-theme-inspector-hover-contrast]");
+  if (contrastSpan) {
+    const contrast = resolveElementContrast(inspection.element);
+    contrastSpan.textContent = contrast ? contrast.badge : "";
+    if (contrast) {
+      contrastSpan.dataset.contrastRatio = contrast.ratio.toFixed(2);
+      contrastSpan.dataset.contrastGrade = contrast.grade;
+    } else {
+      delete contrastSpan.dataset.contrastRatio;
+      delete contrastSpan.dataset.contrastGrade;
+    }
+  }
+
+  if (created) {
+    const createdHover = hover;
+    window.requestAnimationFrame(() => {
+      if (createdHover.isConnected) {
+        createdHover.dataset.themeInspectorReady = "true";
+      }
+    });
+  }
 }
 
 function renderThemeInspectorSpotlight(elements: ReadonlyArray<Element>): void {

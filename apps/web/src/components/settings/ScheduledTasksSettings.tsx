@@ -3,6 +3,8 @@ import { managedCapabilityDenial } from "@t3tools/client-runtime/contract-labels
 import { useAtomValue } from "@effect/atom-react";
 import { connectionStatusTitle } from "@t3tools/client-runtime/connection";
 import { AsyncResult } from "effect/reactivity";
+import * as DateTime from "effect/DateTime";
+import * as Option from "effect/Option";
 import {
   ChevronDownIcon,
   Clock3Icon,
@@ -22,8 +24,10 @@ import type {
   ProjectId,
   ScheduledTask,
   ScheduledTaskId,
+  ScheduledTaskSchedule,
   ScheduledTaskThreadMode,
   ScheduledTaskUpsertInput,
+  ScheduledTaskUpsertSchedule,
   ScheduledTaskWebhookDeliverySummary,
   ThreadId,
 } from "@t3tools/contracts";
@@ -53,6 +57,7 @@ import { msg, T, useGT, useLocale, useMessages, Var } from "gt-react";
 import { m, type MessageResolver } from "../../i18n/messages";
 
 import { formatRelativeTime } from "../../timestampFormat";
+import { cn } from "../../lib/utils";
 import { useClientSettings, useEnvironmentSettings } from "../../hooks/useSettings";
 import { getCustomModelOptionsByInstance, selectsPlanAgent } from "../../modelSelection";
 import { providerInstanceEntriesFor } from "../../providerInstances";
@@ -365,6 +370,271 @@ export function ScheduledRelativeLabel(props: { value: string | null }) {
   const messages = useMessages();
   const nowMinute = useNowMinute();
   return relativeLabel(props.value, Date.parse(`${nowMinute}:00.000Z`), messages);
+}
+
+function parseTimeOfDay(value: string): { hour: number; minute: number } | null {
+  const match = /^([01]?\d|2[0-3]):([0-5]\d)$/.exec(value.trim());
+  if (!match) return null;
+  return { hour: Number(match[1]), minute: Number(match[2]) };
+}
+
+function weekdayKey(weekdays: ReadonlyArray<number> | undefined): string {
+  const unique = [...new Set(weekdays ?? [])].toSorted((x, y) => x - y);
+  if (unique.length === 0 || unique.length === 7) return "daily";
+  return unique.join(",");
+}
+
+function isSameSchedule(a: ScheduledTaskSchedule, b: ScheduledTaskUpsertSchedule): boolean {
+  if (a.type === "interval") {
+    return b.type === "interval" && a.everyMs === b.everyMs;
+  }
+  if (a.type === "webhook") return b.type === "webhook";
+  if (a.type === "once") return b.type === "once" && Date.parse(a.runAt) === Date.parse(b.runAt);
+  if (b.type !== "fixed_time") return false;
+  const aTime = parseTimeOfDay(a.timeOfDay);
+  const bTime = parseTimeOfDay(b.timeOfDay);
+  return (
+    aTime !== null &&
+    bTime !== null &&
+    aTime.hour === bTime.hour &&
+    aTime.minute === bTime.minute &&
+    weekdayKey(a.weekdays) === weekdayKey(b.weekdays)
+  );
+}
+
+function resolveScheduleZone(timeZone: string | undefined): DateTime.TimeZone {
+  if (timeZone) {
+    const parsed = DateTime.zoneFromString(timeZone);
+    if (Option.isSome(parsed)) return parsed.value;
+  }
+  return DateTime.zoneMakeLocal();
+}
+
+function nextFixedTimeRunAfter(
+  timeOfDay: string,
+  weekdays: ReadonlyArray<number> | undefined,
+  afterMs: number,
+  zone: DateTime.TimeZone,
+): Date | null {
+  const time = parseTimeOfDay(timeOfDay);
+  if (time === null) return null;
+  const allowedDays = weekdays && weekdays.length > 0 ? new Set(weekdays) : null;
+  const from = DateTime.setZone(DateTime.makeUnsafe(afterMs), zone);
+  for (let offset = 0; offset <= 7; offset += 1) {
+    const candidate = DateTime.setParts(DateTime.add(from, { days: offset }), {
+      hour: time.hour,
+      minute: time.minute,
+      second: 0,
+      millisecond: 0,
+    });
+    const epochMs = DateTime.toEpochMillis(candidate);
+    if (!Number.isFinite(epochMs) || epochMs <= afterMs) continue;
+    if (allowedDays !== null && !allowedDays.has(DateTime.toParts(candidate).weekDay)) continue;
+    return new Date(epochMs);
+  }
+  return null;
+}
+
+function buildSchedulePreviewFormatter(
+  locale: string,
+  timeZone: string | undefined,
+): Intl.DateTimeFormat {
+  if (timeZone) {
+    try {
+      return new Intl.DateTimeFormat(locale, {
+        weekday: "short",
+        hour: "numeric",
+        minute: "2-digit",
+        timeZone,
+        timeZoneName: "short",
+      });
+    } catch {
+      // Fall back to the browser's zone when the server reports an unsupported zone string.
+    }
+  }
+  return new Intl.DateTimeFormat(locale, {
+    weekday: "short",
+    hour: "numeric",
+    minute: "2-digit",
+  });
+}
+
+function computeUpcomingScheduleRuns(
+  draft: DraftState,
+  nowMs: number,
+  {
+    timeZone,
+    savedTask = null,
+    count = 3,
+  }: {
+    readonly timeZone?: string | undefined;
+    readonly savedTask?: ScheduledTask | null;
+    readonly count?: number;
+  } = {},
+): Date[] {
+  if (!draft.enabled || draft.scheduleMode === "webhook") return [];
+  const schedule = scheduleFromDraft(draft);
+  if (schedule === null || schedule.type === "webhook") return [];
+  if (
+    schedule.type === "interval" &&
+    (!Number.isFinite(schedule.everyMs) || schedule.everyMs < MIN_SCHEDULED_TASK_INTERVAL_MS)
+  ) {
+    return [];
+  }
+
+  const zone = resolveScheduleZone(timeZone);
+  const scheduleUnchanged =
+    savedTask !== null &&
+    savedTask.enabled &&
+    draft.enabled &&
+    isSameSchedule(savedTask.schedule, schedule);
+
+  if (scheduleUnchanged) {
+    const savedNextMs = savedTask.nextRunAt ? Date.parse(savedTask.nextRunAt) : Number.NaN;
+    if (!Number.isFinite(savedNextMs)) return [];
+    const firstRun = new Date(savedNextMs);
+    if (schedule.type === "once") return [firstRun];
+    if (schedule.type === "interval") {
+      const stepMs = Math.max(schedule.everyMs, MIN_SCHEDULED_TASK_INTERVAL_MS);
+      return Array.from({ length: count }, (_, index) => new Date(savedNextMs + stepMs * index));
+    }
+    const upcoming: Date[] = [firstRun];
+    let cursorMs = savedNextMs;
+    while (upcoming.length < count) {
+      const next = nextFixedTimeRunAfter(schedule.timeOfDay, schedule.weekdays, cursorMs, zone);
+      if (next === null) break;
+      upcoming.push(next);
+      cursorMs = next.getTime();
+    }
+    return upcoming;
+  }
+
+  if (schedule.type === "once") {
+    const runAtMs = Date.parse(schedule.runAt);
+    return Number.isFinite(runAtMs) && runAtMs > nowMs ? [new Date(runAtMs)] : [];
+  }
+  if (schedule.type === "interval") {
+    const stepMs = Math.max(schedule.everyMs, MIN_SCHEDULED_TASK_INTERVAL_MS);
+    return Array.from({ length: count }, (_, index) => new Date(nowMs + stepMs * (index + 1)));
+  }
+  const upcoming: Date[] = [];
+  let cursorMs = nowMs;
+  while (upcoming.length < count) {
+    const next = nextFixedTimeRunAfter(schedule.timeOfDay, schedule.weekdays, cursorMs, zone);
+    if (next === null) break;
+    upcoming.push(next);
+    cursorMs = next.getTime();
+  }
+  return upcoming;
+}
+
+function ScheduleRhythmPreview({
+  draft,
+  locale,
+  timeZone,
+  savedTask,
+}: {
+  readonly draft: DraftState;
+  readonly locale: string;
+  readonly timeZone?: string | undefined;
+  readonly savedTask?: ScheduledTask | null;
+}) {
+  const gt = useGT();
+  const messages = useMessages();
+  const nowMinute = useNowMinute();
+  if (draft.scheduleMode === "webhook") return null;
+
+  const nowMs = Date.parse(`${nowMinute}:00.000Z`);
+  const upcoming = computeUpcomingScheduleRuns(draft, nowMs, {
+    timeZone,
+    savedTask: savedTask ?? null,
+    count: 3,
+  });
+  const zone = resolveScheduleZone(timeZone);
+  const onceDay =
+    draft.scheduleMode === "once" && draft.runAt
+      ? (() => {
+          const parsed = new Date(draft.runAt);
+          if (Number.isNaN(parsed.getTime())) return null;
+          return DateTime.toParts(DateTime.setZone(DateTime.makeUnsafe(parsed.getTime()), zone))
+            .weekDay;
+        })()
+      : null;
+
+  const activeDays = new Set<number>(
+    draft.scheduleMode === "interval"
+      ? WEEKDAY_ORDER
+      : draft.scheduleMode === "fixed"
+        ? draft.weekdays.size > 0
+          ? [...draft.weekdays]
+          : WEEKDAY_ORDER
+        : onceDay !== null
+          ? [onceDay]
+          : [],
+  );
+
+  const formatter = buildSchedulePreviewFormatter(locale, timeZone);
+
+  return (
+    <div
+      data-slot="schedule-rhythm-preview"
+      className="space-y-2 rounded-lg border border-border/60 bg-muted/20 px-3 py-2.5"
+    >
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <span className="text-2xs font-medium text-muted-foreground">
+          <T>Weekly rhythm</T>
+        </span>
+        <div
+          className="grid grid-cols-7 gap-1"
+          role="list"
+          aria-label={gt("Active days of the week")}
+        >
+          {WEEKDAY_ORDER.map((day) => {
+            const active = activeDays.has(day);
+            return (
+              <span
+                key={day}
+                role="listitem"
+                aria-label={`${weekdayShortLabel(day, locale)}: ${active ? gt("Active") : gt("Inactive")}`}
+                className={cn(
+                  "flex flex-col items-center gap-1 rounded-md border px-1.5 py-1 text-3xs leading-none transition-colors duration-(--duration-snappy) motion-reduce:transition-none",
+                  active
+                    ? "border-primary/40 bg-primary/12 font-medium text-foreground"
+                    : "border-border/50 bg-background/50 text-muted-foreground/60",
+                )}
+              >
+                <span>{messages(WEEKDAY_SHORT[day])}</span>
+                <span
+                  aria-hidden
+                  data-slot="schedule-rhythm-dot"
+                  data-active={active ? "true" : undefined}
+                  className={cn(
+                    "size-1.5 rounded-full",
+                    active ? "bg-primary" : "bg-muted-foreground/25",
+                  )}
+                />
+              </span>
+            );
+          })}
+        </div>
+      </div>
+      {upcoming.length > 0 ? (
+        <div className="flex flex-wrap items-center gap-1.5 text-2xs text-muted-foreground">
+          <span className="shrink-0">{gt("Next runs:")}</span>
+          {upcoming.map((date) => (
+            <time
+              key={date.toISOString()}
+              dateTime={date.toISOString()}
+              data-slot="schedule-next-run"
+              className="rounded-md border border-border/60 bg-background px-1.5 py-0.5 font-mono text-3xs tabular-nums text-foreground"
+            >
+              {formatter.format(date)}
+            </time>
+          ))}
+        </div>
+      ) : null}
+    </div>
+  );
 }
 
 function deliveryOutcomeVariant(outcome: string) {
@@ -2366,9 +2636,17 @@ function ScheduledTaskEditorForm({
                     setDraft((current) => ({ ...current, intervalMinutes: event.target.value }))
                   }
                 />
-                <span className="text-xs text-muted-foreground">minutes</span>
+                <span className="text-xs text-muted-foreground">
+                  <T>minutes</T>
+                </span>
               </div>
             )}
+            <ScheduleRhythmPreview
+              draft={draft}
+              locale={locale}
+              timeZone={tasksQuery.data?.timeZone}
+              savedTask={liveTask}
+            />
           </div>
 
           <div className="flex items-center justify-between gap-4">

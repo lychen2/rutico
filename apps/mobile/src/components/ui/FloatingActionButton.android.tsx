@@ -9,9 +9,17 @@ import {
 } from "@expo/ui/jetpack-compose";
 import { defaultMinSize, height, size, width } from "@expo/ui/jetpack-compose/modifiers";
 import { View } from "react-native";
+import Animated, {
+  useAnimatedStyle,
+  useSharedValue,
+  withSequence,
+  withSpring,
+} from "react-native-reanimated";
 import { useAndroidControlSizing } from "./useAndroidControlSizing";
 import { useAppearancePreferences } from "../../features/settings/appearance/AppearancePreferencesProvider";
 import { useScaledTextRole } from "../../features/settings/appearance/useScaledTextRole";
+import { triggerSemanticHaptic } from "../../lib/hapticChoreography";
+import { SPRING_EFFECTS_FAST } from "../../lib/mobileMotion";
 import { SymbolView } from "./AppSymbol";
 
 export function FloatingActionButton(props: FloatingActionButtonProps) {
@@ -30,15 +38,26 @@ export function FloatingActionButton(props: FloatingActionButtonProps) {
         ? LargeFloatingActionButton
         : ComposeFloatingActionButton;
   const iconSize = props.variant === "large" ? Math.round(36 * scale) : standardIconSize;
+  const pressScale = useSharedValue(1);
+  const animatedStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: pressScale.get() }],
+  }));
+  const handlePress = () => {
+    pressScale.set(
+      withSequence(withSpring(0.94, SPRING_EFFECTS_FAST), withSpring(1, SPRING_EFFECTS_FAST)),
+    );
+    triggerSemanticHaptic("contextClick");
+    props.onPress();
+  };
   return (
-    <View
+    <Animated.View
       accessible
       accessibilityRole="button"
       accessibilityLabel={props.label}
       accessibilityActions={[{ name: "activate" }]}
-      onAccessibilityAction={props.onPress}
+      onAccessibilityAction={handlePress}
       className={props.className}
-      style={props.style}
+      style={[props.style, animatedStyle]}
     >
       <View importantForAccessibility="no-hide-descendants">
         <NativeThemeHost matchContents ignoreSafeAreaKeyboardInsets>
@@ -49,7 +68,7 @@ export function FloatingActionButton(props: FloatingActionButtonProps) {
               ...(props.variant === "extended" ? [] : [width(buttonSize)]),
             ]}
             containerColor={containerColor}
-            onClick={props.onPress}
+            onClick={handlePress}
             expanded={props.expanded}
           >
             <Component.Icon>
@@ -79,6 +98,6 @@ export function FloatingActionButton(props: FloatingActionButtonProps) {
           tintColorClassName={primary ? "accent-primary-foreground" : "accent-secondary-foreground"}
         />
       </View>
-    </View>
+    </Animated.View>
   );
 }

@@ -1,12 +1,19 @@
 import { BUILT_IN_THEMES } from "@t3tools/shared/themePalettes";
 import { msg, T, useGT, useMessages } from "gt-react";
 import { MonitorIcon, MoonIcon, PaletteIcon, SunIcon } from "lucide-react";
+import { useEffect, useRef } from "react";
 
 import { m } from "../i18n/messages";
 import { useCustomThemes } from "../hooks/useCustomThemes";
 import { useEnvironmentThemeDefinitions } from "../hooks/useEnvironmentTheme";
-import { useTheme } from "../hooks/useTheme";
-import { getThemeDefinition } from "../themePalette";
+import { refreshTheme, useTheme } from "../hooks/useTheme";
+import {
+  getThemeDefinition,
+  previewThemePreference,
+  THEME_PREVIEW_ID,
+  type ThemeAppearance,
+  type ThemePreferenceMode,
+} from "../themePalette";
 import {
   ADDON_ICON_CLASS,
   ITEM_ICON_CLASS,
@@ -53,6 +60,106 @@ function useThemeCards() {
       })
       .map(getThemeCardDefinition),
   ];
+}
+
+const LIVE_THEME_PREVIEW_DEBOUNCE_MS = 60;
+
+type PaletteThemePreviewTarget =
+  | { readonly kind: "theme"; readonly id: string | null }
+  | { readonly kind: "appearance"; readonly mode: ThemePreferenceMode };
+
+function parsePaletteThemePreviewTarget(
+  highlightedItemValue: string | null,
+): PaletteThemePreviewTarget | null {
+  if (!highlightedItemValue) return null;
+  if (highlightedItemValue === "theme:standard") {
+    return { kind: "theme", id: null };
+  }
+  if (highlightedItemValue.startsWith("theme:palette:")) {
+    return { kind: "theme", id: highlightedItemValue.slice("theme:palette:".length) };
+  }
+  if (
+    highlightedItemValue === "appearance:system" ||
+    highlightedItemValue === "appearance:light" ||
+    highlightedItemValue === "appearance:dark"
+  ) {
+    return {
+      kind: "appearance",
+      mode: highlightedItemValue.slice("appearance:".length) as ThemePreferenceMode,
+    };
+  }
+  return null;
+}
+
+function clearPalettePreviewMarker(): void {
+  if (typeof document === "undefined") return;
+  if (document.documentElement.dataset.themeId === THEME_PREVIEW_ID) {
+    delete document.documentElement.dataset.themeId;
+  }
+}
+
+/**
+ * Live-previews highlighted CommandPalette theme & appearance entries with a 60ms debounce
+ * using non-destructive `THEME_PREVIEW_ID`, restoring the stored theme on exit/cancel.
+ */
+export function useCommandPaletteThemeLivePreview(highlightedItemValue: string | null): void {
+  const { theme, themeHalves, resolvedTheme } = useTheme();
+  const ownsPreviewRef = useRef(false);
+  const target = parsePaletteThemePreviewTarget(highlightedItemValue);
+
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- applies debounced non-destructive DOM theme preview while navigating palette items
+  useEffect(() => {
+    if (typeof document === "undefined" || typeof window === "undefined") return;
+
+    if (!target) {
+      if (ownsPreviewRef.current) {
+        ownsPreviewRef.current = false;
+        refreshTheme({ preservePreview: false });
+      }
+      return;
+    }
+
+    // Do not clobber an active Theme Editor draft preview owned outside the command palette.
+    if (!ownsPreviewRef.current && document.documentElement.dataset.themeId === THEME_PREVIEW_ID) {
+      return;
+    }
+
+    const timer = window.setTimeout(() => {
+      ownsPreviewRef.current = true;
+      if (target.kind === "theme") {
+        previewThemePreference(target.id, resolvedTheme);
+        return;
+      }
+      const nextAppearance: ThemeAppearance =
+        target.mode === "system"
+          ? window.matchMedia("(prefers-color-scheme: dark)").matches
+            ? "dark"
+            : "light"
+          : target.mode;
+      const effectiveThemeId =
+        themeHalves?.[nextAppearance] ?? getThemeDefinition(theme)?.id ?? null;
+      previewThemePreference(effectiveThemeId, nextAppearance);
+    }, LIVE_THEME_PREVIEW_DEBOUNCE_MS);
+
+    return () => {
+      window.clearTimeout(timer);
+    };
+  }, [resolvedTheme, target, theme, themeHalves]);
+
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- restores the persisted theme if the command palette closes during an active preview
+  useEffect(() => {
+    return () => {
+      if (ownsPreviewRef.current) {
+        ownsPreviewRef.current = false;
+        if (
+          typeof document !== "undefined" &&
+          document.documentElement.dataset.themeId === THEME_PREVIEW_ID
+        ) {
+          refreshTheme({ preservePreview: false });
+        }
+      }
+    };
+  }, []);
 }
 
 export function useCommandPaletteThemeItems() {
@@ -113,6 +220,7 @@ export function useCommandPaletteThemeItems() {
             </span>
           ),
           run: async () => {
+            clearPalettePreviewMarker();
             const saved =
               previews.length === 1 && id !== null
                 ? setThemeHalf(previews[0]!.mode, id)
@@ -149,6 +257,7 @@ export function useCommandPaletteThemeItems() {
               </span>
             ) : undefined,
           run: async () => {
+            clearPalettePreviewMarker();
             if (!setAppearanceMode(mode)) notifyThemeSaveFailure();
           },
         })),

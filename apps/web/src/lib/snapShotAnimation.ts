@@ -1,5 +1,5 @@
 import { scopedThreadKey } from "@t3tools/client-runtime/environment";
-import type { ScopedThreadRef, SnapShotSource } from "@t3tools/contracts";
+import type { LinuxSnapShotTelemetry, ScopedThreadRef, SnapShotSource } from "@t3tools/contracts";
 
 import type { DraftId } from "../composerDraftStore";
 import { getDesktopSnapShotBridge } from "./desktopSnapShot";
@@ -14,10 +14,76 @@ export type PendingSnapShotAnimation = {
 
 let pendingAnimations: ReadonlyArray<PendingSnapShotAnimation> = [];
 const destinationRequests = new Map<string, Promise<void>>();
+const destinationElements = new Map<string, HTMLElement>();
+const captureTelemetryById = new Map<string, LinuxSnapShotTelemetry>();
 const destinationMountCounts = new Map<string, number>();
 const listeners = new Set<() => void>();
 const DESTINATION_TIMEOUT_MS = 2_000;
 const ARRIVAL_MAX_AGE_MS = 10_000;
+const LANDING_CHOREOGRAPHY_DURATION_MS = 480;
+const REDUCED_MOTION_LANDING_DURATION_MS = 150;
+
+export function recordSnapShotTelemetry(id: string, telemetry: LinuxSnapShotTelemetry): void {
+  captureTelemetryById.set(id, telemetry);
+}
+
+function findLandedSnapShotElement(
+  id: string,
+  fileName?: string,
+  explicitTarget?: HTMLElement | null,
+): HTMLElement | null {
+  if (explicitTarget?.isConnected) return explicitTarget;
+  const registered = destinationElements.get(id);
+  if (registered?.isConnected) return registered;
+  if (typeof document === "undefined") return null;
+  const byId = document.querySelector<HTMLElement>(`[data-snapshot-id="${CSS.escape(id)}"]`);
+  if (byId) return byId;
+  if (fileName) {
+    const img = document.querySelector<HTMLImageElement>(`img[alt="${CSS.escape(fileName)}"]`);
+    const frame = img?.closest<HTMLElement>('div[class*="attachment"], div');
+    if (frame) return frame;
+  }
+  return null;
+}
+
+/**
+ * Triggers the in-Composer squircle landing momentum and subtle primary rim halo once a
+ * capture arrives (particularly on Tier 2/4 Wayland Portal & Niri direct deliveries where
+ * no global compositor flight overlay ran).
+ */
+export function triggerSnapShotLandingChoreography(
+  id: string,
+  options?: {
+    readonly fileName?: string;
+    readonly targetElement?: HTMLElement | null;
+  },
+): boolean {
+  const telemetry = captureTelemetryById.get(id);
+  const element = findLandedSnapShotElement(id, options?.fileName, options?.targetElement);
+  destinationElements.delete(id);
+  captureTelemetryById.delete(id);
+  if (!element) return false;
+
+  const reducedMotion =
+    typeof window !== "undefined" &&
+    typeof window.matchMedia === "function" &&
+    window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+  element.setAttribute("data-snapshot-landed", "true");
+  if (telemetry) {
+    element.setAttribute("data-snapshot-tier", String(telemetry.tier));
+    element.setAttribute("data-snapshot-coord-space", telemetry.coordinateSpace);
+  }
+  const durationMs = reducedMotion
+    ? REDUCED_MOTION_LANDING_DURATION_MS
+    : LANDING_CHOREOGRAPHY_DURATION_MS;
+  window.setTimeout(() => {
+    if (element.getAttribute("data-snapshot-landed") === "true") {
+      element.removeAttribute("data-snapshot-landed");
+    }
+  }, durationMs);
+  return true;
+}
 
 export function shouldAnimateSnapShotArrival(capturedAt: string, now = Date.now()): boolean {
   const capturedTime = Date.parse(capturedAt);
@@ -67,6 +133,8 @@ export async function dismissSnapShotAnimation(id: string): Promise<void> {
 }
 
 export function dismissAllSnapShotAnimations(): void {
+  destinationElements.clear();
+  captureTelemetryById.clear();
   const ids = pendingAnimations.map((capture) => capture.id);
   if (ids.length === 0) return;
   pendingAnimations = [];
@@ -104,6 +172,9 @@ export function setSnapShotAnimationDestination(
   target: HTMLElement,
   source?: SnapShotSource,
 ): void {
+  if (target.isConnected) {
+    destinationElements.set(id, target);
+  }
   if (!target.isConnected || window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
     return;
   }

@@ -88,6 +88,8 @@ export function DeviceToolsPanel(props: {
   readonly access: DeviceHubAccess | null;
   readonly axOverlay: boolean;
   readonly onAxOverlayChange: (enabled: boolean) => void;
+  readonly axInspect?: boolean;
+  readonly onAxInspectChange?: (enabled: boolean) => void;
   readonly onClose: () => void;
   readonly className?: string;
 }) {
@@ -99,7 +101,10 @@ export function DeviceToolsPanel(props: {
 
   return (
     <div
-      className={cn("flex min-h-0 flex-col border-border bg-background text-sm", props.className)}
+      className={cn(
+        "device-tools-drawer flex min-h-0 flex-col border-border bg-background text-sm",
+        props.className,
+      )}
     >
       <div className="flex h-9 shrink-0 items-center gap-2 border-b px-3">
         <span className="font-medium">
@@ -281,12 +286,22 @@ export function DeviceToolsPanel(props: {
               />
             </>
           ) : (
-            <SwitchRow
-              label={gt("Network")}
-              checked={settings?.networkEnabled}
-              disabled={disabled}
-              onChange={(value) => act({ type: "setToggle", setting: "networkEnabled", value })}
-            />
+            <>
+              <SwitchRow
+                label={gt("Network")}
+                checked={settings?.networkEnabled}
+                disabled={disabled}
+                onChange={(value) => act({ type: "setToggle", setting: "networkEnabled", value })}
+              />
+              {settings?.networkEnabled === false ? (
+                <div
+                  role="status"
+                  className="rounded-md border border-warning/40 bg-warning/10 px-2.5 py-1.5 text-2xs text-warning-foreground"
+                >
+                  <T>Emulator network is offline. Re-enable Network to restore connectivity.</T>
+                </div>
+              ) : null}
+            </>
           )}
         </Section>
 
@@ -300,6 +315,17 @@ export function DeviceToolsPanel(props: {
               return Promise.resolve();
             }}
           />
+          {props.axOverlay && props.onAxInspectChange ? (
+            <SwitchRow
+              label={gt("Inspect element frames")}
+              checked={props.axInspect ?? false}
+              disabled={props.access === null}
+              onChange={(value) => {
+                props.onAxInspectChange?.(value);
+                return Promise.resolve();
+              }}
+            />
+          ) : null}
         </Section>
 
         <LocationSection
@@ -503,6 +529,23 @@ function LocationSection(props: {
           disabled={props.disabled}
           onChange={(event) => setLongitude(event.target.value)}
         />
+      </div>
+      <div className="flex flex-wrap gap-1">
+        {LOCATION_PRESETS.map((preset) => (
+          <button
+            key={preset.label}
+            type="button"
+            disabled={props.disabled}
+            onClick={() => {
+              setLatitude(String(preset.latitude));
+              setLongitude(String(preset.longitude));
+              void props.onSet(preset.latitude, preset.longitude);
+            }}
+            className="cursor-pointer rounded-md border border-border/60 bg-muted/35 px-1.5 py-0.5 text-2xs text-muted-foreground transition-colors duration-120 hover:border-border hover:bg-accent hover:text-foreground disabled:pointer-events-none disabled:opacity-50"
+          >
+            {m(preset.label)}
+          </button>
+        ))}
       </div>
       <div className="flex flex-wrap items-center gap-1.5">
         <Select<string | null>

@@ -1,6 +1,8 @@
 import {
   applyTerminalAttachStreamEvent,
   EMPTY_TERMINAL_SESSION_STATE,
+  nextTerminalAttachSeedState,
+  type TerminalBufferState,
 } from "@t3tools/client-runtime/state/terminal";
 import {
   EnvironmentId,
@@ -14,12 +16,14 @@ import {
 import { Cause } from "effect";
 import { compileResolvedKeybindingsConfig, DEFAULT_KEYBINDINGS } from "@t3tools/shared/keybindings";
 import { Atom, AsyncResult } from "effect/reactivity";
+import { useState } from "react";
 import type { GhosttyTerminalSurfaceOptions } from "~/terminal/ghostty/surface";
 import { AppAtomRegistryProvider, appAtomRegistry } from "../rpc/atomRegistry";
 import { useRightPanelStore } from "../rightPanelStore";
 import { useTerminalUiStateStore } from "../terminalUiStateStore";
 import { extractTerminalLinks } from "../terminal-links";
 import { expect, it, vi } from "vite-plus/test";
+import { userEvent } from "vite-plus/test/browser";
 import { act, fakeTimers, render } from "../../test/render";
 import ThreadTerminalDrawer from "./ThreadTerminalDrawer";
 
@@ -32,6 +36,24 @@ const fixture = vi.hoisted(() => ({
   writes: [] as Array<{ threadId: string; data: string; expectedPid?: number }>,
   messages: [] as string[],
   resetSessions: () => {},
+  observeAtoms: new Map<string, Atom.Writable<AsyncResult.AsyncResult<TerminalBufferState>>>(),
+  pushObserveEvent: (
+    _thread: ScopedThreadRef,
+    _terminalId: string,
+    _event: Parameters<typeof applyTerminalAttachStreamEvent>[1],
+  ) => {},
+  selection: {
+    text: "",
+    position: null as { start: { x: number; y: number }; end: { x: number; y: number } } | null,
+    anchorRect: { left: 24, top: 60, width: 60, height: 16 } as {
+      left: number;
+      top: number;
+      width: number;
+      height: number;
+    } | null,
+    pointerSelecting: false,
+    clearedCount: 0,
+  },
   terminalMetadata: (
     _environmentId: EnvironmentId,
   ): Atom.Atom<AsyncResult.AsyncResult<ReadonlyArray<TerminalSummary>>> =>
@@ -66,6 +88,16 @@ const fakeSurface: object = new Proxy(
   {
     input: document.createElement("textarea"),
     write: (data: string) => fixture.messages.push(data),
+    hasSelection: () => fixture.selection.text.length > 0,
+    getSelection: () => fixture.selection.text,
+    getSelectionPosition: () => fixture.selection.position,
+    getSelectionAnchorRect: () => fixture.selection.anchorRect,
+    isPointerSelecting: () => fixture.selection.pointerSelecting,
+    clearSelection: () => {
+      fixture.selection.clearedCount += 1;
+      fixture.selection.text = "";
+      fixture.selection.position = null;
+    },
     // The real surface re-reports its measured grid.
     resendSize: () => {
       const size = fixture.reportedSize;
@@ -208,14 +240,42 @@ vi.mock("../state/server", async () => {
   const config = Atom.make(null);
   return { serverEnvironment: { configValueAtom: () => config } };
 });
-vi.mock("../state/terminal", () => ({
-  terminalEnvironment: {
-    write: {},
-    resize: fixture.resizeCommand,
-    metadata: ({ environmentId }: { environmentId: EnvironmentId }) =>
-      fixture.terminalMetadata(environmentId),
-  },
-}));
+vi.mock("../state/terminal", async () => {
+  const { Atom, AsyncResult } = await import("effect/reactivity");
+  const getObserveAtom = (environmentId: EnvironmentId, threadId: ThreadId, terminalId: string) => {
+    const key = JSON.stringify([environmentId, threadId, terminalId]);
+    let atom = fixture.observeAtoms.get(key);
+    if (!atom) {
+      atom = Atom.make<AsyncResult.AsyncResult<TerminalBufferState>>(AsyncResult.initial());
+      fixture.observeAtoms.set(key, atom);
+    }
+    return atom;
+  };
+  fixture.pushObserveEvent = (thread, terminalId, event) => {
+    const atom = getObserveAtom(thread.environmentId, thread.threadId, terminalId);
+    const currentResult = appAtomRegistry.get(atom);
+    const currentBuffer = AsyncResult.isSuccess(currentResult)
+      ? currentResult.value
+      : nextTerminalAttachSeedState();
+    const nextBuffer = applyTerminalAttachStreamEvent(currentBuffer, event);
+    appAtomRegistry.set(atom, AsyncResult.success(nextBuffer));
+  };
+  return {
+    terminalEnvironment: {
+      write: {},
+      resize: fixture.resizeCommand,
+      metadata: ({ environmentId }: { environmentId: EnvironmentId }) =>
+        fixture.terminalMetadata(environmentId),
+      observe: ({
+        environmentId,
+        input,
+      }: {
+        environmentId: EnvironmentId;
+        input: { threadId: ThreadId; terminalId: string };
+      }) => getObserveAtom(environmentId, input.threadId, input.terminalId),
+    },
+  };
+});
 vi.mock("../state/preview", () => ({ previewEnvironment: { open: {} } }));
 vi.mock("../state/projects", async () => {
   const { Atom, AsyncResult } = await import("effect/reactivity");
@@ -294,6 +354,14 @@ function Drawer(props: {
 
 function setup(originalStatus: "starting" | "exited" = "exited") {
   fixture.resetSessions();
+  fixture.observeAtoms.clear();
+  fixture.selection = {
+    text: "",
+    position: null,
+    anchorRect: { left: 24, top: 60, width: 60, height: 16 },
+    pointerSelecting: false,
+    clearedCount: 0,
+  };
   const original: ScopedThreadRef = {
     environmentId: EnvironmentId.make(`environment-a-${expect.getState().currentTestName}`),
     threadId: ThreadId.make("thread-a"),
@@ -754,4 +822,166 @@ it("keeps New Terminal and Close Terminal hitboxes non-overlapping under coarse 
   });
   expect(newClicks).toBe(1);
   expect(closeClicks).toBe(0);
+});
+
+it("re-reads live selection line numbers on floating pill click and skips stale changed text", async () => {
+  const { other: threadRef } = setup();
+  const onAddTerminalContext = vi.fn();
+  await using screen = await render(
+    <ThreadTerminalDrawer
+      threadRef={threadRef}
+      threadId={threadRef.threadId}
+      cwd="/repo"
+      height={240}
+      terminalIds={["term-1"]}
+      activeTerminalId="term-1"
+      terminalGroups={[{ id: "group-1", terminalIds: ["term-1"] }]}
+      activeTerminalGroupId="group-1"
+      onSplitTerminal={() => {}}
+      onSplitTerminalVertical={() => {}}
+      onNewTerminal={() => {}}
+      onActiveTerminalChange={() => {}}
+      onCloseTerminal={() => {}}
+      onHeightChange={() => {}}
+      onAddTerminalContext={onAddTerminalContext}
+      keybindings={[]}
+    />,
+  );
+  await act(async () => {
+    fixture.pendingSurfaces.shift()?.();
+  });
+
+  // Initial selection sits at line 7 (0-indexed y = 6).
+  fixture.selection.text = "row 6";
+  fixture.selection.position = { start: { x: 0, y: 6 }, end: { x: 4, y: 6 } };
+  await act(() => {
+    fixture.surfaceOptions.at(-1)!.onSelectionChange();
+  });
+  const addButton = screen.getByRole("button", { name: "Add to chat" });
+  await expect.element(addButton).toBeVisible();
+
+  // Two appended lines shift the selected row up to line 5 (y = 4) while text stays identical.
+  fixture.selection.position = { start: { x: 0, y: 4 }, end: { x: 4, y: 4 } };
+  await userEvent.click(addButton);
+
+  expect(onAddTerminalContext).toHaveBeenCalledExactlyOnceWith({
+    terminalId: "term-1",
+    terminalLabel: "Terminal 1",
+    lineStart: 5,
+    lineEnd: 5,
+    text: "row 6",
+  });
+  expect(fixture.selection.clearedCount).toBe(1);
+  expect(addButton.query()).toBeNull();
+
+  // If the selected text mutates before clicking the floating pill, stale content is NOT submitted.
+  fixture.selection.text = "row 6";
+  fixture.selection.position = { start: { x: 0, y: 4 }, end: { x: 4, y: 4 } };
+  await act(() => {
+    fixture.surfaceOptions.at(-1)!.onSelectionChange();
+  });
+  await expect.element(addButton).toBeVisible();
+
+  fixture.selection.text = "different text";
+  await userEvent.click(addButton);
+
+  expect(onAddTerminalContext).toHaveBeenCalledTimes(1);
+  expect(addButton.query()).toBeNull();
+});
+
+it("tracks unread output for unmounted terminal groups without lighting on historical replay", async () => {
+  const { other: threadRef } = setup();
+  function MultiGroupDrawer() {
+    const [activeTerminalId, setActiveTerminalId] = useState("term-b");
+    const activeGroupId = activeTerminalId === "term-a" ? "group-a" : "group-b";
+    return (
+      <AppAtomRegistryProvider>
+        <ThreadTerminalDrawer
+          threadRef={threadRef}
+          threadId={threadRef.threadId}
+          cwd="/repo"
+          height={240}
+          terminalIds={["term-a", "term-b"]}
+          activeTerminalId={activeTerminalId}
+          terminalGroups={[
+            { id: "group-a", terminalIds: ["term-a"] },
+            { id: "group-b", terminalIds: ["term-b"] },
+          ]}
+          activeTerminalGroupId={activeGroupId}
+          terminalLabelsById={
+            new Map([
+              ["term-a", "Group A"],
+              ["term-b", "Group B"],
+            ])
+          }
+          onSplitTerminal={() => {}}
+          onSplitTerminalVertical={() => {}}
+          onNewTerminal={() => {}}
+          onActiveTerminalChange={setActiveTerminalId}
+          onCloseTerminal={() => {}}
+          onHeightChange={() => {}}
+          onAddTerminalContext={() => {}}
+          keybindings={[]}
+        />
+      </AppAtomRegistryProvider>
+    );
+  }
+
+  using _timers = fakeTimers();
+  await using screen = await render(<MultiGroupDrawer />);
+  // Only Group B is mounted as a terminal canvas; Group A is unmounted.
+  expect(fixture.pendingSurfaces).toHaveLength(1);
+  await act(async () => {
+    fixture.pendingSurfaces.shift()?.();
+  });
+
+  const activeIndicator = () => screen.container.querySelector('[aria-label="Terminal active"]');
+  const unreadIndicator = () =>
+    screen.container.querySelector('[aria-label="Unread terminal output"]');
+
+  // Historical scrollback snapshot replay on unmounted Group A must NOT trigger unread.
+  await act(async () => {
+    fixture.pushObserveEvent(threadRef, "term-a", {
+      type: "snapshot",
+      snapshot: {
+        threadId: threadRef.threadId,
+        terminalId: "term-a",
+        cwd: "/repo",
+        worktreePath: null,
+        status: "running",
+        pid: 456,
+        history: "old scrollback line 1\r\nold scrollback line 2\r\n",
+        exitCode: null,
+        exitSignal: null,
+        label: "Group A",
+        updatedAt: "2026-11-20T00:00:00.000Z",
+      },
+    });
+    await vi.advanceTimersByTimeAsync(1_000);
+  });
+  expect(activeIndicator()).toBeNull();
+  expect(unreadIndicator()).toBeNull();
+
+  // Live output in unmounted Group A while Group B is visible lights Group A's unread indicator.
+  await act(async () => {
+    fixture.pushObserveEvent(threadRef, "term-a", {
+      type: "output",
+      threadId: threadRef.threadId,
+      terminalId: "term-a",
+      data: "background build succeeded\r\n",
+    });
+  });
+  expect(activeIndicator()).not.toBeNull();
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(500);
+  });
+  expect(activeIndicator()).toBeNull();
+  expect(unreadIndicator()).not.toBeNull();
+
+  // Switching back to Group A clears its unread indicator and stays clear when leaving again.
+  await userEvent.click(screen.getByRole("button", { name: /^Group A/ }));
+  expect(unreadIndicator()).toBeNull();
+
+  await userEvent.click(screen.getByRole("button", { name: /^Group B/ }));
+  expect(unreadIndicator()).toBeNull();
 });

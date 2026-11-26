@@ -1433,3 +1433,42 @@ it("lets a one-line placeholder's button take clicks and passes the rest to the 
   await userEvent.click(screen.getByRole("button", { name: "Tab" }));
   expect(onClick).toHaveBeenCalledOnce();
 });
+
+describe("ComposerCodeBlockNodeView studio chrome (Astra P1-3)", () => {
+  it("keeps CJK IME composition, undo/redo, and non-editable header actions intact inside a code block", async () => {
+    const clipboardWriteText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: { writeText: clipboardWriteText },
+    });
+
+    await using screen = await mountEditor("```ts\nconst greeting = 'hi';\n```", true);
+    const { editor } = screen;
+
+    const studio = screen.container.querySelector<HTMLElement>(
+      '[data-composer-code-studio="true"]',
+    );
+    expect(studio).not.toBeNull();
+    const copyButton = screen.getByRole("button", { name: "Copy code" });
+    await userEvent.click(copyButton);
+    expect(clipboardWriteText).toHaveBeenCalledWith("const greeting = 'hi';");
+
+    await act(async () => {
+      editor.commands.focus("end");
+      editor.view.dom.dispatchEvent(new CompositionEvent("compositionstart"));
+      editor.view.dispatch(editor.state.tr.insertText(" // 你好").setMeta("composition", 1));
+      editor.view.dom.dispatchEvent(new CompositionEvent("compositionend", { data: " // 你好" }));
+    });
+    expect(serializeEditorDoc(editor.state.doc).value).toContain("const greeting = 'hi'; // 你好");
+
+    await act(async () => {
+      editor.commands.undo();
+    });
+    expect(serializeEditorDoc(editor.state.doc).value).not.toContain("你好");
+
+    await act(async () => {
+      editor.commands.redo();
+    });
+    expect(serializeEditorDoc(editor.state.doc).value).toContain("const greeting = 'hi'; // 你好");
+  });
+});

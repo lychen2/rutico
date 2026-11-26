@@ -10,7 +10,7 @@ import {
 import { managedRuntimeModeCeilingMessage } from "@t3tools/client-runtime/contract-labels";
 import { Radio as RadioPrimitive } from "@base-ui/react/radio";
 import { isLoopbackHost } from "@t3tools/shared/preview";
-import { EyeIcon, type LucideIcon } from "lucide-react";
+import { BotIcon, EyeIcon, MonitorIcon, ShieldCheckIcon, type LucideIcon } from "lucide-react";
 import type * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
@@ -22,6 +22,8 @@ import { m, type MessageResolver } from "../../i18n/messages";
 import { PrimaryEnvironmentHttpClient } from "~/environments/primary/httpClient";
 import { runPrimaryHttp } from "~/lib/runtime";
 import { cn } from "~/lib/utils";
+import { observeVisibleAnimation } from "~/lib/visibleAnimation";
+import "~/styles/pairing-motion.css";
 import {
   agentRedirectUrl,
   resolveApprovalDecision,
@@ -154,6 +156,7 @@ export function McpConsent({
   const [requestedAccess, setAccess] = useState<AuthMcpClientAccess | null>(null);
   const [pairingCode, setPairingCode] = useState("");
   const [armed, setArmed] = useState(false);
+  const [armCycle, setArmCycle] = useState(0);
   const access =
     requireLevelChoice && requestedAccess === null
       ? null
@@ -187,19 +190,26 @@ export function McpConsent({
     };
   }, [authorization, transport]);
 
-  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- keeps Approve off briefly after the page shows or regains focus, so a click aimed at another window cannot land on it
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- keeps Approve off for 700ms after mount, focus, blur, or visibility changes so a click aimed at another window cannot land on it
   useEffect(() => {
     if (loaded.status !== "ready") return;
     let timer = window.setTimeout(() => setArmed(true), ARM_DELAY_MS);
+    const disarm = () => {
+      setArmed(false);
+      window.clearTimeout(timer);
+    };
     const rearm = () => {
       setArmed(false);
+      setArmCycle((cycle) => cycle + 1);
       window.clearTimeout(timer);
       timer = window.setTimeout(() => setArmed(true), ARM_DELAY_MS);
     };
+    window.addEventListener("blur", disarm);
     window.addEventListener("focus", rearm);
     document.addEventListener("visibilitychange", rearm);
     return () => {
       window.clearTimeout(timer);
+      window.removeEventListener("blur", disarm);
       window.removeEventListener("focus", rearm);
       document.removeEventListener("visibilitychange", rearm);
     };
@@ -288,6 +298,45 @@ export function McpConsent({
           )
         }
       />
+      <div className="mt-5 flex items-center justify-between gap-3 rounded-xl border border-border/70 bg-muted/25 px-3.5 py-2.5">
+        <div className="flex min-w-0 items-center gap-2">
+          <span className="flex size-7 shrink-0 items-center justify-center rounded-lg border border-border/60 bg-background text-foreground">
+            <BotIcon className="size-3.5" aria-hidden />
+          </span>
+          <span className="min-w-0 truncate text-xs font-medium text-foreground">
+            {details.clientName}
+          </span>
+        </div>
+        <div className="flex shrink-0 items-center gap-1.5" aria-hidden="true">
+          <span
+            ref={observeVisibleAnimation}
+            data-slot="pairing-bridge-dot"
+            data-active="true"
+            className="size-1.5 rounded-full bg-primary"
+          />
+          <span
+            ref={observeVisibleAnimation}
+            data-slot="pairing-bridge-dot"
+            data-active="true"
+            className="size-1.5 rounded-full bg-primary"
+          />
+          <span
+            ref={observeVisibleAnimation}
+            data-slot="pairing-bridge-dot"
+            data-active="true"
+            className="size-1.5 rounded-full bg-primary"
+          />
+        </div>
+        <div className="flex min-w-0 items-center gap-2">
+          <span className="min-w-0 truncate text-xs font-medium text-foreground">
+            {environmentLabel ?? details.environmentHost}
+          </span>
+          <span className="flex size-7 shrink-0 items-center justify-center rounded-lg border border-border/60 bg-background text-foreground">
+            <MonitorIcon className="size-3.5" aria-hidden />
+          </span>
+        </div>
+      </div>
+
       <dl className="mt-4 grid grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-1 text-sm">
         <dt className="text-muted-foreground">
           <T context="the app requesting access">App</T>
@@ -400,12 +449,36 @@ export function McpConsent({
         ) : null}
 
         <div className="flex flex-wrap gap-2">
-          <Button disabled={!canApprove} type="submit">
-            {pending === "approve"
-              ? gt("Approving…")
-              : approveLevel === null
-                ? gt("Choose what it may do")
-                : gt("Approve {level}", { level: messages(accessConfig[approveLevel].label) })}
+          <Button
+            data-slot="pairing-arm-button"
+            data-armed={armed ? "true" : "false"}
+            disabled={!canApprove}
+            type="submit"
+            className="relative overflow-hidden"
+          >
+            <span
+              key={armCycle}
+              aria-hidden="true"
+              data-slot="arming-sweep"
+              data-armed={armed ? "true" : "false"}
+            />
+            <span
+              aria-hidden="true"
+              data-slot="pairing-arm-ready-glint"
+              data-armed={armed ? "true" : "false"}
+            />
+            <span className="relative z-10 inline-flex items-center gap-1.5">
+              {pending === "approve" ? (
+                <Spinner size="xs" />
+              ) : armed && approveLevel !== null ? (
+                <ShieldCheckIcon className="size-3.5" aria-hidden />
+              ) : null}
+              {pending === "approve"
+                ? gt("Approving…")
+                : approveLevel === null
+                  ? gt("Choose what it may do")
+                  : gt("Approve {level}", { level: messages(accessConfig[approveLevel].label) })}
+            </span>
           </Button>
           <Button
             disabled={pending !== null}

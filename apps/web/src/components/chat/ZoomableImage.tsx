@@ -1,7 +1,15 @@
 import { useGT } from "gt-react";
-import { useImperativeHandle, useRef, useState, useSyncExternalStore, type Ref } from "react";
+import {
+  useEffect,
+  useImperativeHandle,
+  useRef,
+  useState,
+  useSyncExternalStore,
+  type Ref,
+} from "react";
 import { flushSync } from "react-dom";
 
+import { getSpringWaapiTiming, prefersReducedMotion } from "~/lib/motion/springs";
 import {
   onWindowControlsOverlayGeometryChange,
   windowControlsOverlayHeight,
@@ -10,6 +18,7 @@ import {
 import { AttachmentImage } from "../media/AttachmentImage";
 
 const MAX_ZOOM = 8;
+const ZOOM_HUD_HIDE_MS = 1100;
 
 // Subtract the caption strip, matching dialog CSS's --native-titlebar-height.
 function readViewerSize() {
@@ -54,15 +63,32 @@ export function ZoomableImage({
 }) {
   const gt = useGT();
   const viewportRef = useRef<HTMLDivElement>(null);
+  const imageWrapRef = useRef<HTMLDivElement>(null);
+  const zoomAnimationRef = useRef<Animation | null>(null);
+  const zoomHudTimerRef = useRef<number | null>(null);
   const [naturalSize, setNaturalSize] = useState({ width: 0, height: 0 });
   const viewerSize = useSyncExternalStore(subscribeViewerSize, getViewerSize);
   const [zoom, setZoom] = useState(1);
+  const [zoomHudVisible, setZoomHudVisible] = useState(false);
   // A resized viewer refits the image.
   const [zoomViewerSize, setZoomViewerSize] = useState(viewerSize);
   if (zoomViewerSize !== viewerSize) {
     setZoomViewerSize(viewerSize);
     setZoom(1);
+    setZoomHudVisible(false);
   }
+
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- cleans up the ephemeral zoom HUD hide timer and WAAPI animation on unmount
+  useEffect(() => {
+    return () => {
+      if (zoomHudTimerRef.current !== null) {
+        window.clearTimeout(zoomHudTimerRef.current);
+        zoomHudTimerRef.current = null;
+      }
+      zoomAnimationRef.current?.cancel();
+      zoomAnimationRef.current = null;
+    };
+  }, []);
   const dragRef = useRef<{
     pointerId: number;
     x: number;
@@ -116,10 +142,26 @@ export function ZoomableImage({
     [zoom],
   );
 
-  const changeZoom = (next: number, point?: { x: number; y: number }) => {
+  const flashZoomHud = () => {
+    setZoomHudVisible(true);
+    if (zoomHudTimerRef.current !== null) {
+      window.clearTimeout(zoomHudTimerRef.current);
+    }
+    zoomHudTimerRef.current = window.setTimeout(() => {
+      zoomHudTimerRef.current = null;
+      setZoomHudVisible(false);
+    }, ZOOM_HUD_HIDE_MS);
+  };
+
+  const changeZoom = (
+    next: number,
+    point?: { x: number; y: number },
+    options?: { readonly smooth?: boolean },
+  ) => {
     const viewport = viewportRef.current;
     const clamped = Math.min(MAX_ZOOM, Math.max(1, next));
     if (!viewport || zoom === clamped) return;
+    const previousZoom = zoom;
     const bounds = viewport.getBoundingClientRect();
     const x = point ? point.x - bounds.left : viewport.clientWidth / 2;
     const y = point ? point.y - bounds.top : viewport.clientHeight / 2;
@@ -132,6 +174,21 @@ export function ZoomableImage({
     const resized = viewport.getBoundingClientRect();
     viewport.scrollLeft = anchorX * clamped - (clientX - resized.left);
     viewport.scrollTop = anchorY * clamped - (clientY - resized.top);
+    flashZoomHud();
+    if (
+      options?.smooth &&
+      !prefersReducedMotion() &&
+      imageWrapRef.current &&
+      typeof imageWrapRef.current.animate === "function"
+    ) {
+      zoomAnimationRef.current?.cancel();
+      const ratio = previousZoom / clamped;
+      const timing = getSpringWaapiTiming("snappy");
+      zoomAnimationRef.current = imageWrapRef.current.animate(
+        [{ transform: `scale(${ratio.toFixed(4)})` }, { transform: "scale(1)" }],
+        { duration: Math.min(200, timing.duration), easing: timing.easing },
+      );
+    }
   };
 
   const attachViewport = (viewport: HTMLDivElement) => {
@@ -157,7 +214,7 @@ export function ZoomableImage({
   };
 
   return (
-    <div className="min-w-0">
+    <div className="relative min-w-0">
       <div
         ref={attachViewport}
         role="region"
@@ -176,22 +233,22 @@ export function ZoomableImage({
         onClick={(event) => {
           // Pointer capture emits a click after dragging; preserve zoom.
           if (suppressClickRef.current || event.detail > 1) return;
-          changeZoom(zoom > 1 ? 1 : 2, { x: event.clientX, y: event.clientY });
+          changeZoom(zoom > 1 ? 1 : 2, { x: event.clientX, y: event.clientY }, { smooth: true });
         }}
         onKeyDown={(event) => {
           if (event.ctrlKey || event.metaKey || event.altKey) return;
           if (event.key === "Enter" || event.key === " ") {
             event.preventDefault();
-            if (!event.repeat) changeZoom(zoom > 1 ? 1 : 2);
+            if (!event.repeat) changeZoom(zoom > 1 ? 1 : 2, undefined, { smooth: true });
           } else if (event.key === "+" || event.key === "=") {
             event.preventDefault();
-            changeZoom(zoom * 1.5);
+            changeZoom(zoom * 1.5, undefined, { smooth: true });
           } else if (event.key === "-") {
             event.preventDefault();
-            changeZoom(zoom / 1.5);
+            changeZoom(zoom / 1.5, undefined, { smooth: true });
           } else if (event.key === "0") {
             event.preventDefault();
-            changeZoom(1);
+            changeZoom(1, undefined, { smooth: true });
           }
         }}
         onPointerDown={(event) => {
@@ -238,24 +295,34 @@ export function ZoomableImage({
           setDragging(false);
         }}
       >
-        <AttachmentImage
-          name={name}
-          mimeType={mimeType}
-          src={src}
-          alt={name}
-          draggable={false}
-          className="block max-w-none select-none"
-          style={
-            naturalSize.width ? { width, height } : { maxWidth: "var(--media-width)", maxHeight }
-          }
-          onLoad={(event) => {
-            setNaturalSize({
-              width: event.currentTarget.naturalWidth,
-              height: event.currentTarget.naturalHeight,
-            });
-          }}
-          onError={onError}
-        />
+        <div ref={imageWrapRef} className="origin-center">
+          <AttachmentImage
+            name={name}
+            mimeType={mimeType}
+            src={src}
+            alt={name}
+            draggable={false}
+            className="block max-w-none select-none"
+            style={
+              naturalSize.width ? { width, height } : { maxWidth: "var(--media-width)", maxHeight }
+            }
+            onLoad={(event) => {
+              setNaturalSize({
+                width: event.currentTarget.naturalWidth,
+                height: event.currentTarget.naturalHeight,
+              });
+            }}
+            onError={onError}
+          />
+        </div>
+      </div>
+      <div
+        aria-hidden="true"
+        data-zoom-hud="true"
+        data-visible={zoomHudVisible ? "true" : "false"}
+        className="pointer-events-none absolute top-3 left-1/2 z-20 -translate-x-1/2 rounded-full border border-white/15 bg-black/80 px-2.5 py-0.5 font-medium text-xs text-white tabular-nums shadow-md"
+      >
+        {Math.round(zoom * 100)}%
       </div>
       <span className="sr-only" aria-live="polite">
         {gt("{percent}% zoom", { percent: Math.round(zoom * 100) })}

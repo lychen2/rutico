@@ -31,10 +31,20 @@
   font-variant-numeric: tabular-nums;
   color: var(--muted-foreground);
   cursor: pointer;
+  transition:
+    background-color 140ms ease-out,
+    color 160ms ease-out;
 }
 [data-v9-stats-trig]:is(:hover, :focus-visible, [aria-expanded="true"]) {
   background: var(--muted);
   color: var(--foreground);
+}
+[data-v9-stats-trig][data-context-thermal="warm"] [data-context-percent-pill] {
+  color: color-mix(in oklch, var(--warning) 88%, var(--foreground));
+}
+[data-v9-stats-trig][data-context-thermal="critical"] [data-context-percent-pill] {
+  color: color-mix(in oklch, var(--destructive) 88%, var(--foreground));
+  font-weight: 500;
 }
 [data-v9-stats-sep] {
   width: 1px;
@@ -48,28 +58,47 @@
   }
 }
 [data-session-stats-popup] {
-  /* Keep the shared glass-off setting; cap the dark-theme blur at Stardust's 12px. */
-  -webkit-backdrop-filter: blur(min(var(--glass-blur), 12px)) saturate(var(--glass-saturation));
-  backdrop-filter: blur(min(var(--glass-blur), 12px)) saturate(var(--glass-saturation));
-}
-@media (prefers-reduced-transparency: reduce) {
-  [data-session-stats-popup] {
-    background: var(--popover);
-    -webkit-backdrop-filter: none;
-    backdrop-filter: none;
-  }
+  background: var(--popover);
+  transform-origin: var(--transform-origin, bottom center);
 }
 [data-context-meter] {
+  position: relative;
   display: block;
-  height: 0.25rem;
-  border: 0;
-  appearance: none;
+  height: 0.3125rem;
   overflow: hidden;
-  border-radius: var(--radius-sm);
+  border-radius: 999px;
+  background: color-mix(in oklch, var(--foreground) 12%, transparent);
 }
-[data-context-meter]::-webkit-progress-bar {
-  background: color-mix(in srgb, currentColor 15%, transparent);
+[data-context-meter-fill] {
+  display: block;
+  height: 100%;
+  width: 100%;
+  transform-origin: left center;
+  border-radius: inherit;
+  background: color-mix(in oklch, var(--foreground) 72%, var(--primary));
+  transition:
+    transform 320ms var(--spring-snappy),
+    background-color 240ms ease-out;
 }
-[data-context-meter]::-webkit-progress-value {
-  background: currentColor;
+[data-context-meter][data-context-thermal="warm"] [data-context-meter-fill] {
+  background: color-mix(in oklch, var(--warning) 86%, #f59e0b);
+}
+[data-context-meter][data-context-thermal="critical"] [data-context-meter-fill] {
+  background: var(--destructive);
+}
+@media (prefers-reduced-motion: no-preference) {
+  [data-context-live-dot="true"] {
+    animation: chat-scroll-end-live-dot 1.6s ease-in-out infinite;
+    animation-play-state: var(--visible-animation-state, paused);
+    will-change: var(--visible-animation-will-change, auto);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  [data-v9-stats-trig],
+  [data-context-meter-fill] {
+    transition: none;
+  }
+  [data-context-live-dot="true"] {
+    animation: none;
+  }
 }

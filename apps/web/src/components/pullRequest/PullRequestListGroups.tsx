@@ -97,7 +97,10 @@ export function PullRequestListGroups({
   const counts = new Map(groups.map((group) => [group.key, group.entries.length]));
   return (
     <PullRequestSpeedModeProvider>
-      <div className={cn("space-y-3", sweepingKeys.size > 0 && "**:pointer-events-none")}>
+      <div
+        data-slot="pr-list-groups"
+        className={cn("space-y-3", sweepingKeys.size > 0 && "**:pointer-events-none")}
+      >
         {shownGroups.map((group) => (
           <div key={group.key} className="space-y-0.5">
             {group.label ? (

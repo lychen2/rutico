@@ -11,6 +11,7 @@ import {
   PIERRE_TREE_UNSAFE_CSS,
   pierreTreeStyle,
   titleClippedPierreTreeRow,
+  usePierreTreeRailAndEdgeFade,
 } from "~/pierre-tree-theme";
 
 import {
@@ -74,6 +75,9 @@ export function DiffFileTree({
     status: entry.status,
   }));
   const syncingSelectionRef = useRef(false);
+  const treeStageRef = useRef<HTMLDivElement | null>(null);
+  const laserRailRef = useRef<HTMLDivElement | null>(null);
+  usePierreTreeRailAndEdgeFade(treeStageRef, laserRailRef);
   const handledRevealRef = useRef<{
     path: string;
     revealRequestId: number;
@@ -228,35 +232,52 @@ export function DiffFileTree({
           </SharedTooltipTrigger>
         ) : null}
       </div>
-      <FileTree
-        model={model}
-        aria-label={ariaLabel}
-        onClickCapture={(event) => {
-          if (
-            event.defaultPrevented ||
-            event.button !== 0 ||
-            event.ctrlKey ||
-            event.metaKey ||
-            event.shiftKey ||
-            event.altKey
-          ) {
-            return;
-          }
-          // Pierre emits no change for its sole selected row; read before the click to avoid double reveals.
-          const selected = model.getSelectedPaths();
-          const path = selected.length === 1 ? selected[0] : undefined;
-          if (!path || !modelPaths.includes(path)) return;
-          const clickedSelectedRow = event.nativeEvent
-            .composedPath()
-            .some(
-              (node) => node instanceof HTMLElement && node.getAttribute("data-item-path") === path,
-            );
-          if (clickedSelectedRow) onSelectFile(presented.selectionPath(path));
-        }}
-        className="min-h-0 flex-1 overflow-hidden"
-        style={pierreTreeStyle(resolvedTheme)}
-        onPointerOver={titleClippedPierreTreeRow}
-      />
+      <div
+        ref={treeStageRef}
+        data-pierre-tree-stage
+        data-more-above="false"
+        data-more-below="false"
+        className="pierre-tree-stage relative flex min-h-0 flex-1 flex-col overflow-hidden"
+        style={{ height: "100%" }}
+      >
+        <div
+          ref={laserRailRef}
+          aria-hidden="true"
+          data-slot="pierre-tree-laser-rail"
+          className="pointer-events-none absolute top-0 left-1 z-10 w-0.5 rounded-full bg-primary opacity-0 will-change-transform"
+          style={{ position: "absolute", top: 0, left: 4, pointerEvents: "none" }}
+        />
+        <FileTree
+          model={model}
+          aria-label={ariaLabel}
+          onClickCapture={(event) => {
+            if (
+              event.defaultPrevented ||
+              event.button !== 0 ||
+              event.ctrlKey ||
+              event.metaKey ||
+              event.shiftKey ||
+              event.altKey
+            ) {
+              return;
+            }
+            // Pierre emits no change for its sole selected row; read before the click to avoid double reveals.
+            const selected = model.getSelectedPaths();
+            const path = selected.length === 1 ? selected[0] : undefined;
+            if (!path || !modelPaths.includes(path)) return;
+            const clickedSelectedRow = event.nativeEvent
+              .composedPath()
+              .some(
+                (node) =>
+                  node instanceof HTMLElement && node.getAttribute("data-item-path") === path,
+              );
+            if (clickedSelectedRow) onSelectFile(presented.selectionPath(path));
+          }}
+          className="min-h-0 flex-1 overflow-hidden"
+          style={pierreTreeStyle(resolvedTheme)}
+          onPointerOver={titleClippedPierreTreeRow}
+        />
+      </div>
       {footer}
     </div>
   );

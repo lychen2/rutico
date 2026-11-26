@@ -388,7 +388,7 @@ class AgentNotificationsTest : AgentNotificationsFixture() {
   }
 
   @Test
-  fun aSingleThreadUsesItsTitleAndNeverShowsAProgressBar() {
+  fun aSingleThreadUsesProgressStyleOnApi36AndBigTextOnOlderSdk() {
     lifecycle.currentState = Lifecycle.State.RESUMED
     val data = update("work", true) + mapOf(
       "activity_line_0" to "Working	Update dashboard	Project",
@@ -402,11 +402,23 @@ class AgentNotificationsTest : AgentNotificationsFixture() {
     )
     assertEquals(
       "Working Project",
-      working.extras.getCharSequence(Notification.EXTRA_BIG_TEXT).toString()
+      working.extras.getCharSequence(Notification.EXTRA_TEXT).toString()
     )
+    if (Build.VERSION.SDK_INT < 36) {
+      assertEquals(
+        "Working Project",
+        working.extras.getCharSequence(Notification.EXTRA_BIG_TEXT).toString()
+      )
+    }
     assertEquals(null, working.extras.getString(Notification.EXTRA_SUB_TEXT))
     assertEquals("Working", working.extras.getString(NotificationCompat.EXTRA_SHORT_CRITICAL_TEXT))
     assertFalse(working.extras.getBoolean(Notification.EXTRA_SHOW_CHRONOMETER))
+    assertFalse(working.extras.getBoolean(NotificationCompat.EXTRA_COLORIZED))
+    val expectedTemplate = if (Build.VERSION.SDK_INT >= 36) {
+      "android.app.Notification\$ProgressStyle"
+    } else {
+      "android.app.Notification\$BigTextStyle"
+    }
     for (phase in listOf(
       "waiting_for_approval",
       "waiting_for_input",
@@ -425,9 +437,10 @@ class AgentNotificationsTest : AgentNotificationsFixture() {
       )
       val card = manager.activeNotifications.single().notification
       assertEquals(
-        "android.app.Notification\$BigTextStyle",
+        expectedTemplate,
         card.extras.getString(Notification.EXTRA_TEMPLATE)
       )
+      assertFalse(card.extras.getBoolean(NotificationCompat.EXTRA_COLORIZED))
       assertEquals(
         active || Build.VERSION.SDK_INT >= 36,
         NotificationCompat.isRequestPromotedOngoing(card)
@@ -445,6 +458,36 @@ class AgentNotificationsTest : AgentNotificationsFixture() {
         )
         assertEquals(if (Build.VERSION.SDK_INT >= 36) 1 else 0, card.actions?.size ?: 0)
       }
+    }
+  }
+
+  @Test
+  fun phaseStartedAtChronometerAppliesOnlyToActiveExecutionPhases() {
+    lifecycle.currentState = Lifecycle.State.RESUMED
+    val startedAt = System.currentTimeMillis() - 30_000L
+    val basePayload = update("work-timer", true) + mapOf(
+      "activity_line_0" to "Working\tRefactor auth\tProject",
+      "activity_phase" to "running",
+      "activity_phase_started_at" to startedAt.toString(),
+    )
+    AgentNotifications.receive(context, basePayload)
+    val running = manager.activeNotifications.single().notification
+    assertTrue(running.extras.getBoolean(Notification.EXTRA_SHOW_WHEN))
+    assertTrue(running.extras.getBoolean(Notification.EXTRA_SHOW_CHRONOMETER))
+    assertEquals(startedAt, running.`when`)
+
+    // Waiting phases suppress chronometer even when activity_phase_started_at is present.
+    AgentNotifications.receive(
+      context,
+      basePayload + mapOf(
+        "activity_line_0" to "Approval\tRefactor auth\tProject",
+        "activity_phase" to "waiting_for_approval",
+      )
+    )
+    val approval = manager.activeNotifications.single().notification
+    assertFalse(approval.extras.getBoolean(Notification.EXTRA_SHOW_CHRONOMETER))
+    if (Build.VERSION.SDK_INT >= 31) {
+      assertTrue(approval.actions.first().isAuthenticationRequired)
     }
   }
 

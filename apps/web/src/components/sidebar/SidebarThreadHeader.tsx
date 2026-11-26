@@ -9,6 +9,7 @@ import {
 } from "react";
 
 import { cn } from "~/lib/utils";
+import { AnimatedNumber } from "../ui/animated-number";
 import { Button } from "../ui/button";
 import { SidebarInput, SidebarMenuButton } from "../ui/sidebar";
 import { SharedTooltipTrigger } from "../ui/shared-tooltip";
@@ -87,7 +88,7 @@ export function SidebarThreadHeader({
               data-testid="sidebar-search-match-count"
               className="shrink-0 rounded-full bg-sidebar-control-surface/80 px-1.5 py-0.5 text-2xs leading-none font-medium tabular-nums text-sidebar-muted-foreground ring-1 ring-inset ring-sidebar-border/40 dark:ring-white/6"
             >
-              {searchResultCount}
+              <AnimatedNumber value={searchResultCount} />
             </span>
             <Button
               type="button"

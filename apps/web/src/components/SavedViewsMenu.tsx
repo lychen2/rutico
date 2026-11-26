@@ -148,11 +148,18 @@ export function SavedViewsMenu<Preferences extends Stored, Stored, Encoded>({
           }
           label={selectedView?.name ?? savedViewsLabel}
         >
-          <BookmarkIcon aria-hidden className="size-4" />
+          <BookmarkIcon aria-hidden className={selectedView ? "size-4 text-primary" : "size-4"} />
           <span className="max-w-40 truncate">
             {selectedView?.name ?? gt("Views", { $context: "saved filter views menu" })}
           </span>
-          {modified ? <span aria-label={gt("Modified view")}>*</span> : null}
+          {modified ? (
+            <span
+              aria-label={gt("Modified view")}
+              className="font-semibold text-warning-foreground"
+            >
+              *
+            </span>
+          ) : null}
           <ChevronDownIcon aria-hidden className="size-3 shrink-0" />
         </SharedTooltipTrigger>
         <MenuPopup align="start">

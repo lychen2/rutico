@@ -82,22 +82,27 @@ export function MarkdownDetails({
         data-markdown-details-open={expanded ? "true" : "false"}
       >
         <CollapsibleTrigger
-          className="flex w-full items-center gap-2 py-2 text-start text-sm font-medium text-foreground [&:dir(rtl):not([data-panel-open])_svg]:rotate-180 data-panel-open:[&_svg]:rotate-90"
+          className="flex w-full items-center gap-2 py-2 text-start text-sm font-medium text-foreground transition-colors duration-150 ease-out any-hover:text-foreground/90 motion-reduce:transition-none [&:dir(rtl):not([data-panel-open])_svg]:rotate-180 data-panel-open:[&_svg]:rotate-90"
           data-markdown-details-summary=""
           // Keyboard focus armed it, and the swap replaced the focused button.
           ref={armed === "focus" ? focusOnMount : undefined}
         >
           <ChevronRightIcon
-            className="size-4 shrink-0 text-muted-foreground transition-transform"
+            className="size-4 shrink-0 text-muted-foreground transition-transform duration-(--duration-snappy) ease-(--spring-snappy) motion-reduce:transition-none"
             aria-hidden
           />
           <span>{summary}</span>
         </CollapsibleTrigger>
         <CollapsiblePanel ref={revealRef} hiddenUntilFound={searching}>
           <div
-            className="pb-3 ps-6 text-foreground/[calc(90%+var(--appearance-contrast-boost)/10)]"
+            className="relative pb-3 ps-6 text-foreground/[calc(90%+var(--appearance-contrast-boost)/10)]"
             data-markdown-details-content=""
           >
+            <span
+              aria-hidden="true"
+              data-markdown-details-rail="true"
+              className="pointer-events-none absolute start-2 top-0.5 bottom-2.5 w-px origin-top rounded-full bg-border/80"
+            />
             {content}
           </div>
         </CollapsiblePanel>

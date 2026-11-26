@@ -67,6 +67,7 @@ export function AgentElapsed({
         const elapsedMs = deriveSubagentElapsedMs({ status, startedAt, completedAt }, nowMs);
         return elapsedMs === null ? "" : format(elapsedMs / 1000, m);
       }, live)}
+      data-agent-elapsed-live={live ? "true" : undefined}
       className="tabular-nums"
     />
   );

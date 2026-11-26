@@ -95,6 +95,13 @@ export default function SideThreadPane(props: {
   const deleteThread = useAtomCommand(threadEnvironment.delete, { reportFailure: false });
   const confirmThreadDelete = useClientSettings((settings) => settings.confirmThreadDelete);
   const [deleting, setDeleting] = useState(false);
+  const [recentlyAdded, setRecentlyAdded] = useState(false);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- auto-resets the 1.2s emerald Added pill confirmation
+  useEffect(() => {
+    if (!recentlyAdded) return;
+    const timer = window.setTimeout(() => setRecentlyAdded(false), 1200);
+    return () => window.clearTimeout(timer);
+  }, [recentlyAdded]);
   // Closing an unused side chat deletes it, which would leave the link unreadable.
   const canAddToChat = shell !== null && shell.latestUserMessageAt !== null;
   const addToChat = () => {
@@ -104,6 +111,7 @@ export default function SideThreadPane(props: {
       .addThreadContexts(parentRef, [threadContextRecord(threadRef, shell.title)], {
         insertAtCaret: false,
       });
+    setRecentlyAdded(true);
   };
 
   const deleteSideChat = async () => {
@@ -154,6 +162,7 @@ export default function SideThreadPane(props: {
   return (
     <div
       data-side-chat-pane={threadId}
+      data-side-thread-drawer="true"
       data-testid="side-thread-pane"
       className="flex h-full min-h-0 flex-col"
     >
@@ -165,10 +174,33 @@ export default function SideThreadPane(props: {
               <Button
                 variant="ghost"
                 size="xs"
+                data-side-chat-added-pill={recentlyAdded ? "true" : undefined}
                 aria-disabled={!canAddToChat || undefined}
                 onClick={addToChat}
               >
-                <T>Add to chat</T>
+                {recentlyAdded ? (
+                  <span className="inline-flex items-center gap-1 text-success-foreground">
+                    <svg
+                      aria-hidden="true"
+                      viewBox="0 0 14 14"
+                      fill="none"
+                      className="size-3 shrink-0"
+                    >
+                      <path
+                        d="M2.8 7.3l2.8 2.8 5.6-6"
+                        stroke="currentColor"
+                        strokeWidth="1.8"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        pathLength={100}
+                        data-side-chat-added-check="true"
+                      />
+                    </svg>
+                    <T>Added</T>
+                  </span>
+                ) : (
+                  <T>Add to chat</T>
+                )}
               </Button>
             }
             label={

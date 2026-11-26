@@ -1,13 +1,94 @@
 const { withMainActivity } = require("expo/config-plugins");
 
-// RN 0.85 registers back dispatch only on Android 16 with targetSdk 36; Android 13-15 otherwise bypass JS.
+// React Native 0.88.1 registers an OnBackPressedCallback only when running on Android 16 (API 36+)
+// with targetSdk >= 36. Android 13-15 (API 33-35) need this compat callback to bridge both discrete
+// back presses and Android 14-15 BackEventCompat progress events to JS without duplicating API 36.
 
 const CALLBACK_PROPERTY = `
-  // Routes predictive-back gestures to JS on Android 13-15, where react-native
-  // registers no OnBackPressedDispatcher callback of its own (it only does on
+  private var predictiveBackGestureActive = false
+  private var lastPredictiveBackProgress = -1f
+
+  private fun emitPredictiveBackEvent(
+    phase: String,
+    progress: Float,
+    swipeEdge: Int,
+    touchX: Float,
+    touchY: Float,
+    hadGesture: Boolean,
+  ) {
+    val reactContext = reactDelegate?.currentReactContext ?: return
+    val payload = Arguments.createMap().apply {
+      putString("phase", phase)
+      putDouble("progress", progress.toDouble())
+      putInt("swipeEdge", swipeEdge)
+      putDouble("touchX", touchX.toDouble())
+      putDouble("touchY", touchY.toDouble())
+      putBoolean("hadGesture", hadGesture)
+      putString("source", "compat")
+    }
+    reactContext
+      .getJSModule(DeviceEventManagerModule.RCTDeviceEventEmitter::class.java)
+      .emit("t3PredictiveBack", payload)
+  }
+
+  // Routes predictive-back gestures and progress to JS on Android 13-15 (API 33-35), where
+  // react-native registers no OnBackPressedDispatcher callback of its own (it registers on
   // Android 16+). Registered in onCreate; added by withAndroidPredictiveBackCompat.
   private val predictiveBackCompatCallback = object : OnBackPressedCallback(true) {
+    override fun handleOnBackStarted(backEvent: BackEventCompat) {
+      predictiveBackGestureActive = true
+      lastPredictiveBackProgress = backEvent.progress.coerceIn(0f, 1f)
+      emitPredictiveBackEvent(
+        phase = "start",
+        progress = lastPredictiveBackProgress,
+        swipeEdge = backEvent.swipeEdge,
+        touchX = backEvent.touchX,
+        touchY = backEvent.touchY,
+        hadGesture = true,
+      )
+    }
+
+    override fun handleOnBackProgressed(backEvent: BackEventCompat) {
+      val next = backEvent.progress.coerceIn(0f, 1f)
+      if (kotlin.math.abs(next - lastPredictiveBackProgress) < 0.004f && next > 0f && next < 1f) {
+        return
+      }
+      lastPredictiveBackProgress = next
+      emitPredictiveBackEvent(
+        phase = "progress",
+        progress = next,
+        swipeEdge = backEvent.swipeEdge,
+        touchX = backEvent.touchX,
+        touchY = backEvent.touchY,
+        hadGesture = true,
+      )
+    }
+
+    override fun handleOnBackCancelled() {
+      predictiveBackGestureActive = false
+      lastPredictiveBackProgress = -1f
+      emitPredictiveBackEvent(
+        phase = "cancel",
+        progress = 0f,
+        swipeEdge = 0,
+        touchX = 0f,
+        touchY = 0f,
+        hadGesture = true,
+      )
+    }
+
     override fun handleOnBackPressed() {
+      val hadGesture = predictiveBackGestureActive
+      predictiveBackGestureActive = false
+      lastPredictiveBackProgress = -1f
+      emitPredictiveBackEvent(
+        phase = "commit",
+        progress = 1f,
+        swipeEdge = 0,
+        touchX = 0f,
+        touchY = 0f,
+        hadGesture = hadGesture,
+      )
       isEnabled = false
       onBackPressed()
       isEnabled = true
@@ -43,6 +124,18 @@ function insertAfter(contents, anchor, insertion, description) {
   return contents.slice(0, end) + insertion + contents.slice(end);
 }
 
+function addImport(contents, importLine) {
+  if (contents.includes(importLine)) {
+    return contents;
+  }
+  return insertAfter(
+    contents,
+    "import android.os.Bundle",
+    `\n${importLine}`,
+    "the android.os.Bundle import",
+  );
+}
+
 module.exports = function withAndroidPredictiveBackCompat(config) {
   if (config.android?.predictiveBackGestureEnabled !== true) {
     return config;
@@ -57,11 +150,12 @@ module.exports = function withAndroidPredictiveBackCompat(config) {
       return nextConfig;
     }
 
-    contents = insertAfter(
+    contents = addImport(contents, "import androidx.activity.BackEventCompat");
+    contents = addImport(contents, "import androidx.activity.OnBackPressedCallback");
+    contents = addImport(contents, "import com.facebook.react.bridge.Arguments");
+    contents = addImport(
       contents,
-      "import android.os.Bundle",
-      "\nimport androidx.activity.OnBackPressedCallback",
-      "the android.os.Bundle import",
+      "import com.facebook.react.modules.core.DeviceEventManagerModule",
     );
     contents = insertAfter(
       contents,

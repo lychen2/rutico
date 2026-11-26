@@ -22,6 +22,7 @@ import * as ElectronTheme from "../electron/ElectronTheme.ts";
 import * as ElectronWindow from "../electron/ElectronWindow.ts";
 import * as DesktopState from "./DesktopState.ts";
 import * as DesktopWindow from "../window/DesktopWindow.ts";
+import { LINUX_PORTAL_APPEARANCE_CHANNEL } from "../ipc/channels.ts";
 
 export class DesktopLifecycleRelaunchError extends Schema.TaggedError<DesktopLifecycleRelaunchError>()(
   "DesktopLifecycleRelaunchError",
@@ -231,7 +232,7 @@ export const make = DesktopLifecycle.of({
         yield* electronApp.exit(75);
         return;
       }
-      // Startup already acted on the app link that launched it; passing it on replays it.
+      // Startup already acted on launch links or quick actions; passing them on replays them.
       const appLinkPrefixes = [
         `${ElectronProtocol.getDesktopScheme(environment.isDevelopment)}:`,
         "rutico:",
@@ -241,7 +242,11 @@ export const make = DesktopLifecycle.of({
         execPath: yield* HostProcess.ExecutablePath,
         args: args
           .slice(1)
-          .filter((arg) => !appLinkPrefixes.some((prefix) => arg.toLowerCase().startsWith(prefix))),
+          .filter(
+            (arg) =>
+              !appLinkPrefixes.some((prefix) => arg.toLowerCase().startsWith(prefix)) &&
+              !arg.toLowerCase().startsWith("--quick-action="),
+          ),
       });
       yield* electronApp.exit(0);
     }).pipe(
@@ -265,6 +270,13 @@ export const make = DesktopLifecycle.of({
     yield* electronTheme.onUpdated(() => {
       void runEffect(
         desktopWindow.syncAppearance.pipe(Effect.withSpan("desktop.lifecycle.themeUpdated")),
+      );
+    });
+    yield* electronTheme.onLinuxPortalAppearanceChange((appearance) => {
+      void runEffect(
+        electronWindow
+          .sendAll(LINUX_PORTAL_APPEARANCE_CHANNEL, appearance)
+          .pipe(Effect.withSpan("desktop.lifecycle.linuxPortalAppearanceUpdated")),
       );
     });
     yield* electronApp.onBeforeQuitForUpdate(() => {

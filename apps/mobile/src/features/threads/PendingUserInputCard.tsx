@@ -8,13 +8,17 @@ import {
   type TextDirection,
 } from "@t3tools/shared/textDirection";
 import { useNavigation } from "@react-navigation/native";
-import * as Haptics from "expo-haptics";
 import { Plural, T, useGT, Var } from "gt-react-native";
-import { useRef } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import { Platform, Pressable, ScrollView, View, type LayoutChangeEvent } from "react-native";
+import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import Animated, {
+  FadeIn,
+  ReduceMotion,
+  runOnJS,
   useAnimatedStyle,
   useSharedValue,
+  withSpring,
   type DerivedValue,
   type SharedValue,
 } from "react-native-reanimated";
@@ -23,7 +27,9 @@ import { SymbolView } from "../../components/ui/AppSymbol";
 import { AppText as Text } from "../../components/ui/AppText";
 import { ControlPill } from "../../components/ui/ControlPill";
 import { cn } from "../../lib/cn";
+import { triggerSemanticHaptic } from "../../lib/hapticChoreography";
 import { resolveMarkdownLinkPresentation } from "../../lib/markdownLinks";
+import { SPRING_SPATIAL_SNAPPY, withVelocitySpringConfig } from "../../lib/mobileMotion";
 import { SelectableMarkdownText } from "../../native/SelectableMarkdownText";
 import { useOpenPullRequest } from "../../native/useOpenPullRequest";
 import { useMarkdownPreviewStyles } from "../files/FileMarkdownPreview";
@@ -38,6 +44,23 @@ import {
   type PendingUserInputDraftAnswer,
 } from "@t3tools/client-runtime/state/pending-user-input";
 import type { PendingUserInput } from "../../lib/threadActivity";
+
+const COLLAPSE_DRAG_THRESHOLD = 56;
+const COLLAPSE_VELOCITY_THRESHOLD = 520;
+const EXPAND_DRAG_THRESHOLD = 32;
+const EXPAND_VELOCITY_THRESHOLD = 420;
+const QUESTION_STEP_ENTERING = FadeIn.duration(160).reduceMotion(ReduceMotion.System);
+
+function hasDraftAnswer(
+  question: ThreadUserInputQuestion,
+  draft: PendingUserInputDraftAnswer | undefined,
+): boolean {
+  if (!draft) return false;
+  if ((draft.customAnswer ?? "").trim().length > 0) return true;
+  return question.options.some((option) =>
+    isPendingUserInputOptionSelected(question, draft, option.value ?? option.label.trim()),
+  );
+}
 
 export interface PendingUserInputCardProps {
   readonly environmentId: EnvironmentId;
@@ -138,7 +161,19 @@ export function PendingUserInputCard(props: PendingUserInputCardProps) {
       .join(" "),
   );
 
-  const { cardCoverage, cardProgress, maxHeight } = props;
+  const { cardCoverage, cardProgress, maxHeight, onToggleCollapsed } = props;
+  const [questionIndex, setQuestionIndex] = useState(0);
+  const [trackedRequestId, setTrackedRequestId] = useState(props.pendingUserInput.requestId);
+  if (trackedRequestId !== props.pendingUserInput.requestId) {
+    setTrackedRequestId(props.pendingUserInput.requestId);
+    setQuestionIndex(0);
+  }
+  const activeQuestionIndex = Math.min(questionIndex, Math.max(0, questionCount - 1));
+  const hasMultipleQuestions = questionCount > 1;
+  const visibleQuestions = hasMultipleQuestions
+    ? props.pendingUserInput.questions.slice(activeQuestionIndex, activeQuestionIndex + 1)
+    : props.pendingUserInput.questions;
+
   const barHeightRef = useRef(0);
   const cardHeightRef = useRef(0);
   const cardHeight = useSharedValue(0);
@@ -156,23 +191,91 @@ export function PendingUserInputCard(props: PendingUserInputCardProps) {
     cardHeight.set(event.nativeEvent.layout.height);
     notifyCoverage();
   };
+
+  const triggerCollapseFromGesture = useCallback(() => {
+    triggerSemanticHaptic("toggleOff");
+    onToggleCollapsed();
+  }, [onToggleCollapsed]);
+
+  const triggerExpandFromGesture = useCallback(() => {
+    triggerSemanticHaptic("toggleOn");
+    onToggleCollapsed();
+  }, [onToggleCollapsed]);
+
+  const headerPanGesture = useMemo(
+    () =>
+      // oxlint-disable-next-line react/capitalized-calls -- RNGH Gesture factory API
+      Gesture.Pan()
+        .activeOffsetY([-10, 10])
+        .failOffsetX([-20, 20])
+        .onUpdate((event) => {
+          const travel = Math.max(120, cardCoverage.get() || cardHeight.get() || 220);
+          const drag = Math.max(0, event.translationY);
+          cardProgress.set(Math.max(0, Math.min(1, 1 - drag / travel)));
+        })
+        .onEnd((event) => {
+          const travel = Math.max(120, cardCoverage.get() || cardHeight.get() || 220);
+          const shouldCollapse =
+            event.translationY >= COLLAPSE_DRAG_THRESHOLD ||
+            event.velocityY >= COLLAPSE_VELOCITY_THRESHOLD;
+          const normalizedVelocity = -event.velocityY / travel;
+          if (shouldCollapse) {
+            cardProgress.set(
+              withSpring(0, withVelocitySpringConfig(SPRING_SPATIAL_SNAPPY, normalizedVelocity)),
+            );
+            runOnJS(triggerCollapseFromGesture)();
+          } else {
+            cardProgress.set(
+              withSpring(1, withVelocitySpringConfig(SPRING_SPATIAL_SNAPPY, normalizedVelocity)),
+            );
+          }
+        }),
+    [cardCoverage, cardHeight, cardProgress, triggerCollapseFromGesture],
+  );
+
+  const collapsedBarPanGesture = useMemo(
+    () =>
+      // oxlint-disable-next-line react/capitalized-calls -- RNGH Gesture factory API
+      Gesture.Pan()
+        .activeOffsetY([-10, 10])
+        .failOffsetX([-20, 20])
+        .onEnd((event) => {
+          if (
+            event.translationY <= -EXPAND_DRAG_THRESHOLD ||
+            event.velocityY <= -EXPAND_VELOCITY_THRESHOLD
+          ) {
+            runOnJS(triggerExpandFromGesture)();
+          }
+        }),
+    [triggerExpandFromGesture],
+  );
+
+  const selectQuestionStep = (nextIndex: number) => {
+    const clamped = Math.max(0, Math.min(questionCount - 1, nextIndex));
+    if (clamped === activeQuestionIndex) return;
+    triggerSemanticHaptic("segmentTick");
+    setQuestionIndex(clamped);
+  };
+
   const cardAnimatedStyle = useAnimatedStyle(() => {
-    const progress = cardProgress.value;
-    const travel = Platform.OS === "android" ? cardCoverage.value : cardHeight.value;
+    const progress = cardProgress.get();
+    const coverage = cardCoverage.get();
+    const height = cardHeight.get();
+    const travel = Platform.OS === "android" ? coverage : height;
     return {
-      maxHeight: maxHeight.value,
+      maxHeight: maxHeight.get(),
       opacity:
         Platform.OS === "android"
-          ? Math.min(1, (progress * cardHeight.value) / Math.max(1, cardHeight.value - travel))
+          ? Math.min(1, (progress * height) / Math.max(1, height - travel))
           : 1,
       transform: [{ translateY: (1 - progress) * travel }],
     };
   });
   // Android hit-tests inside the parent; its height is also the space the card takes below the feed.
   const androidBoundsStyle = useAnimatedStyle(() => ({
-    paddingTop: cardCoverage.value * cardProgress.value,
+    paddingTop: cardCoverage.get() * cardProgress.get(),
   }));
-  const overlayHeightStyle = useAnimatedStyle(() => ({ height: maxHeight.value }));
+  const overlayHeightStyle = useAnimatedStyle(() => ({ height: maxHeight.get() }));
 
   const stopButton = props.onStopThread ? (
     <ControlPill
@@ -185,52 +288,54 @@ export function PendingUserInputCard(props: PendingUserInputCardProps) {
     />
   ) : null;
   const bar = (
-    <View
-      onLayout={handleBarLayout}
-      pointerEvents={props.collapsed ? "auto" : "none"}
-      accessibilityElementsHidden={!props.collapsed}
-      importantForAccessibility={props.collapsed ? "auto" : "no-hide-descendants"}
-      className="flex-row items-center gap-2 rounded-full border border-border bg-card-alt py-1.5 pl-4 pr-1.5"
-    >
-      <Pressable
-        accessibilityRole="button"
-        accessibilityLabel={gt(
-          "{count, plural, one {Expand user input, {count} question} other {Expand user input, {count} questions}}",
-          { count: questionCount },
-        )}
-        onPress={props.onToggleCollapsed}
-        className="min-h-10 flex-1 flex-row items-center gap-2 active:opacity-70"
+    <GestureDetector gesture={collapsedBarPanGesture}>
+      <View
+        onLayout={handleBarLayout}
+        pointerEvents={props.collapsed ? "auto" : "none"}
+        accessibilityElementsHidden={!props.collapsed}
+        importantForAccessibility={props.collapsed ? "auto" : "no-hide-descendants"}
+        className="flex-row items-center gap-2 rounded-full border border-border bg-card-alt py-1.5 pl-4 pr-1.5"
       >
-        <Text className="font-t3-bold text-2xs uppercase tracking-[1.1px] text-foreground-secondary">
-          <T>User input needed</T>
-        </Text>
-        <Text className="font-sans text-xs text-foreground-muted">
-          <T>
-            <Plural
-              n={questionCount}
-              one={
-                <>
-                  <Var>{questionCount}</Var> question
-                </>
-              }
-              other={
-                <>
-                  <Var>{questionCount}</Var> questions
-                </>
-              }
-            />
-          </T>
-        </Text>
-        <View className="flex-1" />
-        <SymbolView
-          name="chevron.up"
-          size={12}
-          tintColorClassName={"accent-icon-subtle"}
-          type="monochrome"
-        />
-      </Pressable>
-      {stopButton}
-    </View>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={gt(
+            "{count, plural, one {Expand user input, {count} question} other {Expand user input, {count} questions}}",
+            { count: questionCount },
+          )}
+          onPress={triggerExpandFromGesture}
+          className="min-h-10 flex-1 flex-row items-center gap-2 active:opacity-70"
+        >
+          <Text className="font-t3-semibold text-xs text-foreground-secondary">
+            <T>User input needed</T>
+          </Text>
+          <Text className="font-sans text-xs text-foreground-muted">
+            <T>
+              <Plural
+                n={questionCount}
+                one={
+                  <>
+                    <Var>{questionCount}</Var> question
+                  </>
+                }
+                other={
+                  <>
+                    <Var>{questionCount}</Var> questions
+                  </>
+                }
+              />
+            </T>
+          </Text>
+          <View className="flex-1" />
+          <SymbolView
+            name="chevron.up"
+            size={12}
+            tintColorClassName={"accent-icon-subtle"}
+            type="monochrome"
+          />
+        </Pressable>
+        {stopButton}
+      </View>
+    </GestureDetector>
   );
   const card = (
     <Animated.View
@@ -241,35 +346,100 @@ export function PendingUserInputCard(props: PendingUserInputCardProps) {
       className="overflow-hidden gap-2.5 rounded-[20px] border border-border bg-card-alt p-4"
       style={cardAnimatedStyle}
     >
-      <View className="flex-row items-start gap-2">
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel={gt("Collapse user input")}
-          onPress={() => {
-            void Haptics.selectionAsync().catch(() => undefined);
-            props.onToggleCollapsed();
-          }}
-          className="flex-1 flex-row items-start gap-2 active:opacity-70"
-        >
-          <View className="flex-1 gap-2.5">
-            <Text className="font-t3-bold text-2xs uppercase tracking-[1.1px] text-foreground-secondary">
-              <T>User input needed</T>
-            </Text>
-            <Text className="font-t3-bold text-lg text-foreground">
-              <T>Fill in the pending answers</T>
-            </Text>
+      <GestureDetector gesture={headerPanGesture}>
+        <View className="-mx-2 -mt-2 gap-1.5 px-2 pt-1">
+          <View className="items-center">
+            <View className="h-1 w-9 rounded-full bg-foreground-muted/30" />
           </View>
-          <View className="h-8 w-8 items-center justify-center rounded-full bg-subtle-strong">
+          <View className="flex-row items-start gap-2">
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={gt("Collapse user input")}
+              onPress={triggerCollapseFromGesture}
+              className="flex-1 flex-row items-start gap-2 active:opacity-70"
+            >
+              <View className="flex-1 gap-2">
+                <Text className="font-t3-semibold text-xs text-foreground-secondary">
+                  <T>User input needed</T>
+                </Text>
+                <Text className="font-t3-bold text-lg text-foreground">
+                  <T>Fill in the pending answers</T>
+                </Text>
+              </View>
+              <View className="h-8 w-8 items-center justify-center rounded-full bg-subtle-strong">
+                <SymbolView
+                  name="chevron.down"
+                  size={13}
+                  tintColorClassName={"accent-icon-subtle"}
+                  type="monochrome"
+                />
+              </View>
+            </Pressable>
+            {stopButton}
+          </View>
+        </View>
+      </GestureDetector>
+      {hasMultipleQuestions ? (
+        <View className="flex-row items-center justify-between gap-2 rounded-2xl bg-subtle/60 px-2.5 py-1.5">
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={gt("Previous question")}
+            disabled={activeQuestionIndex === 0}
+            onPress={() => selectQuestionStep(activeQuestionIndex - 1)}
+            className="min-h-8 min-w-8 items-center justify-center rounded-full active:opacity-70 disabled:opacity-35"
+          >
             <SymbolView
-              name="chevron.down"
-              size={13}
-              tintColorClassName={"accent-icon-subtle"}
+              name="chevron.left"
+              size={12}
+              tintColorClassName="accent-foreground-secondary"
               type="monochrome"
             />
+          </Pressable>
+          <View className="flex-row items-center gap-1.5">
+            {props.pendingUserInput.questions.map((question, index) => {
+              const active = index === activeQuestionIndex;
+              const answered = hasDraftAnswer(question, props.drafts[question.id]);
+              return (
+                <Pressable
+                  key={question.id}
+                  accessibilityRole="tab"
+                  accessibilityState={{ selected: active }}
+                  accessibilityLabel={gt("Question {index} of {total}", {
+                    index: index + 1,
+                    total: questionCount,
+                  })}
+                  onPress={() => selectQuestionStep(index)}
+                  className={cn(
+                    "h-2 rounded-full",
+                    active
+                      ? "w-6 bg-primary"
+                      : answered
+                        ? "w-2 bg-primary/50"
+                        : "w-2 bg-foreground-muted/30",
+                  )}
+                />
+              );
+            })}
+            <Text className="ml-1 font-t3-medium text-2xs tabular-nums text-foreground-muted">
+              {`${activeQuestionIndex + 1}/${questionCount}`}
+            </Text>
           </View>
-        </Pressable>
-        {stopButton}
-      </View>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={gt("Next question")}
+            disabled={activeQuestionIndex >= questionCount - 1}
+            onPress={() => selectQuestionStep(activeQuestionIndex + 1)}
+            className="min-h-8 min-w-8 items-center justify-center rounded-full active:opacity-70 disabled:opacity-35"
+          >
+            <SymbolView
+              name="chevron.right"
+              size={12}
+              tintColorClassName="accent-foreground-secondary"
+              type="monochrome"
+            />
+          </Pressable>
+        </View>
+      ) : null}
       <ScrollView
         bounces={false}
         className="min-h-0"
@@ -287,10 +457,14 @@ export function PendingUserInputCard(props: PendingUserInputCardProps) {
             </T>
           </Text>
         ) : null}
-        {props.pendingUserInput.questions.map((question) => {
+        {visibleQuestions.map((question) => {
           const draft = props.drafts[question.id];
           return (
-            <View key={question.id} className="gap-2 pt-1">
+            <Animated.View
+              key={question.id}
+              entering={hasMultipleQuestions ? QUESTION_STEP_ENTERING : undefined}
+              className="gap-2 pt-1"
+            >
               <Text
                 className="font-t3-bold text-xs uppercase tracking-[1px] text-foreground-muted"
                 style={proseDirectionStyle(question.header, setDirection)}
@@ -322,7 +496,7 @@ export function PendingUserInputCard(props: PendingUserInputCardProps) {
                           selected ? "border-primary bg-primary/10" : "border-border bg-input",
                         )}
                         onPress={() => {
-                          void Haptics.selectionAsync().catch(() => undefined);
+                          triggerSemanticHaptic("segmentTick");
                           props.onSelectOption(
                             props.pendingUserInput.requestId,
                             question,
@@ -406,7 +580,7 @@ export function PendingUserInputCard(props: PendingUserInputCardProps) {
                   onInputFocusChange={props.onInputFocusChange}
                 />
               ) : null}
-            </View>
+            </Animated.View>
           );
         })}
       </ScrollView>
@@ -416,14 +590,20 @@ export function PendingUserInputCard(props: PendingUserInputCardProps) {
         tone={props.answers ? "primary" : "secondary"}
         loading={isResponding}
         disabled={!props.canOperateThread || responseDisabled || props.answers === null}
-        onPress={() => void props.onSubmit()}
+        onPress={() => {
+          triggerSemanticHaptic("confirm");
+          void props.onSubmit();
+        }}
       />
       {props.pendingUserInput.dismissible ? (
         <Button
           label={gt("Dismiss without answering")}
           tone="text"
           disabled={isResponding}
-          onPress={() => void props.onDismiss()}
+          onPress={() => {
+            triggerSemanticHaptic("reject");
+            void props.onDismiss();
+          }}
         />
       ) : null}
       {!props.canOperateThread ? (

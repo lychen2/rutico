@@ -1,9 +1,11 @@
 import { useGT } from "gt-react-native";
+import { useState } from "react";
 import {
   CODE_FONT_SIZE_STEP,
   MAX_CODE_FONT_SIZE,
   MIN_CODE_FONT_SIZE,
 } from "../../../../lib/appearancePreferences";
+import { MOBILE_CODE_SURFACE } from "../../../../lib/typography";
 import { SettingsSection } from "../../components/SettingsSection";
 import { SettingsSwitchRow } from "../../components/SettingsSwitchRow";
 import { useAppearancePreferences } from "../AppearancePreferencesProvider";
@@ -17,15 +19,19 @@ export function CodeAppearanceSection() {
   const gt = useGT();
   const { isReady, appearance, setCodeFontSize, setCodeWordBreak } = useAppearancePreferences();
   const custom = appearance.isCodeFontSizeCustom;
+  const [previewSize, setPreviewSize] = useState<number | null>(null);
+  const displayedSize = custom ? (previewSize ?? appearance.codeFontSize) : appearance.codeFontSize;
 
   const handleToggleCustom = (enabled: boolean) => {
+    setPreviewSize(null);
     setCodeFontSize(enabled ? appearance.codeFontSize : null);
   };
 
   return (
     <SettingsSection title={gt("Code & Diffs")}>
       <CodeAppearancePreview
-        fontSize={appearance.codeFontSize}
+        fontSize={displayedSize}
+        previewing={custom && previewSize !== null}
         wordBreak={appearance.codeWordBreak}
       />
       <AppearancePreviewSeparator />
@@ -38,12 +44,15 @@ export function CodeAppearanceSection() {
       />
       {custom ? (
         <FontSizeSliderRow
+          defaultValue={MOBILE_CODE_SURFACE.fontSize}
           disabled={!isReady}
+          formatValueLabel={(size) => gt("{size} pt", { size })}
           icon="textformat.size"
           label={gt("Font size")}
           max={MAX_CODE_FONT_SIZE}
           min={MIN_CODE_FONT_SIZE}
           onChange={setCodeFontSize}
+          onPreviewChange={setPreviewSize}
           step={CODE_FONT_SIZE_STEP}
           value={appearance.codeFontSize}
           valueLabel={gt("{size} pt", { size: appearance.codeFontSize })}

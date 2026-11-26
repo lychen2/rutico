@@ -9,6 +9,11 @@ const { Children, harness } = vi.hoisted(() => ({
     // The app-wide error slot other features (composer sends, branch refreshes) write to.
     pendingConnectionError: null as string | null,
     connectPress: vi.fn(),
+    cameraPermissionGranted: false,
+    lastOnBarcodeScanned: null as ((result: unknown) => void) | null,
+    lastFrostedCutoutProps: null as Record<string, unknown> | null,
+    performAndroidHapticsAsync: vi.fn(async () => {}),
+    notificationAsync: vi.fn(async () => {}),
   },
 }));
 
@@ -19,7 +24,8 @@ vi.mock("react-native", () => ({
     sequence: () => ({}),
     timing: () => ({}),
   },
-  Easing: { inOut: () => () => 0, sin: () => 0 },
+  Easing: { inOut: () => () => 0, out: () => () => 0, quad: () => 0, sin: () => 0 },
+  Platform: { OS: "android" },
   useAnimatedValue: () => ({
     setValue: () => {},
     interpolate: () => 0,
@@ -30,7 +36,15 @@ vi.mock("react-native", () => ({
   StyleSheet: { absoluteFill: {} },
 }));
 vi.mock("react-native-reanimated", () => ({
+  default: { View: Children },
+  ReduceMotion: { System: "system" },
+  useAnimatedStyle: () => ({}),
   useReducedMotion: () => false,
+  useSharedValue: (initial: number) => ({
+    get: () => initial,
+    set: () => {},
+  }),
+  withSpring: (value: number) => value,
 }));
 vi.mock("../../lib/appState", () => ({
   useAppActive: () => true,
@@ -67,12 +81,36 @@ vi.mock("@react-navigation/native", () => ({
 vi.mock("@effect/atom-react", () => ({ useAtomValue: () => null }));
 vi.mock("@clerk/expo", () => ({ useAuth: () => ({ isLoaded: false, isSignedIn: false }) }));
 vi.mock("expo-camera", () => ({
-  CameraView: () => null,
-  useCameraPermissions: () => [null, vi.fn()],
+  CameraView: ({ onBarcodeScanned }: { onBarcodeScanned?: (result: unknown) => void }) => {
+    harness.lastOnBarcodeScanned = onBarcodeScanned ?? null;
+    return null;
+  },
+  useCameraPermissions: () => [
+    harness.cameraPermissionGranted ? { granted: true, canAskAgain: true } : null,
+    vi.fn(async () => ({ granted: true, canAskAgain: true })),
+  ],
 }));
 vi.mock("expo-haptics", () => ({
-  notificationAsync: vi.fn(async () => {}),
+  AndroidHaptics: {
+    Confirm: "confirm",
+    Reject: "reject",
+    Gesture_Start: "gesture-start",
+    Gesture_End: "gesture-end",
+    Segment_Tick: "segment-tick",
+    Segment_Frequent_Tick: "segment-frequent-tick",
+    Clock_Tick: "clock-tick",
+    Toggle_On: "toggle-on",
+    Toggle_Off: "toggle-off",
+    Context_Click: "context-click",
+    Drag_Start: "drag-start",
+    Long_Press: "long-press",
+  },
+  performAndroidHapticsAsync: harness.performAndroidHapticsAsync,
+  notificationAsync: harness.notificationAsync,
+  impactAsync: vi.fn(async () => {}),
+  selectionAsync: vi.fn(async () => {}),
   NotificationFeedbackType: { Success: "success", Error: "error" },
+  ImpactFeedbackStyle: { Light: "light", Medium: "medium", Soft: "soft" },
 }));
 vi.mock("../../components/ui/ListRow", () => ({ ListRow: () => null }));
 vi.mock("../../components/ui/Dialog", () => ({ alert: vi.fn() }));
@@ -95,7 +133,12 @@ vi.mock("../../components/ui/AppText", () => ({
     />
   ),
 }));
-vi.mock("../../components/ui/FrostedCutout", () => ({ FrostedCutout: () => null }));
+vi.mock("../../components/ui/FrostedCutout", () => ({
+  FrostedCutout: (props: Record<string, unknown>) => {
+    harness.lastFrostedCutoutProps = props;
+    return null;
+  },
+}));
 vi.mock("../../components/ui/AppSymbol", () => ({ SymbolView: () => null }));
 vi.mock("../../lib/useUniwindTheme", () => ({ useUniwindTheme: () => ({}) }));
 vi.mock("../settings/appearance/AppearancePreferencesProvider", () => ({
@@ -134,11 +177,13 @@ vi.mock("../../state/use-remote-environment-registry", () => ({
   }),
 }));
 
-import { ConnectionsNewRouteScreen } from "./ConnectionsNewRouteScreen";
+import * as hapticChoreography from "../../lib/hapticChoreography";
+import { ConnectionsNewRouteScreen, extractBarcodeLockRect } from "./ConnectionsNewRouteScreen";
 
 it("does not show another feature's error as a pairing failure", () => {
   (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
   vi.stubGlobal("__DEV__", false);
+  harness.cameraPermissionGranted = false;
   harness.pendingConnectionError = "Could not send the message.";
   const container = document.createElement("div");
   const root = createRoot(container);
@@ -155,6 +200,7 @@ it("does not show another feature's error as a pairing failure", () => {
 it("splits a pasted pairing link and preserves the code during address edits", () => {
   (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
   vi.stubGlobal("__DEV__", false);
+  harness.cameraPermissionGranted = false;
   harness.pendingConnectionError = null;
   const container = document.createElement("div");
   const root = createRoot(container);
@@ -198,6 +244,8 @@ it("splits a pasted pairing link and preserves the code during address edits", (
 it("prefills the confirmation form from system links in production without auto-pairing", () => {
   (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
   vi.stubGlobal("__DEV__", false);
+  harness.cameraPermissionGranted = false;
+  harness.pendingConnectionError = null;
   harness.connectPress.mockClear();
   const container = document.createElement("div");
   const root = createRoot(container);
@@ -228,4 +276,84 @@ it("prefills the confirmation form from system links in production without auto-
   } finally {
     act(() => root.unmount());
   }
+});
+
+it("locks reticle onto bounds, fires semantic Confirm haptic, shows in-place handshake card, and requires explicit confirmation", async () => {
+  (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+  vi.stubGlobal("__DEV__", false);
+  harness.cameraPermissionGranted = true;
+  harness.pendingConnectionError = null;
+  harness.lastOnBarcodeScanned = null;
+  harness.lastFrostedCutoutProps = null;
+  harness.connectPress.mockReset();
+  const hapticSpy = vi.spyOn(hapticChoreography, "triggerSemanticHaptic");
+
+  const container = document.createElement("div");
+  const root = createRoot(container);
+
+  try {
+    act(() => root.render(<ConnectionsNewRouteScreen route={{ params: undefined }} />));
+    expect(harness.lastOnBarcodeScanned).not.toBeNull();
+
+    act(() => {
+      harness.lastOnBarcodeScanned?.({
+        data: "http://192.168.1.42:3773/pair#token=scanned-secret",
+        bounds: { origin: { x: 88, y: 42 }, size: { width: 120, height: 118 } },
+      });
+    });
+
+    expect(hapticSpy).toHaveBeenCalledWith("confirm");
+    expect(hapticChoreography.resolveAndroidHapticConstant("confirm")).toBe("confirm");
+    // B12 hard rule: scanning MUST NEVER auto-pair without explicit user confirmation.
+    expect(harness.connectPress).not.toHaveBeenCalled();
+    const cutoutProps = harness.lastFrostedCutoutProps as Record<string, unknown> | null;
+    expect(cutoutProps?.locked).toBe(true);
+    expect(cutoutProps?.lockRect).toEqual({
+      x: 88,
+      y: 42,
+      width: 120,
+      height: 118,
+    });
+    expect(container.textContent).toContain("Ready to pair");
+    expect(container.textContent).toContain("http://192.168.1.42:3773");
+
+    // Failed handshake surfaces Retry button in-place.
+    harness.connectPress.mockResolvedValueOnce({ ok: false, error: "Host unreachable" });
+    const confirmButton = [...container.querySelectorAll("button")].find(
+      (button) => button.textContent === "Confirm & connect",
+    );
+    expect(confirmButton).toBeDefined();
+    await act(async () => {
+      confirmButton?.click();
+    });
+
+    expect(harness.connectPress).toHaveBeenCalledTimes(1);
+    expect(hapticSpy).toHaveBeenCalledWith("reject");
+    expect(container.textContent).toContain("Host unreachable");
+    expect(container.textContent).toContain("Retry handshake");
+  } finally {
+    hapticSpy.mockRestore();
+    act(() => root.unmount());
+    harness.cameraPermissionGranted = false;
+  }
+});
+
+it("returns null lockRect when Android CameraX omits or zeros barcode bounds", () => {
+  expect(
+    extractBarcodeLockRect({
+      data: "http://192.168.1.42:3773/pair#token=abc",
+      bounds: { origin: { x: 0, y: 0 }, size: { width: 0, height: 0 } },
+    }),
+  ).toBeNull();
+  expect(
+    extractBarcodeLockRect({
+      data: "http://192.168.1.42:3773/pair#token=abc",
+      cornerPoints: [
+        { x: 40, y: 30 },
+        { x: 160, y: 30 },
+        { x: 160, y: 150 },
+        { x: 40, y: 150 },
+      ],
+    }),
+  ).toEqual({ x: 40, y: 30, width: 120, height: 120 });
 });

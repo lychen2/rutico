@@ -95,11 +95,14 @@ export function DevicePhoneViewport(props: {
     };
   };
   return (
-    <div className="absolute inset-0">
+    <div
+      className="device-3d-stage-backdrop absolute inset-0"
+      data-device-3d-stage={props.profile.id}
+    >
       <div className="absolute inset-0">
         <div
           aria-hidden
-          className="pointer-events-none absolute bottom-[6%] left-1/2 h-5 w-2/5 -translate-x-1/2 rounded-full bg-foreground/10 blur-xl"
+          className="device-3d-contact-shadow pointer-events-none absolute bottom-[5.5%] left-1/2 h-6 w-2/5 -translate-x-1/2 rounded-full"
         />
         <canvas
           ref={mountViewer}

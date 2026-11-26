@@ -1,0 +1,919 @@
+/* ==========================================================================
+   Wave 0 Physical Motion & Optical Foundation Stylesheet
+   Dedicated stylesheet imported by index.css to isolate Wave 0 tokens and
+   utilities cleanly from downstream Stage 2 edits.
+   ========================================================================== */
+
+:root {
+  /* Fallback deceleration curves when CSS linear() is unsupported. */
+  --ease-out-expo: cubic-bezier(0.23, 1, 0.32, 1);
+  --spring-micro: var(--ease-out-expo);
+  --spring-snappy: var(--ease-out-expo);
+  --spring-fluid: var(--ease-out-expo);
+  --spring-spatial: cubic-bezier(0.32, 0.72, 0, 1);
+  --spring-bouncy: cubic-bezier(0.22, 1.24, 0.36, 1);
+  --spring-gentle: cubic-bezier(0.22, 1, 0.36, 1);
+
+  /* Analytical settling durations paired with each linear() spring curve. */
+  --duration-spring-micro: 292ms;
+  --duration-spring-snappy: 388ms;
+  --duration-spring-fluid: 464ms;
+  --duration-spring-spatial: 540ms;
+  --duration-spring-bouncy: 744ms;
+  --duration-spring-gentle: 692ms;
+
+  /* Desktop 2/3 cadence multiplier (Kubai087 Tip 011). */
+  --motion-cadence-scale: 1;
+  --duration-micro: calc(140ms * var(--motion-cadence-scale));
+  --duration-snappy: calc(200ms * var(--motion-cadence-scale));
+  --duration-fluid: calc(280ms * var(--motion-cadence-scale));
+  --duration-spatial: calc(340ms * var(--motion-cadence-scale));
+  --duration-gentle: calc(400ms * var(--motion-cadence-scale));
+}
+
+@media (pointer: fine) and (hover: hover) {
+  :root {
+    /* Desktop fine-pointer interactions run ~2/3 the duration of coarse-touch motion. */
+    --motion-cadence-scale: 0.72;
+  }
+}
+
+@supports (animation-timing-function: linear(0, 1)) {
+  :root {
+    --spring-micro: linear(
+      0,
+      0.0433,
+      0.1404,
+      0.2579,
+      0.3769,
+      0.4873,
+      0.5846,
+      0.6676,
+      0.7366,
+      0.793,
+      0.8385,
+      0.8747,
+      0.9033,
+      0.9257,
+      0.9431,
+      0.9566,
+      0.967,
+      0.975,
+      0.9811,
+      0.9857,
+      0.9892,
+      0.9919,
+      0.9939,
+      0.9954,
+      0.9966,
+      0.9975,
+      0.9981,
+      0.9986,
+      0.9989,
+      0.9992,
+      0.9994,
+      0.9996,
+      0.9997,
+      0.9998,
+      0.9998,
+      1
+    );
+    --spring-snappy: linear(
+      0,
+      0.0407,
+      0.133,
+      0.2458,
+      0.3612,
+      0.4696,
+      0.5661,
+      0.6494,
+      0.7194,
+      0.7772,
+      0.8243,
+      0.8623,
+      0.8926,
+      0.9166,
+      0.9354,
+      0.9502,
+      0.9617,
+      0.9707,
+      0.9776,
+      0.9829,
+      0.987,
+      0.9901,
+      0.9925,
+      0.9943,
+      0.9957,
+      0.9967,
+      0.9975,
+      0.9981,
+      0.9986,
+      0.999,
+      0.9992,
+      0.9994,
+      0.9996,
+      0.9997,
+      0.9998,
+      1
+    );
+    --spring-fluid: linear(
+      0,
+      0.0372,
+      0.125,
+      0.2369,
+      0.3554,
+      0.4697,
+      0.5736,
+      0.6644,
+      0.7411,
+      0.8043,
+      0.855,
+      0.8951,
+      0.9259,
+      0.9493,
+      0.9666,
+      0.9791,
+      0.988,
+      0.994,
+      0.9981,
+      1.0006,
+      1.002,
+      1.0027,
+      1.003,
+      1.0029,
+      1.0027,
+      1.0023,
+      1.002,
+      1.0016,
+      1.0013,
+      1.0011,
+      1.0008,
+      1.0006,
+      1.0005,
+      1.0003,
+      1.0002,
+      1
+    );
+    --spring-spatial: linear(
+      0,
+      0.0343,
+      0.1158,
+      0.2204,
+      0.3323,
+      0.4414,
+      0.542,
+      0.6312,
+      0.7078,
+      0.7722,
+      0.8251,
+      0.8678,
+      0.9017,
+      0.9282,
+      0.9486,
+      0.9641,
+      0.9756,
+      0.984,
+      0.9901,
+      0.9943,
+      0.9972,
+      0.9992,
+      1.0004,
+      1.001,
+      1.0014,
+      1.0015,
+      1.0015,
+      1.0014,
+      1.0012,
+      1.0011,
+      1.0009,
+      1.0007,
+      1.0006,
+      1.0005,
+      1.0004,
+      1
+    );
+    --spring-bouncy: linear(
+      0,
+      0.0474,
+      0.1602,
+      0.3036,
+      0.4533,
+      0.5939,
+      0.7164,
+      0.817,
+      0.8952,
+      0.9528,
+      0.9925,
+      1.0178,
+      1.0318,
+      1.0377,
+      1.038,
+      1.0349,
+      1.0299,
+      1.0242,
+      1.0185,
+      1.0134,
+      1.0091,
+      1.0056,
+      1.003,
+      1.0011,
+      0.9998,
+      0.999,
+      0.9986,
+      0.9985,
+      0.9986,
+      0.9987,
+      0.9989,
+      0.9992,
+      0.9994,
+      0.9996,
+      0.9997,
+      1
+    );
+    --spring-gentle: linear(
+      0,
+      0.036,
+      0.1191,
+      0.2229,
+      0.3313,
+      0.4351,
+      0.5296,
+      0.6127,
+      0.6841,
+      0.7444,
+      0.7945,
+      0.8357,
+      0.8692,
+      0.8964,
+      0.9182,
+      0.9357,
+      0.9495,
+      0.9605,
+      0.9692,
+      0.976,
+      0.9813,
+      0.9855,
+      0.9888,
+      0.9913,
+      0.9933,
+      0.9948,
+      0.996,
+      0.9969,
+      0.9977,
+      0.9982,
+      0.9986,
+      0.9989,
+      0.9992,
+      0.9994,
+      0.9995,
+      1
+    );
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --duration-spring-micro: 0ms;
+    --duration-spring-snappy: 0ms;
+    --duration-spring-fluid: 0ms;
+    --duration-spring-spatial: 0ms;
+    --duration-spring-bouncy: 0ms;
+    --duration-spring-gentle: 0ms;
+    --duration-micro: 0ms;
+    --duration-snappy: 0ms;
+    --duration-fluid: 0ms;
+    --duration-spatial: 0ms;
+    --duration-gentle: 0ms;
+  }
+}
+
+/* Full-turn refresh spinner: finishes its active 360deg rotation when refreshing ends. */
+@media (prefers-reduced-motion: no-preference) {
+  [data-slot="refresh-icon"][data-spinning="true"] {
+    animation: var(--animate-spin);
+    animation-play-state: var(--visible-animation-state, running);
+    will-change: var(--visible-animation-will-change, transform);
+  }
+}
+
+/* Mechanical digit-rolling mask for AnimatedNumber slots. */
+[data-slot="animated-number-reel"] {
+  -webkit-mask-image: linear-gradient(
+    to bottom,
+    transparent 0%,
+    black 14%,
+    black 86%,
+    transparent 100%
+  );
+  mask-image: linear-gradient(to bottom, transparent 0%, black 14%, black 86%, transparent 100%);
+}
+
+/* Benji 3-line MorphingIcon & Jakub contextual icon swap. */
+[data-slot="morphing-icon-group"],
+[data-slot="morphing-icon-line"] {
+  transition:
+    transform var(--duration-snappy) var(--spring-snappy),
+    opacity 120ms ease-out;
+}
+
+[data-slot="contextual-icon-swap-item"] {
+  transition:
+    transform var(--duration-snappy) var(--spring-snappy),
+    opacity 150ms ease-out,
+    filter 150ms ease-out;
+}
+
+[data-slot="contextual-icon-swap-item"][data-active="true"] {
+  opacity: 1;
+  transform: scale(1);
+  filter: blur(0px);
+}
+
+[data-slot="contextual-icon-swap-item"][data-active="false"] {
+  pointer-events: none;
+  opacity: 0;
+  transform: scale(0.25);
+  filter: blur(4px);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-slot="morphing-icon-group"],
+  [data-slot="morphing-icon-line"],
+  [data-slot="contextual-icon-swap-item"] {
+    transition: none;
+  }
+
+  [data-slot="contextual-icon-swap-item"][data-active="false"] {
+    transform: none;
+    filter: none;
+  }
+}
+
+/* ==========================================================================
+   D02 / C005: Concentric Radius Algebra, Superellipse(1.25) with Pill Guard,
+   5-Tier OKLCH Elevation Ladder, 3-Layer Hairline Rim, and Optical Typography
+   ========================================================================== */
+
+:root {
+  /* Concentric inner radius algebra: r_in = max(0px, R_out - padding). */
+  --radius-concentric-dialog: var(--radius-2xl);
+  --radius-concentric-dialog-inner: calc(var(--radius-2xl) - 0.5rem);
+  --radius-concentric-popover: var(--radius-lg);
+  --radius-concentric-popover-inner: calc(var(--radius-lg) - 0.25rem);
+  --radius-concentric-menu: var(--radius-lg);
+  --radius-concentric-menu-inner: calc(var(--radius-lg) - 0.25rem);
+
+  /* 5-tier perceptually uniform OKLCH surface elevation ladder. */
+  --elevation-0: var(--background);
+  --elevation-1: color-mix(in oklch, var(--card) 92%, var(--background));
+  --elevation-2: var(--card);
+  --elevation-3: var(--popover);
+  --elevation-4: color-mix(in oklch, var(--popover) 96%, oklch(1 0 0));
+
+  /* 3-layer transparent micro-shadow rim (border + tight contact + soft ambient). */
+  --shadow-hairline-rim:
+    0 0 0 1px color-mix(in oklch, var(--contrast-foreground) 9%, transparent),
+    0 1px 2px -0.5px rgb(0 0 0 / 6%), 0 6px 16px -6px rgb(0 0 0 / 10%);
+
+  @variant dark {
+    --elevation-1: color-mix(in oklch, var(--card) 96%, oklch(1 0 0));
+    --elevation-2: color-mix(in oklch, var(--card) 92%, oklch(1 0 0));
+    --elevation-3: color-mix(in oklch, var(--popover) 90%, oklch(1 0 0));
+    --elevation-4: color-mix(in oklch, var(--popover) 85%, oklch(1 0 0));
+    --shadow-hairline-rim:
+      0 0 0 1px color-mix(in oklch, oklch(1 0 0) 10%, transparent), 0 1px 2px rgb(0 0 0 / 42%),
+      0 10px 26px -10px rgb(0 0 0 / 68%);
+  }
+}
+
+@utility surface-elevated-rim {
+  border: 1px solid transparent;
+  box-shadow: var(--shadow-hairline-rim);
+
+  @media (forced-colors: active) {
+    border-color: CanvasText;
+    box-shadow: none;
+  }
+}
+
+/* Continuous-curvature superellipse corners on Chromium 139+ / Electron 44+,
+   strictly guarding circular and pill controls so capsule ends never flatten. */
+@supports (corner-shape: superellipse(1.25)) {
+  [data-slot="dialog-popup"],
+  [data-slot="alert-dialog-popup"],
+  [data-slot="command-dialog-popup"],
+  [data-slot="popover-popup"],
+  [data-slot="menu-popup"],
+  [data-slot="select-popup"],
+  [data-slot="combobox-popup"],
+  [data-slot="autocomplete-popup"],
+  [data-slot="preview-card-popup"],
+  [data-slot="sheet-popup"],
+  [data-slot="button"],
+  [data-slot="toggle-group"],
+  [data-slot="toggle"] {
+    corner-shape: superellipse(1.25);
+  }
+
+  .rounded-full,
+  [data-slot="switch"],
+  [data-slot="switch-thumb"],
+  [data-slot="radio"],
+  [data-slot="radio-indicator"] {
+    corner-shape: round;
+  }
+}
+
+/* Scoped optical cap-height trim: restricted to Latin short controls so CJK
+   and diacritic-heavy locales never clip inside fixed-height badges/keycaps. */
+@supports (text-box: trim-both cap alphabetic) {
+  :lang(en) [data-slot="kbd"],
+  :lang(en) [data-slot="badge"] {
+    text-box: trim-both cap alphabetic;
+  }
+}
+
+/* CJK punctuation kerning & phrase-aware wrapping scoped to short headings only. */
+:lang(zh),
+:lang(ja) {
+  text-spacing-trim: trim-start;
+}
+
+[data-slot="dialog-title"],
+[data-slot="alert-dialog-title"],
+[data-slot="sheet-title"],
+[data-slot="empty-title"],
+[data-slot="popover-title"] {
+  word-break: auto-phrase;
+  overflow-wrap: anywhere;
+}
+
+/* ==========================================================================
+   D02 / C006: Zero-Blur Kubai Specular Bevel Chrome (.surface-optical-chrome)
+   Eliminates hot-path backdrop-filter: blur() on sidebars & chrome while
+   preserving directional top-left specular bevels across light/dark OKLCH.
+   ========================================================================== */
+
+@utility surface-optical-chrome {
+  background-color: color-mix(in oklch, var(--sidebar, var(--card)) 96%, var(--background));
+  background-image:
+    linear-gradient(
+      148deg,
+      rgb(255 255 255 / 44%) 0%,
+      rgb(255 255 255 / 12%) 18%,
+      transparent 46%,
+      rgb(0 0 0 / 2.5%) 100%
+    ),
+    var(--surface-grain);
+  background-repeat: no-repeat, repeat;
+  background-size:
+    100% 100%,
+    var(--surface-grain-size);
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 72%),
+    inset 1px 0 0 rgb(255 255 255 / 38%),
+    inset 0 0 6px rgb(255 255 255 / 14%),
+    inset 0 -1px 0 rgb(0 0 0 / 5%);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+
+  @variant dark {
+    background-color: color-mix(in oklch, var(--sidebar, var(--card)) 97%, oklch(1 0 0));
+    background-image:
+      linear-gradient(
+        148deg,
+        rgb(255 255 255 / 5.5%) 0%,
+        rgb(255 255 255 / 1.8%) 22%,
+        transparent 52%,
+        rgb(0 0 0 / 16%) 100%
+      ),
+      var(--surface-grain);
+    box-shadow:
+      inset 0 1px 0 rgb(255 255 255 / 11%),
+      inset 1px 0 0 rgb(255 255 255 / 5.5%),
+      inset 0 0 6px rgb(255 255 255 / 2.5%),
+      inset 0 -1px 0 rgb(0 0 0 / 48%);
+  }
+
+  @media (prefers-reduced-transparency: reduce) {
+    background-color: var(--sidebar, var(--card));
+    background-image: none;
+  }
+
+  @media (forced-colors: active) {
+    background-image: none;
+    box-shadow: none;
+  }
+}
+
+/* ==========================================================================
+   D02 / C007: Pointer-Tracked Ambient Specular Edge Prism & Shimmer Skeleton
+   ========================================================================== */
+
+@utility surface-specular-prism {
+  position: relative;
+
+  &::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    padding: 1px;
+    pointer-events: none;
+    opacity: 0;
+    background: radial-gradient(
+      260px circle at var(--specular-x, 50%) var(--specular-y, 0%),
+      color-mix(in oklch, var(--contrast-foreground) 22%, transparent) 0%,
+      color-mix(in oklch, var(--primary) 16%, transparent) 34%,
+      transparent 72%
+    );
+    -webkit-mask:
+      linear-gradient(#000 0 0) content-box,
+      linear-gradient(#000 0 0);
+    -webkit-mask-composite: xor;
+    mask:
+      linear-gradient(#000 0 0) content-box,
+      linear-gradient(#000 0 0);
+    mask-composite: exclude;
+    transition: opacity 200ms ease-out;
+  }
+
+  @variant dark {
+    &::after {
+      background: radial-gradient(
+        280px circle at var(--specular-x, 50%) var(--specular-y, 0%),
+        rgb(255 255 255 / 24%) 0%,
+        color-mix(in oklch, var(--primary) 24%, rgb(255 255 255 / 12%)) 34%,
+        transparent 72%
+      );
+    }
+  }
+
+  &[data-specular-active="true"]::after {
+    opacity: 1;
+  }
+
+  @media (prefers-reduced-motion: reduce), (forced-colors: active), (pointer: coarse) {
+    &::after {
+      display: none;
+    }
+  }
+}
+
+@keyframes skeleton-optical-sweep {
+  from {
+    transform: translate3d(-100%, 0, 0);
+  }
+  to {
+    transform: translate3d(100%, 0, 0);
+  }
+}
+
+@utility surface-skeleton-sweep {
+  position: relative;
+  overflow: hidden;
+
+  &::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    width: max(100%, 320px);
+    background-image: linear-gradient(
+      108deg,
+      transparent 18%,
+      color-mix(in oklch, var(--contrast-foreground) 7%, transparent) 50%,
+      transparent 82%
+    );
+    pointer-events: none;
+    animation: skeleton-optical-sweep 1.85s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+    animation-play-state: var(--visible-animation-state, paused);
+    will-change: var(--visible-animation-will-change, auto);
+  }
+
+  @variant dark {
+    &::after {
+      background-image: linear-gradient(
+        108deg,
+        transparent 18%,
+        rgb(255 255 255 / 7%) 50%,
+        transparent 82%
+      );
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce), (forced-colors: active) {
+    &::after {
+      display: none;
+    }
+  }
+}
+
+/* ==========================================================================
+   D02 / C008: Android Chrome/PWA Viewport & Keyboard Stability, Touch Hover
+   Isolation (Kubai087 Tip 023), and Linux Fractional-HiDPI Optical Precision
+   ========================================================================== */
+
+:root {
+  --software-keyboard-inset: 0px;
+}
+
+/* Keep closed fullscreen backdrops non-rendering & non-blocking on touch viewports. */
+[data-slot="dialog-backdrop"][data-closed],
+[data-slot="alert-dialog-backdrop"][data-closed],
+[data-slot="sheet-backdrop"][data-closed],
+[data-slot="command-dialog-backdrop"][data-closed] {
+  visibility: hidden;
+  pointer-events: none;
+}
+
+/* Whole-SVG opacity prevents overlapping strokes inside Lucide icons from darkening at joints. */
+@layer base {
+  svg.lucide {
+    shape-rendering: geometricPrecision;
+  }
+
+  svg.lucide :is(path, line, circle, rect, polyline, polygon) {
+    opacity: 1;
+  }
+}
+
+/* Linux 1.25x / 1.5x / 1.75x fractional HiDPI sharpening: slightly crisper stroke
+   and asymmetric optical inline padding on icon+label buttons. */
+html[data-fractional-dpr="true"] {
+  --app-scrollbar-width: 6px;
+}
+
+html[data-fractional-dpr="true"] :where(svg.lucide[stroke-width="2"]) {
+  stroke-width: 1.8;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  [data-slot="button"]:has(> svg:first-child):has(> :not(svg)) > svg:first-child {
+    margin-inline-start: -0.1875rem;
+  }
+}
+
+/* Prevent sticky hover artifacts on touch-primary Android & Linux touch laptops. */
+@media (hover: none), (pointer: coarse) {
+  [data-slot="menu-item"]:hover:not([data-highlighted]),
+  [data-slot="select-item"]:hover:not([data-highlighted]),
+  [data-slot="combobox-item"]:hover:not([data-highlighted]) {
+    background-color: transparent;
+  }
+}
+
+/* ==========================================================================
+   D03 / C009: Origin-Expanding View Transition Iris Ripple for Theme Switching
+   ========================================================================== */
+
+html[data-theme-transition="iris"]::view-transition-old(root),
+html[data-theme-transition="iris"]::view-transition-new(root) {
+  animation: none;
+  mix-blend-mode: normal;
+}
+
+html[data-theme-transition="iris"]::view-transition-old(root) {
+  z-index: 1;
+}
+
+html[data-theme-transition="iris"]::view-transition-new(root) {
+  z-index: 2;
+}
+
+/* ==========================================================================
+   D03 / C011: Double-Buffered Theme Wallpaper GPU Crossfade
+   ========================================================================== */
+
+@keyframes theme-wallpaper-fade-out {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
+
+html[data-theme-background-crossfade="active"]::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background-image: var(--theme-background-image-prev);
+  background-position: center;
+  background-size: cover;
+  contain: strict;
+  transform: translateZ(0);
+  animation: theme-wallpaper-fade-out 360ms cubic-bezier(0.23, 1, 0.32, 1) forwards;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html[data-theme-background-crossfade="active"]::before {
+    display: none;
+  }
+}
+
+/* ==========================================================================
+   D04 / C012: Sliding FloatingHighlight Item Stacking & Transparent Pass-Through
+   ========================================================================== */
+
+:has(> [data-slot="floating-highlight"][data-active="true"])
+  :is(
+    [data-slot="menu-item"],
+    [data-slot="menu-checkbox-item"],
+    [data-slot="menu-radio-item"],
+    [data-slot="menu-sub-trigger"],
+    [data-slot="select-item"],
+    [data-slot="combobox-item"],
+    [data-slot="autocomplete-item"]
+  ) {
+  position: relative;
+  z-index: 1;
+}
+
+:has(> [data-slot="floating-highlight"][data-active="true"])
+  :is(
+    [data-slot="menu-item"][data-highlighted],
+    [data-slot="menu-checkbox-item"][data-highlighted],
+    [data-slot="menu-radio-item"][data-highlighted],
+    [data-slot="menu-sub-trigger"][data-highlighted],
+    [data-slot="select-item"][data-highlighted],
+    [data-slot="combobox-item"][data-highlighted],
+    [data-slot="autocomplete-item"][data-highlighted]
+  ) {
+  background-color: transparent;
+}
+
+/* Segmented ToggleGroup dual-layer clip mirror renders text via CSS content so
+   light-DOM text nodes (getByText, textContent, find-in-page) are never duplicated. */
+[data-slot="toggle-clip-text"]::after {
+  content: attr(data-clip-text);
+}
+
+/* ==========================================================================
+   D04 / C013: Choice Control Tactile Confirmation Ring & <=64px Bounce
+   ========================================================================== */
+
+@keyframes choice-confirm-pop {
+  0% {
+    transform: scale(0.86);
+  }
+  58% {
+    transform: scale(1.06);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+@keyframes choice-halo-burst {
+  0% {
+    opacity: 0.45;
+    transform: scale(0.85);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(1.65);
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  [data-slot="checkbox"][data-checked] > [data-slot="checkbox-indicator"],
+  [data-slot="radio"][data-checked] > [data-slot="radio-indicator"] {
+    animation: choice-confirm-pop 240ms var(--spring-bouncy) both;
+  }
+
+  [data-slot="checkbox-indicator"][data-checked]::after,
+  [data-slot="radio-indicator"][data-checked]::after {
+    content: "";
+    position: absolute;
+    inset: -2px;
+    border-radius: inherit;
+    border: 1.5px solid var(--primary);
+    pointer-events: none;
+    animation: choice-halo-burst 320ms cubic-bezier(0.23, 1, 0.32, 1) forwards;
+  }
+}
+
+/* ==========================================================================
+   D04 / C014: Overhead-Lit Tactile Button Physics (Kubai Tip 001), Live Kbd
+   Keycaps, and Asymmetric clip-path Hold-to-Confirm Primitive
+   ========================================================================== */
+
+@layer components {
+  [data-slot="button"]:is(
+      [data-variant="default"],
+      [data-variant="destructive"],
+      [data-variant="outline"],
+      [data-variant="destructive-outline"],
+      [data-variant="secondary"]
+    ):not(:disabled):not([aria-disabled="true"])::before {
+    box-shadow:
+      inset 0 1px 0 rgb(255 255 255 / 18%),
+      inset 0 -1px 0 rgb(0 0 0 / 12%),
+      inset 0 0 0 rgb(0 0 0 / 0%);
+    transition: box-shadow 180ms var(--spring-snappy);
+  }
+
+  [data-slot="button"]:is(
+      [data-variant="default"],
+      [data-variant="destructive"],
+      [data-variant="outline"],
+      [data-variant="destructive-outline"],
+      [data-variant="secondary"]
+    ):not(:disabled):not([aria-disabled="true"]):is(:active, [data-pressed])::before {
+    box-shadow:
+      inset 0 1.5px 2.5px rgb(0 0 0 / 20%),
+      inset 0 0 0 rgb(0 0 0 / 0%),
+      inset 0 -1px 0 rgb(255 255 255 / 8%);
+    transition: box-shadow 75ms ease-out;
+  }
+
+  @media (prefers-reduced-motion: no-preference) {
+    [data-slot="button"]:is(
+        [data-variant="default"],
+        [data-variant="destructive"],
+        [data-variant="outline"],
+        [data-variant="destructive-outline"],
+        [data-variant="secondary"]
+      ):not(:disabled):not([aria-disabled="true"]):is(:active, [data-pressed]) {
+      translate: 0 1px;
+    }
+
+    [data-slot="kbd"][data-key-pressed="true"] {
+      transform: translateY(1px);
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    [data-slot="button"]::before {
+      transition: none;
+    }
+  }
+}
+
+[data-slot="kbd"][data-key-pressed="true"] {
+  color: var(--foreground);
+  background-color: color-mix(in oklch, var(--foreground) 14%, transparent);
+  box-shadow: inset 0 1px 1.5px rgb(0 0 0 / 18%);
+}
+
+[data-slot="hold-to-confirm-fill"] {
+  clip-path: inset(0 100% 0 0);
+  transition: clip-path 180ms cubic-bezier(0.23, 1, 0.32, 1);
+}
+
+[data-slot="hold-to-confirm-fill"][data-holding="true"] {
+  clip-path: inset(0 0 0 0);
+  transition: clip-path var(--hold-duration, 1400ms) linear;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-slot="hold-to-confirm-fill"] {
+    transition: none;
+  }
+}
+
+/* ==========================================================================
+   D05 / C015: Spatial Depth Workbench Recess for Stacked Modals
+   Skips scaling while a live Electron BrowserSurfaceSlot is mounted so
+   hosted <webview> geometry never desyncs; returns cleanly to transform: none
+   when modals close so zero containing-block residue affects fixed layers.
+   ========================================================================== */
+
+[data-slot="sidebar-wrapper"][data-spatial-recess="true"] {
+  transform-origin: center top;
+  transition:
+    transform 320ms var(--spring-spatial),
+    border-radius 320ms var(--spring-spatial),
+    filter 220ms ease-out;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  html[data-spatial-modal-depth="1"]
+    [data-slot="sidebar-wrapper"][data-spatial-recess="true"]:not(
+      :has([data-browser-surface-slot])
+    ) {
+    transform: scale(0.986);
+    border-radius: 12px;
+    filter: brightness(0.96);
+  }
+
+  html[data-spatial-modal-depth="2"]
+    [data-slot="sidebar-wrapper"][data-spatial-recess="true"]:not(
+      :has([data-browser-surface-slot])
+    ) {
+    transform: scale(0.974);
+    border-radius: 14px;
+    filter: brightness(0.92);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-slot="sidebar-wrapper"][data-spatial-recess="true"] {
+    transition: none;
+    transform: none;
+    filter: none;
+    border-radius: 0;
+  }
+}

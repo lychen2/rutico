@@ -5,9 +5,10 @@ import {
   type ScopedThreadRef,
 } from "@t3tools/contracts";
 import { useGT } from "gt-react";
-import { QuoteIcon } from "lucide-react";
+import { CheckIcon, CopyIcon, QuoteIcon } from "lucide-react";
 import { use, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { useCopyToClipboard } from "~/hooks/useCopyToClipboard";
 import {
   captureAssistantTextSelection,
   type AssistantCitationSourceAnchor,
@@ -40,14 +41,20 @@ export function AssistantSelectionToolbar({
   const actionsRef = useRef<ReturnType<typeof observeSelectionActions> | null>(null);
   const backgroundThread = use(BackgroundThreadContext);
   const gt = useGT();
+  const { copyToClipboard, isCopied } = useCopyToClipboard({ timeout: 1200 });
 
-  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- measures the toolbar DOM node and clamps its position inside the window before paint
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- measures the toolbar DOM node and clamps its GPU translate3d position inside the window before paint
   useLayoutEffect(() => {
     const container = containerRef.current;
     if (!container || !selection) return;
     const rect = container.getBoundingClientRect();
-    container.style.left = `${Math.max(8, Math.min(selection.position.x, window.innerWidth - rect.width - 8))}px`;
-    container.style.top = `${Math.max(8, Math.min(selection.position.y, window.innerHeight - rect.height - 8))}px`;
+    const x = Math.round(
+      Math.max(8, Math.min(selection.position.x, window.innerWidth - rect.width - 8)),
+    );
+    const y = Math.round(
+      Math.max(8, Math.min(selection.position.y, window.innerHeight - rect.height - 8)),
+    );
+    container.style.transform = `translate3d(${x}px, ${y}px, 0)`;
   }, [selection]);
 
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- subscribes to document selectionchange and keydown to track text selections in the viewport
@@ -195,20 +202,15 @@ export function AssistantSelectionToolbar({
   return createPortal(
     <div
       ref={containerRef}
-      className="fixed z-50 max-w-[calc(100vw-1rem)] origin-bottom transition-[opacity,transform] duration-140 ease-(--ease-spring-snappy) starting:translate-y-1 starting:scale-95 starting:opacity-0 motion-reduce:transition-none"
-      style={{ left: selection.position.x, top: selection.position.y }}
+      data-assistant-selection-toolbar="true"
+      className="fixed top-0 left-0 z-50 max-w-[calc(100vw-1rem)] will-change-transform"
+      style={{
+        transform: `translate3d(${Math.round(selection.position.x)}px, ${Math.round(selection.position.y)}px, 0)`,
+      }}
     >
-      <Button
-        ref={toolbarRef}
-        type="button"
-        size="xs"
-        variant="glass"
-        disabled={tooLong}
-        aria-label={
-          tooLong ? gt("Selection is too long to cite") : gt("Cite selection in composer")
-        }
-        onPointerDown={(event) => event.preventDefault()}
-        onClick={cite}
+      <div
+        data-assistant-selection-capsule="true"
+        className="flex origin-bottom items-center gap-0.5 rounded-full border border-border/80 bg-popover p-0.5 shadow-lg shadow-black/12"
         onKeyDown={(event) => {
           event.stopPropagation();
           if (event.key === "Escape" && !event.nativeEvent.isComposing) {
@@ -217,11 +219,40 @@ export function AssistantSelectionToolbar({
           }
         }}
       >
-        <QuoteIcon aria-hidden="true" className="size-3.5" />
-        {tooLong
-          ? gt("Shorten selection")
-          : gt("Cite", { $context: "verb, button that quotes the selected text" })}
-      </Button>
+        <Button
+          ref={toolbarRef}
+          type="button"
+          size="xs"
+          variant="ghost"
+          disabled={tooLong}
+          aria-label={
+            tooLong ? gt("Selection is too long to cite") : gt("Cite selection in composer")
+          }
+          onPointerDown={(event) => event.preventDefault()}
+          onClick={cite}
+        >
+          <QuoteIcon aria-hidden="true" className="size-3.5" />
+          {tooLong
+            ? gt("Shorten selection")
+            : gt("Cite", { $context: "verb, button that quotes the selected text" })}
+        </Button>
+        <span aria-hidden="true" className="h-3.5 w-px bg-border/70" />
+        <Button
+          type="button"
+          size="xs"
+          variant="ghost"
+          aria-label={isCopied ? gt("Copied selection") : gt("Copy selection")}
+          onPointerDown={(event) => event.preventDefault()}
+          onClick={() => copyToClipboard(selection.citation.text)}
+        >
+          {isCopied ? (
+            <CheckIcon aria-hidden="true" className="size-3.5 text-success" />
+          ) : (
+            <CopyIcon aria-hidden="true" className="size-3.5" />
+          )}
+          {isCopied ? gt("Copied") : gt("Copy")}
+        </Button>
+      </div>
     </div>,
     document.body,
   );

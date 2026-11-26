@@ -917,4 +917,75 @@ describe("WorkflowRunsView", () => {
       .not.toBeInTheDocument();
     localStorage.removeItem(KIND_KEY);
   });
+
+  it("renders observeVisibleAnimation-gated execution spine pulses, parallel tracks, and decision halos", async () => {
+    setup(
+      {
+        runs: [run({ runId: "par", title: "Parallel release", status: "running" })],
+        questions: [
+          {
+            runId: "par",
+            name: "review",
+            request: {
+              title: "Approve canary?",
+              choices: ["Approve", "Hold"],
+              data: {},
+            },
+            askedAt: at(4),
+            thread: null,
+          },
+        ],
+      },
+      {
+        par: [
+          step({
+            name: "prepare",
+            kind: "step",
+            status: "completed",
+            startedAt: at(0),
+            endedAt: at(1),
+          }),
+          step({
+            name: "build-linux",
+            kind: "step",
+            status: "running",
+            startedAt: at(2),
+            endedAt: null,
+          }),
+          step({
+            name: "build-web",
+            kind: "step",
+            status: "running",
+            startedAt: at(2),
+            endedAt: null,
+          }),
+          step({ name: "review", kind: "ask", status: "running", startedAt: at(4), endedAt: null }),
+        ],
+      },
+    );
+    await using _desktop = await desktop();
+    await using screen = await render(page("par"));
+
+    const parallelTracks = screen.container.querySelector('[data-workflow-parallel-tracks="true"]');
+    expect(parallelTracks).not.toBeNull();
+    expect(parallelTracks?.getAttribute("data-workflow-parallel-active")).toBe("true");
+
+    const spinePulses = Array.from(
+      screen.container.querySelectorAll<HTMLElement>("[data-workflow-spine-pulse]"),
+    );
+    expect(spinePulses.length).toBeGreaterThan(0);
+    for (const pulse of spinePulses) {
+      expect(["running", "paused"]).toContain(
+        pulse.style.getPropertyValue("--visible-animation-state"),
+      );
+    }
+
+    const decisionCard = screen.container.querySelector<HTMLElement>(
+      '[data-workflow-decision-card="true"]',
+    );
+    expect(decisionCard).not.toBeNull();
+    expect(["running", "paused"]).toContain(
+      decisionCard?.style.getPropertyValue("--visible-animation-state"),
+    );
+  });
 });

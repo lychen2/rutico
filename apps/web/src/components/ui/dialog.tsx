@@ -20,14 +20,24 @@ import {
   DIALOG_MEDIA_POPUP_CLASS,
   DIALOG_MOBILE_SHEET_CLASS,
   DIALOG_POPUP_CLASS,
+  useSpatialModalDepth,
 } from "~/components/ui/dialog-styles";
 import { ScrollArea } from "~/components/ui/scroll-area";
 
 const ControlledOpenContext = createContext<boolean | undefined>(undefined);
 
-function RetainedWhileClosed({ open, children }: { open: boolean; children: ReactNode }) {
+function RetainedWhileClosed({
+  open,
+  spatialDepth = false,
+  children,
+}: {
+  open: boolean;
+  spatialDepth?: boolean;
+  children: ReactNode;
+}) {
   const controlledOpen = use(ControlledOpenContext);
   const isOpen = open && controlledOpen !== false;
+  useSpatialModalDepth(spatialDepth && isOpen);
   const [retained, setRetained] = useState(children);
   if (isOpen && retained !== children) {
     setRetained(children);
@@ -39,6 +49,16 @@ function renderRetainedPopup(props: ComponentProps<"div">, state: { open: boolea
   return (
     <div {...props}>
       <RetainedWhileClosed open={state.open}>{props.children}</RetainedWhileClosed>
+    </div>
+  );
+}
+
+function renderModalRetainedPopup(props: ComponentProps<"div">, state: { open: boolean }) {
+  return (
+    <div {...props}>
+      <RetainedWhileClosed open={state.open} spatialDepth>
+        {props.children}
+      </RetainedWhileClosed>
     </div>
   );
 }
@@ -98,7 +118,7 @@ function DialogViewport({ className, ...props }: DialogPrimitive.Viewport.Props)
     <DialogPrimitive.Viewport
       // Electron drag regions ignore z-index, so without no-drag a click over a header drag strip never reaches the page.
       className={cn(
-        "fixed inset-0 z-50 grid grid-rows-[1fr_auto_1fr] justify-items-center p-4 [-webkit-app-region:no-drag]",
+        "fixed inset-0 z-50 grid grid-rows-[1fr_auto_1fr] justify-items-center overscroll-contain p-4 [-webkit-app-region:no-drag]",
         className,
       )}
       data-slot="dialog-viewport"
@@ -136,7 +156,7 @@ function DialogPopup({
         )}
         data-slot="dialog-popup"
         initialFocus={initialFocus}
-        render={renderRetainedPopup}
+        render={renderModalRetainedPopup}
         {...props}
       >
         {children}
@@ -160,7 +180,8 @@ function DialogPopup({
       <DialogBackdrop className={variant === "media" ? "z-[60]" : undefined} variant={variant} />
       <DialogViewport
         className={cn(
-          bottomStickOnMobile && "max-sm:grid-rows-[1fr_auto] max-sm:p-0 max-sm:pt-12",
+          bottomStickOnMobile &&
+            "max-sm:grid-rows-[1fr_auto] max-sm:p-0 max-sm:pt-12 max-sm:pb-(--software-keyboard-inset,0px)",
           variant === "media" &&
             "z-[60] grid-rows-1 place-items-center px-4 max-[8rem]:px-0 pb-6 pt-[calc(var(--media-dialog-titlebar-height,0px)+1.5rem)] [-webkit-app-region:no-drag]",
           variant === "media" &&
@@ -266,6 +287,7 @@ function DialogPanel({
 
 export {
   ControlledOpenContext,
+  renderModalRetainedPopup,
   renderRetainedPopup,
   Dialog,
   DialogTrigger,

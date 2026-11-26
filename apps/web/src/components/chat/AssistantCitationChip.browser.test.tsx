@@ -366,3 +366,77 @@ describe("citation comment dictation", () => {
     await vi.waitFor(() => expect(onSave).toHaveBeenCalledWith("dictated comment"));
   });
 });
+
+describe("citation quote preview and CSS.highlights Range hygiene (Astra P1-4)", () => {
+  it("shows the live quoted excerpt in the comment editor and preserves exact Save button text", async () => {
+    using source = setup();
+    await using _screen = await mount(
+      source.sourceAnchor,
+      vi.fn(() => true),
+    );
+    const preview = document.querySelector<HTMLElement>('[data-citation-quote-preview="true"]');
+    expect(preview?.textContent).toContain("hello");
+    await clickButton("Save");
+  });
+
+  it("recreates CSS.highlights Ranges on DOM replacement, cleans up on unmount, and falls back when CSS.highlights is unavailable", async () => {
+    const actual = await vi.importActual<typeof import("./AssistantCitationSource")>(
+      "./AssistantCitationSource",
+    );
+    const source = document.createElement("p");
+    source.textContent = "hello";
+    document.body.append(source);
+    using _cleanup = { [Symbol.dispose]: () => source.remove() };
+
+    const range = document.createRange();
+    range.selectNodeContents(source);
+    const onUnavailable = vi.fn();
+    const dispose = actual.observeAssistantCitationCommentSource({
+      anchor: { source, range, viewport: document.body },
+      citation,
+      onUnavailable,
+    });
+
+    if (typeof CSS !== "undefined" && CSS.highlights) {
+      const initialHighlight = CSS.highlights.get("t3-assistant-citation-comment");
+      expect(initialHighlight?.size).toBe(1);
+      const initialRange = [...(initialHighlight?.values() ?? [])][0];
+
+      // Simulate streaming replacing the text node inside the assistant message.
+      source.replaceChildren(document.createTextNode("hello"));
+      await vi.waitFor(() => {
+        const currentHighlight = CSS.highlights.get("t3-assistant-citation-comment");
+        const nextRange = [...(currentHighlight?.values() ?? [])][0];
+        expect(currentHighlight?.size).toBe(1);
+        expect(nextRange).not.toBe(initialRange);
+      });
+    }
+
+    dispose();
+    if (typeof CSS !== "undefined" && CSS.highlights) {
+      expect(CSS.highlights.has("t3-assistant-citation-comment")).toBe(false);
+    }
+    expect(source.dataset.citationCommentActive).toBeUndefined();
+    expect(onUnavailable).not.toHaveBeenCalled();
+
+    // Graceful fallback when CSS.highlights is absent.
+    const originalHighlights = Object.getOwnPropertyDescriptor(CSS, "highlights");
+    Object.defineProperty(CSS, "highlights", { configurable: true, value: undefined });
+    try {
+      const fallbackRange = document.createRange();
+      fallbackRange.selectNodeContents(source);
+      const disposeFallback = actual.observeAssistantCitationCommentSource({
+        anchor: { source, range: fallbackRange, viewport: document.body },
+        citation,
+        onUnavailable,
+      });
+      expect(source.dataset.citationCommentFallback).toBe("true");
+      disposeFallback();
+      expect(source.dataset.citationCommentFallback).toBeUndefined();
+    } finally {
+      if (originalHighlights) {
+        Object.defineProperty(CSS, "highlights", originalHighlights);
+      }
+    }
+  });
+});

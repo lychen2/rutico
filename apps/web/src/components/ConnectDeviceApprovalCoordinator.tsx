@@ -9,8 +9,9 @@ import { AuthAccessWriteScope, type EnvironmentId } from "@t3tools/contracts";
 import { unseenConnectDevices } from "@t3tools/client-runtime/connect-device-notices";
 import * as DateTime from "effect/DateTime";
 import * as Schema from "effect/Schema";
+import { ShieldCheckIcon } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
-import { msg } from "gt-react";
+import { msg, T, Var } from "gt-react";
 
 import { readLocalStorageValue, writeLocalStorageValue } from "../hooks/useLocalStorage";
 import { m } from "../i18n/messages";
@@ -22,6 +23,20 @@ import { useAtomCommand } from "../state/use-atom-command";
 import { describeConnectDeviceClient } from "./settings/ConnectionsSettings.logic";
 import { toastManager } from "./ui/toast";
 import { stackedThreadToast } from "./ui/toastHelpers";
+
+function formatGroupedVerificationCode(code: string): string {
+  const trimmed = code.trim();
+  if (trimmed.includes("-")) {
+    return trimmed
+      .split("-")
+      .filter((part) => part.length > 0)
+      .join(" · ");
+  }
+  if (/^\d{6}$/.test(trimmed)) {
+    return `${trimmed.slice(0, 3)} · ${trimmed.slice(3)}`;
+  }
+  return trimmed;
+}
 
 /**
  * Asks whoever can approve to look at T3 Connect devices waiting on an environment, and tells
@@ -237,14 +252,21 @@ function ConnectDeviceRequestToasts({
         const current = toasts.current.get(id);
         if (current) toastManager.close(current.toastId);
       };
+      const groupedCode = formatGroupedVerificationCode(request.verificationCode);
       const options = stackedThreadToast({
         type: "info",
         title: m(msg("A device wants to connect to {environmentLabel}", { environmentLabel })),
-        description: m(
-          msg("{device}. Approve only if it shows code {code}.", {
-            device,
-            code: request.verificationCode,
-          }),
+        description: (
+          <div className="mt-1 space-y-2">
+            <p className="text-xs text-muted-foreground">
+              <T>
+                <Var>{device}</Var>. Approve only if it shows this code:
+              </T>
+            </p>
+            <div className="inline-flex items-center rounded-md border border-border/75 bg-muted/45 px-2.5 py-1 font-mono text-sm font-semibold tracking-wider text-foreground tabular-nums">
+              {groupedCode}
+            </div>
+          </div>
         ),
         timeout: remainingMs,
         actionProps: {
@@ -260,6 +282,7 @@ function ConnectDeviceRequestToasts({
           },
         },
         data: {
+          leadingIcon: <ShieldCheckIcon className="size-4 text-primary" aria-hidden />,
           hideCopyButton: true,
           secondaryActionProps: {
             children: m(msg("Deny")),

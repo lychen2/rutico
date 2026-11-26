@@ -167,6 +167,7 @@ export interface NativeReviewDiffViewProps extends ViewProps {
 
 export interface NativeReviewDiffViewHandle {
   readonly scrollToFile: (fileId: string, animated?: boolean) => Promise<void>;
+  readonly scrollToHunk?: (direction: -1 | 1, animated?: boolean) => Promise<boolean>;
   readonly scrollToTop: (animated?: boolean) => Promise<void>;
 }
 
@@ -179,6 +180,8 @@ interface NativeReviewDiffViewRef {
   readonly setTokensJson: (tokensJson: string) => Promise<void>;
   readonly setTokensPatchJson: (tokensPatchJson: string) => Promise<boolean>;
   readonly scrollToFile: (fileId: string, animated: boolean) => Promise<void>;
+  /** Android native diff surface hunk navigation; absent on older builds or iOS. */
+  readonly scrollToHunk?: (direction: -1 | 1, animated: boolean) => Promise<boolean>;
   readonly scrollToTop: (animated: boolean) => Promise<void>;
 }
 
@@ -393,6 +396,10 @@ function NativeReviewDiffContent(
     () => ({
       scrollToFile: async (fileId, animated = true) => {
         await nativeRef.current?.scrollToFile(fileId, animated);
+      },
+      scrollToHunk: async (direction, animated = true) => {
+        if (!nativeRef.current?.scrollToHunk) return false;
+        return nativeRef.current.scrollToHunk(direction, animated);
       },
       scrollToTop: async (animated = true) => {
         await nativeRef.current?.scrollToTop(animated);

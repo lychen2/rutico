@@ -59,9 +59,11 @@ function CommandDialogPopup({
   className,
   children,
   onBackdropPointerDown,
+  size = "default",
   ...props
 }: CommandDialogPrimitive.Popup.Props & {
   onBackdropPointerDown?: React.PointerEventHandler<HTMLDivElement>;
+  size?: "default" | "wide";
 }) {
   const popupRef = useRef<HTMLDivElement>(null);
   return (
@@ -74,7 +76,8 @@ function CommandDialogPopup({
           ref={popupRef}
           className={cn(
             DIALOG_POPUP_CLASS,
-            "pointer-events-auto max-h-105 max-w-xl text-foreground data-ending-style:pointer-events-none",
+            "pointer-events-auto max-h-105 text-foreground data-ending-style:pointer-events-none",
+            size === "wide" ? "max-w-4xl" : "max-w-xl",
             className,
           )}
           data-slot="command-dialog-popup"
@@ -130,7 +133,7 @@ function CommandInput({
 function CommandList({ className, ...props }: React.ComponentProps<typeof AutocompleteList>) {
   return (
     <AutocompleteList
-      className={cn("not-empty:scroll-py-2 not-empty:p-2", className)}
+      className={cn("relative not-empty:scroll-py-2 not-empty:p-2", className)}
       data-slot="command-list"
       {...props}
     />
@@ -143,7 +146,7 @@ function CommandListVirtualized({
 }: React.ComponentProps<typeof AutocompleteListVirtualized>) {
   return (
     <AutocompleteListVirtualized
-      className={cn("flex max-h-[inherit] min-h-0 flex-col", className)}
+      className={cn("relative flex max-h-[inherit] min-h-0 flex-col", className)}
       data-slot="command-list"
       {...props}
     />
@@ -166,6 +169,7 @@ function CommandPanel({ className, ...props }: React.ComponentProps<"div">) {
         "relative min-h-0 overflow-hidden rounded-t-xl not-has-[+[data-slot=command-footer]]:rounded-b-2xl bg-transparent **:data-[slot=scroll-area-scrollbar]:mt-2 [touch-action:pan-y]",
         className,
       )}
+      data-slot="command-panel"
       {...props}
     />
   );
@@ -197,7 +201,7 @@ function CommandItem({
   return (
     <AutocompleteItem
       className={cn(
-        "py-1.5 transition-[background-color,color,scale] duration-120 ease-out active:not-data-disabled:scale-[0.99] motion-reduce:transition-none motion-reduce:active:scale-100 data-selected:bg-foreground/[0.06] data-highlighted:bg-foreground/[0.09] data-highlighted:text-foreground data-highlighted:[&_svg:not([class*='text-'])]:text-foreground [&[data-highlighted][data-selected]]:bg-foreground/[0.09] [&[data-highlighted][data-selected]]:text-foreground",
+        "rounded-[var(--radius-concentric-dialog-inner)] py-1.5 transition-[background-color,color,scale] duration-120 ease-out active:not-data-disabled:scale-[0.99] motion-reduce:transition-none motion-reduce:active:scale-100 data-selected:bg-foreground/[0.06] data-highlighted:bg-foreground/[0.09] data-highlighted:text-foreground data-highlighted:[&_svg:not([class*='text-'])]:text-foreground [&[data-highlighted][data-selected]]:bg-foreground/[0.09] [&[data-highlighted][data-selected]]:text-foreground",
         active !== undefined &&
           "cursor-pointer hover:bg-transparent hover:text-inherit data-highlighted:bg-transparent data-highlighted:text-inherit data-highlighted:[&_svg:not([class*='text-'])]:text-muted-foreground data-selected:bg-transparent data-selected:text-inherit [&[data-highlighted][data-selected]]:bg-transparent [&[data-highlighted][data-selected]]:text-inherit",
         active &&

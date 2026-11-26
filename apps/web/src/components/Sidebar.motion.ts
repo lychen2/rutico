@@ -1,5 +1,68 @@
+import { getSpringWaapiTiming, prefersReducedMotion } from "~/lib/motion/springs";
+
 export const SIDEBAR_REDUCED_MOTION = "(prefers-reduced-motion: reduce)";
 export const sidebarWorkbenchEase = "cubic-bezier(.2,.8,.2,1)";
+
+const SIDEBAR_RIPPLE_AMPLITUDE_PX = 3.5;
+const SIDEBAR_RIPPLE_DECAY = 0.7;
+const SIDEBAR_RIPPLE_STAGGER_MS = 24;
+const SIDEBAR_RIPPLE_MAX_DISTANCE = 4;
+
+/**
+ * Tip 005 damped spring neighbor ripple (`A * 0.7^n`, `24ms * n` stagger)
+ * fired when a dragged thread crosses into a neighboring row boundary.
+ */
+export function triggerSidebarDragRipple(
+  list: HTMLElement,
+  overThreadKey: string | null,
+  direction: 1 | -1 = 1,
+): number {
+  if (!overThreadKey) return 0;
+  const win = list.ownerDocument.defaultView ?? globalThis.window;
+  if (prefersReducedMotion(win)) return 0;
+
+  const rows = Array.from(list.children).filter(
+    (node): node is HTMLElement =>
+      node instanceof HTMLElement && node.hasAttribute("data-thread-item"),
+  );
+  const centerIndex = rows.findIndex(
+    (node) => node.getAttribute("data-thread-item") === overThreadKey,
+  );
+  if (centerIndex === -1) return 0;
+
+  const timing = getSpringWaapiTiming("snappy");
+  let rippledCount = 0;
+
+  for (let distance = 1; distance <= SIDEBAR_RIPPLE_MAX_DISTANCE; distance += 1) {
+    const amplitude = SIDEBAR_RIPPLE_AMPLITUDE_PX * Math.pow(SIDEBAR_RIPPLE_DECAY, distance);
+    const delay = distance * SIDEBAR_RIPPLE_STAGGER_MS;
+    const candidates = [
+      { index: centerIndex - distance, sign: -direction },
+      { index: centerIndex + distance, sign: direction },
+    ];
+    for (const candidate of candidates) {
+      const neighbor = rows[candidate.index];
+      if (!neighbor || typeof neighbor.animate !== "function") continue;
+      const offsetPx = Number((candidate.sign * amplitude).toFixed(2));
+      neighbor.animate(
+        [
+          { transform: "translate3d(0, 0, 0)" },
+          { transform: `translate3d(0, ${offsetPx}px, 0)`, offset: 0.36 },
+          { transform: "translate3d(0, 0, 0)" },
+        ],
+        {
+          duration: Math.max(220, timing.duration),
+          delay,
+          easing: timing.easing,
+          composite: "add",
+        },
+      );
+      rippledCount += 1;
+    }
+  }
+
+  return rippledCount;
+}
 
 const motionTiming = { duration: 150, easing: sidebarWorkbenchEase };
 const attentionExitTiming = { duration: 350, easing: sidebarWorkbenchEase };

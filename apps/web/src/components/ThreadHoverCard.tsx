@@ -1,13 +1,23 @@
 import type { ComponentProps, ReactNode } from "react";
 import { SharedTooltipTrigger } from "./ui/shared-tooltip";
-import { TooltipPopup } from "./ui/tooltip";
+import {
+  HOVER_CARD_INTENT_CLOSE_DELAY_MS,
+  HOVER_CARD_INTENT_DELAY_MS,
+  TooltipPopup,
+} from "./ui/tooltip";
 import { cn } from "~/lib/utils";
 
 const HOVER_CARD_CLASS_NAME = "max-w-80 text-left whitespace-normal";
 
 export function ThreadHoverCardPopup({ className, ...props }: ComponentProps<typeof TooltipPopup>) {
   return (
-    <TooltipPopup {...props} variant="glass" className={cn(HOVER_CARD_CLASS_NAME, className)} />
+    <TooltipPopup
+      {...props}
+      data-hover-card-close-grace={HOVER_CARD_INTENT_CLOSE_DELAY_MS}
+      data-hover-card-delay={HOVER_CARD_INTENT_DELAY_MS}
+      variant="glass"
+      className={cn(HOVER_CARD_CLASS_NAME, className)}
+    />
   );
 }
 

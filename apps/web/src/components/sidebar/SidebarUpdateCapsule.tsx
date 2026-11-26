@@ -7,6 +7,7 @@ import { cn } from "~/lib/utils";
 import { environmentIdsKey } from "~/state/environmentAtomList";
 import { environmentUpdateStatesAtom } from "~/state/server";
 import { useServerUpdate } from "../ServerUpdateAction";
+import { AnimatedNumber } from "../ui/animated-number";
 import { Button } from "../ui/button";
 import { Popover, PopoverPopup, PopoverTrigger } from "../ui/popover";
 import {
@@ -101,6 +102,12 @@ export function SidebarUpdateCapsule({
   const failed = machines.some(({ status }) => status === "failed");
   const settled = !hasActiveMachine && run.localVersion === null;
   const restartSeconds = restartSecondsLeft(run, now);
+  const ringProgress =
+    local?.status === "downloading" && local.percent !== null
+      ? Math.max(0, Math.min(1, local.percent / 100))
+      : restartSeconds !== null
+        ? Math.max(0, Math.min(1, restartSeconds / 15))
+        : null;
   const expandedControlClassName =
     restartSeconds === null
       ? "@min-[5rem]/sidebar-update:block"
@@ -126,13 +133,14 @@ export function SidebarUpdateCapsule({
     <Popover>
       <div
         className={cn(
-          "relative ml-auto flex h-8 w-8 shrink-0 items-center justify-end rounded-full bg-sidebar-control-surface text-sidebar-foreground transition-[width] duration-200 ease-out motion-reduce:transition-none",
+          "relative ml-auto flex h-8 w-8 shrink-0 items-center justify-end rounded-full bg-sidebar-control-surface text-sidebar-foreground transition-[width] duration-260 ease-(--spring-spatial) motion-reduce:transition-none",
           restartSeconds === null
             ? "@min-[5rem]/sidebar-update:w-full"
             : "@min-[12rem]/sidebar-update:w-full",
           view.tone === "slow" && "ring-1 ring-warning/40 ring-inset",
           view.tone === "failed" && "ring-1 ring-destructive/40 ring-inset",
         )}
+        data-slot="sidebar-update-capsule"
       >
         <PopoverTrigger
           render={
@@ -179,7 +187,44 @@ export function SidebarUpdateCapsule({
               "rounded-full text-xs font-medium tabular-nums ring-1 ring-current/22 ring-inset",
           )}
         >
-          {restartSeconds !== null ? m(msg("{seconds}s", { seconds: restartSeconds })) : icon}
+          {ringProgress !== null ? (
+            <svg
+              aria-hidden="true"
+              className="pointer-events-none absolute inset-0.5 size-7 -rotate-90"
+              data-slot="update-capsule-ring"
+              viewBox="0 0 28 28"
+            >
+              <circle
+                cx="14"
+                cy="14"
+                r="11.5"
+                fill="none"
+                stroke="currentColor"
+                strokeOpacity="0.16"
+                strokeWidth="1.75"
+              />
+              <circle
+                cx="14"
+                cy="14"
+                r="11.5"
+                fill="none"
+                stroke="currentColor"
+                strokeDasharray="72.26"
+                strokeDashoffset={String(Number((72.26 * (1 - ringProgress)).toFixed(2)))}
+                strokeLinecap="round"
+                strokeWidth="1.75"
+                className="transition-[stroke-dashoffset] duration-240 ease-(--spring-snappy) motion-reduce:transition-none"
+              />
+            </svg>
+          ) : null}
+          {restartSeconds !== null ? (
+            <AnimatedNumber
+              value={restartSeconds}
+              format={(seconds) => m(msg("{seconds}s", { seconds }))}
+            />
+          ) : (
+            icon
+          )}
         </span>
       </div>
       <PopoverPopup side="top" align="end" padding="compact" width="sm">

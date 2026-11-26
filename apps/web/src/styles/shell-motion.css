@@ -1,0 +1,1152 @@
+/* ==========================================================================
+   Stage 3 Lane 3A — App Shell, Navigation, Sidebar & Settings Motion Stylesheet
+   Reserved modular stylesheet pre-imported by index.css for conflict-free
+   parallel Stage 3 edits.
+   ========================================================================== */
+
+/* ==========================================================================
+   D24 / C079: Workflows Living Execution Spine, Parallel Branch Tracks,
+   Amber Decision Halo, and Resizable Spring WorkflowPane
+   ========================================================================== */
+
+@keyframes workflow-spine-pulse-travel {
+  0% {
+    opacity: 0;
+    transform: translate3d(0, -100%, 0);
+  }
+  18% {
+    opacity: 0.95;
+  }
+  82% {
+    opacity: 0.95;
+  }
+  100% {
+    opacity: 0;
+    transform: translate3d(0, 260%, 0);
+  }
+}
+
+@keyframes workflow-decision-halo-breathe {
+  0%,
+  100% {
+    opacity: 0.45;
+  }
+  50% {
+    opacity: 0.9;
+  }
+}
+
+@keyframes workflow-pane-enter {
+  from {
+    opacity: 0;
+    transform: translate3d(14px, 0, 0);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+@keyframes workflow-detail-enter {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 6px, 0);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+@keyframes workflow-beat-arrive {
+  from {
+    opacity: 0;
+    transform: translate3d(-6px, 4px, 0);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+[data-workflow-spine-rail] {
+  overflow: hidden;
+}
+
+[data-workflow-spine-pulse] {
+  position: absolute;
+  inset-inline: -0.5px;
+  top: 0;
+  height: 44%;
+  min-height: 16px;
+  border-radius: 9999px;
+  pointer-events: none;
+  background: linear-gradient(
+    to bottom,
+    transparent 0%,
+    color-mix(in oklch, var(--info) 85%, white) 52%,
+    transparent 100%
+  );
+  opacity: 0;
+  will-change: var(--visible-animation-will-change, auto);
+  animation: workflow-spine-pulse-travel 1.65s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+  animation-play-state: var(--visible-animation-state, paused);
+}
+
+[data-workflow-spine-pulse="input"] {
+  background: linear-gradient(
+    to bottom,
+    transparent 0%,
+    color-mix(in oklch, var(--warning) 90%, white) 52%,
+    transparent 100%
+  );
+}
+
+[data-workflow-mark-glow] {
+  position: absolute;
+  inset: -2px;
+  border-radius: 9999px;
+  pointer-events: none;
+  border: 1.5px solid color-mix(in oklch, var(--info) 55%, transparent);
+  will-change: var(--visible-animation-will-change, auto);
+  animation: workflow-decision-halo-breathe 2.1s ease-in-out infinite;
+  animation-play-state: var(--visible-animation-state, paused);
+}
+
+[data-workflow-mark-glow="input"] {
+  border-color: color-mix(in oklch, var(--warning) 65%, transparent);
+}
+
+[data-workflow-parallel-tracks="true"] {
+  position: relative;
+}
+
+[data-workflow-parallel-tracks="true"]::before {
+  content: "";
+  position: absolute;
+  inset-block: 10px;
+  inset-inline-start: 10px;
+  width: 1px;
+  border-radius: 9999px;
+  background: color-mix(in oklch, var(--border) 78%, transparent);
+  pointer-events: none;
+}
+
+[data-workflow-parallel-tracks="true"][data-workflow-parallel-active="true"]::before {
+  background: color-mix(in oklch, var(--info) 45%, var(--border));
+}
+
+[data-workflow-decision-card="true"] {
+  position: relative;
+  box-shadow:
+    0 0 0 1px color-mix(in oklch, var(--warning) 32%, transparent),
+    0 6px 20px -10px color-mix(in oklch, var(--warning) 35%, transparent),
+    inset 0 1px 0 color-mix(in oklch, var(--warning) 28%, white);
+}
+
+[data-workflow-decision-card="true"]::before {
+  content: "";
+  position: absolute;
+  inset: -1px;
+  border-radius: inherit;
+  pointer-events: none;
+  box-shadow: 0 0 0 2px color-mix(in oklch, var(--warning) 24%, transparent);
+  animation: workflow-decision-halo-breathe 2.4s ease-in-out infinite;
+  animation-play-state: var(--visible-animation-state, paused);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  [data-workflow-beat-enter="true"] {
+    animation: workflow-beat-arrive var(--duration-snappy) var(--spring-snappy) both;
+  }
+
+  [data-workflow-detail-enter="true"] {
+    animation: workflow-detail-enter var(--duration-micro) var(--ease-out-expo) both;
+  }
+
+  [data-workflow-pane-aside="true"] {
+    animation: workflow-pane-enter var(--duration-fluid) var(--spring-spatial) both;
+  }
+
+  @starting-style {
+    [data-workflow-beat-enter="true"] {
+      opacity: 0;
+      transform: translate3d(-6px, 4px, 0);
+    }
+  }
+}
+
+[data-workflow-run-item="true"] {
+  position: relative;
+}
+
+[data-workflow-run-item="true"]::before {
+  content: "";
+  position: absolute;
+  inset-inline-start: 0;
+  inset-block: 6px;
+  width: 2.5px;
+  border-radius: 9999px;
+  background-color: var(--primary);
+  opacity: 0;
+  transform: scaleY(0.45);
+  transition:
+    opacity var(--duration-micro) ease-out,
+    transform var(--duration-snappy) var(--spring-snappy);
+}
+
+[data-workflow-run-item="true"][data-current="true"]::before {
+  opacity: 1;
+  transform: scaleY(1);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-workflow-spine-pulse],
+  [data-workflow-mark-glow],
+  [data-workflow-decision-card="true"]::before {
+    animation: none;
+    opacity: 0;
+  }
+
+  [data-workflow-beat-enter="true"],
+  [data-workflow-detail-enter="true"],
+  [data-workflow-pane-aside="true"] {
+    animation: none;
+  }
+
+  [data-workflow-run-item="true"]::before {
+    transition: none;
+  }
+}
+
+/* ==========================================================================
+   D27 / C089: Spotlight CommandPalette — 0ms Open Latency, 150ms Soft Exit,
+   Directional Push/Pop Subviews & Back Breadcrumb Pill
+   ========================================================================== */
+
+[data-slot="command-dialog-backdrop"] {
+  transition-duration: 0ms;
+}
+
+[data-slot="command-dialog-backdrop"][data-starting-style] {
+  opacity: 1;
+}
+
+[data-slot="command-dialog-backdrop"][data-ending-style] {
+  transition-duration: 150ms;
+  transition-timing-function: var(--ease-exit, ease-out);
+  opacity: 0;
+}
+
+/* High-frequency Spotlight command palette opens in 0ms (zero opening lag/scale),
+   keeping only a crisp 150ms exit fade & smooth width transition for wide content search. */
+[data-slot="command-dialog-popup"] {
+  transition:
+    opacity 0ms,
+    scale 0ms,
+    translate 0ms,
+    max-width 200ms var(--spring-snappy);
+}
+
+[data-slot="command-dialog-popup"][data-starting-style] {
+  opacity: 1;
+  scale: 1;
+  translate: 0 0;
+}
+
+[data-slot="command-dialog-popup"][data-ending-style] {
+  transition:
+    opacity 150ms var(--ease-exit, ease-out),
+    scale 150ms var(--ease-exit, ease-out),
+    translate 150ms var(--ease-exit, ease-out);
+  opacity: 0;
+  scale: 0.97;
+  translate: 0 6px;
+}
+
+@keyframes command-subview-push {
+  from {
+    opacity: 0;
+    transform: translate3d(18px, 0, 0);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+@keyframes command-subview-pop {
+  from {
+    opacity: 0;
+    transform: translate3d(-18px, 0, 0);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+@keyframes command-breadcrumb-enter {
+  from {
+    opacity: 0;
+    transform: translate3d(-6px, 0, 0);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  [data-command-view-transition="push"] {
+    animation: command-subview-push var(--duration-snappy) var(--spring-snappy) both;
+  }
+
+  [data-command-view-transition="pop"] {
+    animation: command-subview-pop var(--duration-snappy) var(--spring-snappy) both;
+  }
+
+  [data-slot="command-breadcrumb-pill"] {
+    animation: command-breadcrumb-enter var(--duration-micro) var(--spring-snappy) both;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-slot="command-dialog-backdrop"],
+  [data-slot="command-dialog-popup"],
+  [data-slot="command-dialog-popup"][data-ending-style] {
+    transition: none;
+  }
+
+  [data-command-view-transition="push"],
+  [data-command-view-transition="pop"],
+  [data-slot="command-breadcrumb-pill"] {
+    animation: none;
+  }
+}
+
+/* ==========================================================================
+   D27 / C090: 120fps Virtualized Magnetic Highlight Rail & 2px Luminous Edge
+   ========================================================================== */
+
+[data-slot="command-magnetic-rail"] {
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 0;
+  pointer-events: none;
+  border-radius: var(--radius-concentric-dialog-inner);
+  background-color: var(--accent);
+  opacity: 0;
+  will-change: transform;
+}
+
+[data-slot="command-magnetic-rail"]::before {
+  content: "";
+  position: absolute;
+  inset-inline-start: 0;
+  inset-block: 5px;
+  width: 2px;
+  border-radius: 9999px;
+  background-color: var(--primary);
+  box-shadow: 0 0 8px color-mix(in oklch, var(--primary) 55%, transparent);
+}
+
+[data-command-magnetic-ready="true"] [data-slot="command-item"] {
+  position: relative;
+  z-index: 1;
+}
+
+[data-command-magnetic-ready="true"]
+  [data-slot="command-item"]:is([data-active="true"], [data-highlighted]) {
+  background-color: transparent !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-slot="command-magnetic-rail"] {
+    transition: none;
+  }
+}
+
+/* ==========================================================================
+   D27 / C091: Contextual Inspector Footer & Translucent Drag-Pickup Ghost
+   ========================================================================== */
+
+html[data-palette-dragging="true"] [data-slot="command-dialog-popup"] {
+  opacity: 0.22;
+  scale: 0.97;
+  transition:
+    opacity 150ms var(--spring-snappy),
+    scale 150ms var(--spring-snappy);
+}
+
+html[data-palette-dragging="true"] [data-slot="command-dialog-backdrop"] {
+  opacity: 0.16;
+  transition: opacity 150ms ease-out;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  html[data-palette-dragging="true"] [data-slot="thread-context-drag-ghost"] .drag-flight-card {
+    transform: rotate(-1.5deg) scale(1.02);
+    transition: transform 180ms var(--spring-snappy);
+  }
+}
+
+html[data-palette-dragging="true"] [data-slot="thread-context-drag-ghost"] .drag-flight-card > div {
+  box-shadow:
+    0 0 0 1px color-mix(in oklch, var(--primary) 26%, var(--border)),
+    0 14px 32px -12px rgb(0 0 0 / 32%),
+    inset 0 1px 0 rgb(255 255 255 / 32%);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html[data-palette-dragging="true"] [data-slot="command-dialog-popup"],
+  html[data-palette-dragging="true"] [data-slot="command-dialog-backdrop"] {
+    transition: none;
+  }
+}
+
+/* ==========================================================================
+   D28 / C092: Tip 016 In-Place Toast Capsule Morph, 900ms Completion Sheen
+   & 3-Layer Sonner Depth Stack
+   ========================================================================== */
+
+@keyframes toast-icon-morph-in {
+  from {
+    opacity: 0;
+    transform: rotate(-40deg) scale(0.5);
+  }
+  to {
+    opacity: 1;
+    transform: rotate(0deg) scale(1);
+  }
+}
+
+@keyframes toast-completion-sheen-sweep {
+  0% {
+    opacity: 0;
+    transform: translate3d(-145%, 0, 0) skewX(-22deg);
+  }
+  16% {
+    opacity: 1;
+  }
+  84% {
+    opacity: 0.9;
+  }
+  100% {
+    opacity: 0;
+    transform: translate3d(245%, 0, 0) skewX(-22deg);
+  }
+}
+
+[data-slot="toast-root"] {
+  transition:
+    transform 380ms var(--spring-spatial),
+    opacity 240ms ease-out,
+    box-shadow 260ms ease-out,
+    filter 260ms ease-out,
+    height 200ms var(--spring-snappy);
+  box-shadow:
+    0 18px 36px -14px rgb(0 0 0 / 32%),
+    0 4px 12px -4px rgb(0 0 0 / 16%),
+    inset 0 1px 0 rgb(255 255 255 / 26%);
+}
+
+.dark [data-slot="toast-root"] {
+  box-shadow:
+    0 20px 40px -14px rgb(0 0 0 / 62%),
+    0 6px 16px -6px rgb(0 0 0 / 36%),
+    inset 0 1px 0 rgb(255 255 255 / 11%);
+}
+
+[data-slot="toast-root"][data-toast-layer="1"]:not([data-expanded]) {
+  filter: brightness(0.97);
+  box-shadow:
+    0 12px 24px -14px rgb(0 0 0 / 24%),
+    0 2px 6px -2px rgb(0 0 0 / 12%),
+    inset 0 1px 0 rgb(255 255 255 / 18%);
+}
+
+[data-slot="toast-root"][data-toast-layer="2"]:not([data-expanded]) {
+  filter: brightness(0.94);
+  box-shadow:
+    0 8px 16px -12px rgb(0 0 0 / 18%),
+    inset 0 1px 0 rgb(255 255 255 / 12%);
+}
+
+[data-slot="toast-root"][data-toast-layer="3"]:not([data-expanded]) {
+  opacity: 0;
+  pointer-events: none;
+}
+
+[data-slot="toast-root"][data-expanded] {
+  filter: none;
+}
+
+[data-slot="toast-completion-sheen"]::after {
+  content: "";
+  position: absolute;
+  inset-block: -20%;
+  inset-inline-start: 0;
+  width: 48%;
+  pointer-events: none;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    color-mix(in oklch, var(--success) 24%, rgb(255 255 255 / 38%)) 50%,
+    transparent 100%
+  );
+  opacity: 0;
+}
+
+[data-slot="toast-completion-sheen"][data-toast-sheen-type="error"]::after {
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    color-mix(in oklch, var(--destructive) 22%, rgb(255 255 255 / 32%)) 50%,
+    transparent 100%
+  );
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  [data-slot="toast-icon"][data-toast-icon-state]:not([data-toast-icon-state="loading"]):not(
+      [data-toast-icon-state="default"]
+    )
+    > svg {
+    animation: toast-icon-morph-in 240ms var(--spring-snappy) both;
+  }
+
+  [data-slot="toast-completion-sheen"]::after {
+    animation: toast-completion-sheen-sweep 900ms cubic-bezier(0.22, 1, 0.36, 1) 1 forwards;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-slot="toast-root"] {
+    transition: opacity 150ms ease-out;
+  }
+
+  [data-slot="toast-icon"] > svg,
+  [data-slot="toast-completion-sheen"]::after {
+    animation: none;
+  }
+}
+
+/* ==========================================================================
+   D28 / C093: Pauseable 2px Countdown Hairline, Velocity-Tilted Swipe Dismiss
+   & Directional AnchoredToast Micro-Pills
+   ========================================================================== */
+
+@keyframes toast-countdown-drain {
+  from {
+    transform: scaleX(1);
+  }
+  to {
+    transform: scaleX(0);
+  }
+}
+
+@keyframes toast-micro-check-draw {
+  from {
+    stroke-dashoffset: 18;
+    opacity: 0.35;
+  }
+  to {
+    stroke-dashoffset: 0;
+    opacity: 1;
+  }
+}
+
+[data-slot="toast-root"][data-swiping] {
+  transition: none;
+}
+
+[data-slot="toast-countdown"] {
+  position: absolute;
+  inset-inline: 0;
+  bottom: 0;
+  height: 2px;
+  overflow: hidden;
+  border-radius: 0 0 inherit inherit;
+  pointer-events: none;
+}
+
+[data-slot="toast-countdown"]::after {
+  content: "";
+  display: block;
+  width: 100%;
+  height: 100%;
+  transform-origin: left center;
+  background-color: color-mix(in oklch, var(--primary) 68%, transparent);
+  animation: toast-countdown-drain var(--toast-countdown-duration, 5000ms) linear 1 forwards;
+  animation-play-state: running;
+}
+
+[data-slot="toast-countdown"][data-toast-countdown-type="success"]::after {
+  background-color: color-mix(in oklch, var(--success) 75%, transparent);
+}
+
+[data-slot="toast-countdown"][data-toast-countdown-type="error"]::after {
+  background-color: color-mix(in oklch, var(--destructive) 78%, transparent);
+}
+
+[data-slot="toast-countdown"][data-toast-countdown-type="warning"]::after {
+  background-color: color-mix(in oklch, var(--warning) 78%, transparent);
+}
+
+[data-slot="toast-countdown"][data-toast-countdown-type="info"]::after {
+  background-color: color-mix(in oklch, var(--info) 75%, transparent);
+}
+
+[data-slot="toast-viewport"]:hover [data-slot="toast-countdown"]::after,
+[data-slot="toast-viewport"]:focus-within [data-slot="toast-countdown"]::after,
+[data-slot="toast-root"][data-expanded] [data-slot="toast-countdown"]::after,
+[data-slot="toast-root"][data-swiping] [data-slot="toast-countdown"]::after,
+[data-slot="toast-countdown"][data-toast-paused="true"]::after {
+  animation-play-state: paused;
+}
+
+[data-slot="toast-popup"] {
+  transition:
+    transform 190ms var(--spring-snappy),
+    opacity 150ms ease-out;
+}
+
+[data-slot="toast-popup"][data-starting-style] {
+  opacity: 0;
+  transform: scale(0.94);
+}
+
+[data-slot="toast-positioner"][data-side="top"] [data-slot="toast-popup"][data-starting-style] {
+  transform: translate3d(0, 5px, 0) scale(0.94);
+}
+
+[data-slot="toast-positioner"][data-side="bottom"] [data-slot="toast-popup"][data-starting-style] {
+  transform: translate3d(0, -5px, 0) scale(0.94);
+}
+
+[data-slot="toast-positioner"][data-side="left"] [data-slot="toast-popup"][data-starting-style] {
+  transform: translate3d(5px, 0, 0) scale(0.94);
+}
+
+[data-slot="toast-positioner"][data-side="right"] [data-slot="toast-popup"][data-starting-style] {
+  transform: translate3d(-5px, 0, 0) scale(0.94);
+}
+
+[data-slot="toast-popup"][data-ending-style] {
+  opacity: 0;
+  transform: scale(0.96);
+  transition:
+    transform 120ms var(--ease-exit, ease-out),
+    opacity 120ms var(--ease-exit, ease-out);
+}
+
+[data-slot="toast-micro-check"] path {
+  stroke-dasharray: 18;
+  stroke-dashoffset: 0;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  [data-slot="toast-micro-check"] path {
+    animation: toast-micro-check-draw 260ms var(--ease-out-expo) both;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-slot="toast-countdown"]::after,
+  [data-slot="toast-micro-check"] path {
+    animation: none;
+  }
+
+  [data-slot="toast-popup"],
+  [data-slot="toast-popup"][data-ending-style] {
+    transition: opacity 150ms ease-out;
+    transform: none;
+  }
+}
+
+/* ==========================================================================
+   D29 / C094: GPU-Composited Sidebar Collapse, 256px Magnetic Snap Detent,
+   FLIP Active-Thread Rail & Tip 008 Dynamic Scroll-Edge Fade
+   ========================================================================== */
+
+[data-slot="sidebar-container"] {
+  transform: translate3d(0, 0, 0);
+  will-change: transform;
+}
+
+[data-slot="sidebar"][data-side="left"][data-collapsible="offcanvas"]
+  [data-slot="sidebar-container"] {
+  transform: translate3d(-100%, 0, 0);
+}
+
+[data-slot="sidebar"][data-side="right"][data-collapsible="offcanvas"]
+  [data-slot="sidebar-container"] {
+  transform: translate3d(100%, 0, 0);
+}
+
+[data-panel-animations="true"] [data-slot="sidebar-container"] {
+  transition:
+    transform var(--panel-animation-duration, 240ms) var(--spring-spatial),
+    width var(--panel-animation-duration, 240ms) var(--spring-spatial);
+}
+
+[data-slot="sidebar-rail"][data-snapped="true"]::after {
+  background-color: var(--primary);
+  box-shadow: 0 0 10px color-mix(in oklch, var(--primary) 65%, transparent);
+}
+
+[data-slot="sidebar-active-rail"] {
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 2;
+  pointer-events: none;
+  opacity: 0;
+  will-change: transform;
+}
+
+[data-slot="sidebar-active-rail"]::before {
+  content: "";
+  position: absolute;
+  inset-inline-start: 0;
+  inset-block: 6px;
+  width: 2.5px;
+  border-radius: 9999px;
+  background-color: var(--primary);
+  box-shadow: 0 0 8px color-mix(in oklch, var(--primary) 55%, transparent);
+}
+
+[data-slot="sidebar-scroll-area"]::before,
+[data-slot="sidebar-scroll-area"]::after {
+  content: "";
+  position: absolute;
+  inset-inline: 0;
+  z-index: 4;
+  height: 14px;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 160ms ease-out;
+}
+
+[data-slot="sidebar-scroll-area"]::before {
+  top: 0;
+  background: linear-gradient(
+    to bottom,
+    color-mix(in oklch, var(--sidebar) 90%, transparent) 0%,
+    transparent 100%
+  );
+  border-top: 1px solid color-mix(in oklch, var(--sidebar-border) 55%, transparent);
+}
+
+[data-slot="sidebar-scroll-area"]::after {
+  bottom: 0;
+  background: linear-gradient(
+    to top,
+    color-mix(in oklch, var(--sidebar) 90%, transparent) 0%,
+    transparent 100%
+  );
+  border-bottom: 1px solid color-mix(in oklch, var(--sidebar-border) 55%, transparent);
+}
+
+[data-slot="sidebar-scroll-area"][data-more-above="true"]::before,
+[data-slot="sidebar-scroll-area"][data-more-below="true"]::after {
+  opacity: 1;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-panel-animations="true"] [data-slot="sidebar-container"],
+  [data-slot="sidebar-scroll-area"]::before,
+  [data-slot="sidebar-scroll-area"]::after {
+    transition: none;
+  }
+}
+
+/* ==========================================================================
+   D29 / C095: Linux Elastic History Navigation Edge Pulse & SidebarChrome
+   Fluid Islands (UpdateCapsule, UndoNotice, WorkspaceBreadcrumb)
+   ========================================================================== */
+
+@keyframes history-edge-pulse-in {
+  0% {
+    opacity: 0;
+    scale: 0.88;
+  }
+  40% {
+    opacity: 1;
+    scale: 1;
+  }
+  100% {
+    opacity: 0.86;
+    scale: 0.98;
+  }
+}
+
+@keyframes sidebar-undo-countdown-drain {
+  from {
+    transform: scaleX(1);
+  }
+  to {
+    transform: scaleX(0);
+  }
+}
+
+@keyframes workspace-breadcrumb-arrive {
+  from {
+    opacity: 0;
+    transform: translate3d(4px, 0, 0);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+[data-slot="history-swipe-orb"] {
+  box-shadow:
+    0 12px 28px -10px rgb(0 0 0 / 34%),
+    inset 0 1px 0 rgb(255 255 255 / 26%);
+}
+
+[data-slot="sidebar-undo-countdown"] {
+  position: absolute;
+  inset-inline: 0;
+  bottom: 0;
+  height: 1.5px;
+  border-radius: 9999px;
+  background-color: color-mix(in oklch, var(--primary) 55%, transparent);
+  transform-origin: left center;
+  pointer-events: none;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  [data-slot="history-swipe-orb"][data-history-edge-pulse] {
+    animation: history-edge-pulse-in 210ms var(--spring-snappy) both;
+  }
+
+  [data-slot="sidebar-undo-countdown"] {
+    animation: sidebar-undo-countdown-drain 5000ms linear 1 forwards;
+  }
+
+  [data-slot="workspace-breadcrumb-text"] {
+    animation: workspace-breadcrumb-arrive 170ms var(--ease-out-expo) both;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-slot="history-swipe-orb"][data-history-edge-pulse],
+  [data-slot="sidebar-undo-countdown"],
+  [data-slot="workspace-breadcrumb-text"] {
+    animation: none;
+  }
+}
+
+/* ==========================================================================
+   D32 / C105: WelcomePage Editorial Hero, T3Wordmark Geometric Reveal,
+   Live Readiness Cards & Luminous Start CTA
+   ========================================================================== */
+
+@keyframes welcome-hero-rise {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 10px, 0);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+@keyframes wordmark-stem-reveal {
+  from {
+    opacity: 0;
+    transform: translate3d(-4px, 6px, 0) scale(0.92);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+}
+
+@keyframes wordmark-spark-reveal {
+  from {
+    opacity: 0;
+    transform: scale(0.3) rotate(-45deg);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) rotate(0deg);
+  }
+}
+
+@keyframes welcome-scanning-sweep {
+  0% {
+    transform: translate3d(-100%, 0, 0);
+  }
+  100% {
+    transform: translate3d(200%, 0, 0);
+  }
+}
+
+@keyframes welcome-scanning-breathe {
+  0%,
+  100% {
+    opacity: 0.55;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+@keyframes welcome-ready-pop {
+  from {
+    opacity: 0;
+    transform: scale(0.86);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes welcome-cta-bloom {
+  0% {
+    box-shadow: 0 0 0 0 color-mix(in oklch, var(--primary) 52%, transparent);
+  }
+  45% {
+    box-shadow:
+      0 0 0 5px color-mix(in oklch, var(--primary) 16%, transparent),
+      0 10px 24px -10px color-mix(in oklch, var(--primary) 48%, transparent);
+  }
+  100% {
+    box-shadow:
+      0 0 0 0 transparent,
+      0 6px 18px -10px color-mix(in oklch, var(--primary) 34%, transparent);
+  }
+}
+
+[data-welcome-hero="emblem"] {
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 22%);
+}
+
+.dark [data-welcome-hero="emblem"] {
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 9%);
+}
+
+[data-slot="welcome-section-card"] {
+  box-shadow:
+    0 12px 28px -22px rgb(0 0 0 / 28%),
+    inset 0 1px 0 rgb(255 255 255 / 20%);
+}
+
+.dark [data-slot="welcome-section-card"] {
+  box-shadow:
+    0 14px 32px -22px rgb(0 0 0 / 65%),
+    inset 0 1px 0 rgb(255 255 255 / 8%);
+}
+
+[data-welcome-scanning="true"]::after {
+  content: "";
+  position: absolute;
+  inset-inline-start: 0;
+  bottom: 2px;
+  height: 1.5px;
+  width: 45%;
+  border-radius: 9999px;
+  pointer-events: none;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    color-mix(in oklch, var(--primary) 65%, transparent) 50%,
+    transparent 100%
+  );
+  will-change: var(--visible-animation-will-change, auto);
+  animation: welcome-scanning-sweep 1.5s ease-in-out infinite;
+  animation-play-state: var(--visible-animation-state, paused);
+}
+
+[data-welcome-scanning-pill="true"] {
+  will-change: var(--visible-animation-will-change, auto);
+  animation: welcome-scanning-breathe 1.6s ease-in-out infinite;
+  animation-play-state: var(--visible-animation-state, paused);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  [data-wordmark-animated="true"] [data-wordmark-part="stem"] {
+    transform-box: fill-box;
+    transform-origin: center;
+    animation: wordmark-stem-reveal 360ms var(--spring-snappy) both;
+  }
+
+  [data-wordmark-animated="true"] [data-wordmark-part="leg"] {
+    transform-box: fill-box;
+    transform-origin: left top;
+    animation: wordmark-stem-reveal 360ms var(--spring-snappy) 85ms both;
+  }
+
+  [data-wordmark-animated="true"] [data-wordmark-part="spark"] {
+    transform-box: fill-box;
+    transform-origin: center;
+    animation: wordmark-spark-reveal 380ms var(--spring-snappy) 170ms both;
+  }
+
+  [data-welcome-hero="emblem"] {
+    animation: welcome-hero-rise 320ms var(--spring-snappy) both;
+  }
+
+  [data-welcome-hero="title"] {
+    animation: welcome-hero-rise 340ms var(--spring-snappy) 60ms both;
+  }
+
+  [data-welcome-hero="subtitle"] {
+    animation: welcome-hero-rise 340ms var(--spring-snappy) 110ms both;
+  }
+
+  [data-welcome-hero="cards"] {
+    animation: welcome-hero-rise 380ms var(--spring-spatial) 150ms both;
+  }
+
+  [data-welcome-hero="footer"] {
+    animation: welcome-hero-rise 340ms var(--spring-snappy) 200ms both;
+  }
+
+  [data-welcome-agent-ready="true"] {
+    animation: welcome-ready-pop 240ms var(--spring-snappy) both;
+  }
+
+  [data-slot="welcome-start-cta"][data-ready="true"] {
+    animation: welcome-cta-bloom 680ms var(--spring-snappy) 1 forwards;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-welcome-scanning="true"]::after,
+  [data-welcome-scanning-pill="true"],
+  [data-wordmark-animated="true"] [data-wordmark-part],
+  [data-welcome-hero],
+  [data-welcome-agent-ready="true"],
+  [data-slot="welcome-start-cta"][data-ready="true"] {
+    animation: none;
+  }
+
+  [data-welcome-scanning="true"]::after {
+    opacity: 0;
+  }
+}
+
+/* ==========================================================================
+   D32 / C106: FirstRunGate 180ms-Delayed Breathing Loader & Welcome-to-
+   Workspace View Transition Handoff
+   ========================================================================== */
+
+@keyframes first-run-loader-appear {
+  from {
+    opacity: 0;
+    transform: scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes first-run-loader-breathe {
+  0%,
+  100% {
+    opacity: 0.72;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.03);
+  }
+}
+
+@keyframes spatial-route-old-recede {
+  from {
+    opacity: 1;
+    transform: scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: scale(0.985);
+  }
+}
+
+@keyframes spatial-route-new-reveal {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 8px, 0) scale(0.992);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+}
+
+/* Pure-CSS 180ms delay prevents flash on fast hydrated startups (zero JS timer). */
+[data-slot="first-run-loader"] {
+  opacity: 0;
+  animation: first-run-loader-appear 220ms var(--ease-out-expo) 180ms forwards;
+}
+
+[data-slot="first-run-loader-mark"] {
+  will-change: var(--visible-animation-will-change, auto);
+  animation: first-run-loader-breathe 2.2s ease-in-out 420ms infinite;
+  animation-play-state: var(--visible-animation-state, paused);
+}
+
+:root[data-spatial-route-transition="welcome-to-workspace"]::view-transition-old(root) {
+  animation: spatial-route-old-recede 200ms var(--ease-exit, ease-out) both;
+}
+
+:root[data-spatial-route-transition="welcome-to-workspace"]::view-transition-new(root) {
+  animation: spatial-route-new-reveal 340ms var(--spring-spatial) both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-slot="first-run-loader"] {
+    opacity: 1;
+    animation: none;
+  }
+
+  [data-slot="first-run-loader-mark"],
+  :root[data-spatial-route-transition="welcome-to-workspace"]::view-transition-old(root),
+  :root[data-spatial-route-transition="welcome-to-workspace"]::view-transition-new(root) {
+    animation: none;
+  }
+}
+
+/* ==========================================================================
+   D32 / C107: Unified Specular Kinetic Hero Canvas
+   (NoProjectsHero, 404, Error & DraftStartError)
+   ========================================================================== */
+
+@keyframes hero-card-settle {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 10px, 0) scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+}
+
+[data-slot="standalone-page-card"]:has([data-slot="standalone-page-header"][data-tone="error"]) {
+  border-color: color-mix(in oklch, var(--destructive) 30%, var(--border));
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  [data-slot="specular-hero-card"],
+  [data-slot="standalone-page-card"] {
+    animation: hero-card-settle 340ms var(--spring-spatial) both;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-slot="specular-hero-card"],
+  [data-slot="standalone-page-card"] {
+    animation: none;
+  }
+}

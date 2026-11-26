@@ -8,7 +8,7 @@ import { cn } from "~/lib/utils";
 const contextChipVariants = cva(
   "inline-flex max-w-full items-center gap-[0.2em] font-medium leading-[normal] text-(--context-chip-ink) [--context-chip-ink:var(--context-chip-message-ink,var(--context-chip-accent))] [--document-icon-stroke:var(--context-chip-ink)] [&_svg]:block [&_svg]:size-[1em] [&_svg]:shrink-0 [&_svg]:self-center [button&,a&,[data-popup-open]&]:cursor-pointer focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-current rounded-sm disabled:cursor-default",
   {
-    defaultVariants: { kind: "neutral" },
+    defaultVariants: { kind: "neutral", shape: "inline" },
     variants: {
       kind: {
         neutral: "[--context-chip-accent:currentColor]",
@@ -59,10 +59,18 @@ interface ContextChipProps extends useRender.ComponentProps<"span"> {
   shape?: "inline" | "bubble";
 }
 
-function ContextChip({ className, kind, state, shape, render, ...props }: ContextChipProps) {
+function ContextChip({
+  className,
+  kind,
+  state,
+  shape = "inline",
+  render,
+  ...props
+}: ContextChipProps) {
   const defaultProps = {
     className: cn(contextChipVariants({ kind, state, shape }), className),
     "data-slot": "context-chip",
+    "data-shape": shape,
     "data-state": state,
   };
   return useRender({

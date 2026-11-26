@@ -39,6 +39,7 @@ export interface ContextMenuItem<T extends string = string> {
 
 export type QuitShortcutHintEvent =
   | { readonly state: "down"; readonly mode: Exclude<QuitConfirmationMode, "direct"> }
+  | { readonly state: "committing" }
   | { readonly state: "up" };
 
 export interface ContextMenuItemSchemaType {
@@ -184,6 +185,35 @@ export const DesktopCaptureConfigApplied = Schema.Struct({
 });
 export type DesktopCaptureConfigApplied = typeof DesktopCaptureConfigApplied.Type;
 
+const LinuxSnapShotCapabilityTierSchema = Schema.Literals([1, 2, 3, 4]);
+
+const LinuxSnapShotCoordinateSpaceSchema = Schema.Literals([
+  "global-dip",
+  "compositor-logical",
+  "window-local",
+  "unknown",
+]);
+
+const LinuxSnapShotTelemetrySchema = Schema.Struct({
+  tier: LinuxSnapShotCapabilityTierSchema,
+  coordinateSpace: LinuxSnapShotCoordinateSpaceSchema,
+  helperAvailable: Schema.Boolean,
+  backend: Schema.optionalKey(
+    Schema.Literals([
+      "screenshot-portal",
+      "gnome-extension",
+      "niri",
+      "kde",
+      "hyprland",
+      "picker",
+      "x11",
+    ]),
+  ),
+  sourceScaleFactor: Schema.optionalKey(Schema.Finite.check(Schema.isGreaterThan(0))),
+  targetScaleFactor: Schema.optionalKey(Schema.Finite.check(Schema.isGreaterThan(0))),
+});
+export type LinuxSnapShotTelemetry = typeof LinuxSnapShotTelemetrySchema.Type;
+
 export const DesktopSnapShotState = Schema.Struct({
   mode: DesktopSnapShotMode,
   windows: Schema.optional(Schema.Boolean),
@@ -192,6 +222,8 @@ export const DesktopSnapShotState = Schema.Struct({
     Schema.Literals(["screenshot-portal", "gnome-extension", "niri", "kde", "hyprland", "picker"]),
   ),
   linuxFeedbackAvailable: Schema.optional(Schema.Boolean),
+  linuxCaptureTier: Schema.optionalKey(LinuxSnapShotCapabilityTierSchema),
+  linuxCaptureTelemetry: Schema.optionalKey(LinuxSnapShotTelemetrySchema),
   shortcut: SnapShotShortcut,
   shortcutRegistered: Schema.Boolean,
   shortcutPending: Schema.optional(Schema.Boolean),
@@ -227,8 +259,16 @@ export type DesktopSnapShotId = typeof DesktopSnapShotId.Type;
 /** `id` is absent for failures before a capture exists. */
 export const DesktopSnapShotEvent = Schema.Union([
   Schema.Struct({ type: Schema.Literal("requested"), id: DesktopSnapShotId }),
-  Schema.Struct({ type: Schema.Literal("started"), id: DesktopSnapShotId }),
-  Schema.Struct({ type: Schema.Literal("ready"), id: DesktopSnapShotId }),
+  Schema.Struct({
+    type: Schema.Literal("started"),
+    id: DesktopSnapShotId,
+    linuxCaptureTelemetry: Schema.optionalKey(LinuxSnapShotTelemetrySchema),
+  }),
+  Schema.Struct({
+    type: Schema.Literal("ready"),
+    id: DesktopSnapShotId,
+    linuxCaptureTelemetry: Schema.optionalKey(LinuxSnapShotTelemetrySchema),
+  }),
   Schema.Struct({ type: Schema.Literal("failed"), id: Schema.optional(DesktopSnapShotId) }),
   Schema.Struct({ type: Schema.Literal("shortcut-changed") }),
 ]);
@@ -1109,6 +1149,121 @@ export const DesktopAppleSpeechTranscribeInputSchema = Schema.Struct({
 export const SystemSettingsPaneSchema = Schema.Literals(["full-disk-access"]);
 export type SystemSettingsPane = typeof SystemSettingsPaneSchema.Type;
 
+export const LinuxWindowStateSchema = Schema.Struct({
+  maximized: Schema.Boolean,
+  fullscreen: Schema.Boolean,
+  linuxDesktop: Schema.optionalKey(Schema.NullOr(Schema.String)),
+  isTilingWm: Schema.optionalKey(Schema.Boolean),
+  hasNativeWco: Schema.optionalKey(Schema.Boolean),
+  overlayHeight: Schema.optionalKey(Schema.Number),
+});
+export type LinuxWindowState = typeof LinuxWindowStateSchema.Type;
+
+export const LinuxWindowControlActionSchema = Schema.Literals([
+  "minimize",
+  "maximize-toggle",
+  "close",
+]);
+export type LinuxWindowControlAction = typeof LinuxWindowControlActionSchema.Type;
+
+const LinuxPortalAccentColorSchema = Schema.Struct({
+  r: Schema.Finite.check(Schema.isGreaterThanOrEqualTo(0), Schema.isLessThanOrEqualTo(1)),
+  g: Schema.Finite.check(Schema.isGreaterThanOrEqualTo(0), Schema.isLessThanOrEqualTo(1)),
+  b: Schema.Finite.check(Schema.isGreaterThanOrEqualTo(0), Schema.isLessThanOrEqualTo(1)),
+});
+export type LinuxPortalAccentColor = typeof LinuxPortalAccentColorSchema.Type;
+
+const LinuxPortalContrastSchema = Schema.Literals(["no-preference", "high"]);
+export type LinuxPortalContrast = typeof LinuxPortalContrastSchema.Type;
+
+export const LinuxPortalAppearanceSchema = Schema.Struct({
+  colorScheme: Schema.optionalKey(Schema.NullOr(Schema.Literals(["dark", "light"]))),
+  accentColor: Schema.optionalKey(Schema.NullOr(LinuxPortalAccentColorSchema)),
+  contrast: Schema.optionalKey(Schema.NullOr(LinuxPortalContrastSchema)),
+});
+export type LinuxPortalAppearance = typeof LinuxPortalAppearanceSchema.Type;
+
+export const DesktopWindowZoomStateSchema = Schema.Struct({
+  zoomFactor: Schema.Finite.check(Schema.isGreaterThan(0)),
+  deviceScaleFactor: Schema.optionalKey(Schema.Finite.check(Schema.isGreaterThan(0))),
+});
+export type DesktopWindowZoomState = typeof DesktopWindowZoomStateSchema.Type;
+
+export const MainWindowZoomDirectionSchema = Schema.Literals(["in", "out", "reset"]);
+export type MainWindowZoomDirection = typeof MainWindowZoomDirectionSchema.Type;
+
+const DesktopTrayAgentStatusSchema = Schema.Literals([
+  "idle",
+  "running",
+  "approval",
+  "completed",
+  "error",
+]);
+export type DesktopTrayAgentStatus = typeof DesktopTrayAgentStatusSchema.Type;
+
+const DesktopTrayThreadItemSchema = Schema.Struct({
+  environmentId: Schema.String.check(
+    Schema.isTrimmed(),
+    Schema.isNonEmpty(),
+    Schema.isMaxLength(128),
+  ),
+  threadId: Schema.String.check(Schema.isTrimmed(), Schema.isNonEmpty(), Schema.isMaxLength(128)),
+  title: Schema.String.check(Schema.isMaxLength(120)),
+  status: DesktopTrayAgentStatusSchema,
+});
+export type DesktopTrayThreadItem = typeof DesktopTrayThreadItemSchema.Type;
+
+export const DesktopTrayStateSchema = Schema.Struct({
+  status: DesktopTrayAgentStatusSchema,
+  runningCount: Schema.optionalKey(
+    Schema.Int.check(Schema.isBetween({ minimum: 0, maximum: 999 })),
+  ),
+  approvalCount: Schema.optionalKey(
+    Schema.Int.check(Schema.isBetween({ minimum: 0, maximum: 999 })),
+  ),
+  unreadCount: Schema.optionalKey(Schema.Int.check(Schema.isBetween({ minimum: 0, maximum: 999 }))),
+  summary: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(160))),
+  threads: Schema.optionalKey(
+    Schema.Array(DesktopTrayThreadItemSchema).check(Schema.isMaxLength(5)),
+  ),
+});
+export type DesktopTrayState = typeof DesktopTrayStateSchema.Type;
+
+const DesktopTaskbarProgressModeSchema = Schema.Literals([
+  "none",
+  "normal",
+  "indeterminate",
+  "error",
+  "paused",
+]);
+export const DesktopTaskbarProgressSchema = Schema.Struct({
+  progress: Schema.Finite.check(Schema.isBetween({ minimum: -1, maximum: 2 })),
+  mode: Schema.optionalKey(DesktopTaskbarProgressModeSchema),
+});
+export type DesktopTaskbarProgress = typeof DesktopTaskbarProgressSchema.Type;
+
+const DesktopAttentionUrgencySchema = Schema.Literals(["normal", "critical"]);
+export const DesktopWindowAttentionSchema = Schema.Struct({
+  urgency: Schema.optionalKey(DesktopAttentionUrgencySchema),
+});
+type DesktopWindowAttention = typeof DesktopWindowAttentionSchema.Type;
+
+export const DesktopNativeNotificationSchema = Schema.Struct({
+  title: Schema.String.check(Schema.isTrimmed(), Schema.isNonEmpty(), Schema.isMaxLength(200)),
+  body: Schema.String.check(Schema.isMaxLength(500)),
+  tag: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(128))),
+  urgency: Schema.optionalKey(DesktopAttentionUrgencySchema),
+  environmentId: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(128))),
+  threadId: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(128))),
+});
+type DesktopNativeNotification = typeof DesktopNativeNotificationSchema.Type;
+
+export const DesktopNativeNotificationTagSchema = Schema.String.check(
+  Schema.isTrimmed(),
+  Schema.isNonEmpty(),
+  Schema.isMaxLength(128),
+);
+
 export interface DesktopBridge {
   getAppBranding: () => DesktopAppBranding | null;
   getDatabaseMigrationProgress?: () => Promise<DatabaseMigrationProgress | null>;
@@ -1217,7 +1372,22 @@ export interface DesktopBridge {
   onQuitShortcut: (listener: (event: QuitShortcutHintEvent) => void) => () => void;
   getWindowFullscreenState: () => boolean;
   onWindowFullscreenStateChange: (listener: (fullscreen: boolean) => void) => () => void;
+  getLinuxWindowState?: () => LinuxWindowState | null;
+  onLinuxWindowStateChange?: (listener: (state: LinuxWindowState) => void) => () => void;
+  performLinuxWindowControlAction?: (action: LinuxWindowControlAction) => Promise<void>;
+  getLinuxPortalAppearance?: () => LinuxPortalAppearance | null;
+  onLinuxPortalAppearanceChange?: (
+    listener: (appearance: LinuxPortalAppearance) => void,
+  ) => () => void;
   getWindowZoomFactor: () => number;
+  getWindowZoomState?: () => DesktopWindowZoomState | null;
+  onWindowZoomStateChange?: (listener: (state: DesktopWindowZoomState) => void) => () => void;
+  setWindowZoom?: (direction: MainWindowZoomDirection) => Promise<void>;
+  setTrayState?: (state: DesktopTrayState) => Promise<void>;
+  setTaskbarProgress?: (input: DesktopTaskbarProgress) => Promise<void>;
+  requestWindowAttention?: (input?: DesktopWindowAttention) => Promise<void>;
+  showNativeNotification?: (input: DesktopNativeNotification) => Promise<boolean>;
+  closeNativeNotification?: (tag: string) => Promise<void>;
   getUpdateState: () => Promise<DesktopUpdateState>;
   /** `minimumVersion` is a track switch's checked release; nothing older is offered after. */
   setUpdateChannel: (

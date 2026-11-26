@@ -69,6 +69,9 @@ class T3ReviewDiffModule : Module() {
       AsyncFunction("scrollToFile") { view: T3ReviewDiffView, fileId: String, animated: Boolean ->
         view.scrollToFile(fileId, animated)
       }
+      AsyncFunction("scrollToHunk") { view: T3ReviewDiffView, direction: Int, animated: Boolean ->
+        view.scrollToHunk(direction, animated)
+      }
       AsyncFunction("scrollToTop") { view: T3ReviewDiffView, animated: Boolean ->
         view.scrollToTop(animated)
       }

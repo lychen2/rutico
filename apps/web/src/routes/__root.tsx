@@ -11,7 +11,7 @@ import {
   useRouter,
 } from "@tanstack/react-router";
 import { msg, T, useGT, Var } from "gt-react";
-import { CheckIcon, CopyIcon } from "lucide-react";
+import { CheckIcon, CompassIcon, CopyIcon, TriangleAlertIcon } from "lucide-react";
 import { useEffect, useEffectEvent, useRef, useState } from "react";
 
 import { APP_DISPLAY_NAME, APP_VERSION } from "../branding";
@@ -39,6 +39,7 @@ import { ChatGptWelcomeCoordinator } from "../components/settings/ChatGptWelcome
 import { ThemeEditorHost } from "../components/settings/ThemeEditorHost";
 import { useCopyToClipboard } from "../hooks/useCopyToClipboard";
 import { Button } from "../components/ui/button";
+import { EmptyMedia } from "../components/ui/empty";
 import { StandalonePage, StandalonePageHeader } from "../components/ui/standalone-page";
 import { SharedTooltipProvider } from "../components/ui/shared-tooltip";
 import { AnchoredToastProvider, ToastProvider } from "../components/ui/toast";
@@ -63,6 +64,8 @@ import { readProject } from "../state/entities";
 import { getDesktopSnapShotBridge } from "../lib/desktopSnapShot";
 import { isChunkLoadError } from "../lib/chunkReloadGuard";
 import { shouldResumeSnapShotSetupOnStartup } from "../lib/snapShotSetupResume";
+import { syncDocumentFractionalDprClass } from "../lib/windowControlsOverlay";
+import { startSoftwareKeyboardInsetSync } from "../hooks/useSoftwareKeyboardOpen";
 
 export const Route = createRootRoute({
   beforeLoad: async ({ location }) => {
@@ -118,27 +121,46 @@ export const Route = createRootRoute({
 });
 
 function RootRouteNotFoundView() {
+  const gt = useGT();
   return (
-    <main className="flex min-h-0 min-w-0 flex-1 items-center justify-center p-6">
-      <div className="flex max-w-sm flex-col items-center gap-4 text-center">
-        <h1 className="text-lg font-medium text-foreground">
-          <T>Page not found</T>
-        </h1>
-        <p className="text-sm text-muted-foreground">
-          <T>
-            This link doesn't point to a page in <Var>{APP_DISPLAY_NAME}</Var>. Go home to choose a
-            project or start a thread.
-          </T>
-        </p>
-        <Button render={<Link to="/" replace />}>
-          <T>Go home</T>
-        </Button>
-      </div>
+    <main className="flex min-h-0 min-w-0 flex-1 flex-col">
+      <StandalonePage maxWidth="md">
+        <StandalonePageHeader
+          context="404"
+          media={
+            <EmptyMedia className="mb-3" variant="icon">
+              <CompassIcon className="text-muted-foreground" />
+            </EmptyMedia>
+          }
+          title={gt("Page not found")}
+          description={
+            <T>
+              This link doesn't point to a page in <Var>{APP_DISPLAY_NAME}</Var>. Go home to choose
+              a project or start a thread.
+            </T>
+          }
+        />
+        <div className="mt-6">
+          <Button render={<Link to="/" replace />}>
+            <T>Go home</T>
+          </Button>
+        </div>
+      </StandalonePage>
     </main>
   );
 }
 
 function RootRouteView() {
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- synchronizes document-level keyboard inset and fractional HiDPI attributes
+  useEffect(() => {
+    const stopKeyboard = startSoftwareKeyboardInsetSync();
+    const stopFractionalDpr = syncDocumentFractionalDprClass();
+    return () => {
+      stopKeyboard();
+      stopFractionalDpr();
+    };
+  }, []);
+
   // Above every branch: app services raise toasts for the whole page, so the surface they write to
   // must not unmount when the root switches branches (for example /welcome to the app shell).
   return (
@@ -260,7 +282,16 @@ function RootRouteErrorView({ error }: ErrorComponentProps) {
 
   return (
     <StandalonePage>
-      <StandalonePageHeader title={gt("Something went wrong.")} description={message} />
+      <StandalonePageHeader
+        media={
+          <EmptyMedia className="mb-3" variant="icon">
+            <TriangleAlertIcon className="text-destructive" />
+          </EmptyMedia>
+        }
+        tone="error"
+        title={gt("Something went wrong.")}
+        description={message}
+      />
 
       <div className="mt-5 flex flex-wrap gap-2">
         <Button

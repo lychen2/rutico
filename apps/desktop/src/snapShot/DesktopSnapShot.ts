@@ -20,6 +20,7 @@ import {
   type SnapShotShortcut,
   type DesktopSnapShotEvent,
   type DesktopSnapShotId,
+  type LinuxSnapShotTelemetry,
 } from "@t3tools/contracts";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
@@ -45,7 +46,11 @@ import { startGlobalShiftShortcutProcess } from "./GlobalShiftShortcutProcess.ts
 import { startMacModifierPairShortcutProcess } from "./MacModifierPairShortcutProcess.ts";
 import { activeWindow, type ActiveWindow } from "./ActiveWindow.ts";
 import { captureMacWindowSnapshot, type MacSnapShotSource } from "./MacSnapShot.ts";
-import type { LinuxCaptureFeedback, LinuxWindowMetadata } from "./LinuxSnapShot.ts";
+import type {
+  LinuxCaptureBackend,
+  LinuxCaptureFeedback,
+  LinuxWindowMetadata,
+} from "./LinuxSnapShot.ts";
 import { niriSocketPath } from "./NiriSnapShot.ts";
 import { CaptureShortcutConfig, niriCaptureConfigPath } from "./CaptureShortcutConfig.ts";
 import type { PortalCaptureShortcut } from "./PortalCaptureShortcut.ts";
@@ -308,6 +313,92 @@ function captureMode(platform: NodeJS.Platform): DesktopSnapShotState["mode"] {
   return platform === "darwin" || platform === "win32" ? "direct" : "unavailable";
 }
 
+function readDisplayScaleFactorForBounds(
+  bounds: Electron.Rectangle | undefined,
+): number | undefined {
+  if (!bounds) return undefined;
+  try {
+    if (typeof Electron.screen?.getDisplayMatching !== "function") return undefined;
+    const display = Electron.screen.getDisplayMatching(bounds);
+    return Number.isFinite(display?.scaleFactor) && display.scaleFactor > 0
+      ? display.scaleFactor
+      : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * Classifies Linux SnapShot execution into capability tiers on Wayland (Tier 3 helper flight,
+ * Tier 2 trusted-bounds direct, Tier 4 portal/Niri/picker direct + landing).
+ * X11 capture is unsupported and is never reported as executable.
+ */
+export function resolveLinuxSnapShotCapability(input: {
+  readonly isWayland: boolean;
+  readonly backend?:
+    | "screenshot-portal"
+    | "gnome-extension"
+    | "niri"
+    | "kde"
+    | "hyprland"
+    | "picker"
+    | "x11";
+  readonly feedbackAvailable: boolean;
+  readonly hasTrustedSourceBounds: boolean;
+  readonly sourceScaleFactor?: number;
+  readonly targetScaleFactor?: number;
+}): LinuxSnapShotTelemetry {
+  const scaleFields = {
+    ...(input.sourceScaleFactor !== undefined
+      ? { sourceScaleFactor: input.sourceScaleFactor }
+      : {}),
+    ...(input.targetScaleFactor !== undefined
+      ? { targetScaleFactor: input.targetScaleFactor }
+      : {}),
+  };
+
+  if (!input.isWayland) {
+    return {
+      tier: 1,
+      coordinateSpace: "unknown",
+      helperAvailable: false,
+      backend: "x11",
+      ...scaleFields,
+    };
+  }
+
+  const isCompositorHelperBackend =
+    input.backend === "gnome-extension" || input.backend === "kde" || input.backend === "hyprland";
+
+  if (isCompositorHelperBackend && input.feedbackAvailable) {
+    return {
+      tier: 3,
+      coordinateSpace: "compositor-logical",
+      helperAvailable: true,
+      backend: input.backend,
+      ...scaleFields,
+    };
+  }
+
+  if (isCompositorHelperBackend && input.hasTrustedSourceBounds) {
+    return {
+      tier: 2,
+      coordinateSpace: "compositor-logical",
+      helperAvailable: false,
+      backend: input.backend,
+      ...scaleFields,
+    };
+  }
+
+  return {
+    tier: 4,
+    coordinateSpace: input.backend === "niri" ? "window-local" : "unknown",
+    helperAvailable: false,
+    ...(input.backend ? { backend: input.backend } : {}),
+    ...scaleFields,
+  };
+}
+
 function shouldAnimateSnapShot(settings: SnapShotSystemAnimationSettings): boolean {
   return settings.shouldRenderRichAnimation && !settings.prefersReducedMotion;
 }
@@ -456,6 +547,7 @@ async function captureSource({
   transition,
   imageTempPath,
   linuxAppId,
+  linuxBackend,
   kdeCapturePaths,
   hyprlandCapturePaths,
   accessibilityProcessPool,
@@ -471,6 +563,7 @@ async function captureSource({
   transition: SnapShotTransition;
   imageTempPath: string;
   linuxAppId: string;
+  linuxBackend?: DesktopSnapShotState["linuxBackend"];
   kdeCapturePaths: KdeCapturePaths;
   hyprlandCapturePaths: HyprlandCapturePaths;
   accessibilityProcessPool: AccessibilityProcessPool;
@@ -481,6 +574,7 @@ async function captureSource({
   let active: ActiveWindow | undefined;
   let linuxWindow: LinuxWindowMetadata | undefined;
   let linuxFeedback: LinuxCaptureFeedback | undefined;
+  let actualLinuxBackend: LinuxCaptureBackend | undefined;
   let linuxActivationFailure: { readonly cause: unknown } | undefined;
   const destinationWindow =
     Electron.BrowserWindow.getFocusedWindow() ??
@@ -529,12 +623,14 @@ async function captureSource({
         hyprlandCapturePaths,
       );
       if (snapshot) {
+        actualLinuxBackend = snapshot.backend;
         linuxFeedback = snapshot.feedback;
         if (linuxFeedback) onLinuxFeedback(linuxFeedback);
         linuxWindow = snapshot.window;
         source = { name: linuxWindow?.title || "Active window" };
         png = snapshot.png;
       } else {
+        actualLinuxBackend = "picker";
         const [selected] = await Electron.desktopCapturer.getSources({
           types: ["window", "screen"],
           thumbnailSize: snapShotThumbnailSize(active),
@@ -584,6 +680,12 @@ async function captureSource({
         linuxActivationFailure = { cause };
       });
     }
+    const isWayland = platform === "linux" && isWaylandSession(platform, process.env);
+    const sourceScaleFactor = readDisplayScaleFactorForBounds(
+      active?.bounds ??
+        (linuxWindow?.accessibilityBoundsReliable === false ? undefined : linuxWindow?.bounds),
+    );
+    const targetScaleFactor = readDisplayScaleFactorForBounds(destinationWindowBounds);
     const animationStarted =
       linuxFeedback?.animationStarted ??
       (await showCaptureFeedback(
@@ -596,11 +698,26 @@ async function captureSource({
         platform,
         destinationWindowBounds,
       ));
+    const resolvedLinuxBackend = actualLinuxBackend ?? linuxBackend;
+    const linuxCaptureTelemetry =
+      platform === "linux" && isWayland
+        ? resolveLinuxSnapShotCapability({
+            isWayland: true,
+            ...(resolvedLinuxBackend ? { backend: resolvedLinuxBackend } : {}),
+            feedbackAvailable: Boolean(linuxFeedback?.animationStarted),
+            hasTrustedSourceBounds: Boolean(
+              linuxWindow !== undefined && linuxWindow.accessibilityBoundsReliable !== false,
+            ),
+            ...(sourceScaleFactor !== undefined ? { sourceScaleFactor } : {}),
+            ...(targetScaleFactor !== undefined ? { targetScaleFactor } : {}),
+          })
+        : undefined;
     return {
       source,
       active,
       linuxWindow,
       linuxActivationFailure,
+      linuxCaptureTelemetry,
       contextPromise,
       animationStarted,
       png,
@@ -703,7 +820,8 @@ async function showCaptureFeedback(
   platform: NodeJS.Platform,
   destinationWindowBounds?: Electron.Rectangle,
 ): Promise<boolean> {
-  // Wayland does not let this client position overlays on another app's window.
+  // On Linux, Wayland lacks arbitrary global overlay positioning (handled via compositor helpers
+  // or in-Composer landing choreography), and X11 capture is unsupported.
   if (platform === "linux") return false;
   const bounds = snapShotFlashBounds(active, platform);
   const animationsEnabled =
@@ -929,6 +1047,7 @@ export const make = Effect.gen(function* () {
       transition.dispose();
       yield* fileSystem.makeDirectory(captureDirectory, { recursive: true });
       yield* emit({ type: "requested", id: id as DesktopSnapShotId });
+      const currentState = yield* Ref.get(stateRef);
       const snapshot = yield* Effect.tryPromise({
         try: () =>
           captureSource({
@@ -940,6 +1059,7 @@ export const make = Effect.gen(function* () {
             transition,
             imageTempPath,
             linuxAppId,
+            ...(currentState.linuxBackend ? { linuxBackend: currentState.linuxBackend } : {}),
             kdeCapturePaths,
             hyprlandCapturePaths,
             accessibilityProcessPool,
@@ -959,7 +1079,13 @@ export const make = Effect.gen(function* () {
         );
       }
       if (snapshot.animationStarted) {
-        yield* emit({ type: "started", id: id as DesktopSnapShotId });
+        yield* emit({
+          type: "started",
+          id: id as DesktopSnapShotId,
+          ...(snapshot.linuxCaptureTelemetry
+            ? { linuxCaptureTelemetry: snapshot.linuxCaptureTelemetry }
+            : {}),
+        });
       } else {
         yield* desktopWindow.activate.pipe(Effect.ignoreCause);
       }
@@ -1039,7 +1165,15 @@ export const make = Effect.gen(function* () {
     yield* persistCapture(capture).pipe(
       Effect.tap(() =>
         Ref.update(stateRef, (state) => ({ ...state, message: null })).pipe(
-          Effect.andThen(emit({ type: "ready", id: capture.id as DesktopSnapShotId })),
+          Effect.andThen(
+            emit({
+              type: "ready",
+              id: capture.id as DesktopSnapShotId,
+              ...(capture.linuxCaptureTelemetry
+                ? { linuxCaptureTelemetry: capture.linuxCaptureTelemetry }
+                : {}),
+            }),
+          ),
         ),
       ),
       Effect.tapError((error) =>
@@ -1694,6 +1828,23 @@ export const make = Effect.gen(function* () {
             state.linuxBackend === "hyprland"
               ? yield* Effect.promise(() => hyprlandCaptureShortcut(linuxAppId, home))
               : undefined;
+          const resolvedFeedbackAvailable = hyprlandHelper
+            ? hyprlandHelper.status === "ready" && hyprlandHelper.feedbackAvailable === true
+            : kdeHelper
+              ? kdeHelper.status === "ready" && kdeHelper.feedbackAvailable === true
+              : state.linuxFeedbackAvailable === true;
+          const linuxCaptureTelemetry =
+            environment.platform === "linux" && state.mode === "portal"
+              ? resolveLinuxSnapShotCapability({
+                  isWayland: true,
+                  ...(state.linuxBackend ? { backend: state.linuxBackend } : {}),
+                  feedbackAvailable: resolvedFeedbackAvailable,
+                  hasTrustedSourceBounds:
+                    state.linuxBackend === "gnome-extension" ||
+                    (state.linuxBackend === "kde" && kdeHelper?.status === "ready") ||
+                    (state.linuxBackend === "hyprland" && hyprlandHelper?.status === "ready"),
+                })
+              : undefined;
           return {
             ...state,
             ...portalShortcut?.state,
@@ -1715,6 +1866,12 @@ export const make = Effect.gen(function* () {
                   kdeHelper,
                   linuxFeedbackAvailable:
                     kdeHelper.status === "ready" && kdeHelper.feedbackAvailable === true,
+                }
+              : {}),
+            ...(linuxCaptureTelemetry
+              ? {
+                  linuxCaptureTier: linuxCaptureTelemetry.tier,
+                  linuxCaptureTelemetry,
                 }
               : {}),
             shortcutVerified,

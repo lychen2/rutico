@@ -2,13 +2,25 @@ import { useSyncExternalStore } from "react";
 
 export type HistoryDirection = "back" | "forward";
 
+function getNavigationApi(): Navigation | null {
+  if (typeof window === "undefined" || !("navigation" in window)) return null;
+  return window.navigation ?? null;
+}
+
 function subscribeToNavigationHistory(onChange: () => void): () => void {
-  window.navigation.addEventListener("currententrychange", onChange);
-  return () => window.navigation.removeEventListener("currententrychange", onChange);
+  const navigation = getNavigationApi();
+  if (!navigation) return () => {};
+  navigation.addEventListener("currententrychange", onChange);
+  return () => navigation.removeEventListener("currententrychange", onChange);
 }
 
 export function canNavigateHistory(direction: HistoryDirection): boolean {
-  return direction === "back" ? window.navigation.canGoBack : window.navigation.canGoForward;
+  const navigation = getNavigationApi();
+  if (navigation) {
+    return direction === "back" ? navigation.canGoBack : navigation.canGoForward;
+  }
+  if (typeof window === "undefined") return false;
+  return direction === "back" ? window.history.length > 1 : true;
 }
 
 export function navigateHistory(direction: HistoryDirection) {

@@ -3,7 +3,7 @@ import { m } from "~/i18n/messages";
 import * as Schema from "effect/Schema";
 import type { DeviceHostSummary, DeviceSummary, EnvironmentId } from "@t3tools/contracts";
 import { useGT } from "gt-react";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   captureDeviceScreenshot,
   DeviceScreenshotError,
@@ -32,10 +32,21 @@ export function DeviceWorkspace(props: {
   const gt = useGT();
   const [toolsOpen, setToolsOpen] = useState(false);
   const [axOverlay, setAxOverlay] = useState(false);
+  const [axInspect, setAxInspect] = useState(false);
   const [screenshotPending, setScreenshotPending] = useState(false);
+  const [screenshotConfirmed, setScreenshotConfirmed] = useState(false);
+  const [shutterSequence, setShutterSequence] = useState(0);
   const [screenshotError, setScreenshotError] = useState<string | null>(null);
   // A capture always finishes, even if the panel hides or closes meanwhile; the user asked for it.
   const capturing = useRef(false);
+  const confirmTimerRef = useRef<number | null>(null);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- clears the screenshot confirmation checkmark timer on unmount
+  useEffect(
+    () => () => {
+      if (confirmTimerRef.current !== null) window.clearTimeout(confirmTimerRef.current);
+    },
+    [],
+  );
   const access = useDeviceHubAccess(props.environmentId, props.device.hostId);
   // Settings and tools run commands on the device's own machine, which Expo and Simlock do not expose.
   const runsHostCommands = props.hostKind === "local" || props.hostKind === "ssh";
@@ -55,6 +66,13 @@ export function DeviceWorkspace(props: {
       new AbortController().signal,
     )
       .then((image) => {
+        setShutterSequence((sequence) => sequence + 1);
+        setScreenshotConfirmed(true);
+        if (confirmTimerRef.current !== null) window.clearTimeout(confirmTimerRef.current);
+        confirmTimerRef.current = window.setTimeout(() => {
+          setScreenshotConfirmed(false);
+          confirmTimerRef.current = null;
+        }, 1000);
         const url = URL.createObjectURL(image);
         const link = document.createElement("a");
         link.href = url;
@@ -85,7 +103,7 @@ export function DeviceWorkspace(props: {
             {screenshotError ?? controls.error}
           </p>
         ) : null}
-        <div className="min-h-0 flex-1">
+        <div className="relative min-h-0 flex-1">
           <DeviceStreamView
             environmentId={props.environmentId}
             platform={props.device.platform}
@@ -96,6 +114,7 @@ export function DeviceWorkspace(props: {
             visible={props.visible}
             serveSimOnly={props.hostKind === "simlock"}
             axOverlay={axOverlay}
+            axInspect={axOverlay && axInspect}
             allowPhoneView
             renderControls={(view) => (
               <DeviceControlsRail
@@ -105,6 +124,7 @@ export function DeviceWorkspace(props: {
                 view={view}
                 controls={controls}
                 screenshotPending={screenshotPending}
+                screenshotConfirmed={screenshotConfirmed}
                 onScreenshot={() => void saveScreenshot()}
                 toolsOpen={toolsOpen}
                 onTools={() => setToolsOpen(!toolsOpen)}
@@ -114,6 +134,13 @@ export function DeviceWorkspace(props: {
               />
             )}
           />
+          {shutterSequence > 0 ? (
+            <div
+              key={shutterSequence}
+              aria-hidden="true"
+              className="preview-shutter-flash pointer-events-none absolute inset-0 z-20"
+            />
+          ) : null}
         </div>
       </div>
       {toolsOpen ? (
@@ -123,7 +150,12 @@ export function DeviceWorkspace(props: {
           hostDiagnostics={props.hostDiagnostics}
           access={access}
           axOverlay={axOverlay}
-          onAxOverlayChange={setAxOverlay}
+          onAxOverlayChange={(enabled) => {
+            setAxOverlay(enabled);
+            if (!enabled) setAxInspect(false);
+          }}
+          axInspect={axInspect}
+          onAxInspectChange={setAxInspect}
           onClose={() => setToolsOpen(false)}
           className="absolute inset-y-0 right-0 z-10 w-full max-w-72 border-l shadow-lg @[700px]:static @[700px]:w-72 @[700px]:shrink-0 @[700px]:shadow-none"
         />

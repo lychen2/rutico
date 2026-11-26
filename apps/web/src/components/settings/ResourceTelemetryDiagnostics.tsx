@@ -31,7 +31,14 @@ import type {
 import * as DateTime from "effect/DateTime";
 import * as Option from "effect/Option";
 import { RegistryContext } from "@effect/atom-react";
-import { useContext, useRef, useState, type ReactNode } from "react";
+import {
+  useContext,
+  useRef,
+  useState,
+  type KeyboardEvent as ReactKeyboardEvent,
+  type PointerEvent as ReactPointerEvent,
+  type ReactNode,
+} from "react";
 import {
   isAtomCommandInterrupted,
   squashAtomCommandFailure,
@@ -44,6 +51,7 @@ import {
   useResourceTelemetryHistory,
 } from "../../lib/resourceTelemetryState";
 import { cn } from "../../lib/utils";
+import "~/styles/workspace-hubs.css";
 import { formatBytes } from "../../lib/formatBytes";
 import { ensureLocalApi } from "../../localApi";
 import { serverEnvironment } from "../../state/server";
@@ -55,8 +63,10 @@ import { ScrollArea } from "../ui/scroll-area";
 import { Toggle, ToggleGroup } from "../ui/toggle-group";
 import { toastManager } from "../ui/toast";
 import {
+  clampOscilloscopeBucketIndex,
   formatCpuTime,
   formatSamplingStatus,
+  processCpuUtilizationRatio,
   processIdentityKey,
   resourceHistoryBarHeight,
   resourceHistoryCpuScaleMax,
@@ -393,6 +403,16 @@ function HistoryWindowSelector({
   );
 }
 
+function formatBucketClock(startedAt: DateTime.Utc): string {
+  const date = new Date(DateTime.toEpochMillis(startedAt));
+  return date.toLocaleTimeString(undefined, {
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false,
+  });
+}
+
 function ResourceHistoryChart({
   buckets,
 }: {
@@ -401,22 +421,107 @@ function ResourceHistoryChart({
   const gt = useGT();
   const maxCpu = resourceHistoryCpuScaleMax(buckets);
   const maxIo = Math.max(1, ...buckets.map((bucket) => bucket.ioReadBytes + bucket.ioWriteBytes));
+  const chartRef = useRef<HTMLDivElement>(null);
+  const cursorRef = useRef<HTMLSpanElement>(null);
+  const activeIndexRef = useRef<number | null>(null);
+  const [activeIndex, setActiveIndex] = useState<number | null>(null);
+
+  const clampedIndex =
+    activeIndex !== null && activeIndex >= 0 && activeIndex < buckets.length ? activeIndex : null;
+  const inspectedBucket = clampedIndex !== null ? buckets[clampedIndex] : buckets.at(-1);
+
+  const updateScrubIndex = (nextIndex: number | null, pixelX?: number) => {
+    if (cursorRef.current) {
+      if (nextIndex === null || buckets.length === 0) {
+        cursorRef.current.removeAttribute("data-visible");
+      } else {
+        const width = chartRef.current?.clientWidth ?? 0;
+        const x = pixelX ?? ((nextIndex + 0.5) / buckets.length) * width;
+        cursorRef.current.style.transform = `translate3d(${Math.round(x)}px, 0, 0)`;
+        cursorRef.current.setAttribute("data-visible", "true");
+      }
+    }
+    if (activeIndexRef.current !== nextIndex) {
+      activeIndexRef.current = nextIndex;
+      setActiveIndex(nextIndex);
+    }
+  };
+
+  const handlePointerMove = (event: ReactPointerEvent<HTMLDivElement>) => {
+    const chart = chartRef.current;
+    if (!chart || buckets.length === 0) return;
+    const rect = chart.getBoundingClientRect();
+    if (rect.width <= 0) return;
+    const localX = Math.max(0, Math.min(rect.width, event.clientX - rect.left));
+    const nextIndex = clampOscilloscopeBucketIndex(localX / rect.width, buckets.length);
+    updateScrubIndex(nextIndex, localX);
+  };
+
+  const handleKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>) => {
+    if (buckets.length === 0) return;
+    if (event.key === "ArrowRight") {
+      event.preventDefault();
+      const next = clampedIndex === null ? 0 : Math.min(buckets.length - 1, clampedIndex + 1);
+      updateScrubIndex(next);
+    } else if (event.key === "ArrowLeft") {
+      event.preventDefault();
+      const next = clampedIndex === null ? buckets.length - 1 : Math.max(0, clampedIndex - 1);
+      updateScrubIndex(next);
+    } else if (event.key === "Escape") {
+      updateScrubIndex(null);
+    }
+  };
 
   return (
     <div className="border-t border-border/60 px-4 py-4 sm:px-5">
-      <div className="mb-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-3xs text-muted-foreground/65">
-        <span className="inline-flex items-center gap-1.5">
-          <span className="h-1.5 w-3 rounded-full bg-foreground/70" /> <T>CPU average</T>
-        </span>
-        <span className="inline-flex items-center gap-1.5">
-          <span className="h-1.5 w-3 rounded-full bg-info/70" /> <T>I/O reads</T>
-        </span>
-        <span className="inline-flex items-center gap-1.5">
-          <span className="h-1.5 w-3 rounded-full bg-warning/80" /> <T>I/O writes</T>
-        </span>
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-x-4 gap-y-1.5 text-3xs text-muted-foreground/70">
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
+          <span className="inline-flex items-center gap-1.5">
+            <span className="h-1.5 w-3 rounded-full bg-foreground/70" /> <T>CPU average</T>
+          </span>
+          <span className="inline-flex items-center gap-1.5">
+            <span className="h-1.5 w-3 rounded-full bg-info/70" /> <T>I/O reads</T>
+          </span>
+          <span className="inline-flex items-center gap-1.5">
+            <span className="h-1.5 w-3 rounded-full bg-warning/80" /> <T>I/O writes</T>
+          </span>
+        </div>
+        {inspectedBucket ? (
+          <div
+            aria-live="polite"
+            data-slot="telemetry-oscilloscope-readout"
+            className="flex flex-wrap items-center gap-x-2.5 gap-y-0.5 font-mono text-2xs tabular-nums text-foreground/90"
+          >
+            <span className="text-muted-foreground">
+              {formatBucketClock(inspectedBucket.startedAt)}
+            </span>
+            <span>
+              {gt("CPU avg {percent}%", { percent: inspectedBucket.avgCpuPercent.toFixed(1) })}
+            </span>
+            <span className="text-muted-foreground">
+              {gt("CPU peak {percent}%", { percent: inspectedBucket.maxCpuPercent.toFixed(1) })}
+            </span>
+            <span className="text-info-foreground">
+              {gt("Read {bytes}", { bytes: formatBytes(inspectedBucket.ioReadBytes) })}
+            </span>
+            <span className="text-warning-foreground">
+              {gt("Write {bytes}", { bytes: formatBytes(inspectedBucket.ioWriteBytes) })}
+            </span>
+          </div>
+        ) : null}
       </div>
-      <div className="flex h-32 items-end gap-1 overflow-hidden rounded-lg border border-border/40 bg-muted/8 px-2 pt-3 pb-2">
-        {buckets.map((bucket) => {
+      <div
+        ref={chartRef}
+        tabIndex={0}
+        role="region"
+        aria-label={gt("CPU and I/O history oscilloscope")}
+        onPointerMove={handlePointerMove}
+        onPointerLeave={() => updateScrubIndex(null)}
+        onKeyDown={handleKeyDown}
+        className="relative flex h-32 cursor-crosshair items-end gap-1 overflow-hidden rounded-lg border border-border/40 bg-muted/8 px-2 pt-3 pb-2 outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
+      >
+        <span ref={cursorRef} aria-hidden data-slot="telemetry-oscilloscope-cursor" />
+        {buckets.map((bucket, index) => {
           const cpuHeight = resourceHistoryBarHeight({
             value: bucket.avgCpuPercent,
             max: maxCpu,
@@ -432,41 +537,29 @@ function ResourceHistoryChart({
             max: maxIo,
             minimumVisiblePercent: 1,
           });
+          const isInspected = clampedIndex === index;
           return (
-            <SharedTooltipTrigger
+            <div
               key={DateTime.formatIso(bucket.startedAt)}
-              render={
-                <div className="grid h-full min-w-1 flex-1 grid-cols-3 items-end gap-px">
-                  <span
-                    className="block rounded-t-sm bg-foreground/65"
-                    style={{ height: `${cpuHeight}%` }}
-                  />
-                  <span
-                    className="block rounded-t-sm bg-info/70"
-                    style={{ height: `${readHeight}%` }}
-                  />
-                  <span
-                    className="block rounded-t-sm bg-warning/80"
-                    style={{ height: `${writeHeight}%` }}
-                  />
-                </div>
-              }
-              label={
-                <>
-                  <div className="space-y-0.5">
-                    <div>
-                      {gt("CPU avg {percent}%", { percent: bucket.avgCpuPercent.toFixed(1) })}
-                    </div>
-                    <div>
-                      {gt("CPU peak {percent}%", { percent: bucket.maxCpuPercent.toFixed(1) })}
-                    </div>
-                    <div>{gt("Read {bytes}", { bytes: formatBytes(bucket.ioReadBytes) })}</div>
-                    <div>{gt("Write {bytes}", { bytes: formatBytes(bucket.ioWriteBytes) })}</div>
-                  </div>
-                </>
-              }
-              className="text-left"
-            />
+              data-active={isInspected ? "true" : undefined}
+              className={cn(
+                "grid h-full min-w-1 flex-1 grid-cols-3 items-end gap-px rounded-xs transition-colors duration-75 motion-reduce:transition-none",
+                isInspected && "bg-primary/10",
+              )}
+            >
+              <span
+                className="block rounded-t-sm bg-foreground/65"
+                style={{ height: `${cpuHeight}%` }}
+              />
+              <span
+                className="block rounded-t-sm bg-info/70"
+                style={{ height: `${readHeight}%` }}
+              />
+              <span
+                className="block rounded-t-sm bg-warning/80"
+                style={{ height: `${writeHeight}%` }}
+              />
+            </div>
           );
         })}
       </div>
@@ -562,6 +655,7 @@ function ProcessTable({
   const messages = useMessages();
   const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(() => new Set());
   const visible = visibleResourceTelemetryProcesses(processes, collapsed);
+  const maxProcessCpu = Math.max(10, ...visible.map((process) => process.cpuPercent));
   const toggle = (process: ResourceTelemetryProcess) => {
     const identityKey = processIdentityKey(process);
     setCollapsed((current) => {
@@ -654,8 +748,17 @@ function ProcessTable({
                 <td className="truncate px-3 py-2 text-2xs text-muted-foreground">
                   {categoryLabel(process.category, messages)}
                 </td>
-                <td className="px-3 py-2 text-right font-mono tabular-nums">
-                  {process.cpuPercent.toFixed(1)}%
+                <td className="relative px-3 py-2 text-right font-mono tabular-nums">
+                  {process.cpuPercent > 0 ? (
+                    <span
+                      aria-hidden
+                      className="pointer-events-none absolute inset-y-1 right-1 left-2 origin-right rounded-xs bg-primary/14 transition-transform duration-(--duration-snappy) motion-reduce:transition-none"
+                      style={{
+                        transform: `scaleX(${processCpuUtilizationRatio(process.cpuPercent, maxProcessCpu)})`,
+                      }}
+                    />
+                  ) : null}
+                  <span className="relative">{process.cpuPercent.toFixed(1)}%</span>
                 </td>
                 <td className="px-3 py-2 text-right font-mono tabular-nums">
                   {formatCpuTime(process.cpuTimeMs / 1_000, messages)}

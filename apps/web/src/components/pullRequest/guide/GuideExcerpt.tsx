@@ -259,7 +259,10 @@ function ExcerptDiff({
   };
 
   return (
-    <div className="min-w-0 overflow-hidden rounded-lg border border-border/60">
+    <div
+      data-slot="guide-excerpt-frame"
+      className="min-w-0 overflow-hidden rounded-lg border border-border/60 shadow-xs/5 transition-[border-color,box-shadow] duration-180 ease-(--spring-snappy) hover:border-border motion-reduce:transition-none"
+    >
       <FileDiff<ExcerptAnnotation>
         fileDiff={slice.fileDiff}
         options={options}

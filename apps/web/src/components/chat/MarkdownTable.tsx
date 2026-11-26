@@ -44,7 +44,12 @@ export function MarkdownTable({ children, ...props }: ComponentProps<"table">) {
   };
 
   return (
-    <div ref={containerRef} className="chat-markdown-table-container">
+    <div
+      ref={containerRef}
+      className="chat-markdown-table-container"
+      data-markdown-table="true"
+      data-table-copied={copied ? "true" : undefined}
+    >
       <ScrollArea radius="none" chainVerticalScroll scrollFade className="w-full max-w-full">
         <table {...props}>{children}</table>
       </ScrollArea>
@@ -66,7 +71,11 @@ export function MarkdownTable({ children, ...props }: ComponentProps<"table">) {
             }
             label={copyLabel}
           >
-            {copied ? <CheckIcon className="size-3" /> : <CopyIcon className="size-3" />}
+            {copied ? (
+              <CheckIcon className="t3-icon-pop size-3 text-success" data-table-copy-check="true" />
+            ) : (
+              <CopyIcon className="size-3" />
+            )}
           </SharedTooltipTrigger>
           <MenuPopup align="end">
             <MenuItem onClick={() => handleCopy("markdown")}>

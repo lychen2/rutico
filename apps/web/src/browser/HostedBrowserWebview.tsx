@@ -25,6 +25,7 @@ import {
   resolveFittedBrowserViewport,
   resolveHiddenBrowserViewportFitScale,
   resolveHiddenBrowserViewportSize,
+  resolveViewportBreakpointLabel,
 } from "./browserViewportLayout";
 import { BrowserDeviceToolbar } from "./BrowserDeviceToolbar";
 import { BrowserViewportResizeHandles } from "./BrowserViewportResizeHandles";
@@ -394,53 +395,68 @@ export function HostedBrowserWebview(props: {
         <div
           // Keyed here, not on the webview: a destroyed guest's element may already be detached.
           key={webviewGeneration}
-          className="absolute"
+          className={cn(
+            "absolute",
+            active && !layout.fillsPanel && activeDrag === null && "browser-device-frame-morph",
+            active &&
+              !layout.fillsPanel &&
+              effectiveViewport._tag === "preset" &&
+              "overflow-hidden rounded-xl shadow-lg/15 ring-1 ring-border/80",
+          )}
           style={{
             left: layout.viewportX * fitScale,
             top: layout.viewportY * fitScale,
             width: layout.viewportWidth * fitScale,
             height: layout.viewportHeight * fitScale,
-            transformStyle: viewportTransform && fullDetail ? "preserve-3d" : undefined,
           }}
         >
-          <webview
-            ref={setWebviewRef}
-            // Electron needs allowpopups at attachment. React drops boolean values for unknown attributes.
-            {...({ allowpopups: "true" } as unknown as { readonly allowpopups?: boolean })}
-            src={webviewGeneration === 0 ? initialSrc : recoverySrc}
-            partition={config.partition}
-            webpreferences={config.webPreferences}
-            {...(config.preloadUrl ? { preload: config.preloadUrl } : {})}
-            data-preview-tab={runtimeTabId}
-            data-preview-server-tab={tabId}
-            data-preview-viewport-mode={effectiveViewport._tag}
-            data-preview-viewport-key={browserViewportSettingKey(effectiveViewport)}
-            data-preview-css-width={
-              fittedSourceViewport
-                ? fittedSourceViewport.width
-                : effectiveViewport._tag === "fill"
-                  ? Math.max(1, Math.round(layout.viewportWidth / layoutZoomFactor))
-                  : effectiveViewport.width
-            }
-            data-preview-css-height={
-              fittedSourceViewport
-                ? fittedSourceViewport.height
-                : effectiveViewport._tag === "fill"
-                  ? Math.max(1, Math.round(layout.viewportHeight / layoutZoomFactor))
-                  : effectiveViewport.height
-            }
-            aria-hidden={active ? undefined : true}
-            className={cn(
-              "absolute top-0 left-0 flex overflow-hidden bg-white",
-              active && !layout.fillsPanel && "ring-1 ring-border/70 shadow-sm",
-            )}
+          {/* Keep preserve-3d off the overflow-hidden frame: CSS grouping properties flatten 3D
+              contexts and drop matrix3d's z-terms, blurring scaled full-detail desktop captures. */}
+          <div
+            className="relative size-full"
             style={{
-              width: layout.viewportWidth / layout.viewportScale,
-              height: layout.viewportHeight / layout.viewportScale,
-              transform: viewportTransform,
-              transformOrigin: "top left",
+              transformStyle: viewportTransform && fullDetail ? "preserve-3d" : undefined,
             }}
-          />
+          >
+            <webview
+              ref={setWebviewRef}
+              // Electron needs allowpopups at attachment. React drops boolean values for unknown attributes.
+              {...({ allowpopups: "true" } as unknown as { readonly allowpopups?: boolean })}
+              src={webviewGeneration === 0 ? initialSrc : recoverySrc}
+              partition={config.partition}
+              webpreferences={config.webPreferences}
+              {...(config.preloadUrl ? { preload: config.preloadUrl } : {})}
+              data-preview-tab={runtimeTabId}
+              data-preview-server-tab={tabId}
+              data-preview-viewport-mode={effectiveViewport._tag}
+              data-preview-viewport-key={browserViewportSettingKey(effectiveViewport)}
+              data-preview-css-width={
+                fittedSourceViewport
+                  ? fittedSourceViewport.width
+                  : effectiveViewport._tag === "fill"
+                    ? Math.max(1, Math.round(layout.viewportWidth / layoutZoomFactor))
+                    : effectiveViewport.width
+              }
+              data-preview-css-height={
+                fittedSourceViewport
+                  ? fittedSourceViewport.height
+                  : effectiveViewport._tag === "fill"
+                    ? Math.max(1, Math.round(layout.viewportHeight / layoutZoomFactor))
+                    : effectiveViewport.height
+              }
+              aria-hidden={active ? undefined : true}
+              className={cn(
+                "absolute top-0 left-0 flex overflow-hidden bg-white",
+                active && !layout.fillsPanel && "ring-1 ring-border/70 shadow-sm",
+              )}
+              style={{
+                width: layout.viewportWidth / layout.viewportScale,
+                height: layout.viewportHeight / layout.viewportScale,
+                transform: viewportTransform,
+                transformOrigin: "top left",
+              }}
+            />
+          </div>
         </div>
         {active && effectiveViewport._tag !== "fill" && !fittedSourceViewport ? (
           <>
@@ -452,14 +468,22 @@ export function HostedBrowserWebview(props: {
             />
             {activeDrag ? (
               <div
-                className="pointer-events-none absolute z-40 -translate-x-1/2 rounded-md border border-border/80 bg-background/95 px-2 py-1 text-2xs font-medium tabular-nums text-foreground shadow-md backdrop-blur-sm"
+                data-slot="browser-viewport-hud"
+                data-snapped={activeDrag.snapped ? "true" : undefined}
+                className="browser-viewport-hud surface-optical-chrome surface-elevated-rim pointer-events-none absolute z-40 flex -translate-x-1/2 items-center gap-1.5 rounded-md px-2.5 py-1 font-mono text-2xs font-medium tabular-nums text-foreground"
                 style={{
                   left: layout.viewportX + layout.viewportWidth / 2,
-                  top: layout.viewportY + 10,
+                  top: Math.max(8, layout.viewportY + layout.viewportHeight - 34),
                 }}
                 aria-hidden="true"
               >
-                {activeDrag.width} × {activeDrag.height}
+                <span>
+                  {activeDrag.width} × {activeDrag.height}
+                </span>
+                <span className="text-muted-foreground">·</span>
+                <span className={cn(activeDrag.snapped ? "text-primary" : "text-muted-foreground")}>
+                  {resolveViewportBreakpointLabel(activeDrag.width)}
+                </span>
               </div>
             ) : null}
           </>

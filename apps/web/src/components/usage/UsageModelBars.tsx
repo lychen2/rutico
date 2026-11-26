@@ -111,6 +111,7 @@ export function UsageModelBars({
             <rect
               data-usage-bar
               data-hovered={hovered === i || undefined}
+              className="usage-model-bar-rect"
               x={plotLeft + i * geometry.step * xScale}
               y={y(value)}
               width={geometry.width * xScale}

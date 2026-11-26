@@ -76,4 +76,28 @@ describe("WorkflowPane", () => {
       .element(screen.getByRole("button", { name: "Open as a full thread" }))
       .not.toBeInTheDocument();
   });
+
+  it("renders a shared sliding indicator for active workflow pane tabs", async () => {
+    state.linked = [];
+    state.openThreadPage = vi.fn();
+    await using screen = await render(
+      <WorkflowPane
+        environmentId={environmentId}
+        runId={null}
+        state={{
+          pane: [{ thread: "thread-1" }, { thread: "thread-2" }],
+          tab: 1,
+        }}
+        onChange={vi.fn()}
+      />,
+    );
+
+    const indicator = screen.container.querySelector<HTMLElement>(
+      '[data-slot="workflow-pane-tab-indicator"]',
+    );
+    expect(indicator).not.toBeNull();
+    await vi.waitFor(() => {
+      expect(indicator?.getAttribute("data-indicator-ready")).toBe("true");
+    });
+  });
 });

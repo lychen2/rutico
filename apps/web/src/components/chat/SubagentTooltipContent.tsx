@@ -28,6 +28,7 @@ import {
 import { ThreadHoverCard } from "../ThreadHoverCard";
 import { MiddleTruncate } from "../ui/middle-truncate";
 import { ProviderInstanceIcon } from "./ProviderInstanceIcon";
+import { observeVisibleAnimation } from "~/lib/visibleAnimation";
 import { cn } from "~/lib/utils";
 import { deriveProviderInstanceEntries, shouldShowInstanceBadge } from "../../providerInstances";
 
@@ -176,7 +177,15 @@ export function SubagentTooltipContent(props: {
                   : "text-muted-foreground",
           )}
         >
-          <StatusIcon aria-hidden className="size-3 shrink-0" />
+          <span
+            ref={working ? observeVisibleAnimation : undefined}
+            className="inline-flex shrink-0 items-center justify-center"
+          >
+            <StatusIcon
+              aria-hidden
+              className={cn("size-3 shrink-0", working && "motion-safe:visible-animate-spin")}
+            />
+          </span>
           {props.status === "idle"
             ? gt("idle", { $context: "subagent status" })
             : props.status === "pending"

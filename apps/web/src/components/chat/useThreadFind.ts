@@ -92,6 +92,7 @@ export function useThreadFind({
         ? { entryId, runId: runId ?? null, occurrence }
         : null,
     findNavigationId: navigationId,
+    findMatchNavigation: findExpanded ? (remote.data?.navigation ?? null) : null,
   };
   // Keep timeline identity stable during count and response updates to avoid extra jumps.
   const [storedTimeline, setTimeline] = useState(nextTimeline);
@@ -245,12 +246,18 @@ export function useThreadFind({
   };
 }
 
+export interface TimelineFindMatchEntry {
+  readonly entryId: string;
+  readonly count: number;
+}
+
 export interface TimelineFields {
   readonly findOpen: boolean;
   readonly findExpanded: boolean;
   readonly findQuery: string;
   readonly activeFindMatch: ThreadFindMatch | null;
   readonly findNavigationId: number;
+  readonly findMatchNavigation?: ReadonlyArray<TimelineFindMatchEntry> | null;
 }
 
 function sameTimeline(a: TimelineFields, b: TimelineFields) {
@@ -261,6 +268,7 @@ function sameTimeline(a: TimelineFields, b: TimelineFields) {
     a.findExpanded === b.findExpanded &&
     a.findQuery === b.findQuery &&
     a.findNavigationId === b.findNavigationId &&
+    a.findMatchNavigation === b.findMatchNavigation &&
     (aMatch === null || bMatch === null
       ? aMatch === bMatch
       : aMatch.entryId === bMatch.entryId &&

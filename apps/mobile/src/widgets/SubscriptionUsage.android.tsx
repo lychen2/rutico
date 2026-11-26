@@ -39,39 +39,69 @@ export function SubscriptionUsage(props: SubscriptionUsageProps, environment: Wi
         : "light";
   const palette = props.theme?.[appearance];
   const material = getMaterialColors({ scheme: appearance });
+  const isDark = appearance === "dark";
   const colors = palette
     ? {
         surface: palette.background,
+        surfaceTonal: material.surfaceContainerHigh,
         onSurface: palette.foreground,
         muted: palette.secondary,
         track: palette.track,
         error: palette.danger,
+        healthy: isDark ? "#34D399" : "#15803D",
+        warning: isDark ? "#FBBF24" : "#D97706",
+        staleContainer: isDark ? "#3F2A14" : "#FEF3C7",
+        onStaleContainer: isDark ? "#FDE68A" : "#92400E",
       }
     : {
-        surface: material.surface,
+        surface: material.surfaceContainer,
+        surfaceTonal: material.surfaceContainerHigh,
         onSurface: material.onSurface,
         muted: material.onSurfaceVariant,
         track: material.surfaceVariant,
         error: material.error,
+        healthy: isDark ? "#34D399" : "#15803D",
+        warning: isDark ? "#FBBF24" : "#D97706",
+        staleContainer: material.errorContainer,
+        onStaleContainer: material.onErrorContainer,
       };
+  // Normalize #RRGGBB and #RRGGBBAA hex strings before applying an alpha channel.
+  const withHexAlpha = (hex: string, alphaHex: string) => {
+    const base = hex.length === 9 ? hex.slice(0, 7) : hex;
+    return base.length === 7 ? `${base}${alphaHex}` : hex;
+  };
+  const rateColor = (remaining: number) =>
+    remaining <= 10 ? colors.error : remaining <= 40 ? colors.warning : colors.healthy;
   // English until the app publishes its first snapshot in the UI language.
   const text = props.text ?? {
-    refresh: "Open T3 to refresh",
+    refresh: "Open Rutico to refresh",
     left: "left",
     asOf: "As of {time}",
-    tapToConnect: "Tap to connect in T3",
+    tapToConnect: "Tap to connect in Rutico",
     moreInApp: {} as Record<string, string>,
   };
   const providers = props.providers ?? [
-    // oxlint-disable-next-line t3code/no-untranslated-copy -- widget fallback until the app publishes translated text
-    { name: "Codex", detail: "Open T3 to connect", windows: [], expiresAt: 0, totalWindows: 0 },
-    // oxlint-disable-next-line t3code/no-untranslated-copy -- widget fallback until the app publishes translated text
-    { name: "Claude", detail: "Open T3 to connect", windows: [], expiresAt: 0, totalWindows: 0 },
+    {
+      name: "Codex",
+      // oxlint-disable-next-line t3code/no-untranslated-copy -- widget fallback until the app publishes translated text
+      detail: "Open Rutico to connect",
+      windows: [],
+      expiresAt: 0,
+      totalWindows: 0,
+    },
+    {
+      name: "Claude",
+      // oxlint-disable-next-line t3code/no-untranslated-copy -- widget fallback until the app publishes translated text
+      detail: "Open Rutico to connect",
+      windows: [],
+      expiresAt: 0,
+      totalWindows: 0,
+    },
   ];
 
-  const pad = 14;
-  const labelWidth = 92;
-  const footer = 16;
+  const pad = 16;
+  const labelWidth = 96;
+  const footer = 18;
   const widgetWidth = environment.width ?? 320;
   const contentWidth = widgetWidth - pad * 2;
   const contentHeight = (environment.height ?? 200) - pad * 2 - footer;
@@ -84,8 +114,9 @@ export function SubscriptionUsage(props: SubscriptionUsageProps, environment: Wi
         color: string;
         window: SubscriptionUsageProps["providers"][number]["windows"][number];
       }
-    | { type: "note"; provider: string; text: string };
+    | { type: "note"; provider: string; color: string; text: string; stale: boolean };
   const lines: Line[] = providers.flatMap((provider): Line[] => {
+    const providerColor = provider.colors?.[appearance] ?? colors.onSurface;
     const stale =
       provider.windows.length > 0 && provider.expiresAt > 0 && now >= provider.expiresAt;
     if (stale || provider.windows.length === 0)
@@ -93,7 +124,9 @@ export function SubscriptionUsage(props: SubscriptionUsageProps, environment: Wi
         {
           type: "note",
           provider: provider.name,
+          color: providerColor,
           text: stale ? text.refresh : provider.detail,
+          stale,
         },
       ];
     return [...provider.windows]
@@ -101,10 +134,11 @@ export function SubscriptionUsage(props: SubscriptionUsageProps, environment: Wi
       .map((window) => ({
         type: "window",
         provider: provider.name,
-        color: provider.colors?.[appearance] ?? colors.onSurface,
+        color: providerColor,
         window,
       }));
   });
+  const hasStaleReading = lines.some((line) => line.type === "note" && line.stale);
 
   // The snapshot keeps a few windows per provider; the rest still count toward "N more".
   const dropped = providers.reduce(
@@ -132,7 +166,6 @@ export function SubscriptionUsage(props: SubscriptionUsageProps, environment: Wi
     contentHeight / Math.max(1, shown.length + (hidden > 0 ? 1 : 0)),
   );
 
-  const low = (remaining: number) => remaining <= 10;
   const timeLeft = (account: WidgetLimitAccount) =>
     account.resetsAt && account.durationMs
       ? Math.max(0, Math.min(1, (account.resetsAt - now) / account.durationMs))
@@ -151,32 +184,40 @@ export function SubscriptionUsage(props: SubscriptionUsageProps, environment: Wi
 
   const segment = (
     account: WidgetLimitAccount,
-    color: string,
+    fallbackColor: string,
     segmentWidth: number,
     barHeight: number,
     labels: { name: boolean; percent: boolean; reset: boolean },
   ) => {
     if (account.remaining === undefined)
       return <Spacer key={account.name} modifiers={[size(segmentWidth, barHeight)]} />;
+    const barRadius = barHeight >= 16 ? 8 : 4;
     const fill = (segmentWidth * account.remaining) / 100;
     const refill = (segmentWidth * Math.min(100 - account.remaining, account.refill ?? 0)) / 100;
     const left = timeLeft(account);
     const tick =
       left === null ? null : Math.max(0, Math.min(segmentWidth - 5, segmentWidth * left - 2.5));
+    const semanticColor = rateColor(account.remaining);
+    const fillTint = withHexAlpha(semanticColor, "66");
+    const hatchTint = account.color ?? fallbackColor;
     return (
       <Box
         key={account.name}
-        modifiers={[size(segmentWidth, barHeight), background(colors.track), cornerRadius(6)]}
+        modifiers={[
+          size(segmentWidth, barHeight),
+          background(colors.track),
+          cornerRadius(barRadius),
+        ]}
       >
         {fill > 0 ? (
-          <Box modifiers={[size(fill, barHeight), background(`${color}59`), cornerRadius(6)]} />
+          <Box modifiers={[size(fill, barHeight), background(fillTint), cornerRadius(barRadius)]} />
         ) : null}
         {refill > 0 ? (
           <Row modifiers={[size(segmentWidth, barHeight)]}>
             <Spacer modifiers={[width(segmentWidth - refill)]} />
             <Image
               source={{ uri: "t3_widget_hatch" }}
-              tint={color}
+              tint={hatchTint}
               alpha={0.22}
               contentScale="fillBounds"
               modifiers={[size(refill, barHeight)]}
@@ -211,7 +252,7 @@ export function SubscriptionUsage(props: SubscriptionUsageProps, environment: Wi
               </Text>
             ) : null}
             <Text
-              color={low(account.remaining) ? colors.error : colors.onSurface}
+              color={account.remaining <= 40 ? semanticColor : colors.onSurface}
               maxLines={1}
               style={{ fontSize: 10, fontWeight: "bold" }}
             >
@@ -222,9 +263,9 @@ export function SubscriptionUsage(props: SubscriptionUsageProps, environment: Wi
         {labels.reset && account.reset ? (
           <Box
             contentAlignment="centerEnd"
-            modifiers={[size(segmentWidth, barHeight), padding(0, 0, 3, 0)]}
+            modifiers={[size(segmentWidth, barHeight), padding(0, 0, 4, 0)]}
           >
-            <Box modifiers={[background(colors.surface), cornerRadius(4), padding(4, 1, 4, 1)]}>
+            <Box modifiers={[background(colors.surface), cornerRadius(6), padding(4, 1, 4, 1)]}>
               <Text color={colors.onSurface} maxLines={1} style={{ fontSize: 9 }}>
                 {`↻ ${account.reset}`}
               </Text>
@@ -259,7 +300,7 @@ export function SubscriptionUsage(props: SubscriptionUsageProps, environment: Wi
 
   const percentText = (remaining: number, fontSize: number) => (
     <Text
-      color={low(remaining) ? colors.error : colors.onSurface}
+      color={remaining <= 40 ? rateColor(remaining) : colors.onSurface}
       maxLines={1}
       style={{ fontSize, fontWeight: "bold" }}
     >
@@ -276,26 +317,44 @@ export function SubscriptionUsage(props: SubscriptionUsageProps, environment: Wi
           verticalAlignment="center"
           modifiers={[fillMaxWidth(), height(rowHeight)]}
         >
-          <Text color={colors.onSurface} maxLines={1} style={{ fontSize: 11 }}>
+          <Box modifiers={[size(6, 6), background(line.color), cornerRadius(3)]} />
+          <Spacer modifiers={[width(6)]} />
+          <Text color={colors.onSurface} maxLines={1} style={{ fontSize: 11, fontWeight: "bold" }}>
             {`${line.provider}  `}
           </Text>
-          <Text color={colors.muted} maxLines={1} style={{ fontSize: 11 }}>
-            {line.text}
-          </Text>
+          {line.stale ? (
+            <Box
+              modifiers={[background(colors.staleContainer), cornerRadius(10), padding(6, 1, 6, 1)]}
+            >
+              <Text
+                color={colors.onStaleContainer}
+                maxLines={1}
+                style={{ fontSize: 10, fontWeight: "bold" }}
+              >
+                {line.text}
+              </Text>
+            </Box>
+          ) : (
+            <Text color={colors.muted} maxLines={1} style={{ fontSize: 11 }}>
+              {line.text}
+            </Text>
+          )}
         </Row>
       );
     if (!full)
       return (
         <Row key={label} verticalAlignment="center" modifiers={[fillMaxWidth(), height(rowHeight)]}>
+          <Box modifiers={[size(5, 5), background(line.color), cornerRadius(3)]} />
+          <Spacer modifiers={[width(5)]} />
           <Text
             color={colors.muted}
             maxLines={1}
             style={{ fontSize: 10 }}
-            modifiers={[width(labelWidth)]}
+            modifiers={[width(labelWidth - 10)]}
           >
             {label}
           </Text>
-          {bar(line, contentWidth - labelWidth - 40, 6)}
+          {bar(line, contentWidth - labelWidth - 40, 8)}
           <Box contentAlignment="centerEnd" modifiers={[width(40)]}>
             {percentText(line.window.remaining, 10)}
           </Box>
@@ -304,9 +363,13 @@ export function SubscriptionUsage(props: SubscriptionUsageProps, environment: Wi
     return (
       <Row key={label} verticalAlignment="center" modifiers={[fillMaxWidth(), height(rowHeight)]}>
         <Column modifiers={[width(labelWidth)]}>
-          <Text color={colors.muted} maxLines={1} style={{ fontSize: 10 }}>
-            {label}
-          </Text>
+          <Row verticalAlignment="center">
+            <Box modifiers={[size(6, 6), background(line.color), cornerRadius(3)]} />
+            <Spacer modifiers={[width(5)]} />
+            <Text color={colors.muted} maxLines={1} style={{ fontSize: 10 }}>
+              {label}
+            </Text>
+          </Row>
           <Row verticalAlignment="bottom">
             {percentText(line.window.remaining, 18)}
             <Text
@@ -320,16 +383,17 @@ export function SubscriptionUsage(props: SubscriptionUsageProps, environment: Wi
           </Row>
         </Column>
         <Spacer modifiers={[width(8)]} />
-        {bar(line, contentWidth - labelWidth - 8, 20)}
+        {bar(line, contentWidth - labelWidth - 8, 22)}
       </Row>
     );
   };
 
   return (
-    // Android lacks widgetURL; one card Button routes taps to the app listener opening props.url.
+    // The native SubscriptionUsageProvider (via withAndroidWidgetDeepLink.cjs) binds this root
+    // Button to a BAL-compliant Activity actionStartActivity PendingIntent so cold-start taps open Usage.
     <Button
       colors={{ containerColor: colors.surface }}
-      modifiers={[fillMaxSize()]}
+      modifiers={[fillMaxSize(), cornerRadius(24)]}
       onClick={() => {}}
     >
       <Column modifiers={[fillMaxSize(), paddingAll(pad)]}>
@@ -338,28 +402,44 @@ export function SubscriptionUsage(props: SubscriptionUsageProps, environment: Wi
           {hidden > 0 ? (
             <Text color={colors.muted} maxLines={1} style={{ fontSize: 10 }}>
               {/* oxlint-disable-next-line t3code/no-untranslated-copy -- widget fallback until the app publishes translated text */}
-              {text.moreInApp[String(hidden)] ?? `${hidden} more in T3`}
+              {text.moreInApp[String(hidden)] ?? `${hidden} more in Rutico`}
             </Text>
           ) : null}
         </Column>
-        <Text
-          color={colors.muted}
-          maxLines={1}
-          style={{ fontSize: 10 }}
-          modifiers={[height(footer)]}
-        >
-          {props.checkedAt
-            ? text.asOf.replace(
-                "{time}",
-                new Date(props.checkedAt).toLocaleString(undefined, {
-                  hour: "numeric",
-                  minute: "2-digit",
-                  month: "short",
-                  day: "numeric",
-                }),
-              )
-            : text.tapToConnect}
-        </Text>
+        <Row verticalAlignment="center" modifiers={[fillMaxWidth(), height(footer)]}>
+          <Text color={colors.muted} maxLines={1} style={{ fontSize: 10 }}>
+            {props.checkedAt
+              ? text.asOf.replace(
+                  "{time}",
+                  new Date(props.checkedAt).toLocaleString(undefined, {
+                    hour: "numeric",
+                    minute: "2-digit",
+                    month: "short",
+                    day: "numeric",
+                  }),
+                )
+              : text.tapToConnect}
+          </Text>
+          {hasStaleReading ? (
+            <Box modifiers={[padding(6, 0, 0, 0)]}>
+              <Box
+                modifiers={[
+                  background(colors.staleContainer),
+                  cornerRadius(8),
+                  padding(5, 1, 5, 1),
+                ]}
+              >
+                <Text
+                  color={colors.onStaleContainer}
+                  maxLines={1}
+                  style={{ fontSize: 9, fontWeight: "bold" }}
+                >
+                  {"↻"}
+                </Text>
+              </Box>
+            </Box>
+          ) : null}
+        </Row>
       </Column>
     </Button>
   );

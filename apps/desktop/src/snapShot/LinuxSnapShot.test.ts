@@ -259,6 +259,7 @@ it("keeps capture working with v1 and does not request unavailable effects", asy
   expect(await captureLinuxWindow(appId, { flash: true, animate: true })).toEqual({
     png,
     window: metadata,
+    backend: "gnome-extension",
   });
   expect(bus.calls.some((call) => call.member === "CaptureWithFeedback")).toBe(false);
   expect(bus.disconnect).toHaveBeenCalledOnce();
@@ -268,7 +269,7 @@ it.each([false, true])(
   "accepts an early Response with a changed request path: %s",
   async (differentHandle) => {
     bus.differentHandle = differentHandle;
-    expect(await captureLinuxWindow(appId)).toEqual({ png });
+    expect(await captureLinuxWindow(appId)).toEqual({ png, backend: "screenshot-portal" });
     const screenshot = bus.calls.find((call) => call.member === "Screenshot");
     expect(screenshot?.body[1]).toMatchObject({
       target: { signature: "u", value: 8 },
@@ -281,6 +282,18 @@ it.each([false, true])(
     expect(bus.disconnect).toHaveBeenCalledOnce();
   },
 );
+
+it("reports actual screenshot-portal backend when GNOME or KDE falls back to portal", async () => {
+  vi.stubEnv("XDG_CURRENT_DESKTOP", "GNOME");
+  bus.portalVersion = 3;
+  bus.targets = 8;
+  bus.extensionVersion = 2;
+  expect(await captureLinuxWindow(appId)).toEqual({ png, backend: "screenshot-portal" });
+
+  vi.stubEnv("XDG_CURRENT_DESKTOP", "KDE");
+  bus.kdeVersion = undefined;
+  expect(await captureLinuxWindow(appId)).toEqual({ png, backend: "screenshot-portal" });
+});
 
 it.each([1, 2])(
   "does not try the extension or picker after portal rejection %s",

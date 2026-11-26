@@ -3,6 +3,7 @@ import { AtomRegistry } from "effect/reactivity";
 import "~/index.css";
 import { EnvironmentId } from "@t3tools/contracts";
 import { expect, it, vi } from "vite-plus/test";
+import { userEvent } from "vite-plus/test/browser";
 
 import { act, render, stubGlobal } from "../../../test/render";
 
@@ -16,14 +17,25 @@ vi.mock(import("./DevicePhoneViewport"), () => ({
 import { DeviceStreamView } from "./DeviceStreamView";
 
 const access = { httpBase: "http://test", wsBase: "ws://test", query: {}, credentials: true };
-function setup() {
+function setup(options?: { readonly axTree?: ReadonlyArray<unknown> }) {
   const registry = AtomRegistry.make();
   const touches: unknown[] = [];
+  const keys: unknown[] = [];
   const image = vi.spyOn(HTMLImageElement.prototype, "src", "set").mockImplementation(() => {});
   // Select MJPEG without starting a WebCodecs decoder. Input uses the real stream client.
   const decoder = stubGlobal("VideoDecoder", undefined);
   Reflect.deleteProperty(globalThis, "VideoDecoder");
-  const fetch = stubGlobal("fetch", () => Promise.resolve(new Response("prime")));
+  const fetch = stubGlobal("fetch", (input: string | URL | Request) => {
+    const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+    if (url.includes("/ax")) {
+      return Promise.resolve(
+        new Response(JSON.stringify(options?.axTree ?? []), {
+          headers: { "content-type": "application/json" },
+        }),
+      );
+    }
+    return Promise.resolve(new Response("prime"));
+  });
   // The client opens its input socket only after the MJPEG prime resolves.
   type InputSocket = {
     onmessage?: (event: { data: ArrayBuffer }) => void;
@@ -44,15 +56,17 @@ function setup() {
       send(message: string | Uint8Array) {
         if (typeof message !== "string" && message[0] === 0x03) {
           touches.push(JSON.parse(new TextDecoder().decode(message.subarray(1))));
+        } else if (typeof message !== "string" && message[0] === 0x04) {
+          keys.push(JSON.parse(new TextDecoder().decode(message.subarray(1))));
         }
       }
       close() {}
     },
   );
   return {
-    view: () => (
+    view: (props?: { readonly axOverlay?: boolean; readonly axInspect?: boolean }) => (
       <RegistryContext.Provider value={registry}>
-        <div style={{ width: 400, height: 800 }}>{view()}</div>
+        <div style={{ width: 400, height: 800 }}>{view(props)}</div>
       </RegistryContext.Provider>
     ),
     [Symbol.dispose]() {
@@ -63,6 +77,7 @@ function setup() {
       decoder[Symbol.dispose]();
     },
     touches,
+    keys,
     async configure(inputUnavailable = false) {
       const json = new TextEncoder().encode(
         JSON.stringify({ width: 400, height: 800, orientation: "portrait", inputUnavailable }),
@@ -77,7 +92,7 @@ function setup() {
   };
 }
 
-function view() {
+function view(props?: { readonly axOverlay?: boolean; readonly axInspect?: boolean }) {
   return (
     <DeviceStreamView
       hostId="local"
@@ -86,6 +101,8 @@ function view() {
       platform="ios"
       visible
       allowPhoneView={false}
+      {...(props?.axOverlay !== undefined ? { axOverlay: props.axOverlay } : {})}
+      {...(props?.axInspect !== undefined ? { axInspect: props.axInspect } : {})}
       renderControls={(controls) => (
         <output>
           {controls.handle?.inputConnected ? "Input connected" : "Input disconnected"}
@@ -205,4 +222,88 @@ it("releases flat pointer ownership when input disconnects", async () => {
     { type: "begin", x: 0.5, y: 0.5 },
     { type: "end", x: 0.75, y: 0.75 },
   ]);
+});
+
+it("blocks device touches in inspect mode on blank areas, copies via pointer and keyboard, and restores touches when exiting", async () => {
+  const copied: string[] = [];
+  using _clipboard = vi.spyOn(navigator.clipboard, "writeText").mockImplementation(async (text) => {
+    copied.push(text);
+  });
+  using input = setup({
+    axTree: [
+      {
+        type: "Application",
+        frame: { x: 0, y: 0, width: 400, height: 800 },
+        children: [
+          {
+            type: "Button",
+            AXUniqueId: "submit-btn",
+            AXLabel: "Submit",
+            frame: { x: 40, y: 80, width: 120, height: 60 },
+            children: [],
+          },
+        ],
+      },
+    ],
+  });
+  await using screen = await render(input.view({ axOverlay: true, axInspect: true }), options);
+  await act(() => input.configure());
+  await expect.element(screen.getByText("Input connected", { exact: true })).toBeVisible();
+
+  const inspectBox = screen.getByRole("button", { name: "Copy locator for Submit" });
+  await expect.element(inspectBox).toBeVisible();
+
+  // Clicking blank area of the overlay sends 0 touches to the device.
+  const overlay = screen.container.querySelector<HTMLElement>('[data-slot="device-ax-overlay"]')!;
+  const overlayRect = overlay.getBoundingClientRect();
+  await userEvent.click(overlay, {
+    position: {
+      x: Math.round(overlayRect.width * 0.85),
+      y: Math.round(overlayRect.height * 0.85),
+    },
+  });
+  expect(input.touches).toEqual([]);
+  expect(copied).toEqual([]);
+
+  // Clicking an element box copies its locator and sends 0 touches.
+  await userEvent.click(inspectBox);
+  await vi.waitFor(() => expect(copied).toHaveLength(1));
+  expect(copied[0]).toContain('label="Submit"');
+  expect(copied[0]).toContain("id=submit-btn");
+  expect(input.touches).toEqual([]);
+
+  // Keyboard activation copies the locator without sending device touches or keys.
+  inspectBox.element().focus();
+  await userEvent.keyboard("{Enter}");
+  await vi.waitFor(() => expect(copied).toHaveLength(2));
+  await userEvent.keyboard(" ");
+  await vi.waitFor(() => expect(copied).toHaveLength(3));
+  expect(input.touches).toEqual([]);
+  expect(input.keys).toEqual([]);
+
+  // Exiting inspect mode restores normal touch forwarding to the device.
+  await screen.rerender(input.view({ axOverlay: false, axInspect: false }));
+  const { send } = flatPointer(screen.container);
+  send("pointerdown", 1, 0.5, 0.5);
+  send("pointerup", 1, 0.5, 0.5);
+  expect(input.touches).toEqual([
+    { type: "begin", x: 0.5, y: 0.5 },
+    { type: "end", x: 0.5, y: 0.5 },
+  ]);
+});
+
+it("blocks device touches in inspect mode even when no accessibility element boxes exist", async () => {
+  using input = setup({ axTree: [] });
+  await using screen = await render(input.view({ axOverlay: true, axInspect: true }), options);
+  await act(() => input.configure());
+  await expect.element(screen.getByText("Input connected", { exact: true })).toBeVisible();
+
+  const overlay = screen.container.querySelector<HTMLElement>('[data-slot="device-ax-overlay"]')!;
+  expect(overlay).not.toBeNull();
+  await userEvent.click(overlay, { position: { x: 80, y: 120 } });
+  const { send } = flatPointer(screen.container);
+  send("pointerdown", 1, 0.25, 0.25);
+  send("pointermove", 1, 0.5, 0.5);
+  send("pointerup", 1, 0.5, 0.5);
+  expect(input.touches).toEqual([]);
 });

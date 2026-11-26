@@ -23,6 +23,7 @@ export function WorkLogBlock({
 }) {
   return (
     <div
+      data-work-log-block={layout}
       className={
         continues || layout === "group-header"
           ? "pb-0"
@@ -39,7 +40,10 @@ export function WorkLogBlock({
 export function WorkLogList({ children }: { children: ReactNode }) {
   return (
     <GroupedRows value>
-      <div className="flex min-w-0 flex-col">{children}</div>
+      <div data-work-log-spine="true" className="relative flex min-w-0 flex-col ps-2.5">
+        <span aria-hidden="true" data-work-log-spine-rail="true" />
+        {children}
+      </div>
     </GroupedRows>
   );
 }
@@ -151,10 +155,15 @@ export function WorkLogRow({
   children,
   ...rowProps
 }: RowContent & RowProps) {
+  const grouped = use(GroupedRows);
   const className = useRowClassName(rowProps.onClick !== undefined, false);
   const detailsId = useId();
   return (
-    <div {...rowProps} className={className}>
+    <div
+      {...rowProps}
+      data-work-log-grouped-row={grouped ? "true" : undefined}
+      className={className}
+    >
       <WorkLogLine
         aria-controls={toggle ? detailsId : undefined}
         {...toggle}
@@ -192,12 +201,14 @@ export function WorkLogDetails({
   return (
     <div
       ref={scrollerRef}
+      data-work-log-details={kind}
+      data-work-log-follow-live={followLive ? "true" : undefined}
       onScroll={(event) => {
         const { scrollHeight, scrollTop, clientHeight } = event.currentTarget;
         atLiveEdgeRef.current = scrollHeight - scrollTop - clientHeight <= LIVE_EDGE_PX;
       }}
       className={cn(
-        "cursor-auto transition-[opacity,transform] duration-180 ease-out starting:-translate-y-1 starting:opacity-0 motion-reduce:transition-none",
+        "cursor-auto transition-[opacity,transform] duration-200 ease-out starting:-translate-y-1 starting:opacity-0 motion-reduce:transition-none",
         kind === "text"
           ? "ms-3 flex max-h-96 flex-col gap-3 overflow-auto border-s border-border/60 py-1 ps-4 pe-0.5 select-text"
           : kind === "panel"

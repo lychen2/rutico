@@ -814,3 +814,25 @@ it("says the phone is set up only once this computer is shared with the signed-i
   await vi.waitFor(() => expect(pageText()).toContain("Your phone can reach this computer."));
   expect(pageText()).not.toContain("Check T3 Connect");
 });
+
+it("renders editorial T3Wordmark, optical readiness cards, and luminous Start CTA without extra provider refreshes", async () => {
+  using _now = setup();
+  appAtomRegistry.set(state.providers as Atom.Writable<ReadonlyArray<ServerProvider>>, []);
+  await using _screen = await mountWelcome();
+
+  expect(document.querySelector('[data-wordmark-animated="true"]')).not.toBeNull();
+  expect(document.querySelectorAll('[data-slot="welcome-section-card"]').length).toBeGreaterThan(0);
+  const startCta = document.querySelector<HTMLButtonElement>('[data-slot="welcome-start-cta"]');
+  expect(startCta?.dataset.ready).toBe("false");
+  expect(state.refreshProviders).toHaveBeenCalledTimes(1);
+
+  await act(async () =>
+    appAtomRegistry.set(state.providers as Atom.Writable<ReadonlyArray<ServerProvider>>, [
+      readyClaude,
+    ]),
+  );
+
+  await vi.waitFor(() => expect(startCta?.dataset.ready).toBe("true"));
+  expect(document.querySelector('[data-welcome-agent-ready="true"]')).not.toBeNull();
+  expect(state.refreshProviders).toHaveBeenCalledTimes(1);
+});

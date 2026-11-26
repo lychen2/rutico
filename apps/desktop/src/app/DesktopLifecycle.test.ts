@@ -66,6 +66,8 @@ const layerElectronTheme = Layer.succeed(ElectronTheme.ElectronTheme, {
   shouldUseDarkColors: Effect.succeed(false),
   setSource: () => Effect.void,
   onUpdated: () => Effect.void,
+  linuxPortalAppearance: Effect.succeed(null),
+  onLinuxPortalAppearanceChange: () => Effect.void,
 });
 
 function layerElectronWindow(destroyAll: Effect.Effect<void> = Effect.void) {

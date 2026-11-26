@@ -42,6 +42,8 @@ export function SidebarThreadUndoNotice() {
       inert={!summary}
     >
       <div
+        data-slot="sidebar-undo-notice"
+        data-state={summary ? "open" : "closed"}
         onTransitionEnd={(event) => {
           if (!summary && event.target === event.currentTarget) setShownSummary(null);
         }}
@@ -49,8 +51,8 @@ export function SidebarThreadUndoNotice() {
         // second line that overflow hides, instead of truncating mid-word. Browse mode
         // reads the button first; the live announcement carries the full sentence.
         className={cn(
-          "flex h-6 min-w-0 flex-1 flex-row-reverse flex-wrap gap-x-1 overflow-hidden text-2xs leading-6 whitespace-nowrap text-sidebar-muted-foreground transition-opacity duration-200 ease-out starting:opacity-0",
-          !summary && "opacity-0",
+          "relative flex h-6 min-w-0 flex-1 flex-row-reverse flex-wrap gap-x-1 overflow-hidden text-2xs leading-6 whitespace-nowrap text-sidebar-muted-foreground transition-[opacity,transform] duration-200 ease-(--spring-snappy) starting:translate-y-1 starting:opacity-0 motion-reduce:transition-opacity motion-reduce:starting:translate-y-0",
+          !summary && "translate-y-0.5 opacity-0",
         )}
       >
         <InlineButton className="min-w-0 shrink" onClick={undoLatestThreadAction}>
@@ -62,6 +64,7 @@ export function SidebarThreadUndoNotice() {
           </span>
         </InlineButton>
         <span>{text}</span>
+        {summary ? <span aria-hidden="true" data-slot="sidebar-undo-countdown" key={text} /> : null}
       </div>
     </SidebarMenuItem>
   );

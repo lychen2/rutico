@@ -1,0 +1,2082 @@
+/* ==========================================================================
+   Stage 2 Lane 2C — Chat, Composer & Thread Motion Stylesheet
+   Reserved modular stylesheet pre-imported by index.css for conflict-free
+   parallel Stage 2 edits.
+   ========================================================================== */
+
+/* ==========================================================================
+   D06 / C018: Kinetic Mask-Sweep Frontier Reveal & Zero-DOM-Residue Streaming
+   ========================================================================== */
+
+@keyframes chat-prose-frontier-reveal {
+  0% {
+    opacity: 0.28;
+    transform: translate3d(0, 3px, 0);
+    -webkit-mask-position: 100% 0;
+    mask-position: 100% 0;
+  }
+  100% {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+    -webkit-mask-position: 0% 0;
+    mask-position: 0% 0;
+  }
+}
+
+@keyframes chat-ink-caret-breathe {
+  0%,
+  100% {
+    opacity: 0.92;
+    transform: scaleY(1);
+  }
+  50% {
+    opacity: 0.24;
+    transform: scaleY(0.74);
+  }
+}
+
+.chat-markdown[data-streaming] > [data-streaming-tail="true"][data-streaming-frontier="enter"] {
+  -webkit-mask-image: linear-gradient(
+    90deg,
+    #000 0%,
+    #000 62%,
+    rgb(0 0 0 / 45%) 82%,
+    transparent 100%
+  );
+  mask-image: linear-gradient(90deg, #000 0%, #000 62%, rgb(0 0 0 / 45%) 82%, transparent 100%);
+  -webkit-mask-size: 240% 100%;
+  mask-size: 240% 100%;
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+}
+
+.chat-markdown > [data-streaming-tail]:is(p, blockquote, h1, h2, h3, h4, h5, h6)::after,
+.chat-markdown > [data-streaming-tail]:is(ul, ol) > li:last-child::after {
+  content: "";
+  display: inline-block;
+  width: 2px;
+  height: 1em;
+  margin-inline-start: 3px;
+  vertical-align: -0.14em;
+  border-radius: 9999px;
+  background-color: var(--primary);
+  pointer-events: none;
+  user-select: none;
+}
+
+.chat-markdown > [data-streaming-tail="settling"]:is(p, blockquote, h1, h2, h3, h4, h5, h6)::after,
+.chat-markdown > [data-streaming-tail="settling"]:is(ul, ol) > li:last-child::after {
+  opacity: 0;
+  transform: scaleY(0.45);
+  transition:
+    opacity 180ms ease-out,
+    transform 180ms ease-out;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .chat-markdown[data-streaming] > [data-streaming-tail="true"][data-streaming-frontier="enter"] {
+    animation: chat-prose-frontier-reveal 210ms var(--spring-micro) both;
+  }
+
+  .chat-markdown[data-streaming]
+    > [data-streaming-tail="true"]:is(p, blockquote, h1, h2, h3, h4, h5, h6)::after,
+  .chat-markdown[data-streaming] > [data-streaming-tail="true"]:is(ul, ol) > li:last-child::after {
+    animation: chat-ink-caret-breathe 960ms ease-in-out infinite;
+    animation-play-state: var(--visible-animation-state, paused);
+    will-change: var(--visible-animation-will-change, auto);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .chat-markdown[data-streaming] > [data-streaming-tail="true"][data-streaming-frontier="enter"] {
+    -webkit-mask-image: none;
+    mask-image: none;
+    animation: none;
+  }
+
+  .chat-markdown
+    > [data-streaming-tail="settling"]:is(p, blockquote, h1, h2, h3, h4, h5, h6)::after,
+  .chat-markdown > [data-streaming-tail="settling"]:is(ul, ol) > li:last-child::after {
+    display: none;
+    transition: none;
+  }
+}
+
+/* ==========================================================================
+   D06 / C019: Incremental Streaming Shiki Lines, Laser Rail & Metallic Settle
+   ========================================================================== */
+
+@keyframes chat-codeblock-settle-beam {
+  from {
+    opacity: 0.9;
+    transform: translate3d(-110%, 0, 0);
+  }
+  70% {
+    opacity: 0.75;
+  }
+  to {
+    opacity: 0;
+    transform: translate3d(220%, 0, 0);
+  }
+}
+
+@keyframes chat-codeblock-run-unlock {
+  from {
+    opacity: 0;
+    transform: scale(0.86);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.chat-markdown-shiki[data-code-streaming="true"] .line {
+  position: relative;
+}
+
+.chat-markdown-shiki[data-code-streaming="true"] .line[data-code-active-line="true"]::before {
+  content: "";
+  position: absolute;
+  inset-inline-start: -0.625rem;
+  top: 0.125rem;
+  bottom: 0.125rem;
+  width: 2px;
+  border-radius: 9999px;
+  background-color: var(--primary);
+  pointer-events: none;
+}
+
+.chat-codeblock-settle-beam {
+  background-image: linear-gradient(
+    90deg,
+    transparent 0%,
+    color-mix(in oklch, var(--contrast-foreground) 48%, var(--primary)) 50%,
+    transparent 100%
+  );
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .chat-markdown-shiki[data-code-streaming="true"] .line[data-code-line-enter="true"] {
+    transition:
+      opacity 140ms ease-out,
+      transform 140ms var(--spring-micro);
+    @starting-style {
+      opacity: 0;
+      transform: translate3d(-5px, 0, 0);
+    }
+  }
+
+  .chat-codeblock-settle-beam {
+    animation: chat-codeblock-settle-beam 260ms cubic-bezier(0.23, 1, 0.32, 1) forwards;
+  }
+
+  [data-code-run-unlock="true"] {
+    animation: chat-codeblock-run-unlock 200ms var(--spring-snappy) both;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .chat-codeblock-settle-sheen {
+    display: none;
+  }
+
+  [data-code-run-unlock="true"] {
+    animation: none;
+  }
+}
+
+/* ==========================================================================
+   D06 / C020: Turn-Completion Landing Choreography (SVG Check-Draw & Stagger)
+   ========================================================================== */
+
+@keyframes chat-turn-check-draw {
+  from {
+    stroke-dashoffset: 100;
+  }
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+@keyframes chat-turn-check-ring-pop {
+  0% {
+    opacity: 0.4;
+    transform: scale(0.84);
+  }
+  60% {
+    opacity: 1;
+    transform: scale(1.06);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  [data-turn-fold-row="true"][data-turn-just-landed="true"] [data-turn-fold-check="true"] {
+    animation: chat-turn-check-ring-pop 280ms var(--spring-bouncy) both;
+  }
+
+  [data-turn-fold-row="true"][data-turn-just-landed="true"] [data-turn-fold-check-mark="true"] {
+    stroke-dasharray: 100;
+    animation: chat-turn-check-draw 260ms var(--spring-snappy) 60ms both;
+  }
+
+  [data-assistant-meta-rail="true"][data-result-just-landed="true"] > div {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-turn-fold-row="true"][data-turn-just-landed="true"] [data-turn-fold-check="true"],
+  [data-turn-fold-row="true"][data-turn-just-landed="true"] [data-turn-fold-check-mark="true"] {
+    animation: none;
+  }
+}
+
+/* ==========================================================================
+   D06 / C021: Mermaid Clip-Path Morph, MarkdownTable Hover Band & Details Rail
+   ========================================================================== */
+
+@keyframes chat-mermaid-reveal {
+  from {
+    opacity: 0.25;
+    clip-path: inset(0 0 10% 0 round 8px);
+    transform: translate3d(0, 4px, 0);
+  }
+  to {
+    opacity: 1;
+    clip-path: inset(0 0 0 0 round 8px);
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+@keyframes chat-details-rail-draw {
+  from {
+    opacity: 0;
+    transform: scaleY(0);
+  }
+  to {
+    opacity: 1;
+    transform: scaleY(1);
+  }
+}
+
+@keyframes chat-table-copy-pop {
+  0% {
+    transform: scale(0.76);
+  }
+  55% {
+    transform: scale(1.14);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+@media (hover: hover) and (pointer: fine) {
+  [data-markdown-table="true"] tbody tr {
+    transition: background-color 140ms ease-out;
+  }
+
+  [data-markdown-table="true"] tbody tr:hover {
+    background-color: color-mix(in oklch, var(--contrast-foreground) 4.5%, transparent);
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  [data-mermaid-reveal="true"] {
+    animation: chat-mermaid-reveal 260ms var(--spring-spatial) both;
+  }
+
+  [data-markdown-details-open="true"] [data-markdown-details-rail="true"] {
+    animation: chat-details-rail-draw 220ms var(--spring-snappy) both;
+  }
+
+  [data-table-copy-check="true"] {
+    animation: chat-table-copy-pop 240ms var(--spring-bouncy) both;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-mermaid-reveal="true"],
+  [data-markdown-details-open="true"] [data-markdown-details-rail="true"],
+  [data-table-copy-check="true"] {
+    animation: none;
+  }
+
+  [data-markdown-table="true"] tbody tr {
+    transition: none;
+  }
+}
+
+/* ==========================================================================
+   D07 / C022: Magnetic Composer-to-Timeline FLIP Launch & Optimistic Settle
+   ========================================================================== */
+
+@keyframes chat-user-optimistic-rim {
+  0%,
+  100% {
+    opacity: 0.28;
+    transform: scaleX(0.68);
+  }
+  50% {
+    opacity: 0.85;
+    transform: scaleX(1);
+  }
+}
+
+[data-user-message-bubble]::before {
+  content: "";
+  position: absolute;
+  inset-inline: 1rem;
+  top: 0;
+  height: 1px;
+  border-radius: 9999px;
+  pointer-events: none;
+  opacity: 0;
+  background-image: linear-gradient(
+    90deg,
+    transparent 0%,
+    color-mix(in oklch, var(--primary) 52%, var(--contrast-foreground)) 50%,
+    transparent 100%
+  );
+  transition: opacity 200ms ease-out;
+}
+
+[data-user-message-bubble][data-user-message-state="launching"]::before {
+  opacity: 0.6;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  [data-user-message-bubble][data-user-message-state="launching"]::before {
+    animation: chat-user-optimistic-rim 1.3s ease-in-out infinite;
+    animation-play-state: var(--visible-animation-state, paused);
+    will-change: var(--visible-animation-will-change, auto);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-user-message-bubble]::before {
+    transition: none;
+    animation: none;
+  }
+}
+
+/* ==========================================================================
+   D07 / C023: 40%-Center Draft Hero Stage & Contextual Starter Pills
+   ========================================================================== */
+
+[data-draft-hero-overlay="true"] {
+  padding-bottom: 10dvh;
+}
+
+@media (max-height: 34rem) {
+  [data-draft-hero-overlay="true"] {
+    padding-bottom: 0;
+  }
+}
+
+@keyframes chat-draft-hero-stage-in {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 6px, 0) scale(0.992);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+}
+
+@keyframes chat-draft-starter-enter {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 6px, 0) scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+}
+
+[data-draft-project-capsule="true"] {
+  border-radius: 0.625rem;
+  box-shadow:
+    inset 0 1px 0 color-mix(in oklch, var(--contrast-foreground) 10%, transparent),
+    0 0 0 1px color-mix(in oklch, var(--border) 82%, transparent);
+  transition:
+    background-color 150ms ease-out,
+    box-shadow 150ms ease-out,
+    transform 180ms var(--spring-snappy);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  [data-draft-project-capsule="true"]:hover {
+    box-shadow:
+      inset 0 1px 0 color-mix(in oklch, var(--contrast-foreground) 16%, transparent),
+      0 0 0 1px color-mix(in oklch, var(--contrast-foreground) 22%, var(--border)),
+      0 2px 8px -4px rgb(0 0 0 / 0.16);
+  }
+}
+
+[data-draft-project-capsule="true"]:active {
+  transform: scale(0.975);
+}
+
+[data-draft-starter-rail="true"] {
+  transition:
+    opacity 160ms ease-out,
+    transform 160ms var(--spring-micro);
+  transform-origin: top center;
+}
+
+[data-draft-starter-rail="true"][data-starters-visible="false"] {
+  opacity: 0;
+  transform: translate3d(0, -4px, 0) scale(0.985);
+  pointer-events: none;
+}
+
+[data-draft-starter-pill="true"] {
+  box-shadow:
+    inset 0 1px 0 color-mix(in oklch, var(--contrast-foreground) 8%, transparent),
+    0 1px 2px rgb(0 0 0 / 0.04);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  [data-draft-hero-stage="true"] {
+    animation: chat-draft-hero-stage-in 300ms var(--spring-gentle) both;
+  }
+
+  [data-draft-starter-rail="true"][data-starters-visible="true"] [data-draft-starter-pill="true"] {
+    animation: chat-draft-starter-enter 240ms var(--spring-snappy)
+      calc(70ms + var(--starter-index, 0) * 34ms) both;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-draft-hero-stage="true"],
+  [data-draft-starter-pill="true"] {
+    animation: none;
+  }
+
+  [data-draft-project-capsule="true"],
+  [data-draft-starter-rail="true"] {
+    transition: none;
+  }
+
+  [data-draft-project-capsule="true"]:active {
+    transform: none;
+  }
+}
+
+/* ==========================================================================
+   D07 / C024: Zero-Flash Thread-Switch Viewport Gate
+   ========================================================================== */
+
+[data-assistant-citation-viewport="true"][data-timeline-switch-pending="true"] {
+  opacity: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-assistant-citation-viewport="true"][data-timeline-switch-pending="true"] {
+    opacity: 1;
+  }
+}
+
+/* ==========================================================================
+   D09 / C028: 3-Line Optical-Feathered Living Reasoning Stream & Compression
+   ========================================================================== */
+
+@keyframes chat-reasoning-rail-breathe {
+  0%,
+  100% {
+    opacity: 0.32;
+    transform: scaleY(0.84);
+  }
+  50% {
+    opacity: 0.92;
+    transform: scaleY(1);
+  }
+}
+
+[data-live-reasoning-shell="true"] {
+  display: grid;
+  grid-template-rows: 1fr;
+  opacity: 1;
+  transition:
+    grid-template-rows 240ms var(--spring-snappy),
+    opacity 180ms ease-out;
+}
+
+[data-live-reasoning-shell="true"][data-reasoning-window-state="compressed"] {
+  grid-template-rows: 0fr;
+  opacity: 0;
+  pointer-events: none;
+}
+
+[data-live-reasoning-window="true"] {
+  max-height: calc(3 * 1.45em + 0.5rem);
+  mask-image: linear-gradient(to bottom, transparent 0%, #000 18%, #000 84%, transparent 100%);
+  -webkit-mask-image: linear-gradient(
+    to bottom,
+    transparent 0%,
+    #000 18%,
+    #000 84%,
+    transparent 100%
+  );
+}
+
+[data-reasoning-breathing-rail="true"] {
+  transform-origin: center;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  [data-reasoning-breathing-rail="true"][data-reasoning-active="true"] {
+    animation: chat-reasoning-rail-breathe 1.6s ease-in-out infinite;
+    animation-play-state: var(--visible-animation-state, paused);
+    will-change: var(--visible-animation-will-change, auto);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-live-reasoning-shell="true"] {
+    transition: none;
+  }
+
+  [data-reasoning-breathing-rail="true"] {
+    animation: none;
+  }
+}
+
+/* ==========================================================================
+   D09 / C029: WorkGroup & TurnFold Optical Spine Rail + Decaying Cascade
+   ========================================================================== */
+
+@keyframes chat-work-spine-draw {
+  from {
+    opacity: 0;
+    transform: scaleY(0);
+  }
+  to {
+    opacity: 1;
+    transform: scaleY(1);
+  }
+}
+
+@keyframes chat-work-cascade-in {
+  from {
+    opacity: 0;
+    transform: translate3d(-4px, 4px, 0);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+[data-work-log-spine="true"] > [data-work-log-spine-rail="true"] {
+  position: absolute;
+  inset-inline-start: 0.375rem;
+  top: 0.375rem;
+  bottom: 0.375rem;
+  width: 1px;
+  border-radius: 9999px;
+  pointer-events: none;
+  transform-origin: top center;
+  background-image: linear-gradient(
+    to bottom,
+    color-mix(in oklch, var(--border) 90%, transparent) 0%,
+    color-mix(in oklch, var(--border) 75%, transparent) 85%,
+    transparent 100%
+  );
+}
+
+[data-work-log-spine="true"] [data-work-log-grouped-row="true"]::before {
+  content: "";
+  position: absolute;
+  inset-inline-start: -0.4375rem;
+  top: 0.65rem;
+  width: 5px;
+  height: 5px;
+  border-radius: 9999px;
+  pointer-events: none;
+  background-color: color-mix(in oklch, var(--border) 85%, transparent);
+  opacity: 0;
+  transform: scale(0.7);
+  transition:
+    opacity 140ms ease-out,
+    background-color 140ms ease-out,
+    transform 160ms var(--spring-snappy);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  [data-work-log-spine="true"] [data-work-log-grouped-row="true"]:hover::before,
+  [data-work-log-spine="true"] [data-work-log-grouped-row="true"]:focus-within::before {
+    opacity: 1;
+    background-color: color-mix(in oklch, var(--primary) 78%, var(--contrast-foreground));
+    transform: scale(1);
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  [data-work-log-spine="true"] > [data-work-log-spine-rail="true"] {
+    animation: chat-work-spine-draw 240ms var(--spring-snappy) both;
+  }
+
+  [data-work-cascade-row="true"] {
+    animation: chat-work-cascade-in 210ms var(--spring-snappy) var(--work-cascade-delay, 0ms) both;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-work-log-spine="true"] > [data-work-log-spine-rail="true"],
+  [data-work-cascade-row="true"] {
+    animation: none;
+  }
+
+  [data-work-log-spine="true"] [data-work-log-grouped-row="true"]::before {
+    transition: none;
+  }
+}
+
+/* ==========================================================================
+   D09 / C030: Framed Zero-Blur Telemetry Cards, Exit-Code Morphs & Output Fade
+   ========================================================================== */
+
+@keyframes chat-exit-dot-pulse {
+  0%,
+  100% {
+    opacity: 0.4;
+    transform: scale(0.8);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.1);
+  }
+}
+
+@keyframes chat-exit-check-draw {
+  from {
+    stroke-dashoffset: 100;
+  }
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+[data-telemetry-well="true"],
+[data-telemetry-card],
+[data-telemetry-command="framed"] {
+  box-shadow: inset 0 1px 0 color-mix(in oklch, var(--contrast-foreground) 7%, transparent);
+}
+
+[data-command-output-scroller="true"][data-command-output-faded="true"] {
+  mask-image: linear-gradient(to bottom, #000 0%, #000 84%, transparent 100%);
+  -webkit-mask-image: linear-gradient(to bottom, #000 0%, #000 84%, transparent 100%);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  [data-exit-running-dot="true"] {
+    animation: chat-exit-dot-pulse 1.3s ease-in-out infinite;
+    animation-play-state: var(--visible-animation-state, paused);
+    will-change: var(--visible-animation-will-change, auto);
+  }
+
+  [data-exit-check-mark="true"] {
+    stroke-dasharray: 100;
+    animation: chat-exit-check-draw 220ms var(--spring-snappy) both;
+  }
+
+  [data-telemetry-copy-check="true"] {
+    animation: chat-table-copy-pop 220ms var(--spring-bouncy) both;
+  }
+
+  [data-command-jump-bottom="true"] {
+    animation: chat-work-cascade-in 180ms var(--spring-snappy) both;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-exit-running-dot="true"],
+  [data-exit-check-mark="true"],
+  [data-telemetry-copy-check="true"],
+  [data-command-jump-bottom="true"] {
+    animation: none;
+  }
+}
+
+/* ==========================================================================
+   D09 / C031: Tip 012 4×4 Physics Dot-Matrix & Worktree Check-Draw Progression
+   ========================================================================== */
+
+@keyframes chat-dot-matrix-field {
+  0%,
+  100% {
+    opacity: 0.16;
+    transform: scale(0.76);
+  }
+  28% {
+    opacity: 1;
+    transform: scale(1.12);
+  }
+  58% {
+    opacity: 0.42;
+    transform: scale(0.92);
+  }
+}
+
+[data-dot-matrix-indicator="true"] [data-dm-dot="true"] {
+  transform-box: fill-box;
+  transform-origin: center;
+  opacity: 0.28;
+}
+
+[data-dot-matrix-indicator="true"] [data-dm-dot="true"][data-dm-core="true"] {
+  opacity: 0.78;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  [data-dot-matrix-indicator="true"] [data-dm-dot="true"] {
+    animation: chat-dot-matrix-field var(--dm-cycle, 1400ms) cubic-bezier(0.4, 0, 0.2, 1)
+      var(--dm-delay, 0ms) infinite;
+    animation-play-state: var(--visible-animation-state, paused);
+    will-change: var(--visible-animation-will-change, auto);
+  }
+
+  [data-worktree-stage-check="true"][data-just-completed="true"] [data-worktree-check-path="true"] {
+    stroke-dasharray: 100;
+    animation: chat-exit-check-draw 260ms var(--spring-snappy) both;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-dot-matrix-indicator="true"] [data-dm-dot="true"],
+  [data-worktree-stage-check="true"] [data-worktree-check-path="true"] {
+    animation: none;
+  }
+}
+
+/* ==========================================================================
+   D10 / C032: Optical Approval Decision Cards, 3-Layer Stack & Stamp Lock
+   ========================================================================== */
+
+@keyframes chat-approval-card-in {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 6px, 0) scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+}
+
+@keyframes chat-approval-stamp-pop {
+  0% {
+    opacity: 0.4;
+    transform: scale(0.88);
+  }
+  65% {
+    opacity: 1;
+    transform: scale(1.04);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+[data-approval-decision-card="true"] {
+  position: relative;
+  overflow: hidden;
+  box-shadow:
+    inset 0 1px 0 color-mix(in oklch, var(--warning) 28%, transparent),
+    0 2px 10px -6px rgb(0 0 0 / 0.14);
+}
+
+[data-approval-decision-card="true"]::before {
+  content: "";
+  position: absolute;
+  inset-inline: 1rem;
+  top: 0;
+  height: 1px;
+  border-radius: 9999px;
+  pointer-events: none;
+  background-image: linear-gradient(
+    90deg,
+    transparent 0%,
+    color-mix(in oklch, var(--warning) 72%, var(--contrast-foreground)) 50%,
+    transparent 100%
+  );
+  opacity: 0.72;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  [data-approval-decision-card="true"] {
+    animation: chat-approval-card-in 220ms var(--spring-snappy) both;
+  }
+
+  [data-approval-stamp] {
+    animation: chat-approval-stamp-pop 240ms var(--spring-bouncy) both;
+  }
+
+  [data-approval-stamp-check="true"] {
+    stroke-dasharray: 100;
+    animation: chat-exit-check-draw 220ms var(--spring-snappy) 40ms both;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-approval-decision-card="true"],
+  [data-approval-stamp],
+  [data-approval-stamp-check="true"] {
+    animation: none;
+  }
+}
+
+/* ==========================================================================
+   D10 / C033: Bidirectional Step-Carousel & Reactive Kbd Press Feedback
+   ========================================================================== */
+
+@keyframes chat-question-step-forward {
+  from {
+    opacity: 0;
+    transform: translate3d(16px, 0, 0);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+@keyframes chat-question-step-backward {
+  from {
+    opacity: 0;
+    transform: translate3d(-16px, 0, 0);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+@keyframes chat-question-option-ripple {
+  from {
+    opacity: 0.48;
+    transform: scaleX(0.25);
+  }
+  to {
+    opacity: 0;
+    transform: scaleX(1);
+  }
+}
+
+[data-question-option-row="true"]::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  opacity: 0;
+  transform-origin: left center;
+  background-image: linear-gradient(
+    90deg,
+    color-mix(in oklch, var(--primary) 16%, transparent) 0%,
+    transparent 100%
+  );
+}
+
+[dir="rtl"] [data-question-option-row="true"]::after {
+  transform-origin: right center;
+}
+
+[data-question-kbd-slot="true"] {
+  transition: transform 90ms ease-out;
+}
+
+[data-question-kbd-slot="true"][data-kbd-pressed="true"] {
+  transform: translate3d(0, 1.5px, 0) scale(0.92);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  [data-question-step-direction="forward"] {
+    animation: chat-question-step-forward 220ms var(--spring-snappy) both;
+  }
+
+  [data-question-step-direction="backward"] {
+    animation: chat-question-step-backward 220ms var(--spring-snappy) both;
+  }
+
+  [dir="rtl"] [data-question-step-direction="forward"] {
+    animation-name: chat-question-step-backward;
+  }
+
+  [dir="rtl"] [data-question-step-direction="backward"] {
+    animation-name: chat-question-step-forward;
+  }
+
+  [data-question-option-row="true"][data-option-ripple="true"]::after {
+    animation: chat-question-option-ripple 240ms ease-out both;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-question-step-direction="forward"],
+  [data-question-step-direction="backward"],
+  [data-question-option-row="true"][data-option-ripple="true"]::after {
+    animation: none;
+  }
+
+  [data-question-kbd-slot="true"],
+  [data-question-kbd-slot="true"][data-kbd-pressed="true"] {
+    transition: none;
+    transform: none;
+  }
+}
+
+/* ==========================================================================
+   D10 / C034: ProposedPlanCard Outline Pills, Jump Highlight & Saved Badge
+   ========================================================================== */
+
+@keyframes chat-plan-jump-highlight {
+  0% {
+    background-color: color-mix(in oklch, var(--primary) 18%, transparent);
+  }
+  100% {
+    background-color: transparent;
+  }
+}
+
+[data-plan-jump-target="true"] {
+  border-radius: 0.375rem;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  [data-plan-outline-rail="true"] {
+    animation: chat-work-cascade-in 200ms var(--spring-snappy) both;
+  }
+
+  [data-plan-saved-badge="true"] {
+    animation: chat-approval-stamp-pop 240ms var(--spring-bouncy) both;
+  }
+
+  [data-plan-jump-target="true"] {
+    animation: chat-plan-jump-highlight 650ms ease-out both;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-plan-outline-rail="true"],
+  [data-plan-saved-badge="true"],
+  [data-plan-jump-target="true"] {
+    animation: none;
+  }
+}
+
+/* ==========================================================================
+   D10 / C035: Vault-Grade Secret & Link Request Cards + Sealed Morph
+   ========================================================================== */
+
+[data-vault-card] {
+  position: relative;
+  overflow: hidden;
+  box-shadow:
+    inset 0 1px 0 color-mix(in oklch, var(--contrast-foreground) 9%, transparent),
+    0 2px 10px -6px rgb(0 0 0 / 0.14);
+}
+
+[data-vault-card]::before {
+  content: "";
+  position: absolute;
+  inset-inline: 1rem;
+  top: 0;
+  height: 1px;
+  border-radius: 9999px;
+  pointer-events: none;
+  background-image: linear-gradient(
+    90deg,
+    transparent 0%,
+    color-mix(in oklch, var(--contrast-foreground) 34%, var(--border)) 50%,
+    transparent 100%
+  );
+  opacity: 0.7;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  [data-vault-card] {
+    animation: chat-approval-card-in 220ms var(--spring-snappy) both;
+  }
+
+  [data-vault-sealed-pill] {
+    animation: chat-approval-stamp-pop 200ms var(--spring-bouncy) both;
+  }
+
+  [data-vault-seal-check="true"] {
+    stroke-dasharray: 100;
+    animation: chat-exit-check-draw 180ms var(--spring-snappy) 30ms both;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-vault-card],
+  [data-vault-sealed-pill],
+  [data-vault-seal-check="true"] {
+    animation: none;
+  }
+}
+
+/* ==========================================================================
+   D11 / C036: Subagent Live Orbital-Ring Micro-Card & Completion Edge-Bloom
+   ========================================================================== */
+
+@keyframes chat-subagent-orbit-spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes chat-subagent-progress-swap {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 4px, 0);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+@keyframes chat-subagent-complete-bloom {
+  0% {
+    box-shadow:
+      inset 0 0 0 1.5px color-mix(in oklch, var(--success) 75%, transparent),
+      inset 0 1px 0 color-mix(in oklch, var(--success) 38%, transparent);
+  }
+  100% {
+    box-shadow:
+      inset 0 0 0 1.5px transparent,
+      inset 0 1px 0 color-mix(in oklch, var(--contrast-foreground) 7%, transparent);
+  }
+}
+
+[data-subagent-card] {
+  box-shadow: inset 0 1px 0 color-mix(in oklch, var(--contrast-foreground) 7%, transparent);
+}
+
+[data-subagent-orbit-arc="true"] {
+  transform-origin: 16px 16px;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  [data-subagent-orbit="true"] [data-subagent-orbit-arc="true"] {
+    animation: chat-subagent-orbit-spin 2.2s linear infinite;
+    animation-play-state: var(--visible-animation-state, paused);
+    will-change: var(--visible-animation-will-change, auto);
+  }
+
+  [data-subagent-progress-line="swap"] {
+    animation: chat-subagent-progress-swap 180ms var(--spring-snappy) both;
+  }
+
+  [data-subagent-card][data-subagent-just-completed="true"] {
+    animation: chat-subagent-complete-bloom 460ms ease-out 1 both;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-subagent-orbit="true"] [data-subagent-orbit-arc="true"],
+  [data-subagent-progress-line="swap"],
+  [data-subagent-card][data-subagent-just-completed="true"] {
+    animation: none;
+  }
+}
+
+/* ==========================================================================
+   D11 / C037: SideThreadPane Drawer Entry, Add-to-Chat Arrival Halo & Subagent Bar
+   ========================================================================== */
+
+@keyframes chat-side-drawer-in {
+  from {
+    opacity: 0.01;
+    transform: translate3d(12px, 0, 0);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+@keyframes chat-side-drawer-in-rtl {
+  from {
+    opacity: 0.01;
+    transform: translate3d(-12px, 0, 0);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+[data-subagent-bar-badge="true"] {
+  box-shadow: inset 0 1px 0 color-mix(in oklch, var(--contrast-foreground) 8%, transparent);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  [data-side-thread-drawer="true"] {
+    animation: chat-side-drawer-in 200ms var(--spring-snappy) both;
+  }
+
+  [dir="rtl"] [data-side-thread-drawer="true"] {
+    animation-name: chat-side-drawer-in-rtl;
+  }
+
+  [data-side-chat-added-pill="true"] {
+    animation: chat-approval-stamp-pop 200ms var(--spring-bouncy) both;
+  }
+
+  [data-side-chat-added-check="true"] {
+    stroke-dasharray: 100;
+    animation: chat-exit-check-draw 180ms var(--spring-snappy) both;
+  }
+
+  [data-subagent-bar-dot="live"] {
+    animation: chat-exit-dot-pulse 1.5s ease-in-out infinite;
+    animation-play-state: var(--visible-animation-state, paused);
+    will-change: var(--visible-animation-will-change, auto);
+  }
+
+  [data-lineage-group-list="true"] {
+    animation: chat-work-cascade-in 180ms var(--spring-snappy) both;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-side-thread-drawer="true"],
+  [data-side-chat-added-pill="true"],
+  [data-side-chat-added-check="true"],
+  [data-subagent-bar-dot="live"],
+  [data-lineage-group-list="true"] {
+    animation: none;
+  }
+}
+
+/* ==========================================================================
+   D11 / C038: System Divider Wings, Flow Arrows & Context-Compaction Squeeze Bar
+   ========================================================================== */
+
+@keyframes chat-divider-flow-nudge {
+  from {
+    opacity: 0.4;
+    transform: translate3d(-3px, 0, 0);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+@keyframes chat-compaction-squeeze {
+  from {
+    transform: scaleX(1);
+    opacity: 0.55;
+  }
+  to {
+    transform: scaleX(var(--compaction-ratio, 0.25));
+    opacity: 1;
+  }
+}
+
+[data-divider-wing="start"][data-divider-tone="neutral"] {
+  background-image: linear-gradient(
+    to right,
+    transparent 0%,
+    color-mix(in oklch, var(--border) 78%, transparent) 100%
+  );
+}
+
+[data-divider-wing="end"][data-divider-tone="neutral"] {
+  background-image: linear-gradient(
+    to left,
+    transparent 0%,
+    color-mix(in oklch, var(--border) 78%, transparent) 100%
+  );
+}
+
+[data-divider-wing="start"][data-divider-tone="danger"] {
+  background-image: linear-gradient(
+    to right,
+    transparent 0%,
+    color-mix(in oklch, var(--destructive) 36%, transparent) 100%
+  );
+}
+
+[data-divider-wing="end"][data-divider-tone="danger"] {
+  background-image: linear-gradient(
+    to left,
+    transparent 0%,
+    color-mix(in oklch, var(--destructive) 36%, transparent) 100%
+  );
+}
+
+[data-system-divider-capsule] {
+  box-shadow:
+    inset 0 1px 0 color-mix(in oklch, var(--contrast-foreground) 7%, transparent),
+    0 1px 2px rgb(0 0 0 / 0.04);
+}
+
+[data-compaction-squeeze-fill="true"] {
+  transform: scaleX(var(--compaction-ratio, 0.25));
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  [data-divider-flow-arrow="true"] {
+    animation: chat-divider-flow-nudge 260ms var(--spring-snappy) both;
+  }
+
+  [data-compaction-squeeze-fill="true"] {
+    animation: chat-compaction-squeeze 420ms var(--spring-spatial) both;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-divider-flow-arrow="true"],
+  [data-compaction-squeeze-fill="true"] {
+    animation: none;
+  }
+}
+
+/* ==========================================================================
+   D12 / C039: 120fps Direct-DOM Drag-to-Scrub TimelineMinimap & Semantic Dots
+   ========================================================================== */
+
+[data-minimap-strip] {
+  transform: translateY(-50%) scaleX(0.333);
+  transition:
+    transform 180ms var(--spring-snappy),
+    background-color 140ms ease-out;
+  will-change: transform;
+}
+
+[data-minimap-scrubbing="true"] [data-minimap-strip] {
+  transition: background-color 90ms ease-out;
+}
+
+[data-minimap-strip][data-minimap-active="true"] {
+  background-color: color-mix(in oklch, var(--muted-foreground) 78%, transparent);
+}
+
+[data-minimap-preview-card="true"] {
+  opacity: 0;
+  visibility: hidden;
+  transition:
+    opacity 130ms ease-out,
+    transform 140ms var(--spring-snappy),
+    visibility 0ms linear 130ms;
+  will-change: transform, opacity;
+}
+
+[data-minimap-preview-card="true"][data-minimap-preview-visible="true"] {
+  opacity: 1;
+  visibility: visible;
+  transition:
+    opacity 130ms ease-out,
+    transform 140ms var(--spring-snappy),
+    visibility 0ms linear 0ms;
+}
+
+[data-minimap-preview-card="true"][data-minimap-scrubbing="true"] {
+  transition:
+    opacity 90ms ease-out,
+    visibility 0ms linear 0ms;
+}
+
+[data-minimap-preview-card="true"][data-minimap-scrubbing="true"] [data-minimap-turn-badge="true"] {
+  color: var(--primary);
+}
+
+[data-minimap-semantic="plan"] {
+  background-color: var(--primary);
+}
+
+[data-minimap-semantic="error"] {
+  background-color: var(--destructive);
+}
+
+[data-minimap-semantic="fork"] {
+  background-color: var(--chart-3, var(--info, var(--primary)));
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-minimap-strip],
+  [data-minimap-preview-card="true"],
+  [data-minimap-preview-card="true"][data-minimap-preview-visible="true"] {
+    transition: none;
+  }
+}
+
+/* ==========================================================================
+   D12 / C040: Non-Blur Checkpoint Time-Travel Veil, Ruler & Restore Bloom
+   ========================================================================== */
+
+[data-rewind-preview-veil="true"] > [data-timeline-root="true"] {
+  opacity: 0.36;
+  filter: saturate(0.42);
+  transition:
+    opacity 180ms ease-out,
+    filter 180ms ease-out;
+}
+
+[data-rewind-target="true"] {
+  box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--warning) 52%, transparent);
+}
+
+@keyframes chat-rewind-ruler-in {
+  from {
+    opacity: 0;
+    transform: translate3d(0, -4px, 0);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  [data-rewind-boundary-ruler="true"] {
+    animation: chat-rewind-ruler-in 180ms var(--spring-snappy) both;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-rewind-preview-veil="true"] > [data-timeline-root="true"] {
+    transition: none;
+  }
+
+  [data-rewind-boundary-ruler="true"] {
+    animation: none;
+  }
+}
+
+/* ==========================================================================
+   D12 / C041: Grid-Morphing ScrollToEnd Unread-Activity Capsule
+   ========================================================================== */
+
+[data-scroll-to-end-label-grid="true"] {
+  grid-template-columns: 0fr;
+  opacity: 0;
+  transition:
+    grid-template-columns 220ms var(--spring-snappy),
+    opacity 150ms ease-out;
+}
+
+[data-scroll-to-end-label-grid="true"][data-expanded="true"] {
+  grid-template-columns: 1fr;
+  opacity: 1;
+}
+
+@keyframes chat-scroll-end-live-dot {
+  0%,
+  100% {
+    opacity: 0.45;
+    transform: scale(0.82);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.15);
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  [data-scroll-to-end-indicator="true"][data-scroll-to-end-live="true"] {
+    animation: chat-scroll-end-live-dot 1.4s ease-in-out infinite;
+    animation-play-state: var(--visible-animation-state, paused);
+    will-change: var(--visible-animation-will-change, auto);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-scroll-to-end-label-grid="true"],
+  [data-scroll-to-end-label-grid="true"][data-expanded="true"] {
+    transition: none;
+  }
+
+  [data-scroll-to-end-indicator="true"][data-scroll-to-end-live="true"] {
+    animation: none;
+  }
+}
+
+/* ==========================================================================
+   D12 / C042: Synchronized Find Match Heatmap Dots on TimelineMinimap
+   ========================================================================== */
+
+[data-minimap-find-dot="true"] {
+  width: 4px;
+  height: 4px;
+  background-color: color-mix(in oklch, var(--warning) 85%, #f59e0b);
+  box-shadow: 0 0 0 1px color-mix(in oklch, var(--background) 85%, transparent);
+  transition:
+    transform 160ms var(--spring-snappy),
+    background-color 140ms ease-out;
+}
+
+[data-minimap-find-dot="true"][data-minimap-find-dense="true"] {
+  width: 5px;
+  height: 5px;
+}
+
+[data-minimap-find-dot="true"][data-minimap-find-active="true"] {
+  width: 6px;
+  height: 6px;
+  background-color: var(--warning);
+  box-shadow: 0 0 0 2px color-mix(in oklch, var(--warning) 28%, transparent);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-minimap-find-dot="true"] {
+    transition: none;
+  }
+}
+
+/* ==========================================================================
+   D13 / C043: Tactile ContextChip Capsules & ComposerCodeBlockNodeView Studio
+   ========================================================================== */
+
+[data-slot="context-chip"][data-shape="inline"]:not([data-state="unresolved"]) {
+  padding-inline: 0.3em;
+  border-radius: 5px;
+  background-color: color-mix(in oklch, var(--context-chip-accent) 9%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--context-chip-accent) 18%, transparent);
+  transition:
+    background-color 140ms ease-out,
+    box-shadow 160ms ease-out;
+}
+
+:is(button:enabled, a, [data-popup-open])[data-slot="context-chip"][data-shape="inline"]:not(
+    [data-state="unresolved"]
+  ):hover {
+  background-color: color-mix(in oklch, var(--context-chip-accent) 14%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--context-chip-accent) 28%, transparent);
+}
+
+.composer-tiptap [data-composer-chip-selected] [data-slot="context-chip"] {
+  box-shadow:
+    inset 0 0 0 1px color-mix(in oklch, var(--primary) 52%, transparent),
+    0 0 0 1.5px color-mix(in oklch, var(--primary) 34%, transparent);
+}
+
+[data-composer-code-studio="true"] {
+  transition:
+    border-color 160ms ease-out,
+    box-shadow 180ms ease-out;
+}
+
+[data-composer-code-studio="true"]:focus-within {
+  border-color: color-mix(in oklch, var(--primary) 42%, var(--border));
+  box-shadow: 0 0 0 2px color-mix(in oklch, var(--primary) 12%, transparent);
+}
+
+[data-composer-code-studio="true"] [data-composer-code-studio-hint="true"] {
+  opacity: 0.45;
+  transition: opacity 150ms ease-out;
+}
+
+[data-composer-code-studio="true"]:focus-within [data-composer-code-studio-hint="true"] {
+  opacity: 0.9;
+}
+
+@keyframes chat-composer-code-studio-in {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 4px, 0) scale(0.992);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  /* Scope spring chip embed strictly inside the composer so message history never replays. */
+  .composer-tiptap [data-slot="context-chip"] {
+    transition:
+      opacity 180ms ease-out,
+      transform 220ms var(--spring-bouncy),
+      background-color 140ms ease-out,
+      box-shadow 360ms ease-out;
+    @starting-style {
+      opacity: 0;
+      transform: scale(0.88);
+      box-shadow: 0 0 0 3px
+        color-mix(in oklch, var(--context-chip-accent, var(--primary)) 28%, transparent);
+    }
+  }
+
+  [data-composer-code-studio="true"] {
+    animation: chat-composer-code-studio-in 200ms var(--spring-snappy) both;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-slot="context-chip"][data-shape="inline"],
+  .composer-tiptap [data-slot="context-chip"],
+  [data-composer-code-studio="true"],
+  [data-composer-code-studio="true"] [data-composer-code-studio-hint="true"] {
+    transition: none;
+    animation: none;
+  }
+}
+
+/* ==========================================================================
+   D13 / C044: Tip 013 Single-Sweep 1px Metallic Rim & Border-Only Aura States
+   ========================================================================== */
+
+[data-chat-composer-main-surface="true"] {
+  transition: box-shadow 200ms ease-out;
+}
+
+[data-chat-composer-main-surface="true"] > [data-composer-rim-sweep="true"] {
+  position: absolute;
+  inset: 0;
+  z-index: 25;
+  border-radius: inherit;
+  padding: 1px;
+  overflow: hidden;
+  pointer-events: none;
+  -webkit-mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  mask-composite: exclude;
+}
+
+[data-chat-composer-main-surface="true"] > [data-composer-rim-sweep="true"]::before {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 220%;
+  aspect-ratio: 1;
+  opacity: 0;
+  transform: translate(-50%, -50%) rotate(0deg);
+  background: conic-gradient(
+    from 0deg,
+    transparent 0deg,
+    color-mix(in oklch, var(--composer-rim-accent, var(--primary)) 82%, white) 48deg,
+    transparent 124deg,
+    transparent 360deg
+  );
+}
+
+/* Quiet border-only hairline tints per composer aura state (zero neon blur). */
+[data-chat-composer-main-surface="true"][data-composer-aura="focused"] {
+  --composer-rim-accent: var(--primary);
+  box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--primary) 22%, transparent);
+}
+
+[data-chat-composer-main-surface="true"][data-composer-aura="editing-queue"] {
+  --composer-rim-accent: var(--warning);
+  box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--warning) 44%, transparent);
+}
+
+[data-chat-composer-main-surface="true"][data-composer-aura="pending-input"] {
+  --composer-rim-accent: var(--info, var(--primary));
+  box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--info, var(--primary)) 36%, transparent);
+}
+
+[data-chat-composer-main-surface="true"][data-composer-aura="dispatch-steer"] {
+  --composer-rim-accent: var(--primary);
+  box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--primary) 34%, transparent);
+}
+
+[data-chat-composer-main-surface="true"][data-composer-aura="dispatch-queue"] {
+  --composer-rim-accent: var(--info, var(--primary));
+  box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--info, var(--primary)) 30%, transparent);
+}
+
+[data-chat-composer-main-surface="true"][data-composer-aura="ultrathink"] {
+  --composer-rim-accent: #8b5cf6;
+}
+
+/* Refine ultrathink-frame into a quiet 1px metallic rim instead of a 2px heavy band. */
+[data-chat-composer-main-surface="true"].ultrathink-frame::before {
+  padding: 1px;
+  opacity: 0.72;
+}
+
+[data-chat-composer-main-surface="true"][data-composer-aura="ultrathink"]
+  > [data-composer-rim-sweep="true"]::before {
+  background: conic-gradient(
+    from 0deg,
+    transparent 0deg,
+    #38bdf8 34deg,
+    #a855f7 68deg,
+    #f59e0b 98deg,
+    transparent 148deg,
+    transparent 360deg
+  );
+}
+
+@keyframes chat-composer-rim-sweep-once {
+  0% {
+    opacity: 0;
+    transform: translate(-50%, -50%) rotate(-36deg);
+  }
+  18% {
+    opacity: 0.92;
+  }
+  78% {
+    opacity: 0.68;
+  }
+  100% {
+    opacity: 0;
+    transform: translate(-50%, -50%) rotate(324deg);
+  }
+}
+
+@keyframes chat-composer-rim-glint-once {
+  0% {
+    opacity: 0;
+    transform: translate(-50%, -50%) rotate(-45deg);
+  }
+  28% {
+    opacity: 0.52;
+  }
+  100% {
+    opacity: 0;
+    transform: translate(-50%, -50%) rotate(225deg);
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  /* Tip 013 + Astra P1-5: single GPU rotate() pass on mode entry, zero infinite loop. */
+  [data-chat-composer-main-surface="true"][data-composer-aura="ultrathink"]
+    > [data-composer-rim-sweep="true"]::before {
+    animation: chat-composer-rim-sweep-once 900ms cubic-bezier(0.22, 1, 0.36, 1) 1 forwards;
+  }
+
+  [data-chat-composer-main-surface="true"]:is(
+      [data-composer-aura="focused"],
+      [data-composer-aura="editing-queue"],
+      [data-composer-aura="pending-input"],
+      [data-composer-aura="dispatch-steer"]
+    )
+    > [data-composer-rim-sweep="true"]::before {
+    animation: chat-composer-rim-glint-once 560ms cubic-bezier(0.22, 1, 0.36, 1) 1 forwards;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-chat-composer-main-surface="true"] {
+    transition: none;
+  }
+
+  [data-chat-composer-main-surface="true"] > [data-composer-rim-sweep="true"]::before {
+    animation: none;
+    opacity: 0;
+  }
+}
+
+/* ==========================================================================
+   D14 / C046: Zero-Blur Cursor-Reactive Dropzone Corner Reticle
+   ========================================================================== */
+
+[data-chat-workspace-drop-overlay="true"] {
+  --drop-x: 50%;
+  --drop-y: 50%;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+[data-dropzone-halo="true"] {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: radial-gradient(
+    340px circle at var(--drop-x) var(--drop-y),
+    color-mix(in oklch, var(--primary) 14%, transparent) 0%,
+    transparent 70%
+  );
+}
+
+[data-dropzone-corner] {
+  position: absolute;
+  width: 22px;
+  height: 22px;
+  pointer-events: none;
+  border-color: color-mix(in oklch, var(--primary) 82%, transparent);
+  transition:
+    transform 190ms var(--spring-snappy),
+    opacity 150ms ease-out;
+}
+
+[data-dropzone-corner="tl"] {
+  top: 12px;
+  left: 12px;
+  border-top: 2px solid;
+  border-left: 2px solid;
+  border-top-left-radius: 6px;
+}
+
+[data-dropzone-corner="tr"] {
+  top: 12px;
+  right: 12px;
+  border-top: 2px solid;
+  border-right: 2px solid;
+  border-top-right-radius: 6px;
+}
+
+[data-dropzone-corner="bl"] {
+  bottom: 12px;
+  left: 12px;
+  border-bottom: 2px solid;
+  border-left: 2px solid;
+  border-bottom-left-radius: 6px;
+}
+
+[data-dropzone-corner="br"] {
+  bottom: 12px;
+  right: 12px;
+  border-bottom: 2px solid;
+  border-right: 2px solid;
+  border-bottom-right-radius: 6px;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  [data-dropzone-corner="tl"] {
+    @starting-style {
+      opacity: 0;
+      transform: translate3d(-10px, -10px, 0);
+    }
+  }
+
+  [data-dropzone-corner="tr"] {
+    @starting-style {
+      opacity: 0;
+      transform: translate3d(10px, -10px, 0);
+    }
+  }
+
+  [data-dropzone-corner="bl"] {
+    @starting-style {
+      opacity: 0;
+      transform: translate3d(-10px, 10px, 0);
+    }
+  }
+
+  [data-dropzone-corner="br"] {
+    @starting-style {
+      opacity: 0;
+      transform: translate3d(10px, 10px, 0);
+    }
+  }
+
+  [data-dropzone-pill="true"] {
+    transition:
+      transform 200ms var(--spring-bouncy),
+      opacity 140ms ease-out;
+    @starting-style {
+      opacity: 0;
+      transform: scale(0.92);
+    }
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-dropzone-corner],
+  [data-dropzone-pill="true"] {
+    transition: none;
+  }
+}
+
+/* ==========================================================================
+   D14 / C047: Thumbnail Decode Reveal, Radial Upload Rings & Fanned Stack
+   ========================================================================== */
+
+[data-upload-ring-arc="true"] {
+  transition: stroke-dashoffset 140ms ease-out;
+}
+
+@keyframes chat-upload-ring-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes chat-upload-complete-pop {
+  0% {
+    opacity: 0;
+    transform: scale(0.5);
+  }
+  22% {
+    opacity: 1;
+    transform: scale(1.1);
+  }
+  38% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  78% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(0.82);
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  [data-thumbnail-decoded="true"] {
+    transition:
+      opacity 180ms ease-out,
+      transform 220ms var(--spring-snappy);
+    @starting-style {
+      opacity: 0;
+      transform: scale(1.03);
+    }
+  }
+
+  [data-upload-ring-svg="spinning"] {
+    animation: chat-upload-ring-spin 1.05s linear infinite;
+    animation-play-state: var(--visible-animation-state, paused);
+    will-change: var(--visible-animation-will-change, auto);
+  }
+
+  [data-upload-complete="true"] {
+    animation: chat-upload-complete-pop 1.15s var(--spring-bouncy) forwards;
+  }
+
+  @media (any-hover: hover) {
+    [data-resting-fan="true"] [data-resting-fan-card="true"] {
+      transform: rotate(var(--fan-angle, 0deg));
+      transition:
+        transform 220ms var(--spring-snappy),
+        margin-inline-start 220ms var(--spring-snappy),
+        box-shadow 180ms ease-out;
+      box-shadow: 0 1px 3px rgb(0 0 0 / 0.14);
+    }
+
+    [data-resting-fan="true"] [data-resting-fan-card="true"] + [data-resting-fan-card="true"] {
+      margin-inline-start: -0.35rem;
+    }
+
+    [data-resting-fan="true"]:is(:hover, :focus-within) [data-resting-fan-card="true"] {
+      transform: rotate(0deg);
+      margin-inline-start: 0;
+    }
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-thumbnail-decoded="true"],
+  [data-upload-ring-arc="true"],
+  [data-resting-fan="true"] [data-resting-fan-card="true"] {
+    transition: none;
+    animation: none;
+    transform: none;
+  }
+
+  [data-upload-ring-svg="spinning"] {
+    animation: none;
+  }
+
+  [data-upload-complete="true"] {
+    display: none;
+  }
+}
+
+/* ==========================================================================
+   D14 / C048: ExpandedImageDialog Shared-Element Stage & Zoom HUD Pill
+   ========================================================================== */
+
+[data-zoom-hud="true"] {
+  opacity: 0;
+  transform: translate3d(0, -4px, 0) scale(0.94);
+  transition:
+    opacity 180ms ease-out,
+    transform 180ms var(--spring-snappy);
+}
+
+[data-zoom-hud="true"][data-visible="true"] {
+  opacity: 1;
+  transform: translate3d(0, 0, 0) scale(1);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-zoom-hud="true"],
+  [data-zoom-hud="true"][data-visible="true"] {
+    transition: none;
+    transform: none;
+  }
+}
+
+/* ==========================================================================
+   D15 / C049: Magnetic Command & Stash Highlight Rail + Fuzzy Match Marks
+   ========================================================================== */
+
+[data-command-menu-track="true"]:has(
+    > [data-shared-indicator="command-menu"][data-indicator-ready="true"]
+  )
+  [data-composer-item-id][data-active="true"] {
+  background-color: transparent !important;
+}
+
+[data-stash-menu-track="true"]:has(
+    > [data-shared-indicator="stash-menu"][data-indicator-ready="true"]
+  )
+  [data-stash-entry][data-highlighted] {
+  background-color: transparent !important;
+}
+
+[data-fuzzy-match="true"] {
+  background-color: transparent;
+  color: var(--foreground);
+  font-weight: 600;
+  text-decoration: underline;
+  text-decoration-color: color-mix(in oklch, var(--primary) 55%, transparent);
+  text-decoration-thickness: 1.5px;
+  text-underline-offset: 2px;
+}
+
+/* ==========================================================================
+   D15 / C050: ModelPicker Sliding Provider Rail, Quota Gauges & EffortGlyph Sync
+   ========================================================================== */
+
+[data-model-picker-rail]:has(
+    > [data-shared-indicator="model-picker-provider"][data-indicator-ready="true"]
+  )
+  button[aria-pressed="true"] {
+  background-color: transparent !important;
+}
+
+[data-effort-radiogroup="true"]:has(
+    > [data-shared-indicator="effort-level"][data-indicator-ready="true"]
+  )
+  [role="radio"][aria-checked="true"] {
+  background-color: transparent !important;
+}
+
+[data-quota-gauge-fill="true"] {
+  background-color: color-mix(in oklch, var(--foreground) 56%, var(--primary));
+  transition:
+    transform 240ms var(--spring-snappy),
+    background-color 180ms ease-out;
+}
+
+[data-quota-gauge-fill="true"][data-quota-low="true"] {
+  background-color: var(--warning);
+}
+
+[data-composer-effort-glyph] [data-effort-bar="true"] {
+  opacity: 0.38;
+  transform: scaleY(0.86);
+  transition:
+    opacity 180ms ease-out calc(var(--effort-bar-index, 0) * 26ms),
+    transform 220ms var(--spring-snappy) calc(var(--effort-bar-index, 0) * 26ms);
+}
+
+[data-composer-effort-glyph] [data-effort-bar="true"][data-filled="true"] {
+  opacity: 1;
+  transform: scaleY(1);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-quota-gauge-fill="true"],
+  [data-composer-effort-glyph] [data-effort-bar="true"] {
+    transition: none;
+    transform: none;
+  }
+}
+
+/* ==========================================================================
+   D15 / C051: Morphing Send/Steer/Queue/Stop Action & Modifier Intent Pill
+   ========================================================================== */
+
+@media (prefers-reduced-motion: no-preference) {
+  [data-composer-intent-pill="true"] {
+    transition:
+      opacity 140ms ease-out,
+      transform 180ms var(--spring-snappy);
+    @starting-style {
+      opacity: 0;
+      transform: translate3d(4px, 0, 0) scale(0.92);
+    }
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-composer-intent-pill="true"] {
+    transition: none;
+    transform: none;
+  }
+}
+
+/* ==========================================================================
+   D16 / C052: Liquid Voice Capsule Reveal & Global Voice Indicator Entrance
+   ========================================================================== */
+
+@media (prefers-reduced-motion: no-preference) {
+  [data-voice-capsule-reveal="true"] {
+    transition:
+      opacity 160ms ease-out,
+      transform 220ms var(--spring-snappy);
+    @starting-style {
+      opacity: 0;
+      transform: translate3d(8px, 0, 0) scaleX(0.45);
+    }
+  }
+
+  [data-global-voice-indicator="true"] {
+    transition:
+      opacity 180ms ease-out,
+      transform 240ms var(--spring-snappy);
+    @starting-style {
+      opacity: 0;
+      transform: translate3d(0, -10px, 0) scale(0.95);
+    }
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-voice-capsule-reveal="true"],
+  [data-global-voice-indicator="true"] {
+    transition: none;
+    transform: none;
+  }
+}
+
+/* ==========================================================================
+   D16 / C053: Selection Toolbar Capsule, Quote Preview & Citation Fallback
+   ========================================================================== */
+
+[data-citation-comment-fallback="true"] {
+  box-shadow: inset 2px 0 0 color-mix(in oklch, var(--primary) 62%, transparent);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  [data-assistant-selection-capsule="true"] {
+    transition:
+      opacity 140ms ease-out,
+      transform 180ms var(--spring-snappy);
+    @starting-style {
+      opacity: 0;
+      transform: translate3d(0, 4px, 0) scale(0.94);
+    }
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-assistant-selection-capsule="true"] {
+    transition: none;
+    transform: none;
+  }
+}

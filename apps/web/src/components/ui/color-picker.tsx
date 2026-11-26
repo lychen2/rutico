@@ -15,6 +15,13 @@ function clamp(value: number) {
   return Math.min(1, Math.max(0, value));
 }
 
+function hsvToCssColor(color: HsvColor): string {
+  const c = color.v * color.s;
+  const l = color.v - c / 2;
+  const s = l === 0 || l === 1 ? 0 : (color.v - l) / Math.min(l, 1 - l);
+  return `hsl(${Math.round(color.h)} ${Math.round(s * 100)}% ${Math.round(l * 100)}%)`;
+}
+
 function useColorDrag(
   update: (event: PointerEvent<HTMLDivElement>) => void,
   onInteractionEnd?: () => void,
@@ -29,9 +36,7 @@ function useColorDrag(
     onInteractionEnd?.();
   };
   return {
-    thumbTransition: isDragging
-      ? undefined
-      : "left 80ms linear, top 80ms linear, background-color 80ms linear",
+    isDragging,
     handlers: {
       onPointerDown(event: PointerEvent<HTMLDivElement>) {
         if (pointerId.current !== null || event.button !== 0) return;
@@ -70,7 +75,7 @@ export function ColorSaturationValuePlane({
   const gt = useGT();
   const instructionsId = useId();
   const saturationRef = useRef<HTMLInputElement>(null);
-  const { handlers, thumbTransition } = useColorDrag(
+  const { handlers, isDragging } = useColorDrag(
     (event) => {
       const bounds = event.currentTarget.getBoundingClientRect();
       if (!bounds.width || !bounds.height) return;
@@ -108,6 +113,8 @@ export function ColorSaturationValuePlane({
     event.preventDefault();
     onChange({ ...value, [axis]: nextValue });
   };
+
+  const sampledColor = hsvToCssColor(value);
 
   return (
     <div
@@ -169,11 +176,12 @@ export function ColorSaturationValuePlane({
         </label>
       ))}
       <span
-        className="pointer-events-none absolute size-3 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white shadow-[0_0_0_1px_rgb(0_0_0/0.4)]"
+        data-dragging={isDragging ? "true" : undefined}
+        className="pointer-events-none absolute size-3.5 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white shadow-[0_0_0_1px_rgb(0_0_0/0.45),0_2px_6px_rgb(0_0_0/0.25)] transition-[scale,box-shadow] duration-160 ease-(--spring-snappy) data-[dragging=true]:scale-[1.85] data-[dragging=true]:shadow-[0_0_0_1.5px_rgb(0_0_0/0.55),0_6px_14px_rgb(0_0_0/0.35)] motion-reduce:transition-none motion-reduce:data-[dragging=true]:scale-100"
         style={{
-          left: `calc(${value.s} * (100% - 0.75rem) + 0.375rem)`,
-          top: `calc(${1 - value.v} * (100% - 0.75rem) + 0.375rem)`,
-          transition: thumbTransition,
+          left: `calc(${value.s} * (100% - 0.875rem) + 0.4375rem)`,
+          top: `calc(${1 - value.v} * (100% - 0.875rem) + 0.4375rem)`,
+          backgroundColor: sampledColor,
         }}
       />
     </div>
@@ -187,7 +195,7 @@ export function ColorHueSlider({
   onInteractionEnd,
   className,
 }: ColorControlProps<number>) {
-  const { handlers, thumbTransition } = useColorDrag((event) => {
+  const { handlers, isDragging } = useColorDrag((event) => {
     const bounds = event.currentTarget.getBoundingClientRect();
     if (!bounds.width) return;
     onChange(clamp((event.clientX - bounds.left) / bounds.width) * 360);
@@ -226,11 +234,11 @@ export function ColorHueSlider({
         className="h-2.5 w-full rounded-full bg-[linear-gradient(to_right,#f00,#ff0,#0f0,#0ff,#00f,#f0f,#f00)] shadow-[inset_0_0_0_1px_rgb(0_0_0_/_12%)]"
       />
       <span
-        className="pointer-events-none absolute top-1/2 size-4 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white shadow-[0_0_0_1px_rgb(0_0_0/0.4)]"
+        data-dragging={isDragging ? "true" : undefined}
+        className="pointer-events-none absolute top-1/2 size-4 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white shadow-[0_0_0_1px_rgb(0_0_0/0.45),0_2px_6px_rgb(0_0_0/0.25)] transition-[scale,box-shadow] duration-160 ease-(--spring-snappy) data-[dragging=true]:scale-[1.45] data-[dragging=true]:shadow-[0_0_0_1.5px_rgb(0_0_0/0.55),0_6px_14px_rgb(0_0_0/0.35)] motion-reduce:transition-none motion-reduce:data-[dragging=true]:scale-100"
         style={{
           left: `calc(${value / 360} * (100% - 1rem) + 0.5rem)`,
           backgroundColor: `hsl(${value} 100% 50%)`,
-          transition: thumbTransition,
         }}
       />
     </div>

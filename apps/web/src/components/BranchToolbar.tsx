@@ -237,9 +237,11 @@ const RunContextSelector = memo(function RunContextSelector({
       showWorkspaceContextMenu(event, workspacePath);
     }
   };
+  const isWorktreeIsolated =
+    offersWorkspaceModes && (effectiveEnvMode === "worktree" || activeWorktreePath !== null);
   const workspaceIcon = (
     <SharedTooltipTrigger
-      render={<span className="inline-flex shrink-0" />}
+      render={<span className="relative inline-flex shrink-0" />}
       label={
         isPanel
           ? forceNewWorktree
@@ -248,7 +250,19 @@ const RunContextSelector = memo(function RunContextSelector({
           : workspaceLabel
       }
     >
-      <WorkspaceIcon className={isPanel ? THREAD_DETAILS_PANEL_ICON_CLASS : "size-3 shrink-0"} />
+      <WorkspaceIcon
+        className={cn(
+          isPanel ? THREAD_DETAILS_PANEL_ICON_CLASS : "size-3 shrink-0",
+          isWorktreeIsolated && "text-info",
+        )}
+      />
+      {isWorktreeIsolated ? (
+        <span
+          aria-hidden="true"
+          data-slot="worktree-isolation-badge"
+          className="absolute -top-0.5 -right-0.5 size-1.5 rounded-full bg-info ring-1 ring-background"
+        />
+      ) : null}
     </SharedTooltipTrigger>
   );
   const environmentIcon = (
@@ -798,6 +812,11 @@ export const BranchToolbar = memo(function BranchToolbar({
     <ComposerSurface.ContextStrip
       ref={attachStrip}
       data-compact={labelsOverflow ? "" : undefined}
+      data-worktree-active={
+        showGitControls && (effectiveEnvMode === "worktree" || activeWorktreePath !== null)
+          ? "true"
+          : "false"
+      }
       className={cn("gap-1 text-xs font-normal text-foreground/70 dark:text-muted-foreground")}
     >
       {showGitControls ? (

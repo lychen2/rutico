@@ -4,7 +4,7 @@ import { CheckIcon, MicIcon, XIcon } from "lucide-react";
 import { useEffect, useState, type PointerEvent, type ReactElement } from "react";
 
 import { VoiceInputErrorPill } from "./VoiceInputErrorPill";
-import { VoiceInputPill, VoiceWaveform } from "./VoiceInputPill";
+import { VoiceInputPill, VoiceWaveform, type VoiceWaveformMode } from "./VoiceInputPill";
 import { m, type MessageResolver } from "~/i18n/messages";
 import { cn } from "~/lib/utils";
 import { observeVisibleAnimation } from "~/lib/visibleAnimation";
@@ -56,50 +56,61 @@ function formatElapsed(seconds: number) {
 
 function RecordingStatus(props: {
   level: number;
-  preparing: boolean;
+  mode: VoiceWaveformMode;
+  statusText: string | null;
   recordingStartedAt?: number | null | undefined;
   recordingLimitSeconds?: number | undefined;
 }) {
-  const { preparing, recordingStartedAt } = props;
+  const { mode, recordingStartedAt } = props;
+  const preparing = mode === "preparing";
+  const transcribing = mode === "transcribing";
   const [elapsedSeconds, setElapsedSeconds] = useState(() =>
     recordingStartedAt ? Math.max(0, Math.floor((Date.now() - recordingStartedAt) / 1_000)) : 0,
   );
 
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- owns the timer displaying the native recording duration
   useEffect(() => {
-    if (preparing) return;
+    if (preparing || transcribing) return;
     const startedAt = recordingStartedAt ?? Date.now();
     const timer = window.setInterval(
       () => setElapsedSeconds(Math.floor((Date.now() - startedAt) / 1_000)),
       250,
     );
     return () => window.clearInterval(timer);
-  }, [preparing, recordingStartedAt]);
+  }, [preparing, transcribing, recordingStartedAt]);
 
   return (
     <>
-      <span aria-hidden className="relative flex size-2 shrink-0 items-center justify-center">
-        {!preparing ? (
-          <span
-            ref={observeVisibleAnimation}
-            className="t3-stop-pulse-ring pointer-events-none absolute -inset-0.5 rounded-full ring-1 ring-destructive/50"
-          />
-        ) : null}
-        <span
-          className={cn(
-            "size-2 rounded-full transition-colors duration-150 motion-reduce:transition-none",
-            preparing ? "bg-muted-foreground/40" : "bg-destructive",
-          )}
-        />
-      </span>
-      <span className="shrink-0 text-xs text-muted-foreground tabular-nums">
-        {formatElapsed(preparing ? 0 : elapsedSeconds)}
-        {props.recordingLimitSeconds !== undefined
-          ? ` / ${formatElapsed(props.recordingLimitSeconds)}`
-          : ""}
-      </span>
+      {transcribing ? (
+        <span className="min-w-0 truncate text-xs font-medium text-muted-foreground">
+          {props.statusText}
+        </span>
+      ) : (
+        <>
+          <span aria-hidden className="relative flex size-2 shrink-0 items-center justify-center">
+            {!preparing ? (
+              <span
+                ref={observeVisibleAnimation}
+                className="t3-stop-pulse-ring pointer-events-none absolute -inset-0.5 rounded-full ring-1 ring-destructive/50"
+              />
+            ) : null}
+            <span
+              className={cn(
+                "size-2 rounded-full transition-colors duration-150 motion-reduce:transition-none",
+                preparing ? "bg-muted-foreground/40" : "bg-destructive",
+              )}
+            />
+          </span>
+          <span className="shrink-0 text-xs text-muted-foreground tabular-nums">
+            {formatElapsed(preparing ? 0 : elapsedSeconds)}
+            {props.recordingLimitSeconds !== undefined
+              ? ` / ${formatElapsed(props.recordingLimitSeconds)}`
+              : ""}
+          </span>
+        </>
+      )}
       <div className="me-1.5 flex w-16 min-w-0 shrink grow">
-        <VoiceWaveform level={props.level} />
+        <VoiceWaveform level={transcribing || preparing ? 0 : props.level} mode={mode} />
       </div>
     </>
   );
@@ -193,13 +204,20 @@ export function ComposerSpeechRecordingPill(props: {
   if (!presentation.active) return null;
   const recording = phase === "recording";
   const starting = phase === "preparing" && props.progress === null;
+  const downloading = phase === "preparing" && props.progress !== null;
   const showRecordingLayout = starting || recording;
+  const waveformMode: VoiceWaveformMode = starting
+    ? "preparing"
+    : recording
+      ? "recording"
+      : "transcribing";
   const trailing = showRecordingLayout || phase === "post-processing";
 
   return (
     <div
+      data-voice-capsule-reveal="true"
       className={cn(
-        "block min-w-0 origin-right transition-[opacity,scale] duration-180 ease-(--ease-spring-snappy) starting:scale-95 starting:opacity-0 motion-reduce:transition-none motion-reduce:starting:scale-100 motion-reduce:starting:opacity-100",
+        "block min-w-0 origin-right",
         compact ? "max-sm:order-first max-sm:basis-full" : "max-w-fit grow-[1.5] basis-0",
       )}
     >
@@ -226,22 +244,23 @@ export function ComposerSpeechRecordingPill(props: {
           aria-live={recording ? "off" : "polite"}
           aria-label={presentation.status ?? undefined}
         >
-          {showRecordingLayout ? (
-            <>
-              {starting && <span className="sr-only">{presentation.status}</span>}
-              <RecordingStatus
-                preparing={starting}
-                level={starting ? 0 : props.level}
-                recordingStartedAt={props.recordingStartedAt}
-                recordingLimitSeconds={props.recordingLimitSeconds}
-              />
-            </>
-          ) : (
+          {downloading ? (
             <>
               <Spinner aria-hidden size="sm" tone="muted" className="shrink-0" />
               <span className="min-w-0 truncate text-sm text-muted-foreground">
                 {presentation.status}
               </span>
+            </>
+          ) : (
+            <>
+              {starting && <span className="sr-only">{presentation.status}</span>}
+              <RecordingStatus
+                mode={waveformMode}
+                statusText={presentation.status}
+                level={starting ? 0 : props.level}
+                recordingStartedAt={props.recordingStartedAt}
+                recordingLimitSeconds={props.recordingLimitSeconds}
+              />
             </>
           )}
         </div>

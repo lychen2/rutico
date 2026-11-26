@@ -224,28 +224,45 @@ function conflictsWithWhen(leftWhen: string, rightWhen: string): boolean {
   return always(leftWhen) || always(rightWhen) || leftWhen === rightWhen;
 }
 
-export function keybindingConflictLabels(
+export interface KeybindingConflict {
+  readonly command: KeybindingCommand;
+  readonly label: string;
+}
+
+export function keybindingConflicts(
   rows: ReadonlyArray<KeybindingRow>,
   input: { readonly rowId: string; readonly key: string; readonly when: string },
   platform = navigator.platform,
   resolve: MessageResolver = m,
-): ReadonlyArray<string> {
+): ReadonlyArray<KeybindingConflict> {
   if (input.key.trim().length === 0) return [];
   const shortcut = parseKeybindingShortcut(input.key);
   if (!shortcut) return [];
   // Compare resolved chords so mod+k and ctrl+k collide where mod is Ctrl.
   const conflictKey = shortcutConflictKey(shortcut, platform);
-  const conflicts: Array<string> = [];
+  const byLabel = new Map<string, KeybindingConflict>();
   for (const candidate of rows) {
     if (
       candidate.id !== input.rowId &&
       shortcutConflictKey(candidate.binding.shortcut, platform) === conflictKey &&
       conflictsWithWhen(candidate.when, input.when)
     ) {
-      conflicts.push(commandLabel(candidate.command, resolve));
+      const label = commandLabel(candidate.command, resolve);
+      if (!byLabel.has(label)) {
+        byLabel.set(label, { command: candidate.command, label });
+      }
     }
   }
-  return [...new Set(conflicts)].toSorted();
+  return [...byLabel.values()].toSorted((left, right) => left.label.localeCompare(right.label));
+}
+
+export function keybindingConflictLabels(
+  rows: ReadonlyArray<KeybindingRow>,
+  input: { readonly rowId: string; readonly key: string; readonly when: string },
+  platform = navigator.platform,
+  resolve: MessageResolver = m,
+): ReadonlyArray<string> {
+  return keybindingConflicts(rows, input, platform, resolve).map((conflict) => conflict.label);
 }
 
 export interface KeybindingGroup {

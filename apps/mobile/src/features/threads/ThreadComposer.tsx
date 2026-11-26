@@ -481,7 +481,7 @@ export const ThreadComposer = function ThreadComposer(props: ThreadComposerProps
   const compactEditor = useCompactComposerEditor(
     bodyText,
     draftMessage,
-    Platform.OS === "ios" && isFocused,
+    (Platform.OS === "ios" || Platform.OS === "android") && isFocused,
   );
   const showsCompactDictation = isVoiceInputPresented;
   const isToolbarVisible = isVoiceInputPresented;
@@ -814,9 +814,20 @@ export const ThreadComposer = function ThreadComposer(props: ThreadComposerProps
         ) : null}
 
         <ComposerSurface
-          animateLayout={false}
+          animateLayout={
+            isFocused || compactEditor.isExpanded || (isExpanded && hasEditingAttachments)
+          }
           style={{
-            borderRadius: usesLargeControls ? 31 : 27,
+            borderRadius:
+              Platform.OS === "android"
+                ? compactEditor.isExpanded || (isExpanded && hasEditingAttachments)
+                  ? 20
+                  : usesLargeControls
+                    ? 28
+                    : 26
+                : usesLargeControls
+                  ? 31
+                  : 27,
             borderCurve: "circular",
             overflow: "hidden",
             paddingVertical: surfacePaddingVertical,

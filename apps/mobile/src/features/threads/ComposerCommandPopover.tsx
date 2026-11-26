@@ -12,11 +12,17 @@ import type {
 } from "@t3tools/contracts";
 import type { ComposerTriggerKind } from "@t3tools/shared/composerTrigger";
 import { formatProviderSkillDisplayName } from "@t3tools/shared/inlineSkills";
-import * as Haptics from "expo-haptics";
 import { msg, useMessages } from "gt-react-native";
-import { memo } from "react";
-import { Pressable, ScrollView, StyleSheet, View, type ViewStyle } from "react-native";
-import Animated, { FadeInDown, FadeOutDown, ReduceMotion } from "react-native-reanimated";
+import { memo, useEffect } from "react";
+import { Platform, Pressable, ScrollView, StyleSheet, View, type ViewStyle } from "react-native";
+import Animated, {
+  FadeInDown,
+  FadeOutDown,
+  ReduceMotion,
+  useAnimatedStyle,
+  useSharedValue,
+  withSpring,
+} from "react-native-reanimated";
 
 import { AppActivityIndicator } from "../../components/ui/AppActivityIndicator";
 import { SymbolView, type AppSymbolName } from "../../components/ui/AppSymbol";
@@ -27,6 +33,8 @@ import { PierreEntryIcon } from "../../components/PierreEntryIcon";
 import { ProviderIcon } from "../../components/ProviderIcon";
 import type { MessageResolver } from "../../i18n/messages";
 import { cn } from "../../lib/cn";
+import { triggerSemanticHaptic } from "../../lib/hapticChoreography";
+import { SPRING_SPATIAL_SNAPPY } from "../../lib/mobileMotion";
 import type { ModelOption } from "../../lib/modelOptions";
 import { pullRequestStatus } from "../pull-requests/pullRequestStatus";
 export type ComposerCommandItem =
@@ -99,6 +107,8 @@ interface ComposerCommandPopoverProps {
 
 const POPOVER_ENTERING = FadeInDown.duration(150).reduceMotion(ReduceMotion.System);
 const POPOVER_EXITING = FadeOutDown.duration(120).reduceMotion(ReduceMotion.System);
+const POPOVER_ROW_HEIGHT = Platform.OS === "android" ? 48 : 44;
+const POPOVER_MAX_LIST_HEIGHT = 240;
 
 function PopoverSurface(props: { readonly children: React.ReactNode; readonly style?: ViewStyle }) {
   const baseStyle: ViewStyle = {
@@ -201,8 +211,11 @@ const CommandRow = memo(function CommandRow(props: {
   return (
     <Pressable
       accessibilityRole="button"
+      onPressIn={() => {
+        triggerSemanticHaptic("clockTick");
+      }}
       onPress={() => {
-        void Haptics.selectionAsync().catch(() => undefined);
+        triggerSemanticHaptic("contextClick");
         props.onPress();
       }}
       className="min-h-[44px] flex-row items-center gap-2.5 border-border px-3.5 py-2.5 active:opacity-60 android:min-h-[48px]"
@@ -258,6 +271,20 @@ export const ComposerCommandPopover = memo(function ComposerCommandPopover(
 ) {
   const m = useMessages();
   const label = groupLabel(props.triggerKind, props.items, m);
+  const targetListHeight = Math.min(
+    POPOVER_MAX_LIST_HEIGHT,
+    Math.max(POPOVER_ROW_HEIGHT, props.items.length * POPOVER_ROW_HEIGHT),
+  );
+  const animatedListHeight = useSharedValue(targetListHeight);
+
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- smoothly spring-morphs the command popover height as filtered matches change
+  useEffect(() => {
+    animatedListHeight.set(withSpring(targetListHeight, SPRING_SPATIAL_SNAPPY));
+  }, [animatedListHeight, targetListHeight]);
+
+  const listHeightStyle = useAnimatedStyle(() => ({
+    maxHeight: animatedListHeight.get(),
+  }));
 
   return (
     <PopoverSurface>
@@ -269,21 +296,19 @@ export const ComposerCommandPopover = memo(function ComposerCommandPopover(
         </View>
       ) : null}
       {props.items.length > 0 ? (
-        <ScrollView
-          className="max-h-[180px]"
-          keyboardShouldPersistTaps="always"
-          showsVerticalScrollIndicator={false}
-        >
-          {props.items.map((item, index) => (
-            <CommandRow
-              key={item.id}
-              item={item}
-              onPress={() => props.onSelect(item)}
-              isLast={index === props.items.length - 1}
-              isSlashSkill={props.triggerKind === "slash-command" && item.type === "skill"}
-            />
-          ))}
-        </ScrollView>
+        <Animated.View style={listHeightStyle}>
+          <ScrollView keyboardShouldPersistTaps="always" showsVerticalScrollIndicator={false}>
+            {props.items.map((item, index) => (
+              <CommandRow
+                key={item.id}
+                item={item}
+                onPress={() => props.onSelect(item)}
+                isLast={index === props.items.length - 1}
+                isSlashSkill={props.triggerKind === "slash-command" && item.type === "skill"}
+              />
+            ))}
+          </ScrollView>
+        </Animated.View>
       ) : props.error ? (
         <View className="px-3.5 py-2.5">
           <Text accessibilityRole="alert" className="text-xs text-danger-foreground">

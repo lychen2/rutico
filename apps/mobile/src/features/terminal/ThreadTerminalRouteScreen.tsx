@@ -90,6 +90,12 @@ import {
   type HostPlatform,
   type PendingModifier,
 } from "./terminalInput";
+import {
+  TerminalTrackpadScrubber,
+  TerminalZoomHud,
+  useStickyTerminalModifier,
+  useTerminalZoomHud,
+} from "./TerminalAndroidOverlay";
 import { createTerminalPasteSession } from "./terminalPaste";
 import { cacheTerminalGridSize, getCachedTerminalGridSize } from "./terminalUiState";
 import { getKeyboardShowEpoch, subscribeKeyboardShowing } from "./terminalKeyboardShowing";
@@ -504,7 +510,13 @@ function ThreadTerminal(props: {
   );
   const surfaceRef = useRef<TerminalSurfaceHandle>(null);
   const [keyboardFocusRequest, setKeyboardFocusRequest] = useState(0);
-  const [pendingModifier, setPendingModifier] = useState<PendingModifier | null>(null);
+  const {
+    modifierState,
+    toggle: toggleModifier,
+    consume: consumeModifier,
+    clear: clearModifier,
+  } = useStickyTerminalModifier();
+  const { hud: zoomHud, handleFontSizeZoom } = useTerminalZoomHud(setTerminalFontSize);
   const launchLocation = useInitialTerminalLaunchLocation({
     targetKey: terminalKey,
     pendingLaunch,
@@ -683,15 +695,16 @@ function ThreadTerminal(props: {
   };
 
   const writeModifiedInput = (data: string) => {
-    if (pendingModifier === null) {
+    if (modifierState === null) {
       void pasteSession.write(data, writeInput);
       return;
     }
 
-    setPendingModifier(null);
+    const modifier = modifierState.modifier;
+    consumeModifier();
     const resolved = resolveModifiedTerminalInput({
       data,
-      modifier: pendingModifier,
+      modifier,
       hostPlatform,
     });
     if (resolved.kind === "paste") {
@@ -804,7 +817,7 @@ function ThreadTerminal(props: {
       return;
     }
 
-    setPendingModifier(null);
+    clearModifier();
     void clearTerminal({
       environmentId: selectedThread.environmentId,
       input: {
@@ -816,7 +829,7 @@ function ThreadTerminal(props: {
 
   const handleToolbarActionPress = (action: TerminalToolbarAction) => {
     if (action.kind === "modifier") {
-      setPendingModifier((current) => (current === action.modifier ? null : action.modifier));
+      toggleModifier(action.modifier);
       return;
     }
 
@@ -828,13 +841,17 @@ function ThreadTerminal(props: {
       return;
     }
 
+    if (action.data === "\u001b") {
+      clearModifier();
+    }
+
     writeModifiedInput(action.data);
   };
 
   const handlePaste = (readText: () => Promise<string>) => {
     // Pasted text bypasses the native field, so a syllable it holds must not be recomposed.
     surfaceRef.current?.resetInput();
-    setPendingModifier(null);
+    clearModifier();
     void pasteText(readText);
   };
 
@@ -1017,10 +1034,12 @@ function ThreadTerminal(props: {
                   onInput={handleInput}
                   onPaste={(text) => handlePaste(async () => text)}
                   onResize={handleResize}
+                  onFontSizeZoom={handleFontSizeZoom}
                   style={{ flex: 1 }}
                   terminalKey={terminalKey}
                   theme={terminalTheme}
                 />
+                <TerminalZoomHud hud={zoomHud} />
               </View>
 
               {Platform.OS === "android" && !isKeyboardVisible ? (
@@ -1082,13 +1101,15 @@ function ThreadTerminal(props: {
                       >
                         {terminalToolbarActions.map((action) => {
                           const active =
-                            action.kind === "modifier" && pendingModifier === action.modifier;
+                            action.kind === "modifier" &&
+                            modifierState?.modifier === action.modifier;
+                          const locked = active && modifierState?.locked === true;
 
                           return (
                             <ComposerToolbarButton
                               key={action.key}
                               active={active}
-                              label={action.label}
+                              label={locked ? `${action.label} •` : action.label}
                               maxWidth={120}
                               minWidth={action.label.length > 1 ? 56 : 44}
                               onPress={() => handleToolbarActionPress(action)}
@@ -1102,6 +1123,14 @@ function ThreadTerminal(props: {
                           );
                         })}
                       </ComposerToolbarScroller>
+                      {Platform.OS === "android" ? (
+                        <TerminalTrackpadScrubber
+                          onScrubSequence={(sequence) => {
+                            surfaceRef.current?.resetInput();
+                            writeModifiedInput(sequence);
+                          }}
+                        />
+                      ) : null}
                       <ComposerToolbarButton
                         accessibilityLabel={gt("Paste", { $context: "verb" })}
                         icon={{ ios: "doc.on.clipboard", android: "content_paste" }}

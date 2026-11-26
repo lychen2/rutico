@@ -1,5 +1,6 @@
 import { msg, T, useGT, useMessages } from "gt-react";
 import { contextMenuSourceOf } from "../contextMenuSource";
+import { observeVisibleAnimation } from "~/lib/visibleAnimation";
 import { m, type MessageResolver } from "../i18n/messages";
 import { sourceControlClients } from "@t3tools/client-runtime/source-control-clients";
 import { scopeThreadRef } from "@t3tools/client-runtime/environment";
@@ -33,13 +34,14 @@ import {
   closestCenter,
   DndContext,
   type DragEndEvent,
+  type DragOverEvent,
+  type DragStartEvent,
   PointerSensor,
   useSensor,
   useSensors,
 } from "@dnd-kit/core";
 import { restrictToFirstScrollableAncestor, restrictToHorizontalAxis } from "@dnd-kit/modifiers";
 import { horizontalListSortingStrategy, SortableContext, useSortable } from "@dnd-kit/sortable";
-import { CSS } from "@dnd-kit/utilities";
 import {
   Bot,
   CircleDotIcon,
@@ -53,7 +55,6 @@ import {
   MessagesSquare,
   Plus,
   TerminalSquare,
-  Volume2Icon,
   VolumeOffIcon,
 } from "lucide-react";
 import {
@@ -106,6 +107,7 @@ import { useEnvironmentQuery } from "~/state/query";
 import { COLLAPSED_SIDEBAR_TITLEBAR_INSET_CLASS } from "~/workspaceTitlebar";
 
 import { PreviewPanelShell, type PreviewPanelMode } from "./preview/PreviewPanelShell";
+import { BrowserMockup } from "./preview/BrowserMockup";
 import { FaviconImage } from "./preview/PreviewFaviconIcon";
 import { previewBridge } from "./preview/previewBridge";
 import { dispatchPreviewAction } from "./preview/previewActionBus";
@@ -114,6 +116,7 @@ import { PierreEntryIcon } from "./chat/PierreEntryIcon";
 import { resolvePullRequestState } from "./pullRequest/pullRequestPresentation";
 import { PullRequestGlyph } from "~/components/pullRequest/pullRequestIcons";
 import { observeResize } from "~/lib/observeResize";
+import { useSharedIndicator } from "~/lib/motion/useSharedIndicator";
 import { surfaceShortcutKey } from "~/lib/surfaceShortcutKey";
 import { SharedTooltipTrigger } from "~/components/ui/shared-tooltip";
 
@@ -482,9 +485,16 @@ function RightPanelEmptyState(props: {
     highlightIndex !== -1 && availableActions[highlightIndex] === action;
 
   const actionIcon = (action: SurfaceAction, iconClassName = "size-4") => {
+    if (action.label === "Browser") {
+      return (
+        <span className="relative inline-flex shrink-0 items-center justify-center">
+          <BrowserMockup className="h-4.5 w-6" />
+        </span>
+      );
+    }
     const Icon = action.icon;
     return (
-      <span className="relative inline-flex shrink-0">
+      <span className="relative inline-flex size-6 shrink-0 items-center justify-center rounded-md border border-border/60 bg-muted/40 text-muted-foreground transition-colors duration-150 group-hover:border-border group-hover:text-foreground">
         <Icon className={iconClassName} />
       </span>
     );
@@ -498,15 +508,23 @@ function RightPanelEmptyState(props: {
       aria-label={gt("Open a surface")}
       data-surface-launcher-keys={availableActions.map((action) => action.shortcut).join("")}
       className={cn(
-        "scrollbar-gutter-both flex min-h-0 flex-1 items-center justify-center overflow-y-auto px-6 outline-none",
+        "@container scrollbar-gutter-both flex min-h-0 flex-1 items-center justify-center overflow-y-auto px-5 outline-none",
         "pb-(--workspace-topbar-height)",
       )}
     >
-      <div className="surface-glass w-full max-w-xs rounded-2xl border border-border/50 px-3.5 py-4 dark:border-white/8">
-        <h3 className="mb-2.5 text-center font-medium text-balance text-foreground text-sm tracking-tight">
-          <T>Open a surface</T>
-        </h3>
-        <div className="flex flex-col gap-0.5">
+      <div className="surface-optical-chrome surface-elevated-rim w-full max-w-md rounded-2xl px-3.5 py-4">
+        <div className="mb-3 flex items-center justify-between px-1">
+          <h3 className="font-medium text-balance text-foreground text-sm tracking-tight">
+            <T>Open a surface</T>
+          </h3>
+          <span className="text-2xs text-muted-foreground">
+            <T>Press key to open</T>
+          </span>
+        </div>
+        <div
+          data-slot="right-panel-bento-launcher"
+          className="grid grid-cols-1 gap-1.5 @min-[22rem]:grid-cols-2"
+        >
           {actions.map((action) =>
             action.available ? (
               <div
@@ -522,21 +540,22 @@ function RightPanelEmptyState(props: {
                 <button
                   type="button"
                   onClick={action.onClick}
+                  data-highlighted={isHighlighted(action) ? "true" : undefined}
                   className={cn(
-                    "flex h-8 w-full cursor-pointer items-center gap-2.5 rounded-(--control-radius) px-2.5 text-left text-sm outline-none transition-[background-color,color,scale] duration-150 ease-out focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring active:scale-[0.985] group-hover:bg-accent/60 motion-reduce:transition-none motion-reduce:active:scale-100",
-                    isHighlighted(action) && "bg-accent/60",
+                    "bento-launcher-card flex min-h-11 w-full cursor-pointer items-center gap-2.5 rounded-xl border border-border/55 bg-background/75 px-2.5 py-2 text-left text-sm outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring active:scale-[0.985] group-hover:border-border group-hover:bg-accent/55 motion-reduce:transition-none motion-reduce:active:scale-100",
+                    isHighlighted(action) && "border-primary/40 bg-accent/65",
                   )}
                 >
-                  {actionIcon(action, "size-4")}
+                  {actionIcon(action, "size-3.5")}
                   <span
                     className={cn(
-                      "min-w-0 flex-1 truncate",
+                      "min-w-0 flex-1 truncate font-medium text-xs text-foreground",
                       action.label === "Browser" && props.browserProfiles.length > 1 && "pr-7",
                     )}
                   >
                     {messages(action.label)}
                   </span>
-                  <Kbd>{action.shortcut}</Kbd>
+                  <Kbd reactiveKey={action.shortcut.toLowerCase()}>{action.shortcut}</Kbd>
                 </button>
                 {action.label === "Browser" && props.browserProfiles.length > 1 ? (
                   <Menu>
@@ -573,11 +592,11 @@ function RightPanelEmptyState(props: {
                   <div
                     tabIndex={0}
                     aria-disabled="true"
-                    className="flex h-8 w-full cursor-default items-center gap-2.5 rounded-(--control-radius) px-2.5 text-left text-sm opacity-50"
+                    className="flex min-h-11 w-full cursor-default items-center gap-2.5 rounded-xl border border-border/40 bg-muted/20 px-2.5 py-2 text-left text-xs opacity-50"
                   >
-                    {actionIcon(action, "size-4")}
+                    {actionIcon(action, "size-3.5")}
                     <span className="min-w-0 flex-1 truncate">{messages(action.label)}</span>
-                    <Kbd>{action.shortcut}</Kbd>
+                    <Kbd reactiveKey={false}>{action.shortcut}</Kbd>
                   </div>
                 }
               />
@@ -895,25 +914,92 @@ function PullRequestSurfaceIcon({
   return <presentation.Icon className={cn("size-3 shrink-0", presentation.toneClassName)} />;
 }
 
+const TAB_RIPPLE_AMPLITUDE_PX = 4;
+const TAB_RIPPLE_DECAY = 0.7;
+const TAB_RIPPLE_STAGGER_MS = 24;
+const TAB_RIPPLE_MAX_HOP = 4;
+
+/**
+ * Kubai087 Tip 005 drag-reorder neighbor ripple (`A * 0.7^n`, `24ms * n` stagger):
+ * returns a gentle horizontal wave offset and delay for tabs neighboring the hovered slot.
+ */
+export function computeTabDragRipple(
+  tabIndex: number,
+  activeIndex: number,
+  overIndex: number,
+): { readonly offsetPx: number; readonly delayMs: number } {
+  if (activeIndex < 0 || overIndex < 0 || tabIndex === activeIndex || activeIndex === overIndex) {
+    return { offsetPx: 0, delayMs: 0 };
+  }
+  const hop = Math.abs(tabIndex - overIndex);
+  if (hop === 0 || hop > TAB_RIPPLE_MAX_HOP) {
+    return { offsetPx: 0, delayMs: 0 };
+  }
+  const direction = tabIndex > overIndex ? 1 : -1;
+  const magnitude = TAB_RIPPLE_AMPLITUDE_PX * TAB_RIPPLE_DECAY ** hop;
+  return {
+    offsetPx: Math.round(direction * magnitude * 100) / 100,
+    delayMs: hop * TAB_RIPPLE_STAGGER_MS,
+  };
+}
+
+interface TabDragRippleState {
+  readonly activeId: string;
+  readonly activeIndex: number;
+  readonly overIndex: number;
+}
+
 function SortableTabList(props: {
   surfaces: readonly RightPanelSurface[];
   onMove: ((surfaceId: string, toIndex: number) => void) | undefined;
+  onDragStateChange: (state: TabDragRippleState | null) => void;
   children: ReactNode;
 }) {
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }));
   const surfaceIds = props.surfaces.map((surface) => surface.id);
-  const { onMove, surfaces } = props;
+  const { onMove, onDragStateChange, surfaces } = props;
+
+  const handleDragStart = ({ active }: DragStartEvent) => {
+    const activeIndex = surfaces.findIndex((surface) => surface.id === active.id);
+    if (activeIndex < 0) return;
+    onDragStateChange({
+      activeId: String(active.id),
+      activeIndex,
+      overIndex: activeIndex,
+    });
+  };
+
+  const handleDragOver = ({ active, over }: DragOverEvent) => {
+    const activeIndex = surfaces.findIndex((surface) => surface.id === active.id);
+    const overIndex = over ? surfaces.findIndex((surface) => surface.id === over.id) : activeIndex;
+    if (activeIndex < 0) return;
+    onDragStateChange({
+      activeId: String(active.id),
+      activeIndex,
+      overIndex: overIndex >= 0 ? overIndex : activeIndex,
+    });
+  };
+
   const handleDragEnd = ({ active, over }: DragEndEvent) => {
+    onDragStateChange(null);
     if (!over || active.id === over.id) return;
     const toIndex = surfaces.findIndex((surface) => surface.id === over.id);
     if (toIndex >= 0) onMove?.(String(active.id), toIndex);
   };
+
+  const handleDragCancel = () => {
+    onDragStateChange(null);
+  };
+
   return (
     <DndContext
       sensors={sensors}
       collisionDetection={closestCenter}
       modifiers={TAB_DRAG_MODIFIERS}
+      onDragStart={handleDragStart}
+      onDragOver={handleDragOver}
       onDragEnd={handleDragEnd}
+      onDragCancel={handleDragCancel}
     >
       <SortableContext items={surfaceIds} strategy={horizontalListSortingStrategy}>
         {props.children}
@@ -943,6 +1029,9 @@ function RightPanelTab(
     surface: RightPanelSurface;
     dragDisabled: boolean;
     active: boolean;
+    indicatorActive: boolean;
+    rippleOffsetPx: number;
+    rippleDelayMs: number;
     pending: boolean;
     title: string;
     audio: TabAudioState;
@@ -1010,7 +1099,7 @@ function RightPanelTab(
             <button
               type="button"
               className={cn(
-                "flex size-4 shrink-0 cursor-pointer items-center justify-center rounded-sm outline-none transition-[background-color,color,scale] duration-150 ease-out hover:bg-muted focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring active:scale-90 motion-reduce:transition-none motion-reduce:active:scale-100",
+                "group/audio relative flex size-4 shrink-0 cursor-pointer items-center justify-center rounded-sm outline-none transition-[background-color,color,scale] duration-150 ease-out hover:bg-muted focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring active:scale-90 motion-reduce:transition-none motion-reduce:active:scale-100",
                 audio === "audible"
                   ? "text-primary"
                   : "text-muted-foreground hover:text-foreground",
@@ -1028,7 +1117,19 @@ function RightPanelTab(
               {audio === "muted" ? (
                 <VolumeOffIcon key="muted" className="t3-icon-pop size-3" />
               ) : (
-                <Volume2Icon key="audible" className="t3-icon-pop size-3" />
+                <>
+                  <span
+                    ref={observeVisibleAnimation}
+                    aria-hidden="true"
+                    data-slot="tab-audio-eq"
+                    className="tab-audio-eq flex h-2.5 items-end gap-px transition-[opacity,scale] duration-150 ease-out group-hover/audio:scale-75 group-hover/audio:opacity-0 group-focus-visible/audio:scale-75 group-focus-visible/audio:opacity-0 motion-reduce:transition-none"
+                  >
+                    <span className="tab-audio-eq-bar tab-audio-eq-bar-1 h-full w-0.5 rounded-full bg-current" />
+                    <span className="tab-audio-eq-bar tab-audio-eq-bar-2 h-full w-0.5 rounded-full bg-current" />
+                    <span className="tab-audio-eq-bar tab-audio-eq-bar-3 h-full w-0.5 rounded-full bg-current" />
+                  </span>
+                  <VolumeOffIcon className="pointer-events-none absolute size-3 scale-75 opacity-0 transition-[opacity,scale] duration-150 ease-(--spring-snappy) group-hover/audio:scale-100 group-hover/audio:opacity-100 group-focus-visible/audio:scale-100 group-focus-visible/audio:opacity-100 motion-reduce:transition-none" />
+                </>
               )}
             </button>
           }
@@ -1092,21 +1193,40 @@ function RightPanelTab(
       )}
     </>
   );
+  const combinedX = (transform?.x ?? 0) + (isDragging ? 0 : props.rippleOffsetPx);
+  const combinedY = transform?.y ?? 0;
+  const tabTransform =
+    combinedX !== 0 || combinedY !== 0
+      ? `translate3d(${Math.round(combinedX * 100) / 100}px, ${Math.round(combinedY * 100) / 100}px, 0)`
+      : undefined;
+  const tabTransition = isDragging
+    ? transition
+    : (transition ??
+      (props.rippleOffsetPx !== 0 ? "transform 180ms var(--spring-snappy)" : undefined));
+
   return (
     <div
       data-active-tab={props.active}
+      data-sheet-no-drag={!props.dragDisabled ? "" : undefined}
       onMouseDown={preventTabMiddleButtonDefault}
       onMouseUp={preventTabMiddleButtonDefault}
       onAuxClick={(event) => onAuxClick(event, surface)}
       onContextMenu={(event) => onContextMenu(event, surface)}
       {...listeners}
       ref={setNodeRef}
-      style={{ transform: CSS.Translate.toString(transform), transition }}
+      style={{
+        transform: tabTransform,
+        transition: tabTransition,
+        transitionDelay:
+          !isDragging && props.rippleDelayMs > 0 ? `${props.rippleDelayMs}ms` : undefined,
+      }}
       className={cn(
-        "t3-panel-tab-enter cursor-pointer group/tab flex h-6 max-w-36 shrink-0 items-center gap-0.5 rounded-md pr-2 pl-1.5 text-xs pointer-coarse:h-8 pointer-coarse:gap-1 motion-reduce:transition-none",
+        "t3-panel-tab-enter relative z-1 cursor-pointer group/tab flex h-6 max-w-36 shrink-0 items-center gap-0.5 rounded-md pr-2 pl-1.5 text-xs pointer-coarse:h-8 pointer-coarse:gap-1 motion-reduce:transition-none",
         props.ownsDesktopTitleBar && "[-webkit-app-region:no-drag]",
         props.active
-          ? "bg-accent text-foreground shadow-xs/5 ring-1 ring-inset ring-border/60 dark:ring-white/10"
+          ? props.indicatorActive
+            ? "text-foreground"
+            : "bg-accent text-foreground shadow-xs/5 ring-1 ring-inset ring-border/60 dark:ring-white/10"
           : "text-muted-foreground hover:bg-accent/60 hover:text-foreground",
         isDragging &&
           "relative z-10 cursor-grabbing bg-popover text-foreground shadow-md ring-1 ring-inset ring-primary/40",
@@ -1125,15 +1245,28 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
   const browserProfiles = useBrowserDefaults().profiles;
   const { resolvedTheme } = useTheme();
   const tabListRef = useRef<HTMLDivElement>(null);
+  const tabStripContainerRef = useRef<HTMLDivElement>(null);
+  const activeTabIndicatorRef = useRef<HTMLDivElement>(null);
   const addSurfaceTriggerRef = useRef<HTMLButtonElement>(null);
   const [renamingDevice, setRenamingDevice] = useState<string | null>(null);
   const [addSurfaceMenuOpen, setAddSurfaceMenuOpen] = useState(false);
+  const [dragRippleState, setDragRippleState] = useState<TabDragRippleState | null>(null);
   const [tabScrollState, setTabScrollState] = useState({
     hasOverflow: false,
     canScrollLeft: false,
     canScrollRight: false,
   });
 
+  const sharedIndicatorActive = dragRippleState === null && props.activeSurfaceId !== null;
+  useSharedIndicator({
+    containerRef: tabStripContainerRef,
+    indicatorRef: activeTabIndicatorRef,
+    activeSelector: "[data-active-tab='true']",
+    activeKey: sharedIndicatorActive ? props.activeSurfaceId : null,
+    preset: "fluid",
+    maxSquash: 0.15,
+    axis: "x",
+  });
   const updateTabScrollState = (viewport: HTMLDivElement) => {
     const maxScroll = viewport.scrollWidth - viewport.clientWidth;
     const hasOverflow = maxScroll > TAB_SCROLL_EDGE_TOLERANCE;
@@ -1516,21 +1649,47 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
             )}
             data-right-panel-tab-list
           >
-            <div className="flex h-full w-max min-w-full items-center gap-1">
-              <SortableTabList surfaces={props.surfaces} onMove={props.onMoveSurface}>
-                {props.surfaces.map((surface) => {
+            <div
+              ref={tabStripContainerRef}
+              className="relative flex h-full w-max min-w-full items-center gap-1"
+            >
+              <div
+                ref={activeTabIndicatorRef}
+                aria-hidden="true"
+                data-slot="right-panel-active-tab-indicator"
+                className={cn(
+                  "pointer-events-none absolute top-0 left-0 z-0 rounded-md bg-accent opacity-0 shadow-xs/5 ring-1 ring-inset ring-border/60 will-change-transform dark:ring-white/10",
+                  !sharedIndicatorActive && "hidden",
+                )}
+              />
+              <SortableTabList
+                surfaces={props.surfaces}
+                onMove={props.onMoveSurface}
+                onDragStateChange={setDragRippleState}
+              >
+                {props.surfaces.map((surface, tabIndex) => {
                   const previewTabId = previewTabIdOf(surface, props.previewSessions);
                   const favicon = previewFaviconOf(
                     surface,
                     props.previewSessions,
                     props.desktopByTabId,
                   );
+                  const ripple = dragRippleState
+                    ? computeTabDragRipple(
+                        tabIndex,
+                        dragRippleState.activeIndex,
+                        dragRippleState.overIndex,
+                      )
+                    : { offsetPx: 0, delayMs: 0 };
                   return (
                     <RightPanelTab
                       key={surface.id}
                       surface={surface}
                       dragDisabled={!props.onMoveSurface || renamingDevice === surface.id}
                       active={surface.id === props.activeSurfaceId}
+                      indicatorActive={sharedIndicatorActive}
+                      rippleOffsetPx={ripple.offsetPx}
+                      rippleDelayMs={ripple.delayMs}
                       pending={props.pendingSurfaceIds.has(surface.id)}
                       title={surfaceTitle(
                         surface,

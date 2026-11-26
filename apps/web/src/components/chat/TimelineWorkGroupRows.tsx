@@ -12,13 +12,26 @@ import { useAssetUrls } from "~/assets/assetUrls";
 import { observeResize } from "~/lib/observeResize";
 import { tickTextContent } from "~/lib/tickTextContent";
 import { observeVisibleAnimation } from "../../lib/visibleAnimation";
+import { formatDuration } from "@t3tools/shared/orchestrationTiming";
+import * as DateTime from "effect/DateTime";
 import { T, useGT, useMessages } from "gt-react";
-import { memo, use, useLayoutEffect, useRef, useState, type ReactNode } from "react";
+import {
+  memo,
+  use,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type CSSProperties,
+  type ReactNode,
+  type UIEvent,
+} from "react";
 import { LegendList, type LegendListRef } from "@legendapp/list/react";
 import { workEntryDisplayIndicatesToolFailure } from "../../session-logic";
 import ChatMarkdown from "../ChatMarkdown";
 import { assetMediaActionsSource } from "./ChatMarkdownMedia";
 import { ChevronRightIcon, Minimize2Icon, WrenchIcon, XIcon } from "lucide-react";
+import { AnimatedNumber } from "../ui/animated-number";
 import { Button } from "../ui/button";
 import { getVirtualizedScrollFadeClassName } from "../ui/scroll-area";
 import {
@@ -42,7 +55,11 @@ import {
   type TimelineRow,
 } from "./timelineRowContext";
 import { ProviderStartingIcon } from "./ProviderStartingIcon";
-import { TimelineRowTimestamp, ActivityShimmerOverlay } from "./TimelineRowParts";
+import {
+  TimelineRowTimestamp,
+  ActivityShimmerOverlay,
+  DotMatrixWorkingIndicator,
+} from "./TimelineRowParts";
 import {
   failedToolIconClassName,
   toolIconAcceptsTint,
@@ -57,6 +74,8 @@ import {
   SimpleWorkEntryRow,
 } from "./TimelineWorkEntryRow";
 import {
+  liveThoughtPreviewMarkdown,
+  sliceLiveThoughtTailSource,
   sliceThoughtPreviewSource,
   thoughtPreviewMarkdown,
   toolGroupSummaryIconName,
@@ -139,6 +158,7 @@ function WorkingTimer({ createdAt }: { createdAt: string }) {
 }
 
 const compactWorkEntryHeight = 24;
+const WORK_GROUP_CASCADE_DELAYS_MS = [0, 24, 44, 60, 72, 80] as const;
 
 // The thumbnail strip below the group is its own virtualized row, so the gallery an expanded
 // entry opens is built from the same entries rather than from the strip's mounted images.
@@ -211,6 +231,20 @@ function ExpandedWorkGroupEntries({
   const listRef = useRef<LegendListRef>(null);
   const [expandedContentHeight, setExpandedContentHeight] = useState(0);
   const [fades, setFades] = useState({ top: false, bottom: false, viewportHeight: 0 });
+  const [initialCascadeDelays, setInitialCascadeDelays] = useState<ReadonlyMap<string, number>>(
+    () =>
+      new Map(
+        entries
+          .slice(0, WORK_GROUP_CASCADE_DELAYS_MS.length)
+          .map((entry, idx) => [entry.id, WORK_GROUP_CASCADE_DELAYS_MS[idx]!]),
+      ),
+  );
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- clears the one-shot initial expand stagger after 360ms so virtualized row recycling never replays entrance motion
+  useEffect(() => {
+    if (initialCascadeDelays.size === 0) return;
+    const timer = window.setTimeout(() => setInitialCascadeDelays(new Map()), 360);
+    return () => window.clearTimeout(timer);
+  }, [initialCascadeDelays.size]);
   const [appendState, setAppendState] = useState({ entries, follow: false });
   // Capture the pre-change edge once per incoming array, before new layout
   // metrics arrive. Edge/viewport changes never turn a status update into a follow.
@@ -285,9 +319,21 @@ function ExpandedWorkGroupEntries({
     return observeResize(content ? [element, content] : element, updateScrollFades);
   }, [updateScrollFades]);
 
-  const renderEntry = ({ item }: { item: TimelineWorkEntry }) => (
-    <SimpleWorkEntryRow key={item.id} workEntry={item} workspaceRoot={workspaceRoot} />
-  );
+  const renderEntry = ({ item }: { item: TimelineWorkEntry }) => {
+    const cascadeDelay = initialCascadeDelays.get(item.id);
+    if (cascadeDelay === undefined) {
+      return <SimpleWorkEntryRow key={item.id} workEntry={item} workspaceRoot={workspaceRoot} />;
+    }
+    return (
+      <div
+        key={item.id}
+        data-work-cascade-row="true"
+        style={{ "--work-cascade-delay": `${cascadeDelay}ms` } as CSSProperties}
+      >
+        <SimpleWorkEntryRow workEntry={item} workspaceRoot={workspaceRoot} />
+      </div>
+    );
+  };
 
   const updateExpandedContentHeight = () => {
     const state = listRef.current?.getState();
@@ -349,16 +395,6 @@ function ExpandedWorkGroupEntries({
 
 const workEntryKey = (entry: TimelineWorkEntry) => entry.id;
 
-function observeVisiblePulse(element: HTMLSpanElement | null) {
-  if (element === null) return;
-  element.style.animationPlayState = "var(--visible-animation-state, paused)";
-  const stop = observeVisibleAnimation(element);
-  return () => {
-    stop?.();
-    element.style.removeProperty("animation-play-state");
-  };
-}
-
 export function WorkingTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "working" }> }) {
   const {
     isCompacting,
@@ -401,12 +437,9 @@ export function WorkingTimelineRow({ row }: { row: Extract<TimelineRow, { kind: 
         <span
           aria-hidden="true"
           data-working-indicator="true"
-          className="relative flex size-2 shrink-0 items-center justify-center"
+          className="relative flex size-4 shrink-0 items-center justify-center"
         >
-          <span
-            ref={observeVisiblePulse}
-            className="size-1.5 rounded-full bg-info motion-safe:animate-pulse"
-          />
+          <DotMatrixWorkingIndicator phase={phase} />
         </span>
         <span
           ref={shimmer ? observeVisibleAnimation : undefined}
@@ -427,7 +460,7 @@ export function WorkingTimelineRow({ row }: { row: Extract<TimelineRow, { kind: 
                 className="inline-flex shrink-0 items-center gap-1 rounded-full bg-muted/65 px-1.5 py-0.5 font-medium tabular-nums"
               >
                 <WrenchIcon className="size-2.5 shrink-0 opacity-75" />
-                <span>{toolCallCount}</span>
+                <AnimatedNumber value={toolCallCount} />
               </span>
             ) : null}
             {showTaskPill ? (
@@ -443,7 +476,7 @@ export function WorkingTimelineRow({ row }: { row: Extract<TimelineRow, { kind: 
                   />
                 </span>
                 <span>
-                  {taskProgress.completed}/{taskProgress.total}
+                  <AnimatedNumber value={taskProgress.completed} />/{taskProgress.total}
                 </span>
               </span>
             ) : null}
@@ -697,6 +730,103 @@ function LiveActivityContent({
   );
 }
 
+const LIVE_REASONING_BOTTOM_SLACK_PX = 6;
+
+function reasoningDurationLabel(entry: TimelineWorkEntry): string | null {
+  const item = entry.projectedItem?.item;
+  if (!item || !item.startedAt || !item.completedAt) return null;
+  const elapsedMs =
+    DateTime.toEpochMillis(item.completedAt) - DateTime.toEpochMillis(item.startedAt);
+  if (!Number.isFinite(elapsedMs) || elapsedMs < 1000) return null;
+  return formatDuration(elapsedMs);
+}
+
+function LiveReasoningStreamWindow({
+  text,
+  cwd,
+  active,
+  fallbackTitle,
+}: {
+  readonly text: string;
+  readonly cwd: string | undefined;
+  readonly active: boolean;
+  readonly fallbackTitle: string;
+}) {
+  const scrollerRef = useRef<HTMLDivElement>(null);
+  const atBottomRef = useRef(true);
+  const lastAutoScrollTopRef = useRef(0);
+  const [frozenStartOffset, setFrozenStartOffset] = useState<number | null>(null);
+
+  const sliced = sliceLiveThoughtTailSource(text, {
+    startOffset: frozenStartOffset,
+  });
+  const displayText = sliced.text.trim();
+
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- pins the 3-line living reasoning window to the latest streamed line unless the user scrolled up
+  useLayoutEffect(() => {
+    const scroller = scrollerRef.current;
+    if (!scroller || !active || !atBottomRef.current) return;
+    const maxScrollTop = Math.max(0, scroller.scrollHeight - scroller.clientHeight);
+    const expectedBottom = Math.min(lastAutoScrollTopRef.current, maxScrollTop);
+    if (scroller.scrollTop < expectedBottom - LIVE_REASONING_BOTTOM_SLACK_PX) {
+      atBottomRef.current = false;
+      return;
+    }
+    scroller.scrollTop = scroller.scrollHeight;
+    lastAutoScrollTopRef.current = scroller.scrollTop;
+  });
+
+  const handleScroll = (event: UIEvent<HTMLDivElement>) => {
+    const element = event.currentTarget;
+    const isAtBottom =
+      element.scrollHeight - element.scrollTop - element.clientHeight <=
+      LIVE_REASONING_BOTTOM_SLACK_PX;
+    atBottomRef.current = isAtBottom;
+    if (isAtBottom) {
+      lastAutoScrollTopRef.current = element.scrollTop;
+      if (frozenStartOffset !== null) {
+        setFrozenStartOffset(null);
+      }
+    } else if (frozenStartOffset === null) {
+      setFrozenStartOffset(sliced.startOffset);
+    }
+  };
+
+  return (
+    <div
+      data-live-reasoning-shell="true"
+      data-reasoning-window-state={active ? "open" : "compressed"}
+      className="ms-7.5 w-[calc(100%-1.875rem)]"
+    >
+      <div className="min-h-0 overflow-hidden">
+        <div className="relative flex min-w-0 items-stretch gap-2.5 py-0.5">
+          <span
+            ref={active ? observeVisibleAnimation : undefined}
+            aria-hidden="true"
+            data-reasoning-breathing-rail="true"
+            data-reasoning-active={active ? "true" : "false"}
+            className="my-1 w-0.5 shrink-0 rounded-full bg-primary/65"
+          />
+          <div
+            ref={scrollerRef}
+            data-live-reasoning-window="true"
+            onScroll={handleScroll}
+            className="min-w-0 flex-1 overflow-y-auto py-1 text-xs leading-snug text-muted-foreground [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+          >
+            <ChatMarkdown
+              text={displayText}
+              cwd={cwd}
+              parseRawHtml={false}
+              lineBreaks
+              extensions={liveThoughtPreviewMarkdown(fallbackTitle)}
+            />
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export function LiveWorkEntryTimelineRow({
   row,
 }: {
@@ -715,11 +845,24 @@ export function LiveWorkEntryTimelineRow({
   if (pendingApproval) return <TimelinePendingApprovalRow approval={pendingApproval} />;
 
   const failed = workEntryDisplayIndicatesToolFailure(row.entry);
+  const reasoningSource =
+    row.thought && !row.expanded
+      ? (row.thought.detail ?? "").trim()
+      : row.entry.itemType === "reasoning" && !row.expanded
+        ? (row.entry.detail ?? "").trim()
+        : "";
   const thoughtLine =
     row.thought && !row.expanded
       ? liveThoughtLine(sliceThoughtPreviewSource(row.thought.detail ?? ""))
       : "";
   const thoughtIsStatus = thoughtLine !== "" && row.entry === row.thought;
+  const isLiveReasoningWindow =
+    !row.expanded &&
+    reasoningSource.length > 0 &&
+    (row.entry.itemType === "reasoning" || row.thought !== undefined);
+  const reasoningEntry = row.thought ?? (row.entry.itemType === "reasoning" ? row.entry : null);
+  const settledThoughtDuration =
+    !row.active && reasoningEntry ? reasoningDurationLabel(reasoningEntry) : null;
   const groupCount = row.groupedEntries.length;
   const groupCountBadge =
     groupCount > 1 ? (
@@ -744,7 +887,7 @@ export function LiveWorkEntryTimelineRow({
       data-live-execution-slot={row.active ? "active" : "settled"}
       className={cn(
         "group/live-work flex w-full max-w-full cursor-pointer rounded-md text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/70",
-        thoughtLine ? "flex-col items-start" : "min-h-6 items-center",
+        thoughtLine || isLiveReasoningWindow ? "flex-col items-start" : "min-h-6 items-center",
       )}
       aria-label={
         failed
@@ -756,37 +899,21 @@ export function LiveWorkEntryTimelineRow({
       aria-expanded={row.expanded}
       onClick={() => ctx.onToggleWorkGroup(row.groupId, row.id)}
     >
-      {thoughtLine ? (
-        <WorkLogRow
-          icon={
-            <span className="flex size-4 items-center justify-center text-icon-muted">
-              <ToolActivityIconView
-                icon={undefined}
-                fallbackName="brain"
-                className="block size-4 shrink-0 stroke-2"
-                muted
-              />
-            </span>
-          }
-          label={
-            <span className="line-clamp-4">
-              <ChatMarkdown
-                inline
-                text={thoughtLine}
-                cwd={ctx.markdownCwd}
-                parseRawHtml={false}
-                extensions={thoughtPreviewMarkdown(gt("Thought"))}
-              />
-            </span>
-          }
-          wrapLabel
-        />
-      ) : null}
       <LiveActivityRow
         label={
-          thoughtIsStatus ? (
+          thoughtIsStatus || (row.entry.itemType === "reasoning" && isLiveReasoningWindow) ? (
             row.active ? (
               gt("Thinking")
+            ) : settledThoughtDuration ? (
+              <span
+                data-reasoning-summary-pill="true"
+                className="inline-flex items-center gap-1.5 tabular-nums"
+              >
+                <span>{gt("Thought")}</span>
+                <span className="rounded-full bg-muted/65 px-1.5 py-0.5 text-2xs font-normal text-muted-foreground">
+                  {settledThoughtDuration}
+                </span>
+              </span>
             ) : (
               gt("Thought")
             )
@@ -818,6 +945,15 @@ export function LiveWorkEntryTimelineRow({
         active={row.active}
         trailingBadge={groupCountBadge}
       />
+      {isLiveReasoningWindow ? (
+        <LiveReasoningStreamWindow
+          key={reasoningEntry?.id}
+          text={reasoningSource}
+          cwd={ctx.markdownCwd}
+          active={row.active}
+          fallbackTitle={row.active ? gt("Thinking") : gt("Thought")}
+        />
+      ) : null}
     </button>
   );
 }

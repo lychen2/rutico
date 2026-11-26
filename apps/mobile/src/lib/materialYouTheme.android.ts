@@ -3,6 +3,13 @@ import { Hct, argbFromHex, hexFromArgb } from "@material/material-color-utilitie
 import type { MobileThemeAppearance, MobileThemeVariables } from "./mobileTheme";
 import type { MaterialYouPalette } from "./materialYouPalette";
 
+export interface MaterialYouTonalSwatch {
+  readonly id: "primary" | "secondary" | "surface" | "accent";
+  readonly core: string;
+  readonly ring: string;
+  readonly container: string;
+}
+
 function withAlpha(color: string, alpha: number): string {
   const match = /^#([\da-f]{6})(?:[\da-f]{2})?$/iu.exec(color);
   if (!match?.[1]) return color;
@@ -117,4 +124,41 @@ export function materialYouPaletteToMobileThemeVariables(
     "--color-wordmark": palette.onSurface,
     "--color-chevron": withAlpha(palette.onSurface, 0.2),
   };
+}
+
+/**
+ * Extracts concentric Material You tonal swatches (Primary / Secondary / Surface / Accent)
+ * derived directly from the active Android 12+ wallpaper palette for settings showcase cards.
+ */
+export function extractMaterialYouTonalSwatches(
+  palette: MaterialYouPalette,
+  appearance: MobileThemeAppearance,
+): ReadonlyArray<MaterialYouTonalSwatch> {
+  const dark = appearance === "dark";
+  return [
+    {
+      id: "primary",
+      core: palette.primary,
+      ring: materialTone(palette.primary, dark ? 35 : 85),
+      container: palette.primaryContainer,
+    },
+    {
+      id: "secondary",
+      core: materialTone(palette.secondaryContainer, dark ? 72 : 46),
+      ring: palette.secondaryContainer,
+      container: palette.surfaceContainer,
+    },
+    {
+      id: "surface",
+      core: palette.surfaceContainerHighest,
+      ring: palette.surfaceContainerLow,
+      container: palette.surface,
+    },
+    {
+      id: "accent",
+      core: palette.tertiary,
+      ring: materialTone(palette.tertiary, dark ? 35 : 85),
+      container: palette.tertiaryContainer,
+    },
+  ];
 }

@@ -5,6 +5,7 @@ import { msg, T, useMessages } from "gt-react";
 import { StarIcon } from "lucide-react";
 import { ProviderInstanceIcon } from "./ProviderInstanceIcon";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
+import { useSharedIndicator } from "~/lib/motion/useSharedIndicator";
 import { cn } from "~/lib/utils";
 import type { MessageResolver } from "../../i18n/messages";
 import {
@@ -68,6 +69,18 @@ export const ModelPickerSidebar = memo(function ModelPickerSidebar(props: {
   const rowClassName = horizontal ? HORIZONTAL_PROVIDER_ROW_CLASS_NAME : PROVIDER_ROW_CLASS_NAME;
   const tooltipSide = horizontal ? "top" : PICKER_TOOLTIP_SIDE;
   const stripRef = useRef<HTMLDivElement | null>(null);
+  const railRef = useRef<HTMLDivElement | null>(null);
+  const providerIndicatorRef = useRef<HTMLSpanElement | null>(null);
+
+  useSharedIndicator({
+    containerRef: railRef,
+    indicatorRef: providerIndicatorRef,
+    activeSelector: 'button[aria-pressed="true"]',
+    activeKey: props.selectedInstanceId,
+    preset: "fluid",
+    maxSquash: 0.14,
+    axis: horizontal ? "x" : "y",
+  });
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- scrolls the newly selected provider button into view without resetting manual scroll on other renders
   useLayoutEffect(() => {
     const strip = stripRef.current;
@@ -128,16 +141,27 @@ export const ModelPickerSidebar = memo(function ModelPickerSidebar(props: {
         }}
       >
         <div
+          ref={railRef}
+          data-model-picker-rail={horizontal ? "horizontal" : "vertical"}
           className={
             horizontal
-              ? "flex min-h-10 w-max items-center gap-1 px-2 py-1"
-              : "flex min-h-full flex-col gap-1 p-1"
+              ? "relative flex min-h-10 w-max items-center gap-1 px-2 py-1"
+              : "relative flex min-h-full flex-col gap-1 p-1"
           }
         >
+          <span
+            ref={providerIndicatorRef}
+            aria-hidden="true"
+            data-shared-indicator="model-picker-provider"
+            className={cn(
+              "pointer-events-none absolute top-0 left-0 z-0 opacity-0 will-change-transform",
+              horizontal ? "rounded-full bg-foreground" : "rounded-md bg-accent",
+            )}
+          />
           {showFavorites ? (
             <>
               <div
-                className={cn("relative", !horizontal && "w-full")}
+                className={cn("relative z-10", !horizontal && "w-full")}
                 data-model-picker-provider="favorites"
               >
                 <Tooltip>
@@ -242,7 +266,7 @@ export const ModelPickerSidebar = memo(function ModelPickerSidebar(props: {
             return (
               <div
                 key={entry.instanceId}
-                className={cn("relative", !horizontal && "w-full")}
+                className={cn("relative z-10", !horizontal && "w-full")}
                 data-model-picker-provider={entry.instanceId}
               >
                 <Tooltip>

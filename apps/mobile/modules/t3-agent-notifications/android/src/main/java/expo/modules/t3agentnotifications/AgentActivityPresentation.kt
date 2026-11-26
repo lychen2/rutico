@@ -2,6 +2,7 @@ package expo.modules.t3agentnotifications
 
 import android.content.Context
 import android.graphics.Typeface
+import android.os.Build
 import android.text.SpannableStringBuilder
 import android.text.Spanned
 import android.text.style.ForegroundColorSpan
@@ -90,6 +91,8 @@ internal class ActivityPresentation(data: Map<String, String>, private val activ
   private val rows = activityRows(data)
   private val hero = rows.firstOrNull()
   val phase = activityPhase(data, rows)
+  val isMultiThread = rows.size > 1
+  private val phaseStartedAt = parseStablePhaseStartedAt(data["activity_phase_started_at"])
   private val activeCount = data["activity_active_count"]?.toIntOrNull()?.coerceAtLeast(0)
     ?: rows.count { ActivityPhase.forStatus(it.status)?.finished != true }
   private val attentionCount = data["activity_attention_count"]?.toIntOrNull()?.coerceAtLeast(0)
@@ -124,6 +127,17 @@ internal class ActivityPresentation(data: Map<String, String>, private val activ
 
   val action = if (active) phase?.action ?: "Open" else null
 
+  /** Lock-screen sensitive actions (Approve/Answer) require device unlock before opening the thread. */
+  val requiresAuthenticationForAction: Boolean
+    get() = active && phase?.needsUser == true
+
+  /**
+   * Android 16 (API 36+) Live Updates use ProgressStyle for single-thread milestone cards.
+   * Multi-thread aggregate notifications stay on BigTextStyle so every thread row remains visible.
+   */
+  internal val usesLiveUpdateProgressStyle: Boolean
+    get() = Build.VERSION.SDK_INT >= 36 && phase != null && !isMultiThread
+
   fun applyTo(builder: NotificationCompat.Builder, context: Context) {
     val tint = phase?.let { ContextCompat.getColor(context, it.color) }
     if (tint != null) builder.setColor(tint)
@@ -143,10 +157,75 @@ internal class ActivityPresentation(data: Map<String, String>, private val activ
     val body = body(context)
     val lineBreak = body.indexOf('\n')
     val firstLine = if (lineBreak >= 0) body.subSequence(0, lineBreak) else body
-    builder.setContentText(firstLine).setStyle(NotificationCompat.BigTextStyle().bigText(body))
+    builder.setContentText(firstLine)
+    if (usesLiveUpdateProgressStyle && phase != null) {
+      builder.setStyle(buildProgressStyle(context, phase))
+    } else {
+      builder.setStyle(NotificationCompat.BigTextStyle().bigText(body))
+    }
     // Thread update timestamps can change while an approval remains pending.
-    // Leave the timer hidden until the payload has a stable phase-entry timestamp.
-    builder.setShowWhen(false).setUsesChronometer(false)
+    // Only enable the live chronometer when a stable activity_phase_started_at is supplied
+    // for an active, non-waiting execution phase.
+    val showChronometer = active &&
+      phaseStartedAt != null &&
+      phase != null &&
+      !phase.finished &&
+      !phase.needsUser
+    if (showChronometer && phaseStartedAt != null) {
+      builder.setShowWhen(true).setWhen(phaseStartedAt).setUsesChronometer(true)
+    } else {
+      builder.setShowWhen(false).setUsesChronometer(false)
+    }
+  }
+
+  private fun buildProgressStyle(
+    context: Context,
+    currentPhase: ActivityPhase,
+  ): NotificationCompat.ProgressStyle {
+    val workingColor = ContextCompat.getColor(context, R.color.agent_activity_working)
+    val waitingColor = ContextCompat.getColor(context, R.color.agent_activity_waiting)
+    val attentionColor = ContextCompat.getColor(context, R.color.agent_activity_attention)
+    val inputColor = ContextCompat.getColor(context, R.color.agent_activity_input)
+    val doneColor = ContextCompat.getColor(context, R.color.agent_activity_done)
+    val failedColor = ContextCompat.getColor(context, R.color.agent_activity_failed)
+
+    val runSegmentColor = if (currentPhase == ActivityPhase.STALE) waitingColor else workingColor
+    val reviewSegmentColor = when (currentPhase) {
+      ActivityPhase.APPROVAL -> attentionColor
+      ActivityPhase.INPUT -> inputColor
+      ActivityPhase.FAILED -> failedColor
+      ActivityPhase.COMPLETED -> doneColor
+      else -> workingColor
+    }
+    val finishSegmentColor = if (currentPhase == ActivityPhase.FAILED) failedColor else doneColor
+
+    val progress = milestoneProgressFor(currentPhase)
+    return NotificationCompat.ProgressStyle()
+      .setStyledByProgress(true)
+      .setProgress(progress)
+      .addProgressSegment(
+        NotificationCompat.ProgressStyle.Segment(SEGMENT_START).setColor(workingColor)
+      )
+      .addProgressSegment(
+        NotificationCompat.ProgressStyle.Segment(SEGMENT_RUN).setColor(runSegmentColor)
+      )
+      .addProgressSegment(
+        NotificationCompat.ProgressStyle.Segment(SEGMENT_REVIEW).setColor(reviewSegmentColor)
+      )
+      .addProgressSegment(
+        NotificationCompat.ProgressStyle.Segment(SEGMENT_FINISH).setColor(finishSegmentColor)
+      )
+      .addProgressPoint(
+        NotificationCompat.ProgressStyle.Point(SEGMENT_START).setColor(workingColor)
+      )
+      .addProgressPoint(
+        NotificationCompat.ProgressStyle.Point(SEGMENT_START + SEGMENT_RUN)
+          .setColor(reviewSegmentColor)
+      )
+      .addProgressPoint(
+        NotificationCompat.ProgressStyle.Point(SEGMENT_START + SEGMENT_RUN + SEGMENT_REVIEW)
+          .setColor(finishSegmentColor)
+      )
   }
 
   private fun body(context: Context): CharSequence = when {
@@ -184,4 +263,29 @@ internal class ActivityPresentation(data: Map<String, String>, private val activ
       setSpan(ForegroundColorSpan(color), 0, length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
       if (bold) setSpan(StyleSpan(Typeface.BOLD), 0, length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
     }
+
+  companion object {
+    private const val SEGMENT_START = 20
+    private const val SEGMENT_RUN = 45
+    private const val SEGMENT_REVIEW = 20
+    private const val SEGMENT_FINISH = 15
+    private const val MAX_PHASE_STARTED_SKEW_MS = 24 * 60 * 60 * 1000L
+
+    internal fun milestoneProgressFor(phase: ActivityPhase): Int = when (phase) {
+      ActivityPhase.STARTING -> 15
+      ActivityPhase.RUNNING -> 50
+      ActivityPhase.STALE -> 55
+      ActivityPhase.APPROVAL -> 75
+      ActivityPhase.INPUT -> 75
+      ActivityPhase.COMPLETED -> 100
+      ActivityPhase.FAILED -> 100
+    }
+
+    private fun parseStablePhaseStartedAt(raw: String?): Long? {
+      val parsed = raw?.toLongOrNull() ?: return null
+      if (parsed <= 0L) return null
+      val now = System.currentTimeMillis()
+      return parsed.takeIf { now - it in -60_000L..MAX_PHASE_STARTED_SKEW_MS }
+    }
+  }
 }

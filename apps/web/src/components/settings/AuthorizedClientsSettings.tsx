@@ -78,6 +78,177 @@ import {
   endpointShareHint,
 } from "./ConnectionsSettings.logic";
 import { SharedTooltipTrigger } from "../ui/shared-tooltip";
+import "~/styles/pairing-motion.css";
+
+const QR_EXPIRY_URGENT_MS = 30_000;
+const QR_RING_BOX_SIZE = 204;
+const QR_RING_INSET = 3;
+const QR_RING_SPAN = QR_RING_BOX_SIZE - QR_RING_INSET * 2;
+const QR_RING_RADIUS = 18;
+const QR_RING_PERIMETER =
+  2 * (QR_RING_SPAN - 2 * QR_RING_RADIUS) +
+  2 * (QR_RING_SPAN - 2 * QR_RING_RADIUS) +
+  2 * Math.PI * QR_RING_RADIUS;
+
+function PairingQrExpiryPlate({
+  value,
+  createdAt,
+  expiresAt,
+  nowMs,
+  title,
+}: {
+  readonly value: string;
+  readonly createdAt: string;
+  readonly expiresAt: string;
+  readonly nowMs: number;
+  readonly title: string;
+}) {
+  const gt = useGT();
+  const m = useMessages();
+  const createdAtMs = Date.parse(createdAt);
+  const expiresAtMs = Date.parse(expiresAt);
+  const totalMs =
+    Number.isFinite(createdAtMs) && Number.isFinite(expiresAtMs) && expiresAtMs > createdAtMs
+      ? expiresAtMs - createdAtMs
+      : 600_000;
+  const remainingMs = Number.isFinite(expiresAtMs) ? Math.max(0, expiresAtMs - nowMs) : totalMs;
+  const progress = Math.max(0, Math.min(1, remainingMs / totalMs));
+  const isUrgent = remainingMs > 0 && remainingMs <= QR_EXPIRY_URGENT_MS;
+  const remainingSeconds = Math.max(1, Math.ceil(remainingMs / 1000));
+  const dashOffset = QR_RING_PERIMETER * (1 - progress);
+
+  return (
+    <div
+      data-slot="pairing-qr-stage"
+      data-urgent={isUrgent ? "true" : "false"}
+      className="flex w-fit shrink-0 flex-col items-center gap-2 self-center sm:self-start"
+    >
+      <div className="relative flex size-[204px] items-center justify-center">
+        <svg
+          aria-hidden="true"
+          viewBox={`0 0 ${QR_RING_BOX_SIZE} ${QR_RING_BOX_SIZE}`}
+          className="pointer-events-none absolute inset-0 size-full"
+        >
+          <rect
+            x={QR_RING_INSET}
+            y={QR_RING_INSET}
+            width={QR_RING_SPAN}
+            height={QR_RING_SPAN}
+            rx={QR_RING_RADIUS}
+            ry={QR_RING_RADIUS}
+            fill="none"
+            className="stroke-border/55"
+            strokeWidth={2.5}
+          />
+          <rect
+            data-slot="pairing-expiry-ring-arc"
+            data-urgent={isUrgent ? "true" : "false"}
+            x={QR_RING_INSET}
+            y={QR_RING_INSET}
+            width={QR_RING_SPAN}
+            height={QR_RING_SPAN}
+            rx={QR_RING_RADIUS}
+            ry={QR_RING_RADIUS}
+            fill="none"
+            className={cn(isUrgent ? "stroke-warning" : "stroke-primary")}
+            strokeWidth={2.75}
+            strokeLinecap="round"
+            strokeDasharray={QR_RING_PERIMETER}
+            strokeDashoffset={dashOffset}
+          />
+        </svg>
+        <div className="rounded-xl bg-white p-2.5 shadow-xs ring-1 ring-black/6">
+          <QRCodeSvg
+            value={value}
+            size={168}
+            level="H"
+            marginSize={2}
+            variant="branded"
+            title={title}
+          />
+        </div>
+      </div>
+      <span
+        data-slot="pairing-expiry-countdown"
+        data-urgent={isUrgent ? "true" : "false"}
+        className={cn(
+          "inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-2xs font-medium tabular-nums transition-colors duration-200",
+          isUrgent
+            ? "border-warning/40 bg-warning/10 text-warning"
+            : "border-border/60 bg-muted/35 text-muted-foreground",
+        )}
+      >
+        <span
+          aria-hidden="true"
+          className={cn("size-1.5 rounded-full", isUrgent ? "bg-warning" : "bg-primary/75")}
+        />
+        {isUrgent
+          ? gt("{seconds}s left", { seconds: remainingSeconds })
+          : formatExpiresInLabel(expiresAt, nowMs, m)}
+      </span>
+    </div>
+  );
+}
+
+function clientSessionDisplayName(clientSession: ServerClientSessionRecord): string {
+  return (
+    clientSession.client.label ??
+    ([clientSession.client.os, clientSession.client.browser].filter(Boolean).join(" · ") ||
+      clientSession.subject)
+  );
+}
+
+function EmeraldPairedBloomBanner({
+  clientSession,
+}: {
+  readonly clientSession: ServerClientSessionRecord;
+}) {
+  const deviceLabel = clientSessionDisplayName(clientSession);
+  return (
+    <div
+      data-slot="pairing-emerald-bloom"
+      role="status"
+      aria-live="polite"
+      className={cn(
+        ITEM_ROW_CLASSNAME,
+        "border-success/35 bg-success/[0.06] dark:bg-success/[0.1]",
+      )}
+    >
+      <div className="flex items-center gap-3">
+        <div className="relative flex size-9 shrink-0 items-center justify-center">
+          <span
+            aria-hidden="true"
+            data-slot="pairing-emerald-bloom-ring"
+            className="pointer-events-none absolute inset-0 rounded-full border-2 border-success/65"
+          />
+          <span
+            data-slot="pairing-emerald-bloom-badge"
+            className="relative flex size-8 items-center justify-center rounded-full bg-success text-white shadow-xs"
+          >
+            <svg
+              aria-hidden="true"
+              viewBox="0 0 18 18"
+              className="size-4"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth={2.4}
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <path data-slot="pairing-emerald-check-path" d="M4 9.5L7.5 13L14 5.5" />
+            </svg>
+          </span>
+        </div>
+        <div className="min-w-0 flex-1">
+          <p className="text-sm font-medium text-foreground">
+            <T>Device paired</T>
+          </p>
+          <p className="truncate text-xs text-muted-foreground">{deviceLabel}</p>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 function AccessScopeSummary({
   scopes,
@@ -372,13 +543,16 @@ const PairingLinkListRow = memo(function PairingLinkListRow({
                 />
                 {isRevealValueUrl && isRevealValueQrShareable ? (
                   <div className="flex justify-center rounded-xl border border-border/60 bg-muted/30 p-4">
-                    <QRCodeSvg
-                      value={revealValue}
-                      size={132}
-                      level="M"
-                      marginSize={2}
-                      title={gt("Pairing link. Scan to open on another device")}
-                    />
+                    <div className="rounded-xl bg-white p-2.5 shadow-xs ring-1 ring-black/6">
+                      <QRCodeSvg
+                        value={revealValue}
+                        size={132}
+                        level="H"
+                        marginSize={2}
+                        variant="branded"
+                        title={gt("Pairing link. Scan to open on another device")}
+                      />
+                    </div>
                   </div>
                 ) : null}
               </DialogPanel>
@@ -525,15 +699,13 @@ const PairingLinkListRow = memo(function PairingLinkListRow({
             </p>
           </div>
           {canRenderQrForSelection ? (
-            <div className="w-fit shrink-0 self-center rounded-xl bg-white p-3 sm:self-start">
-              <QRCodeSvg
-                value={qrPairingUrl}
-                size={168}
-                level="M"
-                marginSize={1}
-                title={gt("Pairing link. Scan to open on another device")}
-              />
-            </div>
+            <PairingQrExpiryPlate
+              value={qrPairingUrl}
+              createdAt={pairingLink.createdAt}
+              expiresAt={pairingLink.expiresAt}
+              nowMs={nowMs}
+              title={gt("Pairing link. Scan to open on another device")}
+            />
           ) : (
             <div className="flex size-[192px] shrink-0 items-center justify-center self-center rounded-xl border border-border/50 p-4 sm:self-start">
               <p className="text-center text-2xs text-muted-foreground/70">
@@ -552,6 +724,7 @@ const PairingLinkListRow = memo(function PairingLinkListRow({
 
 type ConnectedClientListRowProps = {
   clientSession: ServerClientSessionRecord;
+  isNewlyPaired?: boolean;
   revokingClientSessionId: string | null;
   onRevokeSession: (sessionId: ServerClientSessionRecord["sessionId"]) => void;
   canRevoke: boolean;
@@ -559,6 +732,7 @@ type ConnectedClientListRowProps = {
 
 const ConnectedClientListRow = memo(function ConnectedClientListRow({
   clientSession,
+  isNewlyPaired = false,
   revokingClientSessionId,
   onRevokeSession,
   canRevoke,
@@ -585,13 +759,17 @@ const ConnectedClientListRow = memo(function ConnectedClientListRow({
     clientSession.client.browser ?? null,
     clientSession.client.ipAddress ?? null,
   ].filter((value): value is string => value !== null);
-  const primaryLabel =
-    clientSession.client.label ??
-    ([clientSession.client.os, clientSession.client.browser].filter(Boolean).join(" · ") ||
-      clientSession.subject);
+  const primaryLabel = clientSessionDisplayName(clientSession);
 
   return (
-    <div className={ITEM_ROW_CLASSNAME}>
+    <div
+      data-slot="pairing-client-row"
+      data-newly-paired={isNewlyPaired ? "true" : undefined}
+      className={cn(
+        ITEM_ROW_CLASSNAME,
+        isNewlyPaired && "bg-success/[0.05] dark:bg-success/[0.08]",
+      )}
+    >
       <div className={ITEM_ROW_INNER_CLASSNAME}>
         <div className="min-w-0 flex-1 space-y-1">
           <div className="flex min-h-5 items-center gap-1.5">
@@ -601,6 +779,11 @@ const ConnectedClientListRow = memo(function ConnectedClientListRow({
               pingClassName={isLive ? "bg-success/60 duration-2000" : null}
             />
             <h3 className="text-sm font-medium text-foreground">{primaryLabel}</h3>
+            {isNewlyPaired ? (
+              <span className="text-3xs inline-flex items-center rounded-md border border-success/35 bg-success/12 px-1.5 py-0.5 font-medium text-success">
+                <T>Paired</T>
+              </span>
+            ) : null}
             {clientSession.current ? (
               <span className="text-3xs text-muted-foreground/80 rounded-md border border-border/50 bg-muted/50 px-1 py-0.5">
                 <T>This device</T>
@@ -907,6 +1090,8 @@ type PairingClientsListProps = {
   createdPairingCredentials: ReadonlyMap<string, string>;
   sharedPairingLinkId: string | null;
   clientSessions: ReadonlyArray<ServerClientSessionRecord>;
+  recentPairedSession?: ServerClientSessionRecord | null;
+  newlyPairedSessionIds?: ReadonlySet<string>;
   revokingPairingLinkId: string | null;
   revokingClientSessionId: string | null;
   onRevokePairingLink: (id: string) => void;
@@ -924,6 +1109,8 @@ export const PairingClientsList = memo(function PairingClientsList({
   createdPairingCredentials,
   sharedPairingLinkId,
   clientSessions,
+  recentPairedSession = null,
+  newlyPairedSessionIds,
   revokingPairingLinkId,
   revokingClientSessionId,
   onRevokePairingLink,
@@ -932,6 +1119,13 @@ export const PairingClientsList = memo(function PairingClientsList({
 }: PairingClientsListProps) {
   return (
     <>
+      {recentPairedSession ? (
+        <EmeraldPairedBloomBanner
+          key={recentPairedSession.sessionId}
+          clientSession={recentPairedSession}
+        />
+      ) : null}
+
       {pairingLinks.map((pairingLink) => (
         <PairingLinkListRow
           key={pairingLink.id}
@@ -952,13 +1146,17 @@ export const PairingClientsList = memo(function PairingClientsList({
         <ConnectedClientListRow
           key={clientSession.sessionId}
           clientSession={clientSession}
+          isNewlyPaired={newlyPairedSessionIds?.has(clientSession.sessionId) ?? false}
           revokingClientSessionId={revokingClientSessionId}
           onRevokeSession={onRevokeClientSession}
           canRevoke={canRevoke}
         />
       ))}
 
-      {pairingLinks.length === 0 && clientSessions.length === 0 && !isLoading ? (
+      {recentPairedSession === null &&
+      pairingLinks.length === 0 &&
+      clientSessions.length === 0 &&
+      !isLoading ? (
         <div className={ITEM_ROW_CLASSNAME}>
           <p className="text-xs text-muted-foreground/60">
             <T>No pairing links or client sessions.</T>

@@ -18,6 +18,7 @@ import { SettingsScopeNotice } from "../components/settings/SettingsScopeNotice"
 import { SETTINGS_DEVICE_ONLY_PATHS } from "../components/settings/SettingsScopeSentence";
 import { SettingsPageContainer } from "../components/settings/settingsLayout";
 import { useRenderedSettingsPathname } from "../components/settings/useRenderedSettingsPathname";
+import "~/styles/workspace-hubs.css";
 import {
   retainSettingsScope,
   validateSettingsRouteSearch,
@@ -174,7 +175,13 @@ function SettingsContentLayout() {
           </header>
           <div key={`${contentScopeKey}:${restoreSignal}`} className="min-h-0 flex flex-1 flex-col">
             <SettingsScopeBoundary pathname={pathname}>
-              <Outlet />
+              <div
+                key={pathname}
+                data-slot="settings-route-stage"
+                className="flex min-h-0 flex-1 flex-col"
+              >
+                <Outlet />
+              </div>
             </SettingsScopeBoundary>
           </div>
         </div>

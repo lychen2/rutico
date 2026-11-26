@@ -40,6 +40,7 @@ export interface ThreadTerminalGroup {
   id: string;
   terminalIds: string[];
   splitDirection?: "horizontal" | "vertical";
+  paneWeights?: number[];
 }
 
 export interface ChatImageAttachment extends ContractChatImageAttachment {

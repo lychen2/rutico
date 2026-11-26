@@ -136,6 +136,7 @@ function ThreadLineageRowList(props: {
         ref={listRef}
         tabIndex={-1}
         aria-label={gt("Related threads")}
+        data-lineage-group-list="true"
         className="m-0 max-h-[13.5rem] list-none overflow-y-auto p-0 outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/70 has-data-workflow-expanded:max-h-[min(28rem,55dvh)]"
       >
         {props.children}
@@ -207,7 +208,7 @@ function ThreadLineageGroup<Row extends LineageRow>(props: {
             aria-hidden
             className={cn(
               THREAD_DETAILS_PANEL_CHEVRON_CLASS,
-              "transition-transform",
+              "transition-transform duration-200 ease-(--ease-spring-snappy) motion-reduce:transition-none",
               !expanded && "-rotate-90",
             )}
           />
@@ -910,7 +911,7 @@ export function ThreadRelationshipsPanel(props: {
           </span>
         </span>
         {agent ? null : (
-          <ArrowRightIcon className="size-3 shrink-0 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100" />
+          <ArrowRightIcon className="size-3 shrink-0 text-muted-foreground opacity-0 transition-[opacity,transform] duration-150 ease-(--ease-spring-snappy) group-hover:translate-x-0.5 group-hover:opacity-100 motion-reduce:transition-none motion-reduce:group-hover:translate-x-0 rtl:rotate-180 rtl:group-hover:-translate-x-0.5" />
         )}
         {agent && !failed && (deriveSubagentElapsedMs(agent, 0) !== null || canStopWorkflow) ? (
           <span

@@ -23,6 +23,7 @@ import {
   resolveNativeTerminalSurfaceView,
   supportsNativeTerminalOutput,
   type NativeTerminalSurfaceHandle,
+  type TerminalFontSizeZoomEvent,
 } from "./nativeTerminalModule";
 import {
   buildGhosttyThemeConfig,
@@ -65,6 +66,7 @@ interface TerminalSurfaceProps extends ViewProps {
   readonly onInput: (data: string) => void;
   readonly onPaste?: (text: string) => void;
   readonly onResize: (size: { readonly cols: number; readonly rows: number }) => void;
+  readonly onFontSizeZoom?: (event: TerminalFontSizeZoomEvent) => void;
 }
 
 type ReadyTerminalSurfaceProps = Omit<TerminalSurfaceProps, "buffer"> & {
@@ -303,6 +305,9 @@ const ReadyTerminalSurface = memo(function ReadyTerminalSurface({
             if (props.isRunning && !props.readOnly) props.onPaste?.(event.nativeEvent.text);
           }}
           onResize={handleNativeResize}
+          onFontSizeZoom={
+            props.onFontSizeZoom ? (event) => props.onFontSizeZoom?.(event.nativeEvent) : undefined
+          }
           captureRequest={props.captureRequest}
           onCapture={(event) => props.onCapture?.(event.nativeEvent.text)}
         />

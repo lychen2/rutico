@@ -2,6 +2,7 @@ import { Alert, AlertDescription } from "../ui/alert";
 import type { AuthSessionState } from "@t3tools/contracts";
 import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
 import { msg, T, useGT, useMessages, Var } from "gt-react";
+import { CheckIcon, GlobeIcon, MonitorIcon, ShieldCheckIcon } from "lucide-react";
 import React, { startTransition, useEffect, useEffectEvent, useRef, useState } from "react";
 
 import { connectPairing } from "../../connection/onboarding";
@@ -12,20 +13,91 @@ import {
 } from "../../environments/primary";
 import { readHostedPairingRequest } from "../../hostedPairing";
 import { resolveRemotePairingTarget } from "@t3tools/shared/remote";
+import { observeVisibleAnimation } from "~/lib/visibleAnimation";
+import "~/styles/pairing-motion.css";
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
+import { Spinner } from "../ui/spinner";
 import { StandalonePage, StandalonePageHeader } from "../ui/standalone-page";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { m, type MessageResolver } from "../../i18n/messages";
+
+function PairingBridgeStrip({
+  leftLabel,
+  rightLabel,
+  active,
+  paired = false,
+}: {
+  readonly leftLabel: string;
+  readonly rightLabel: string;
+  readonly active: boolean;
+  readonly paired?: boolean;
+}) {
+  return (
+    <div className="mt-5 flex items-center justify-between gap-3 rounded-xl border border-border/70 bg-muted/25 px-3.5 py-2.5">
+      <div className="flex min-w-0 items-center gap-2">
+        <span className="flex size-7 shrink-0 items-center justify-center rounded-lg border border-border/60 bg-background text-foreground">
+          <GlobeIcon className="size-3.5" aria-hidden />
+        </span>
+        <span className="min-w-0 truncate text-xs font-medium text-foreground">{leftLabel}</span>
+      </div>
+      <div className="flex shrink-0 items-center gap-1.5" aria-hidden="true">
+        {paired ? (
+          <span
+            data-slot="pairing-emerald-bloom-badge"
+            className="flex size-5 items-center justify-center rounded-full bg-success text-white"
+          >
+            <CheckIcon className="size-3" strokeWidth={2.5} />
+          </span>
+        ) : (
+          <>
+            <span
+              ref={observeVisibleAnimation}
+              data-slot="pairing-bridge-dot"
+              data-active={active ? "true" : "false"}
+              className="size-1.5 rounded-full bg-primary"
+            />
+            <span
+              ref={observeVisibleAnimation}
+              data-slot="pairing-bridge-dot"
+              data-active={active ? "true" : "false"}
+              className="size-1.5 rounded-full bg-primary"
+            />
+            <span
+              ref={observeVisibleAnimation}
+              data-slot="pairing-bridge-dot"
+              data-active={active ? "true" : "false"}
+              className="size-1.5 rounded-full bg-primary"
+            />
+          </>
+        )}
+      </div>
+      <div className="flex min-w-0 items-center gap-2">
+        <span className="min-w-0 truncate text-xs font-medium text-foreground">{rightLabel}</span>
+        <span className="flex size-7 shrink-0 items-center justify-center rounded-lg border border-border/60 bg-background text-foreground">
+          <MonitorIcon className="size-3.5" aria-hidden />
+        </span>
+      </div>
+    </div>
+  );
+}
 
 export function PairingPendingSurface() {
   const gt = useGT();
   return (
     <StandalonePage>
       <StandalonePageHeader
+        context={gt("Device pairing")}
         title={gt("Pairing with this environment")}
         description={gt("Validating the pairing link and preparing your session.")}
       />
+      <PairingBridgeStrip leftLabel={gt("This browser")} rightLabel={gt("Environment")} active />
+      <div className="mt-5 flex items-center gap-2.5 text-xs text-muted-foreground">
+        <Spinner size="sm" tone="muted" />
+        <span>
+          <T>Completing handshake…</T>
+        </span>
+      </div>
     </StandalonePage>
   );
 }
@@ -91,8 +163,15 @@ export function PairingRouteSurface({
   return (
     <StandalonePage>
       <StandalonePageHeader
+        context={gt("Device pairing")}
         title={gt("Pair with this environment")}
         description={describeAuthGate(auth.bootstrapMethods, messages)}
+      />
+
+      <PairingBridgeStrip
+        leftLabel={gt("This browser")}
+        rightLabel={gt("Environment")}
+        active={isSubmitting}
       />
 
       <form className="mt-6 space-y-4" onSubmit={(event) => void handleSubmit(event)}>
@@ -225,6 +304,7 @@ export function HostedPairingRouteSurface() {
   return (
     <StandalonePage>
       <StandalonePageHeader
+        context={gt("Device pairing")}
         title={
           status === "paired"
             ? gt("Backend paired")
@@ -238,14 +318,32 @@ export function HostedPairingRouteSurface() {
       />
 
       {request ? (
-        <div className="mt-5 rounded-lg border border-border/70 bg-background/55 px-3 py-3 text-xs leading-relaxed text-muted-foreground">
-          <T>
-            Host:{" "}
-            <span className="font-mono text-foreground/80">
-              <Var>{origin ?? request.host}</Var>
+        <>
+          <PairingBridgeStrip
+            leftLabel={gt("This browser")}
+            rightLabel={request.label || gt("Target backend")}
+            active={status === "pairing"}
+            paired={status === "paired"}
+          />
+          <div className="mt-4 flex items-center gap-2.5 rounded-xl border border-border/70 bg-background/60 px-3.5 py-2.5 text-xs leading-relaxed text-muted-foreground">
+            <ShieldCheckIcon
+              className={
+                status === "paired"
+                  ? "size-4 shrink-0 text-success"
+                  : "size-4 shrink-0 text-muted-foreground"
+              }
+              aria-hidden
+            />
+            <span className="min-w-0 truncate">
+              <T>
+                Host:{" "}
+                <span className="font-mono text-foreground/85">
+                  <Var>{origin ?? request.host}</Var>
+                </span>
+              </T>
             </span>
-          </T>
-        </div>
+          </div>
+        </>
       ) : null}
 
       {status === "error" ? (

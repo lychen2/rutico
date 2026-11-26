@@ -12,6 +12,7 @@ import { ChevronRightIcon, ChevronUpIcon, WorkflowIcon } from "lucide-react";
 import { type KeyboardEvent, type ReactNode, use, useRef, useState } from "react";
 
 import { m, type MessageResolver } from "~/i18n/messages";
+import { useSharedIndicator } from "~/lib/motion/useSharedIndicator";
 import { cn } from "~/lib/utils";
 import {
   Menu,
@@ -213,7 +214,7 @@ function ColumnRow(props: {
     // Up and Down move between rows.
     tabIndex: props.tabStop ? 0 : -1,
     className:
-      "relative min-w-0 flex-1 rounded-md px-1 py-1 text-center text-xs text-muted-foreground outline-none transition-colors duration-120 hover:text-foreground focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring aria-checked:bg-foreground/8 aria-checked:font-semibold aria-checked:text-foreground disabled:cursor-not-allowed disabled:opacity-64",
+      "relative z-10 min-w-0 flex-1 rounded-md px-1 py-1 text-center text-xs text-muted-foreground outline-none transition-colors duration-120 hover:text-foreground focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring aria-checked:bg-foreground/8 aria-checked:font-semibold aria-checked:text-foreground disabled:cursor-not-allowed disabled:opacity-64",
     onClick: props.onPick,
   } as const;
   const content = (
@@ -342,6 +343,19 @@ function EffortStudio(props: {
   const messages = useMessages();
   const { choices, locked } = props;
   const selectedIndex = choices.findIndex((choice) => choice.id === props.value);
+  const groupRef = useRef<HTMLDivElement>(null);
+  const indicatorRef = useRef<HTMLSpanElement>(null);
+
+  useSharedIndicator({
+    containerRef: groupRef,
+    indicatorRef,
+    activeSelector: '[role="radio"][aria-checked="true"]',
+    activeKey: props.value,
+    preset: "snappy",
+    maxSquash: 0.12,
+    axis: "x",
+  });
+
   return (
     <CosmicEffortSlider
       label={props.label}
@@ -353,7 +367,20 @@ function EffortStudio(props: {
       {locked ? (
         <p className="pb-1.5 text-xs text-muted-foreground">{messages(ULTRATHINK_IN_BODY_NOTE)}</p>
       ) : null}
-      <div role="radiogroup" aria-label={props.label} className="flex" dir="ltr">
+      <div
+        ref={groupRef}
+        role="radiogroup"
+        aria-label={props.label}
+        data-effort-radiogroup="true"
+        className="relative flex"
+        dir="ltr"
+      >
+        <span
+          ref={indicatorRef}
+          aria-hidden="true"
+          data-shared-indicator="effort-level"
+          className="pointer-events-none absolute top-0 left-0 z-0 rounded-md bg-foreground/8 opacity-0 will-change-transform"
+        />
         {choices.map((choice, index) => (
           <ColumnRow
             key={choice.id}

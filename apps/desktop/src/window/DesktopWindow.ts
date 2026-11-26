@@ -16,11 +16,15 @@ import { msg } from "gt-i18n";
 import {
   type DatabaseMigrationProgress,
   type DesktopSnapShotEvent,
+  type DesktopWindowZoomState,
+  type LinuxWindowState,
+  type MainWindowZoomDirection,
   DEFAULT_CLIENT_SETTINGS,
 } from "@t3tools/contracts";
 
 import * as DesktopAssets from "../app/DesktopAssets.ts";
 import * as DesktopClerk from "../app/DesktopClerk.ts";
+import { resolveLinuxDesktopSessionInfo } from "../app/DesktopEarlyElectronStartup.ts";
 import * as DesktopEnvironment from "../app/DesktopEnvironment.ts";
 import * as DesktopPrimaryPaste from "../app/DesktopPrimaryPaste.ts";
 import { makeComponentLogger } from "../app/DesktopObservability.ts";
@@ -31,12 +35,15 @@ import * as ElectronShell from "../electron/ElectronShell.ts";
 import * as ElectronTheme from "../electron/ElectronTheme.ts";
 import * as ElectronWindow from "../electron/ElectronWindow.ts";
 import {
+  LINUX_PORTAL_APPEARANCE_CHANNEL,
+  LINUX_WINDOW_STATE_CHANNEL,
   MENU_ACTION_CHANNEL,
   QUIT_SHORTCUT_CHANNEL,
   SNAP_SHOT_EVENT_CHANNEL,
   TRACKPAD_SCROLL_BEGIN_CHANNEL,
   TRACKPAD_SCROLL_END_CHANNEL,
   WINDOW_FULLSCREEN_STATE_CHANNEL,
+  WINDOW_ZOOM_STATE_CHANNEL,
 } from "../ipc/channels.ts";
 import {
   PASSKEY_BRIDGE_ARGUMENT,
@@ -54,6 +61,120 @@ import { copyContextMenuImage } from "./ContextMenuImage.ts";
 import { installMainWindowRemoteRequestHeaderPolicy } from "./RemoteRequestHeaders.ts";
 
 const TITLEBAR_HEIGHT = 40;
+
+const linuxWindowNativeWco = new WeakMap<object, boolean>();
+
+export const LINUX_NATIVE_WCO_PROBE_SCRIPT =
+  'typeof navigator !== "undefined" && Boolean(navigator.windowControlsOverlay?.visible)';
+
+export function recordLinuxWindowNativeWco(
+  window: Pick<Electron.BrowserWindow, "isMaximized" | "isFullScreen">,
+  hasNativeWco: boolean,
+): void {
+  linuxWindowNativeWco.set(window, hasNativeWco);
+}
+
+export function resolveLinuxWindowNativeWco(
+  window: Pick<Electron.BrowserWindow, "isMaximized" | "isFullScreen"> & {
+    readonly setTitleBarOverlay?: Electron.BrowserWindow["setTitleBarOverlay"];
+  },
+): boolean | undefined {
+  const recorded = linuxWindowNativeWco.get(window);
+  if (recorded !== undefined) {
+    return recorded;
+  }
+  if (typeof window.setTitleBarOverlay !== "function") {
+    return false;
+  }
+  return undefined;
+}
+
+export function buildLinuxWindowState(
+  window: Pick<Electron.BrowserWindow, "isMaximized" | "isFullScreen"> & {
+    readonly setTitleBarOverlay?: Electron.BrowserWindow["setTitleBarOverlay"];
+  },
+  env: NodeJS.ProcessEnv = process.env,
+  hasNativeWco?: boolean,
+): LinuxWindowState {
+  const session = resolveLinuxDesktopSessionInfo(env);
+  const resolvedNativeWco = hasNativeWco ?? resolveLinuxWindowNativeWco(window);
+  return {
+    maximized: window.isMaximized(),
+    fullscreen: window.isFullScreen(),
+    linuxDesktop: session.linuxDesktop,
+    isTilingWm: session.isTilingWm,
+    ...(resolvedNativeWco !== undefined ? { hasNativeWco: resolvedNativeWco } : {}),
+    overlayHeight: TITLEBAR_HEIGHT,
+  };
+}
+
+/**
+ * Tracks forked background fibers for scope-exit interruption without referencing
+ * an uninitialized `fiber` binding when an Effect finishes synchronously inside `runFork`.
+ */
+export const makeScopedFiberTracker = Effect.fn("desktop.window.makeScopedFiberTracker")(function* <
+  R,
+>() {
+  const context = yield* Effect.context<R>();
+  const runFork = Effect.runForkWith(context);
+  const fibers = new Set<Fiber.Fiber<void, never>>();
+  const track = (effect: Effect.Effect<void, never, R>): Fiber.Fiber<void, never> => {
+    let completed = false;
+    let fiber: Fiber.Fiber<void, never> | undefined;
+    fiber = runFork(
+      effect.pipe(
+        Effect.ensuring(
+          Effect.sync(() => {
+            completed = true;
+            if (fiber !== undefined) {
+              fibers.delete(fiber);
+            }
+          }),
+        ),
+      ),
+    );
+    if (!completed) {
+      fibers.add(fiber);
+    }
+    return fiber;
+  };
+  const interruptAll = Effect.suspend(() =>
+    Effect.forEach([...fibers], (fiber) => Fiber.interrupt(fiber), {
+      concurrency: "unbounded",
+      discard: true,
+    }),
+  ).pipe(
+    Effect.ensuring(
+      Effect.sync(() => {
+        fibers.clear();
+      }),
+    ),
+  );
+  return { fibers, track, interruptAll };
+});
+
+export function buildDesktopWindowZoomState(
+  window: Pick<Electron.BrowserWindow, "getBounds" | "webContents">,
+): DesktopWindowZoomState {
+  const rawZoom =
+    typeof window.webContents.getZoomFactor === "function" ? window.webContents.getZoomFactor() : 1;
+  const zoomFactor = Number.isFinite(rawZoom) && rawZoom > 0 ? rawZoom : 1;
+  let deviceScaleFactor = 1;
+  try {
+    if (
+      typeof window.getBounds === "function" &&
+      typeof Electron.screen?.getDisplayMatching === "function"
+    ) {
+      const display = Electron.screen.getDisplayMatching(window.getBounds());
+      if (Number.isFinite(display?.scaleFactor) && display.scaleFactor > 0) {
+        deviceScaleFactor = display.scaleFactor;
+      }
+    }
+  } catch {
+    deviceScaleFactor = 1;
+  }
+  return { zoomFactor, deviceScaleFactor };
+}
 
 class ContextMenuImageCopyError extends Schema.TaggedError<ContextMenuImageCopyError>()(
   "ContextMenuImageCopyError",
@@ -100,6 +221,18 @@ const TITLEBAR_DARK_SYMBOL_COLOR = "#f8fafc";
 const TITLEBAR_DARK_INACTIVE_SYMBOL_COLOR = "#94a3b8";
 const SPLASH_FADE_STEP_MS = 30;
 const SPLASH_FADE_OPACITIES = [0.75, 0.5, 0.25, 0] as const;
+const LINUX_SPLASH_CONTENT_FADE_MS = 130;
+const LINUX_SPLASH_DISMISS_TIMEOUT_MS = 140;
+const LINUX_EXIT_CURTAIN_MS = 90;
+export const LINUX_SPLASH_DISMISS_CONTENT_SCRIPT = `(() => {
+  if (typeof window.matchMedia === "function" && window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+    return false;
+  }
+  const content = document.querySelector(".splash-content");
+  if (!content) return false;
+  content.classList.add("dismissing");
+  return true;
+})();`;
 const MAIN_WINDOW_BOUNDS_PERSIST_DEBOUNCE_MS = 500;
 const DEVELOPMENT_LOAD_RETRY_DELAYS_MS = [100, 250, 500, 1_000, 2_000] as const;
 const RENDERER_RECOVERY_RELOAD_DELAY_MS = 500;
@@ -137,7 +270,7 @@ export type DesktopWindowError =
   | ElectronWindow.ElectronWindowCreateError
   | PreviewManager.PreviewManagerError;
 
-export type MainWindowZoomDirection = "in" | "out" | "reset";
+export type { MainWindowZoomDirection };
 export type MainWindowContentsCommand = "reload" | "forceReload" | "toggleDevTools";
 
 export class DesktopWindow extends Context.Service<
@@ -344,10 +477,12 @@ export function buildConnectingSplashDataUrl(
   const accent = shouldUseDarkColors ? "#b4a3fd" : "#684dc6";
   const track = shouldUseDarkColors ? "rgba(180,163,253,0.22)" : "rgba(104,77,198,0.18)";
   const hairline = shouldUseDarkColors ? "rgba(255,255,255,0.08)" : "rgba(28,23,41,0.08)";
+  const specular = shouldUseDarkColors ? "rgba(255,255,255,0.14)" : "rgba(255,255,255,0.72)";
+  const ribbon = shouldUseDarkColors ? "rgba(180,163,253,0.34)" : "rgba(104,77,198,0.26)";
   const message = progress
     ? `Upgrading database (${progress.current} of ${progress.total})`
     : "Connecting to WSL…";
-  const html = `<!doctype html><html><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'"><style>html,body{margin:0;height:100%}body{box-sizing:border-box;background:${background};color:${foreground};border:1px solid ${hairline};border-radius:12px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif;-webkit-font-smoothing:antialiased;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;-webkit-user-select:none;user-select:none;-webkit-app-region:drag}.emblem{display:block;color:${foreground}}.status{display:flex;align-items:center;gap:9px;color:${label};font-size:12.5px;line-height:1.2;letter-spacing:-0.005em}.spinner{width:14px;height:14px;box-sizing:border-box;border:2px solid ${track};border-top-color:${accent};border-radius:50%;animation:spin .8s linear infinite}@keyframes spin{to{transform:rotate(360deg)}}@media (prefers-reduced-motion: reduce){.spinner{animation:none;border-color:${accent};opacity:0.55}}</style></head><body>${RUTICO_SPLASH_EMBLEM_SVG}<div class="status"><div class="spinner" aria-hidden="true"></div><span>${message}</span></div></body></html>`;
+  const html = `<!doctype html><html><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'"><style>html,body{margin:0;height:100%}body{box-sizing:border-box;background:${background};color:${foreground};border:1px solid ${hairline};border-radius:14px;box-shadow:inset 0 1px 0 ${specular};font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif;-webkit-font-smoothing:antialiased;display:flex;align-items:center;justify-content:center;-webkit-user-select:none;user-select:none;-webkit-app-region:drag}@supports (corner-shape: superellipse(1.25)){body{corner-shape:superellipse(1.25)}}.splash-content{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;opacity:1;transform:scale(1);transition:opacity ${LINUX_SPLASH_CONTENT_FADE_MS}ms cubic-bezier(0.23,1,0.32,1),transform ${LINUX_SPLASH_CONTENT_FADE_MS}ms cubic-bezier(0.23,1,0.32,1)}.splash-content.dismissing{opacity:0;transform:scale(0.985)}.emblem-wrap{position:relative;display:flex;flex-direction:column;align-items:center;gap:10px}.emblem{display:block;color:${foreground}}.ribbon{position:relative;width:54px;height:2px;border-radius:999px;background:${track};overflow:hidden}.ribbon::after{content:'';position:absolute;inset:0;width:55%;background:linear-gradient(90deg,transparent,${ribbon},transparent);transform:translateX(-120%);animation:sheen 1.6s cubic-bezier(0.23,1,0.32,1) infinite}@keyframes sheen{to{transform:translateX(220%)}}.status{display:flex;align-items:center;gap:9px;color:${label};font-size:12.5px;line-height:1.2;letter-spacing:-0.005em}.spinner{width:14px;height:14px;box-sizing:border-box;border:2px solid ${track};border-top-color:${accent};border-radius:50%;animation:spin .8s linear infinite}@keyframes spin{to{transform:rotate(360deg)}}@media (prefers-reduced-motion: reduce){.spinner{animation:none;border-color:${accent};opacity:0.55}.ribbon::after{animation:none;transform:none;width:100%;opacity:0.45}.splash-content{transition:none}}</style></head><body><div class="splash-content"><div class="emblem-wrap">${RUTICO_SPLASH_EMBLEM_SVG}<div class="ribbon" aria-hidden="true"></div></div><div class="status"><div class="spinner" aria-hidden="true"></div><span>${message}</span></div></div></body></html>`;
   return `data:text/html;charset=utf-8,${encodeURIComponent(html)}`;
 }
 
@@ -390,13 +525,16 @@ function concealPendingQuitWindow(
     Electron.BrowserWindow,
     "isDestroyed" | "isFullScreen" | "setFullScreen" | "setOpacity"
   >,
+  platform: NodeJS.Platform,
 ): void {
   if (window.isDestroyed()) return;
   if (window.isFullScreen()) {
     window.setFullScreen(false);
   }
-  // Linux lacks Electron window opacity; release-gated quits remain visible there.
-  window.setOpacity(0);
+  // Linux lacks Electron window opacity; the renderer paints a 90ms exit curtain instead.
+  if (platform !== "linux") {
+    window.setOpacity(0);
+  }
 }
 
 // Low-specificity (:where) fallback aligned with apps/web/src/index.css so inactive
@@ -618,6 +756,9 @@ export const make = Effect.gen(function* () {
   );
   let flushMainWindowBounds: Effect.Effect<void> = Effect.void;
   let remoteRequestHeaderOwner: Electron.BrowserWindow | null = null;
+  const scopedFibers = yield* makeScopedFiberTracker<DesktopWindowRuntimeServices>();
+  const trackFork = scopedFibers.track;
+  yield* Effect.addFinalizer(() => scopedFibers.interruptAll);
 
   const dismissConnectingSplash = Effect.gen(function* () {
     const splash = yield* Ref.getAndSet(splashWindowRef, Option.none());
@@ -625,12 +766,41 @@ export const make = Effect.gen(function* () {
       return;
     }
     const target = splash.value;
-    // Linux lacks Electron window opacity; close immediately there.
+    // Linux lacks Electron window.setOpacity(); perform a bounded in-DOM content fade
+    // (the main window's In-Window Boot Curtain owns the visual handoff) and always close.
     if (environment.platform === "linux") {
-      target.close();
+      if (
+        target.webContents === undefined ||
+        target.webContents.isDestroyed() ||
+        typeof target.webContents.executeJavaScript !== "function"
+      ) {
+        target.close();
+        return;
+      }
+      trackFork(
+        Effect.tryPromise({
+          try: () => target.webContents.executeJavaScript(LINUX_SPLASH_DISMISS_CONTENT_SCRIPT),
+          catch: () => false,
+        }).pipe(
+          Effect.timeoutOption(LINUX_SPLASH_DISMISS_TIMEOUT_MS),
+          Effect.flatMap((result) =>
+            Option.isSome(result) && result.value === true
+              ? Effect.sleep(LINUX_SPLASH_CONTENT_FADE_MS)
+              : Effect.void,
+          ),
+          Effect.ignore,
+          Effect.ensuring(
+            Effect.sync(() => {
+              if (!target.isDestroyed()) {
+                target.close();
+              }
+            }),
+          ),
+        ),
+      );
       return;
     }
-    runFork(
+    trackFork(
       Effect.forEach(
         SPLASH_FADE_OPACITIES,
         (opacity) =>
@@ -677,6 +847,9 @@ export const make = Effect.gen(function* () {
       direction === "reset" ? 0 : webContents.getZoomLevel() + (direction === "in" ? 0.5 : -0.5),
     );
     if (environment.platform === "darwin") syncMacosWindowButtons(window);
+    if (!window.isDestroyed() && !webContents.isDestroyed()) {
+      webContents.send(WINDOW_ZOOM_STATE_CHANNEL, buildDesktopWindowZoomState(window));
+    }
     // App zoom propagates to guests; restore each preview's own zoom.
     yield* previewManager.reapplyZoom();
   });
@@ -722,6 +895,7 @@ export const make = Effect.gen(function* () {
       yield* logWindowWarning("saved main window bounds could not be restored; using defaults");
     }
     if (yield* Ref.get(desktopState.quitting)) return Option.none();
+    const titleBarOptions = getWindowTitleBarOptions(shouldUseDarkColors, environment.platform);
     const window = yield* electronWindow.create({
       ...initialBounds,
       minWidth: DesktopAppSettings.MIN_MAIN_WINDOW_SIZE.width,
@@ -737,7 +911,7 @@ export const make = Effect.gen(function* () {
       ...vibrancyOptions,
       ...iconOption,
       title: environment.displayName,
-      ...getWindowTitleBarOptions(shouldUseDarkColors, environment.platform),
+      ...titleBarOptions,
       webPreferences: {
         preload: environment.preloadPath,
         // Hidden-renderer throttling stalls first paint; re-enable it after the first reveal.
@@ -751,6 +925,16 @@ export const make = Effect.gen(function* () {
         disableHtmlFullscreenWindowResize: true,
       },
     });
+    if (
+      environment.platform === "linux" &&
+      (!(
+        typeof titleBarOptions.titleBarOverlay === "object" ||
+        titleBarOptions.titleBarOverlay === true
+      ) ||
+        typeof window.setTitleBarOverlay !== "function")
+    ) {
+      recordLinuxWindowNativeWco(window, false);
+    }
     if (yield* Ref.get(desktopState.quitting)) {
       yield* electronWindow.destroyAll;
       return Option.none();
@@ -1071,8 +1255,22 @@ export const make = Effect.gen(function* () {
         }
       },
       // Hold focus until shortcut release so remaining repeats cannot reach the next app.
-      concealWindow: () => concealPendingQuitWindow(window),
+      concealWindow: () => concealPendingQuitWindow(window, environment.platform),
       quit: () => {
+        if (
+          environment.platform === "linux" &&
+          !window.isDestroyed() &&
+          !window.webContents.isDestroyed()
+        ) {
+          window.webContents.send(QUIT_SHORTCUT_CHANNEL, { state: "committing" });
+          trackFork(
+            Effect.sleep(LINUX_EXIT_CURTAIN_MS).pipe(
+              Effect.andThen(electronApp.quit),
+              Effect.ignoreCause,
+            ),
+          );
+          return;
+        }
         void runPromise(electronApp.quit);
       },
     });
@@ -1127,25 +1325,90 @@ export const make = Effect.gen(function* () {
                 environment.platform,
                 focused,
               );
-              if (typeof titleBarOverlay === "object") {
+              if (
+                typeof titleBarOverlay === "object" &&
+                typeof window.setTitleBarOverlay === "function"
+              ) {
                 try {
                   window.setTitleBarOverlay(titleBarOverlay);
-                } catch {}
+                } catch {
+                  if (
+                    environment.platform === "linux" &&
+                    resolveLinuxWindowNativeWco(window) !== false
+                  ) {
+                    recordLinuxWindowNativeWco(window, false);
+                    emitLinuxWindowState();
+                  }
+                }
               }
             }),
           ),
         ),
       );
     };
+    const emitLinuxWindowState = () => {
+      if (
+        environment.platform !== "linux" ||
+        window.isDestroyed() ||
+        window.webContents.isDestroyed()
+      ) {
+        return;
+      }
+      window.webContents.send(LINUX_WINDOW_STATE_CHANNEL, buildLinuxWindowState(window));
+    };
+    const handleMaximizeChange = () => {
+      scheduleBoundsPersist();
+      emitLinuxWindowState();
+    };
+    let lastKnownScaleFactor = buildDesktopWindowZoomState(window).deviceScaleFactor ?? 1;
+    const emitWindowZoomStateIfScaleChanged = () => {
+      if (window.isDestroyed() || window.webContents.isDestroyed()) return;
+      const state = buildDesktopWindowZoomState(window);
+      const nextScale = state.deviceScaleFactor ?? 1;
+      if (Math.abs(nextScale - lastKnownScaleFactor) < 0.001) return;
+      lastKnownScaleFactor = nextScale;
+      window.webContents.send(WINDOW_ZOOM_STATE_CHANNEL, state);
+    };
+    const handleMove = () => {
+      scheduleBoundsPersist();
+      emitWindowZoomStateIfScaleChanged();
+    };
     window.on("focus", () => handleWindowFocusChange(true));
     window.on("blur", () => handleWindowFocusChange(false));
     window.on("resize", scheduleBoundsPersist);
-    window.on("move", scheduleBoundsPersist);
-    window.on("maximize", scheduleBoundsPersist);
-    window.on("unmaximize", scheduleBoundsPersist);
+    window.on("move", handleMove);
+    window.on("maximize", handleMaximizeChange);
+    window.on("unmaximize", handleMaximizeChange);
     window.on("close", () => {
       runFork(flushBoundsPersist);
     });
+
+    if (environment.platform === "linux") {
+      window.on("enter-full-screen", () => {
+        if (!window.isDestroyed() && !window.webContents.isDestroyed()) {
+          window.webContents.send(WINDOW_FULLSCREEN_STATE_CHANNEL, true);
+        }
+        emitLinuxWindowState();
+      });
+      window.on("leave-full-screen", () => {
+        if (!window.isDestroyed() && !window.webContents.isDestroyed()) {
+          window.webContents.send(WINDOW_FULLSCREEN_STATE_CHANNEL, false);
+        }
+        emitLinuxWindowState();
+      });
+    }
+
+    if (environment.platform !== "darwin") {
+      // Forward hardware mouse back/forward app commands to the renderer's single history navigation owner.
+      window.on("app-command", (_event, command) => {
+        if (window.isDestroyed() || window.webContents.isDestroyed()) return;
+        if (command === "browser-backward") {
+          window.webContents.send(MENU_ACTION_CHANNEL, "history.app-command:back");
+        } else if (command === "browser-forward") {
+          window.webContents.send(MENU_ACTION_CHANNEL, "history.app-command:forward");
+        }
+      });
+    }
 
     if (environment.platform === "darwin") {
       // Mouse drivers can deliver Back/Forward as macOS swipe gestures instead of buttons.
@@ -1226,6 +1489,43 @@ export const make = Effect.gen(function* () {
         window,
         typeof window.isFocused === "function" ? window.isFocused() : true,
       );
+      emitLinuxWindowState();
+      if (environment.platform === "linux") {
+        if (typeof window.webContents.executeJavaScript === "function") {
+          trackFork(
+            Effect.tryPromise({
+              try: () => window.webContents.executeJavaScript(LINUX_NATIVE_WCO_PROBE_SCRIPT),
+              catch: () => undefined,
+            }).pipe(
+              Effect.tap((detected) =>
+                Effect.sync(() => {
+                  if (typeof detected !== "boolean") return;
+                  if (resolveLinuxWindowNativeWco(window) === detected) return;
+                  recordLinuxWindowNativeWco(window, detected);
+                  emitLinuxWindowState();
+                }),
+              ),
+              Effect.ignore,
+            ),
+          );
+        }
+        trackFork(
+          electronTheme.linuxPortalAppearance.pipe(
+            Effect.tap((appearance) =>
+              Effect.sync(() => {
+                if (
+                  appearance !== null &&
+                  !window.isDestroyed() &&
+                  !window.webContents.isDestroyed()
+                ) {
+                  window.webContents.send(LINUX_PORTAL_APPEARANCE_CHANNEL, appearance);
+                }
+              }),
+            ),
+            Effect.asVoid,
+          ),
+        );
+      }
     });
     window.webContents.on(
       "did-fail-load",

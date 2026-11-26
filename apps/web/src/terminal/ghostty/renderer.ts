@@ -192,12 +192,15 @@ function fillCellDecorations(
   top: number,
   width: number,
   metrics: GhosttyCellMetrics,
+  dprY: number,
 ): void {
-  if (underline) context.fillRect(left, top + metrics.height - 2, width, 1);
+  const thickness = Math.max(1 / dprY, Math.round(dprY) / dprY);
+  const snapY = (value: number) => Math.round(value * dprY) / dprY;
+  if (underline) context.fillRect(left, snapY(top + metrics.height - 2), width, thickness);
   if (cell.strikethrough) {
-    context.fillRect(left, top + Math.floor(metrics.height * 0.55), width, 1);
+    context.fillRect(left, snapY(top + Math.floor(metrics.height * 0.55)), width, thickness);
   }
-  if (cell.overline) context.fillRect(left, top + 1, width, 1);
+  if (cell.overline) context.fillRect(left, snapY(top + 1), width, thickness);
 }
 
 function fontForCell(cell: GhosttyCell, fontSize: number, fontFamily: string): string {
@@ -267,12 +270,19 @@ export function renderGhosttySnapshot(options: {
   const selectionBackground = options.selectionBackground ?? DEFAULT_SELECTION_BACKGROUND;
   const hoveredLinkRange = options.hoveredLinkRange ?? null;
   const originY = options.originY ?? padding;
-  // Rows start on whole device pixels and clear the full canvas width, so repainting
-  // a row replaces every pixel the last frame drew in it, including a cursor's edges.
+  // Rows and columns snap to whole device pixels so fractional Linux DPI scaling
+  // (1.25x, 1.5x, 1.75x) leaves zero anti-aliased hairline seams between cells,
+  // Powerline separators, decorations, and cursor edges.
   const transform = context.getTransform();
-  const rowTop = (row: number) =>
-    Math.round((originY + row * metrics.height) * transform.d) / transform.d;
-  const rowWidth = context.canvas.width / transform.a;
+  const dprX = transform.a || 1;
+  const dprY = transform.d || 1;
+  const snapX = (value: number) => Math.round(value * dprX) / dprX;
+  const snapY = (value: number) => Math.round(value * dprY) / dprY;
+  const colLeft = (col: number) => snapX(padding + col * metrics.width);
+  const rowTop = (row: number) => snapY(originY + row * metrics.height);
+  const rowWidth = context.canvas.width / dprX;
+  const pixelWidthX = Math.max(1 / dprX, Math.round(dprX) / dprX);
+  const pixelHeightY = Math.max(1 / dprY, Math.round(dprY) / dprY);
   const rowsToDraw = forceFull
     ? Array.from({ length: snapshot.rows }, (_, index) => index)
     : [...snapshot.dirtyRows];
@@ -323,8 +333,8 @@ export function renderGhosttySnapshot(options: {
         backgroundEnd += 1;
       }
       if (first.selected || !ghosttyColorsEqual(first.background, snapshot.background)) {
-        const left = padding + backgroundStart * metrics.width;
-        const width = (backgroundEnd - backgroundStart) * metrics.width;
+        const left = colLeft(backgroundStart);
+        const width = colLeft(backgroundEnd) - left;
         if (!ghosttyColorsEqual(first.background, snapshot.background)) {
           context.fillStyle = cssColor(first.background);
           context.fillRect(left, top, width, height);
@@ -348,13 +358,15 @@ export function renderGhosttySnapshot(options: {
       const powerlineShape = POWERLINE_SHAPES.get(first.text);
       if (powerlineShape) {
         if (!first.invisible) {
+          const cellLeft = colLeft(runStart);
+          const cellWidth = colLeft(runStart + 1) - cellLeft;
           drawPowerlineShape(
             context,
             powerlineShape,
             cssColor(first.foreground),
-            padding + runStart * metrics.width,
+            cellLeft,
             top,
-            metrics.width,
+            cellWidth,
             height,
             1,
           );
@@ -405,34 +417,47 @@ export function renderGhosttySnapshot(options: {
         (rowIndex < hoveredLinkRange.end.y || column <= hoveredLinkRange.end.x);
       if (!cell.underline && !cell.strikethrough && !cell.overline && !hoveredLink) continue;
       context.fillStyle = cssColor(cell.foreground);
-      const left = padding + column * metrics.width;
+      const left = colLeft(column);
+      const cellWidth = colLeft(column + 1) - left;
       fillCellDecorations(
         context,
         cell,
         cell.underline || hoveredLink,
         left,
         top,
-        metrics.width,
+        cellWidth,
         metrics,
+        dprY,
       );
     }
   }
 
   if (cursorOn && snapshot.cursorVisible && snapshot.cursorX >= 0 && snapshot.cursorY >= 0) {
-    const left = padding + snapshot.cursorX * metrics.width;
+    const left = colLeft(snapshot.cursorX);
     const top = rowTop(snapshot.cursorY);
     const height = rowTop(snapshot.cursorY + 1) - top;
     const cells = snapshot.rowData[snapshot.cursorY]?.cells ?? [];
     const wide = isWideGlyph(cells, snapshot.cursorX);
-    const width = wide ? metrics.width * 2 : metrics.width;
+    const width = colLeft(snapshot.cursorX + (wide ? 2 : 1)) - left;
     context.fillStyle = cssColor(snapshot.cursor);
     if (!focused || snapshot.cursorStyle === 3) {
+      context.save();
       context.strokeStyle = cssColor(snapshot.cursor);
-      context.strokeRect(left + 0.5, top + 0.5, width - 1, height - 1);
+      context.lineWidth = pixelWidthX;
+      const halfStroke = pixelWidthX / 2;
+      context.strokeRect(
+        left + halfStroke,
+        top + halfStroke,
+        Math.max(0, width - pixelWidthX),
+        Math.max(0, height - pixelWidthX),
+      );
+      context.restore();
     } else if (snapshot.cursorStyle === 0) {
-      context.fillRect(left, top, 2, height);
+      const barWidth = Math.max(pixelWidthX, snapX(2));
+      context.fillRect(left, top, barWidth, height);
     } else if (snapshot.cursorStyle === 2) {
-      context.fillRect(left, top + height - 2, width, 2);
+      const barHeight = Math.max(pixelHeightY, snapY(2));
+      context.fillRect(left, snapY(top + height - barHeight), width, barHeight);
     } else {
       const cell = cells[snapshot.cursorX];
       context.fillRect(left, top, width, height);
@@ -446,7 +471,7 @@ export function renderGhosttySnapshot(options: {
             cssColor(snapshot.background),
             left,
             top,
-            metrics.width,
+            width,
             height,
             0,
           );
@@ -455,7 +480,7 @@ export function renderGhosttySnapshot(options: {
           context.textAlign = wide ? "center" : "start";
           context.fillText(
             cell.text,
-            wide ? left + metrics.width : left,
+            wide ? left + width / 2 : left,
             top + metrics.baseline,
             width,
           );
@@ -463,7 +488,7 @@ export function renderGhosttySnapshot(options: {
         }
       }
       if (cell && !cell.invisible) {
-        fillCellDecorations(context, cell, cell.underline, left, top, width, metrics);
+        fillCellDecorations(context, cell, cell.underline, left, top, width, metrics, dprY);
       }
     }
   }

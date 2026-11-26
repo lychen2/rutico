@@ -5,12 +5,18 @@ export interface ResizeBounds {
   readonly max: number;
 }
 
+interface ResizeDragMeta {
+  readonly clientX: number;
+  readonly clientY: number;
+  readonly altKey: boolean;
+}
+
 interface ResizeSession {
   width: number;
   edge: "left" | "right";
   /** The first `resize` argument is clamped; the second retains pointer intent. */
   bounds: ResizeBounds;
-  resize: (width: number, rawWidth: number) => number;
+  resize: (width: number, rawWidth: number, meta: ResizeDragMeta) => number;
   cancelOnInterrupt?: boolean;
   finish: (width: number, moved: boolean) => void;
   cleanup?: (committed: boolean) => void;
@@ -26,10 +32,13 @@ interface ActiveDrag<T extends HTMLElement> {
   pointerId: number;
   startX: number;
   pendingX: number;
+  pendingY: number;
+  altKey: boolean;
   width: number;
   moved: boolean;
   frame: number | null;
   onBlur: () => void;
+  onKeyChange: (event: KeyboardEvent) => void;
 }
 
 function createResizeDrag<T extends HTMLElement>() {
@@ -41,7 +50,19 @@ function createResizeDrag<T extends HTMLElement>() {
     const delta = (active.pendingX - active.startX) * (active.session.edge === "left" ? -1 : 1);
     if (Math.abs(delta) > 2) active.moved = true;
     const rawWidth = active.session.width + delta;
-    active.width = active.session.resize(clampToBounds(rawWidth, active.session.bounds), rawWidth);
+    active.width = active.session.resize(clampToBounds(rawWidth, active.session.bounds), rawWidth, {
+      clientX: active.pendingX,
+      clientY: active.pendingY,
+      altKey: active.altKey,
+    });
+  };
+
+  const scheduleFlush = (active: ActiveDrag<T>) => {
+    if (active.frame !== null) return;
+    active.frame = requestAnimationFrame(() => {
+      active.frame = null;
+      flush();
+    });
   };
 
   const finish = (commit: boolean) => {
@@ -49,6 +70,8 @@ function createResizeDrag<T extends HTMLElement>() {
     if (!active) return;
     if (active.frame !== null) cancelAnimationFrame(active.frame);
     window.removeEventListener("blur", active.onBlur);
+    window.removeEventListener("keydown", active.onKeyChange);
+    window.removeEventListener("keyup", active.onKeyChange);
     if (commit) flush();
     // Release can synchronously dispatch lostpointercapture.
     drag = null;
@@ -67,7 +90,11 @@ function createResizeDrag<T extends HTMLElement>() {
     const active = drag;
     if (!active || active.pointerId !== event.pointerId) return;
     event.preventDefault();
-    if (usePosition) active.pendingX = event.clientX;
+    if (usePosition) {
+      active.pendingX = event.clientX;
+      active.pendingY = event.clientY;
+      active.altKey = event.altKey;
+    }
     finish(usePosition || !active.session.cancelOnInterrupt);
   };
 
@@ -92,17 +119,29 @@ function createResizeDrag<T extends HTMLElement>() {
       event.preventDefault();
       event.stopPropagation();
       const onBlur = () => finish(!session.cancelOnInterrupt);
+      const onKeyChange = (keyEvent: KeyboardEvent) => {
+        if (!drag || keyEvent.key !== "Alt") return;
+        const nextAlt = keyEvent.type === "keydown" ? true : keyEvent.altKey;
+        if (drag.altKey === nextAlt) return;
+        drag.altKey = nextAlt;
+        scheduleFlush(drag);
+      };
       window.addEventListener("blur", onBlur);
+      window.addEventListener("keydown", onKeyChange);
+      window.addEventListener("keyup", onKeyChange);
       drag = {
         session,
         target: event.currentTarget,
         pointerId: event.pointerId,
         startX: event.clientX,
         pendingX: event.clientX,
+        pendingY: event.clientY,
+        altKey: event.altKey,
         width: session.width,
         moved: false,
         frame: null,
         onBlur,
+        onKeyChange,
       };
       document.body.style.cursor = "col-resize";
       document.body.style.userSelect = "none";
@@ -112,12 +151,10 @@ function createResizeDrag<T extends HTMLElement>() {
       if (!active || active.pointerId !== event.pointerId) return;
       event.preventDefault();
       active.pendingX = event.clientX;
+      active.pendingY = event.clientY;
+      active.altKey = event.altKey;
       if (Math.abs(event.clientX - active.startX) > 2) active.moved = true;
-      if (active.frame !== null) return;
-      active.frame = requestAnimationFrame(() => {
-        active.frame = null;
-        flush();
-      });
+      scheduleFlush(active);
     },
     onPointerUp: (event: PointerEvent<T>) => end(event, true),
     onPointerCancel: (event: PointerEvent<T>) => end(event, false),

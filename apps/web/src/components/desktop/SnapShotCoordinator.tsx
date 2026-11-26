@@ -35,6 +35,8 @@ import {
   dismissSnapShotAnimation,
   finishSnapShotAnimation,
   getPendingSnapShotAnimations,
+  recordSnapShotTelemetry,
+  triggerSnapShotLandingChoreography,
   updateSnapShotAnimationSource,
   waitForSnapShotAnimationDestination,
 } from "../../lib/snapShotAnimation";
@@ -218,12 +220,18 @@ export async function deliverSnapShot(
     throw new Error(m(msg("The captured window could not be saved to the draft.")));
   }
 
+  const animateCaptures = getClientSettings().snapShotAnimations;
   // Paint the attachment before removing the capture overlay to avoid missing frames at landing.
   if (getPendingSnapShotAnimations().some((animation) => animation.id === capture.id)) {
     await afterNextPaint();
     await waitForSnapShotAnimationDestination(capture.id).catch(() => undefined);
     finishSnapShotAnimation(capture.id);
     await afterNextPaint();
+  } else {
+    await afterNextPaint();
+  }
+  if (animateCaptures) {
+    triggerSnapShotLandingChoreography(capture.id, { fileName: file.name });
   }
   await bridge.acknowledgeSnapShot(capture.id);
   dispatchSnapShotComposerFocus();
@@ -452,6 +460,9 @@ export function SnapShotCoordinator() {
           return;
         }
         case "started": {
+          if (event.linuxCaptureTelemetry && getClientSettings().snapShotAnimations) {
+            recordSnapShotTelemetry(event.id, event.linuxCaptureTelemetry);
+          }
           playCaptureSound(event.id);
           const target = resolveSnapShotDeliveryTarget(
             captureTargetsRef.current,
@@ -471,6 +482,9 @@ export function SnapShotCoordinator() {
           return;
         }
         case "ready":
+          if (event.linuxCaptureTelemetry && getClientSettings().snapShotAnimations) {
+            recordSnapShotTelemetry(event.id, event.linuxCaptureTelemetry);
+          }
           void drain();
           return;
         case "failed": {

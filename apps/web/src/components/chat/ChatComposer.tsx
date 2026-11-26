@@ -3644,6 +3644,20 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   const composerAttachButton = showComposerAttachAction ? (
     <ComposerAttachButton onOpenPicker={() => composerAttachInputRef.current?.click()} />
   ) : null;
+  const composerAura =
+    composerProviderState.composerFrameClassName === "ultrathink-frame"
+      ? "ultrathink"
+      : isEditingQueuedMessage
+        ? "editing-queue"
+        : pendingUserInputs.length > 0 || isComposerApprovalState
+          ? "pending-input"
+          : (phase === "running" || phase === "connecting") && !draftRunsLocally
+            ? followUpBehavior === "steer" && canSteer
+              ? "dispatch-steer"
+              : "dispatch-queue"
+            : isComposerFocused
+              ? "focused"
+              : "idle";
   return (
     <form
       ref={composerFormRef}
@@ -3706,6 +3720,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       }}
       className="mx-auto w-full min-w-0 max-w-(--chat-content-max-width)"
       data-chat-composer-form="true"
+      data-composer-launch-source="true"
       {...threadContextDropTargetProps()}
     >
       <ComposerBanner.Dock>
@@ -3754,6 +3769,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         <ComposerSurface.Main
           ref={composerMainSurfaceRef}
           data-inline-resting-controls="true"
+          data-composer-aura={composerAura}
           className={composerProviderState.composerFrameClassName}
         >
           <div
@@ -3902,6 +3918,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                   resolvedTheme={resolvedTheme}
                   isLoading={isComposerMenuLoading}
                   triggerKind={composerTriggerKind}
+                  query={composerTrigger?.query ?? ""}
                   emptyStateText={composerMenuEmptyState}
                   activeItemId={activeComposerMenuItem?.id ?? null}
                   onHighlightedItemChange={onComposerMenuItemHighlightedStable}

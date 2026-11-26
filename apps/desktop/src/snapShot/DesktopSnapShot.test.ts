@@ -2234,6 +2234,285 @@ it.effect.each([false, true])(
   },
 );
 
+it("classifies Linux SnapShot capability into 4 explicit tiers with dual-DPI scale telemetry", () => {
+  assert.deepEqual(
+    DesktopSnapShot.resolveLinuxSnapShotCapability({
+      isWayland: true,
+      backend: "gnome-extension",
+      feedbackAvailable: true,
+      hasTrustedSourceBounds: true,
+      sourceScaleFactor: 1,
+      targetScaleFactor: 1.5,
+    }),
+    {
+      tier: 3,
+      coordinateSpace: "compositor-logical",
+      helperAvailable: true,
+      backend: "gnome-extension",
+      sourceScaleFactor: 1,
+      targetScaleFactor: 1.5,
+    },
+  );
+  assert.deepEqual(
+    DesktopSnapShot.resolveLinuxSnapShotCapability({
+      isWayland: true,
+      backend: "kde",
+      feedbackAvailable: false,
+      hasTrustedSourceBounds: true,
+    }),
+    {
+      tier: 2,
+      coordinateSpace: "compositor-logical",
+      helperAvailable: false,
+      backend: "kde",
+    },
+  );
+  assert.deepEqual(
+    DesktopSnapShot.resolveLinuxSnapShotCapability({
+      isWayland: true,
+      backend: "niri",
+      feedbackAvailable: false,
+      hasTrustedSourceBounds: false,
+    }),
+    {
+      tier: 4,
+      coordinateSpace: "window-local",
+      helperAvailable: false,
+      backend: "niri",
+    },
+  );
+  assert.deepEqual(
+    DesktopSnapShot.resolveLinuxSnapShotCapability({
+      isWayland: true,
+      backend: "screenshot-portal",
+      feedbackAvailable: false,
+      hasTrustedSourceBounds: false,
+    }),
+    {
+      tier: 4,
+      coordinateSpace: "unknown",
+      helperAvailable: false,
+      backend: "screenshot-portal",
+    },
+  );
+  assert.deepEqual(
+    DesktopSnapShot.resolveLinuxSnapShotCapability({
+      isWayland: false,
+      backend: "x11",
+      feedbackAvailable: true,
+      hasTrustedSourceBounds: true,
+      sourceScaleFactor: 1,
+      targetScaleFactor: 2,
+    }),
+    {
+      tier: 1,
+      coordinateSpace: "unknown",
+      helperAvailable: false,
+      backend: "x11",
+      sourceScaleFactor: 1,
+      targetScaleFactor: 2,
+    },
+  );
+  assert.deepEqual(
+    DesktopSnapShot.resolveLinuxSnapShotCapability({
+      isWayland: false,
+      backend: "x11",
+      feedbackAvailable: false,
+      hasTrustedSourceBounds: false,
+    }),
+    {
+      tier: 1,
+      coordinateSpace: "unknown",
+      helperAvailable: false,
+      backend: "x11",
+    },
+  );
+});
+
+it("renders Wave 0 spring easing, superellipse squircle styling, and 120ms reduced-motion fade in transition HTML", () => {
+  const html = buildSnapShotTransitionHtml(
+    { x: 100, y: 80, width: 640, height: 480 },
+    { x: 0, y: 0, width: 1440, height: 900 },
+    true,
+  );
+  assert.include(html, "linear(0, 0.0431, 0.1456");
+  assert.include(html, "@supports (corner-shape: superellipse(1.25))");
+  assert.include(html, "duration:120");
+});
+
+it.effect("reports Linux Wayland capability tier and telemetry on state and ready events", () => {
+  vi.stubEnv("XDG_SESSION_TYPE", "wayland");
+  vi.stubEnv("XDG_CURRENT_DESKTOP", "niri");
+  vi.stubEnv("NIRI_SOCKET", "/tmp/niri.sock");
+  niriShortcutMock.mockResolvedValueOnce(niriShortcutStopMock);
+  linuxBackendMock.mockResolvedValueOnce("niri");
+  linuxCaptureMock.mockResolvedValueOnce({
+    png: Buffer.from([1, 2, 3]),
+    window: {
+      title: "Alacritty",
+      appName: "Alacritty",
+      appIdentifier: "Alacritty",
+      processId: 4242,
+      bounds: { x: 0, y: 0, width: 800, height: 600 },
+      accessibilityBoundsReliable: false,
+    },
+  });
+  const events: Array<DesktopSnapShotEvent> = [];
+  const layer = Layer.mergeAll(
+    layerTest("linux", {
+      makeDirectory: () => Effect.void,
+      writeFile: () => Effect.void,
+      writeFileString: () => Effect.void,
+      rename: () => Effect.void,
+      remove: () => Effect.void,
+    }),
+    Layer.succeed(
+      DesktopWindow.DesktopWindow,
+      DesktopWindow.DesktopWindow.of({
+        activate: Effect.void,
+        prepareCaptureReveal: Effect.void,
+        dispatchMenuAction: () => Effect.void,
+        dispatchSnapShotEvent: (event: DesktopSnapShotEvent) =>
+          Effect.sync(() => {
+            events.push(event);
+          }),
+      } as unknown as DesktopWindow.DesktopWindow["Service"]),
+    ),
+  );
+  return Effect.scoped(
+    Effect.gen(function* () {
+      const service = yield* DesktopSnapShot.make;
+      yield* service.configure(enabledSettings());
+      const state = yield* service.state;
+      assert.equal(state.linuxCaptureTier, 4);
+      assert.equal(state.linuxCaptureTelemetry?.coordinateSpace, "window-local");
+      assert.equal(state.linuxCaptureTelemetry?.backend, "niri");
+      yield* service.capture;
+      const ready = events.find((event) => event.type === "ready");
+      assert.isDefined(ready);
+      assert.equal(ready?.type, "ready");
+      if (ready?.type === "ready") {
+        assert.equal(ready.linuxCaptureTelemetry?.tier, 4);
+        assert.equal(ready.linuxCaptureTelemetry?.coordinateSpace, "window-local");
+        assert.equal(ready.linuxCaptureTelemetry?.helperAvailable, false);
+      }
+    }),
+  ).pipe(Effect.provide(layer), Effect.ensuring(Effect.sync(() => vi.unstubAllEnvs())));
+});
+
+it.effect(
+  "reports actual screenshot-portal and picker backends on ready events instead of guessing from XDG_CURRENT_DESKTOP",
+  () => {
+    vi.stubEnv("XDG_SESSION_TYPE", "wayland");
+    vi.stubEnv("XDG_CURRENT_DESKTOP", "GNOME");
+    linuxBackendMock.mockResolvedValue("screenshot-portal");
+    const events: Array<DesktopSnapShotEvent> = [];
+    const layer = Layer.mergeAll(
+      layerTest("linux", {
+        makeDirectory: () => Effect.void,
+        writeFile: () => Effect.void,
+        writeFileString: () => Effect.void,
+        rename: () => Effect.void,
+        remove: () => Effect.void,
+      }),
+      Layer.succeed(
+        DesktopWindow.DesktopWindow,
+        DesktopWindow.DesktopWindow.of({
+          activate: Effect.void,
+          prepareCaptureReveal: Effect.void,
+          dispatchMenuAction: () => Effect.void,
+          dispatchSnapShotEvent: (event: DesktopSnapShotEvent) =>
+            Effect.sync(() => {
+              events.push(event);
+            }),
+        } as unknown as DesktopWindow.DesktopWindow["Service"]),
+      ),
+    );
+    return Effect.scoped(
+      Effect.gen(function* () {
+        const service = yield* DesktopSnapShot.make;
+        yield* service.configure(enabledSettings());
+
+        // GNOME session where LinuxSnapShot actually captured via screenshot-portal.
+        linuxCaptureMock.mockResolvedValueOnce({
+          png: Buffer.from([1, 2, 3]),
+          backend: "screenshot-portal",
+        });
+        yield* service.capture;
+        const portalReady = events.findLast((event) => event.type === "ready");
+        assert.isDefined(portalReady);
+        if (portalReady?.type === "ready") {
+          assert.equal(portalReady.linuxCaptureTelemetry?.backend, "screenshot-portal");
+          assert.equal(portalReady.linuxCaptureTelemetry?.tier, 4);
+          assert.equal(portalReady.linuxCaptureTelemetry?.helperAvailable, false);
+        }
+
+        // KDE session where LinuxSnapShot actually fell back to screenshot-portal.
+        vi.stubEnv("XDG_CURRENT_DESKTOP", "KDE");
+        linuxCaptureMock.mockResolvedValueOnce({
+          png: Buffer.from([1, 2, 3]),
+          backend: "screenshot-portal",
+        });
+        yield* service.capture;
+        const kdePortalReady = events.findLast((event) => event.type === "ready");
+        assert.isDefined(kdePortalReady);
+        if (kdePortalReady?.type === "ready") {
+          assert.equal(kdePortalReady.linuxCaptureTelemetry?.backend, "screenshot-portal");
+          assert.equal(kdePortalReady.linuxCaptureTelemetry?.tier, 4);
+        }
+
+        // GNOME session where LinuxSnapShot returns undefined and falls back to desktopCapturer picker.
+        vi.stubEnv("XDG_CURRENT_DESKTOP", "GNOME");
+        linuxCaptureMock.mockResolvedValueOnce(undefined);
+        getSourcesMock.mockResolvedValueOnce([
+          {
+            name: "Picked Window",
+            thumbnail: { isEmpty: () => false, toPNG: () => Buffer.from([1, 2, 3]) },
+          },
+        ]);
+        yield* service.capture;
+        const pickerReady = events.findLast((event) => event.type === "ready");
+        assert.isDefined(pickerReady);
+        if (pickerReady?.type === "ready") {
+          assert.equal(pickerReady.linuxCaptureTelemetry?.backend, "picker");
+          assert.equal(pickerReady.linuxCaptureTelemetry?.tier, 4);
+          assert.equal(pickerReady.linuxCaptureTelemetry?.helperAvailable, false);
+        }
+      }),
+    ).pipe(
+      Effect.provide(layer),
+      Effect.ensuring(
+        Effect.sync(() => {
+          linuxBackendMock.mockResolvedValue("picker");
+          vi.unstubAllEnvs();
+        }),
+      ),
+    );
+  },
+);
+
+it.effect("does not advertise unsupported X11 sessions as executable in state or capture", () => {
+  vi.stubEnv("XDG_SESSION_TYPE", "x11");
+  vi.stubEnv("WAYLAND_DISPLAY", "");
+  vi.stubEnv("XDG_CURRENT_DESKTOP", "GNOME");
+  return Effect.scoped(
+    Effect.gen(function* () {
+      const service = yield* DesktopSnapShot.make;
+      yield* service.configure(enabledSettings());
+      const state = yield* service.state;
+      assert.equal(state.mode, "unavailable");
+      assert.isUndefined(state.linuxCaptureTier);
+      assert.isUndefined(state.linuxCaptureTelemetry);
+      assert.include(state.message ?? "", "X11 capture is not supported");
+      const error = yield* Effect.flip(service.capture);
+      assert.equal(error.operation, "unsupported");
+    }),
+  ).pipe(
+    Effect.provide(layerTest("linux")),
+    Effect.ensuring(Effect.sync(() => vi.unstubAllEnvs())),
+  );
+});
+
 it.each([
   ["preview-config", "Alt+Super+C is already used by Hyprland. Choose another shortcut."],
   ["apply-config", "Your config changed since this preview. Review changes again before saving."],

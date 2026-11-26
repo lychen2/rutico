@@ -45,6 +45,7 @@ import {
   sidebarWorkbenchEase,
 } from "../Sidebar.motion";
 import { pickSnoozePreset, resolveSnoozePresets, type SnoozePreset } from "../Sidebar.snooze";
+import { AnimatedNumber } from "../ui/animated-number";
 import { Button } from "../ui/button";
 import { Menu, MenuItem, MenuItemDetail, MenuPopup, MenuSeparator, MenuTrigger } from "../ui/menu";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
@@ -164,7 +165,7 @@ function OverviewCount({ count, className }: { count: number; className: string 
   }, [count]);
   return (
     <span ref={badge} className={className}>
-      {count}
+      <AnimatedNumber value={count} />
     </span>
   );
 }

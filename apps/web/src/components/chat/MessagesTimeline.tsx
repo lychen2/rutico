@@ -12,7 +12,11 @@ import { useChatCanvas } from "./ChatCanvasContext";
 import { WorkLogBlock } from "./WorkLog";
 import { TimelinePendingApprovalRow } from "./TimelinePendingApprovalRow";
 import type { WorktreeSetupSnapshot } from "@t3tools/contracts";
-import { deriveTimelineMinimapItems } from "./timelineMinimapItems";
+import {
+  annotateTimelineMinimapFindMatches,
+  deriveTimelineMinimapItems,
+} from "./timelineMinimapItems";
+import type { TimelineFindMatchEntry } from "./useThreadFind";
 import {
   type AssistantCitation,
   type EnvironmentId,
@@ -27,8 +31,17 @@ import { parseScopedThreadKey } from "@t3tools/client-runtime/environment";
 import { resolveWorkGroupScrollAnchor } from "@t3tools/client-runtime/work-log/scroll-anchor";
 import type { WorkflowOpening } from "@t3tools/client-runtime/state/subagentRuntime";
 import { observeResize } from "~/lib/observeResize";
+import {
+  getSpringWaapiTiming,
+  prefersReducedMotion as prefersReducedMotionSetting,
+} from "~/lib/motion/springs";
 import { preserveReadingPosition } from "~/lib/preserveReadingPosition";
 import { useStableCallback } from "~/hooks/useStableCallback";
+import {
+  claimTurnFoldLandingAnimation,
+  markTurnRunActive,
+  turnFoldLandingKey,
+} from "./turnLandingChoreography";
 
 const NOOP_USE_ARTIFACT_TEMPLATE = () => {};
 const EMPTY_PENDING_APPROVALS: ReadonlyArray<PendingApproval> = [];
@@ -62,7 +75,6 @@ import { formatDiffCount } from "@t3tools/client-runtime/diff-count";
 import {
   ArrowRightIcon,
   BotIcon,
-  CheckCircle2Icon,
   ChevronRightIcon,
   CircleAlertIcon,
   CircleDotIcon,
@@ -70,6 +82,7 @@ import {
   Minimize2Icon,
   WrenchIcon,
 } from "lucide-react";
+import { AnimatedNumber } from "../ui/animated-number";
 import { Skeleton } from "../ui/skeleton";
 import { ExpandedImagePreview } from "./ExpandedImagePreview";
 import {
@@ -110,10 +123,15 @@ import { useMediaQuery } from "~/hooks/useMediaQuery";
 import { cn } from "~/lib/utils";
 import { type TimestampFormat } from "@t3tools/contracts/settings";
 import { type HandoffTimelineRun } from "./V2LifecycleRow";
-import { TimelineSystemDivider } from "./TimelineSystemDivider";
+import {
+  TimelineSystemDivider,
+  parseCompactTokenMetric,
+  resolveCompactionRatio,
+} from "./TimelineSystemDivider";
 
 import { forwardWheelToTimeline } from "./timelineMinimapWheel";
 import { TimelineMinimap } from "./TimelineMinimap";
+import { useRevertPreviewMessageId } from "./ChatOverlayHosts";
 import {
   type TimelineRowSharedState,
   type TimelineRowActivityState,
@@ -355,6 +373,7 @@ interface MessagesTimelineProps {
   findQuery?: string;
   activeFindMatch?: ThreadFindMatch | null;
   findNavigationId?: number;
+  findMatchNavigation?: ReadonlyArray<TimelineFindMatchEntry> | null;
 }
 
 export function MessagesTimeline(props: MessagesTimelineProps) {
@@ -404,6 +423,7 @@ const ConversationTimeline = memo(function ConversationTimeline({
   findQuery = "",
   activeFindMatch = null,
   findNavigationId = 0,
+  findMatchNavigation = null,
   latestRun,
   usageLimitRunId = null,
   announcedRun = null,
@@ -590,8 +610,17 @@ const ConversationTimeline = memo(function ConversationTimeline({
   };
 
   // Turn and attempt folds reveal later rows rather than growing their own row.
+  const [revealingTurnFoldRunId, setRevealingTurnFoldRunId] = useState<RunId | null>(null);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- clears one-shot TurnFold expand stagger after 360ms so recycled virtual rows never replay
+  useEffect(() => {
+    if (revealingTurnFoldRunId === null) return;
+    const timer = window.setTimeout(() => setRevealingTurnFoldRunId(null), 360);
+    return () => window.clearTimeout(timer);
+  }, [revealingTurnFoldRunId]);
   const onToggleTurnFold = (runId: RunId) => {
     preserveDisclosurePosition(`turn-fold:${runId}`);
+    const expanding = !expandedRunIds.has(runId);
+    setRevealingTurnFoldRunId(expanding ? runId : null);
     setExpandedRunIds((existing) => {
       const next = new Set(existing);
       if (next.has(runId)) {
@@ -666,6 +695,15 @@ const ConversationTimeline = memo(function ConversationTimeline({
       }
     }
   }
+
+  const activeRunIdToObserve =
+    runningRunId ?? (latestRun?.status === "running" ? latestRun.runId : null);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- records currently running turn identities so TurnFoldTimelineRow animates only newly completed turns, never recycled history
+  useLayoutEffect(() => {
+    if (activeRunIdToObserve !== null) {
+      markTurnRunActive(turnFoldLandingKey(routeThreadKey, activeRunIdToObserve));
+    }
+  }, [activeRunIdToObserve, routeThreadKey]);
 
   const preferredToolCallVisibility = useClientSettings((settings) => settings.toolCallVisibility);
   const screenReaderAnnouncements = useClientSettings(
@@ -806,7 +844,26 @@ const ConversationTimeline = memo(function ConversationTimeline({
   );
   // Run status/timestamps change per stream event; keep them out of shared row context.
   const runs = useStableHandoffRuns(runsProp);
-  const minimapItems = deriveTimelineMinimapItems(rows);
+  const revertPreviewMessageId = useRevertPreviewMessageId(routeThreadKey);
+  const baseMinimapItems = deriveTimelineMinimapItems(rows);
+  const minimapItems = annotateTimelineMinimapFindMatches(
+    baseMinimapItems,
+    rows,
+    findActive ? findMatchNavigation : null,
+    findActive ? (activeFindMatch?.entryId ?? null) : null,
+  );
+  const revertPreviewRowIndex =
+    revertPreviewMessageId === null
+      ? -1
+      : rows.findIndex(
+          (row) => row.kind === "message" && row.message.id === revertPreviewMessageId,
+        );
+  const revertPreviewTurnIndex =
+    revertPreviewMessageId === null
+      ? -1
+      : minimapItems.findIndex((item) => item.id === revertPreviewMessageId);
+  const revertAffectedTurnCount =
+    revertPreviewTurnIndex >= 0 ? Math.max(1, minimapItems.length - revertPreviewTurnIndex) : 0;
   const minimapRowIndices = minimapItems.map((item) => item.rowIndex);
   const restoreRowIndex =
     restoringThreadPosition && rememberedPosition?.atEnd === false
@@ -864,6 +921,88 @@ const ConversationTimeline = memo(function ConversationTimeline({
   const [timelineViewportElement, setTimelineViewportElement] = useState<HTMLDivElement | null>(
     null,
   );
+  const timelineViewportRef = useRef<HTMLDivElement | null>(null);
+  const hasTimelineViewport = timelineViewportElement !== null;
+  const hasParentThread = parentThreadLink !== null;
+  const lastSettledIdentityRef = useRef<string | null>(null);
+  const lastSettledHasParentRef = useRef<boolean>(false);
+  const pendingThreadSwitchRef = useRef<{
+    readonly targetIdentity: string;
+    readonly fromHasParent: boolean;
+  } | null>(null);
+  const threadSwitchAnimationRef = useRef<Animation | null>(null);
+
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- plays a single directional WAAPI transition on the outer timeline viewport once scroll-position restore lands
+  useLayoutEffect(() => {
+    if (!hasTimelineViewport) return;
+    const viewport = timelineViewportRef.current;
+    if (!viewport) return;
+    if (lastSettledIdentityRef.current === null) {
+      lastSettledIdentityRef.current = listIdentityKey;
+      lastSettledHasParentRef.current = hasParentThread;
+      delete viewport.dataset.timelineSwitchPending;
+      return;
+    }
+
+    if (lastSettledIdentityRef.current !== listIdentityKey) {
+      if (pendingThreadSwitchRef.current?.targetIdentity !== listIdentityKey) {
+        pendingThreadSwitchRef.current = {
+          targetIdentity: listIdentityKey,
+          fromHasParent: lastSettledHasParentRef.current,
+        };
+      }
+      if (restoreReady && !prefersReducedMotionSetting()) {
+        viewport.dataset.timelineSwitchPending = "true";
+        return;
+      }
+    }
+
+    delete viewport.dataset.timelineSwitchPending;
+    const pendingSwitch = pendingThreadSwitchRef.current;
+    if (pendingSwitch === null || pendingSwitch.targetIdentity !== listIdentityKey) {
+      lastSettledIdentityRef.current = listIdentityKey;
+      lastSettledHasParentRef.current = hasParentThread;
+      return;
+    }
+
+    pendingThreadSwitchRef.current = null;
+    lastSettledIdentityRef.current = listIdentityKey;
+    lastSettledHasParentRef.current = hasParentThread;
+
+    threadSwitchAnimationRef.current?.cancel();
+    threadSwitchAnimationRef.current = null;
+    if (prefersReducedMotionSetting() || typeof viewport.animate !== "function") return;
+
+    const isRtl =
+      typeof window !== "undefined" && window.getComputedStyle(viewport).direction === "rtl";
+    const horizontalSign = isRtl ? -1 : 1;
+    const enteringChild = !pendingSwitch.fromHasParent && hasParentThread;
+    const returningToParent = pendingSwitch.fromHasParent && !hasParentThread;
+    const fromTransform = enteringChild
+      ? `translate3d(${horizontalSign * 10}px, 0, 0)`
+      : returningToParent
+        ? `translate3d(${-horizontalSign * 10}px, 0, 0)`
+        : "translate3d(0, 5px, 0)";
+    const timing = getSpringWaapiTiming("snappy");
+    const animation = viewport.animate(
+      [
+        { opacity: 0.01, transform: fromTransform },
+        { opacity: 1, transform: "translate3d(0, 0, 0)" },
+      ],
+      {
+        duration: 150,
+        easing: timing.easing,
+      },
+    );
+    threadSwitchAnimationRef.current = animation;
+    void animation.finished
+      .catch(() => undefined)
+      .then(() => {
+        if (threadSwitchAnimationRef.current === animation) {
+          threadSwitchAnimationRef.current = null;
+        }
+      });
+  }, [hasParentThread, hasTimelineViewport, listIdentityKey, restoreReady]);
   const {
     target: readyCitationRequest,
     positioning: citationPositioning,
@@ -1118,6 +1257,7 @@ const ConversationTimeline = memo(function ConversationTimeline({
     });
   };
   const attachTimelineViewportElement = (viewportElement: HTMLDivElement | null) => {
+    timelineViewportRef.current = viewportElement;
     setTimelineViewportElement(viewportElement);
     if (!viewportElement) return;
     const stopObserving = observeResize(viewportElement, () => {
@@ -1126,6 +1266,7 @@ const ConversationTimeline = memo(function ConversationTimeline({
     });
     return () => {
       stopObserving();
+      timelineViewportRef.current = null;
       setTimelineViewportElement(null);
     };
   };
@@ -1155,6 +1296,7 @@ const ConversationTimeline = memo(function ConversationTimeline({
     runs,
     activeThreadEnvironmentId,
     onRevertToTurnCount,
+    revertPreviewMessageId,
     onRunShellCommand,
     findActive,
     onImageExpand,
@@ -1432,28 +1574,96 @@ const ConversationTimeline = memo(function ConversationTimeline({
       return next;
     });
   });
-  const renderItem = ({ item }: { item: MessagesTimelineRow }) => (
-    <TimelineRowCtx value={sharedState}>
-      <div
-        className="messages-timeline-row-frame"
-        onPlayCapture={(event) => onAudioPlaybackChange(item.id, event)}
-        onPauseCapture={(event) => onAudioPlaybackChange(item.id, event)}
-        onEndedCapture={(event) => onAudioPlaybackChange(item.id, event)}
-      >
+  const revealingTurnFoldDelays = new Map<string, number>();
+  if (revealingTurnFoldRunId !== null) {
+    const foldIndex = rows.findIndex(
+      (row) => row.kind === "turn-fold" && row.runId === revealingTurnFoldRunId,
+    );
+    const delays = [0, 24, 44, 60, 72, 80] as const;
+    if (foldIndex >= 0) {
+      let cascadeCount = 0;
+      for (let i = foldIndex + 1; i < rows.length && cascadeCount < delays.length; i += 1) {
+        const candidate = rows[i]!;
+        if (
+          candidate.kind === "turn-fold" ||
+          (candidate.kind === "message" && candidate.message.role === "user")
+        ) {
+          break;
+        }
+        revealingTurnFoldDelays.set(candidate.id, delays[cascadeCount]!);
+        cascadeCount += 1;
+      }
+    }
+  }
+  const renderItem = ({ item, index }: { item: MessagesTimelineRow; index: number }) => {
+    const foldCascadeDelay = revealingTurnFoldDelays.get(item.id);
+    const inRewindPreviewVeil = revertPreviewRowIndex >= 0 && index >= revertPreviewRowIndex;
+    const isRewindBoundary = revertPreviewRowIndex >= 0 && index === revertPreviewRowIndex;
+    return (
+      <TimelineRowCtx value={sharedState}>
         <div
-          ref={observeLaneWidth}
-          // An HTML preview can run wider than this lane, which stays the chat column's width.
-          className={cn("chat-content-lane", item.kind !== "html-render" && "overflow-x-clip")}
-          data-timeline-root="true"
+          className="messages-timeline-row-frame"
+          data-rewind-preview-veil={inRewindPreviewVeil ? "true" : undefined}
+          onPlayCapture={(event) => onAudioPlaybackChange(item.id, event)}
+          onPauseCapture={(event) => onAudioPlaybackChange(item.id, event)}
+          onEndedCapture={(event) => onAudioPlaybackChange(item.id, event)}
         >
-          <AudioPreviewUnmountContext value={onAudioUnmount}>
-            <TimelineRowContent row={item} />
-          </AudioPreviewUnmountContext>
+          {isRewindBoundary ? (
+            <div
+              role="separator"
+              data-rewind-boundary-ruler="true"
+              className="chat-content-lane mb-2 flex items-center gap-2.5 text-2xs font-medium text-warning-foreground tabular-nums"
+            >
+              <span
+                aria-hidden="true"
+                className="h-px flex-1 border-t border-dashed border-warning/60"
+              />
+              <span className="shrink-0 rounded-full border border-warning/35 bg-warning/10 px-2.5 py-0.5">
+                {revertPreviewTurnIndex >= 0 ? (
+                  <T>
+                    Rewind to Turn <Var>{revertPreviewTurnIndex + 1}</Var> ·{" "}
+                    <Var>
+                      {gt("{count, plural, one {{count} turn} other {{count} turns}}", {
+                        count: revertAffectedTurnCount,
+                      })}
+                    </Var>
+                  </T>
+                ) : (
+                  <T>Rewind point</T>
+                )}
+              </span>
+              <span
+                aria-hidden="true"
+                className="h-px flex-1 border-t border-dashed border-warning/60"
+              />
+            </div>
+          ) : null}
+          <div
+            ref={observeLaneWidth}
+            // An HTML preview can run wider than this lane, which stays the chat column's width.
+            className={cn("chat-content-lane", item.kind !== "html-render" && "overflow-x-clip")}
+            data-timeline-root="true"
+            data-work-cascade-row={foldCascadeDelay !== undefined ? "true" : undefined}
+            style={
+              foldCascadeDelay !== undefined
+                ? ({ "--work-cascade-delay": `${foldCascadeDelay}ms` } as React.CSSProperties)
+                : undefined
+            }
+          >
+            <AudioPreviewUnmountContext value={onAudioUnmount}>
+              <TimelineRowContent row={item} />
+            </AudioPreviewUnmountContext>
+          </div>
         </div>
-      </div>
-    </TimelineRowCtx>
-  );
-  const listExtraData = { identity: listIdentityKey, rowCount: rows.length, sharedState };
+      </TimelineRowCtx>
+    );
+  };
+  const listExtraData = {
+    identity: listIdentityKey,
+    rowCount: rows.length,
+    sharedState,
+    revertPreviewMessageId,
+  };
   const timelineListFooter = (
     <TimelineListFooter
       composerInset={anchoredEndSpace ? 0 : contentInsetEndAdjustment}
@@ -1579,6 +1789,14 @@ const ConversationTimeline = memo(function ConversationTimeline({
               atEnd={minimapAtEnd}
               stripMap={minimapStripMap}
               onWheel={forwardMinimapWheel}
+              onScrub={(item) => {
+                navigateTimeline();
+                void listRef.current?.scrollToIndex({
+                  index: item.rowIndex,
+                  animated: false,
+                  viewOffset: TIMELINE_MINIMAP_TARGET_OFFSET,
+                });
+              }}
               onSelect={(item) => {
                 navigateTimeline();
                 void listRef.current?.scrollToIndex({
@@ -1816,28 +2034,74 @@ function ContextCompactionTimelineRow({
         ? gt("{title} {before} → {after} tokens", { title: row.title, ...row.tokenCounts })
         : row.title
       : row.label;
+  const compactionRatio =
+    row.tokenCounts !== null
+      ? resolveCompactionRatio(row.tokenCounts.before, row.tokenCounts.after)
+      : null;
+  const afterMetric =
+    row.tokenCounts !== null ? parseCompactTokenMetric(row.tokenCounts.after) : null;
+  const afterDisplay =
+    row.tokenCounts === null ? null : afterMetric !== null ? (
+      <span className="font-medium text-foreground/90 tabular-nums">
+        <AnimatedNumber
+          value={afterMetric.displayValue}
+          format={(value) =>
+            `${afterMetric.decimals > 0 ? value.toFixed(afterMetric.decimals) : Math.round(value)}${afterMetric.suffix}`
+          }
+        />
+      </span>
+    ) : (
+      <span className="font-medium text-foreground/90 tabular-nums">{row.tokenCounts.after}</span>
+    );
   const content = (
-    <span className="flex min-w-0 items-center gap-1.5">
+    <span className="flex min-w-0 items-center gap-1.5 tabular-nums">
       {row.failed ? (
         <CircleAlertIcon aria-hidden="true" className="size-3 shrink-0" />
       ) : (
-        <Minimize2Icon aria-hidden="true" className="size-3" />
+        <Minimize2Icon aria-hidden="true" className="size-3 shrink-0" />
       )}
       {row.tokenCounts ? (
         <>
           {row.title ? (
             <T>
-              <Var>{row.title}</Var> <Var>{row.tokenCounts.before}</Var>
-              <ArrowRightIcon aria-hidden="true" className="size-3" />
-              <Var>{row.tokenCounts.after}</Var> tokens
+              <Var>{row.title}</Var>{" "}
+              <span className="opacity-75">
+                <Var>{row.tokenCounts.before}</Var>
+              </span>
+              <ArrowRightIcon
+                aria-hidden="true"
+                data-divider-flow-arrow="true"
+                className="size-3 shrink-0"
+              />
+              <Var>{afterDisplay}</Var> tokens
             </T>
           ) : (
             <T>
-              Context compacted <Var>{row.tokenCounts.before}</Var>
-              <ArrowRightIcon aria-hidden="true" className="size-3" />
-              <Var>{row.tokenCounts.after}</Var> tokens
+              Context compacted{" "}
+              <span className="opacity-75">
+                <Var>{row.tokenCounts.before}</Var>
+              </span>
+              <ArrowRightIcon
+                aria-hidden="true"
+                data-divider-flow-arrow="true"
+                className="size-3 shrink-0"
+              />
+              <Var>{afterDisplay}</Var> tokens
             </T>
           )}
+          {compactionRatio !== null ? (
+            <span
+              aria-hidden="true"
+              data-compaction-squeeze-bar="true"
+              className="ms-0.5 inline-flex h-1.5 w-9 shrink-0 overflow-hidden rounded-full bg-border/65"
+            >
+              <span
+                data-compaction-squeeze-fill="true"
+                style={{ "--compaction-ratio": compactionRatio } as React.CSSProperties}
+                className="block h-full w-full origin-left rounded-full bg-primary/80"
+              />
+            </span>
+          ) : null}
         </>
       ) : (
         label
@@ -1852,20 +2116,35 @@ function ContextCompactionTimelineRow({
     <div
       role="separator"
       aria-label={row.failure ? `${label}: ${row.failure}` : label}
+      data-system-divider={row.failed ? "danger" : "milestone"}
       className={cn(
-        "mx-auto flex w-full max-w-(--chat-content-max-width) items-center gap-3 py-1 text-xs",
+        "mx-auto flex w-full max-w-(--chat-content-max-width) items-center gap-2.5 py-2 text-2xs",
         row.failed ? "text-destructive" : "text-muted-foreground",
       )}
     >
-      <span className={cn("h-px flex-1", row.failed ? "bg-destructive/30" : "bg-border/70")} />
+      <span
+        aria-hidden="true"
+        data-divider-wing="start"
+        data-divider-tone={row.failed ? "danger" : "neutral"}
+        className="h-px flex-1"
+      />
       <span
         ref={row.active ? observeVisibleAnimation : undefined}
-        className="relative min-w-0 overflow-hidden"
+        data-system-divider-capsule={row.failed ? "danger" : "milestone"}
+        className={cn(
+          "relative min-w-0 overflow-hidden rounded-full border px-2.5 py-1 shadow-xs",
+          row.failed ? "border-destructive/30 bg-destructive/6" : "border-border/65 bg-card/85",
+        )}
       >
         {content}
         {row.active ? <ActivityShimmerOverlay>{content}</ActivityShimmerOverlay> : null}
       </span>
-      <span className={cn("h-px flex-1", row.failed ? "bg-destructive/30" : "bg-border/70")} />
+      <span
+        aria-hidden="true"
+        data-divider-wing="end"
+        data-divider-tone={row.failed ? "danger" : "neutral"}
+        className="h-px flex-1"
+      />
     </div>
   );
 }
@@ -1931,17 +2210,61 @@ function TurnFoldTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "turn-
   const ctx = use(TimelineRowCtx);
   const { turnFoldStatsByRunId } = use(TimelineRowActivityCtx);
   const stats = turnFoldStatsByRunId?.get(row.runId);
+  const rowRef = useRef<HTMLDivElement | null>(null);
   const { loading, error, toggle } = useDeferredWorkLoading(row, () =>
     ctx.onToggleTurnFold(row.runId),
   );
   const showSettledSummary =
     !row.expanded && stats !== undefined && (stats.toolCallCount > 0 || stats.changedFileCount > 0);
+  const turnLandingKey = turnFoldLandingKey(ctx.routeThreadKey, row.runId);
+  const isInterrupted = stats?.interrupted === true;
+
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- plays one-shot check-draw & decaying stat stagger strictly for turns observed active before landing; resets immediately on LegendList recycling
+  useLayoutEffect(() => {
+    const container = rowRef.current;
+    if (!container) return;
+    delete container.dataset.turnJustLanded;
+    if (isInterrupted || !claimTurnFoldLandingAnimation(turnLandingKey)) return;
+    if (prefersReducedMotionSetting()) return;
+
+    container.dataset.turnJustLanded = "true";
+    const timing = getSpringWaapiTiming("snappy");
+    const pills = Array.from(container.querySelectorAll<HTMLElement>("[data-turn-fold-pill]"));
+    const delays = [0, 38, 66];
+    const animations: Animation[] = [];
+    for (const [index, pill] of pills.entries()) {
+      if (typeof pill.animate !== "function") continue;
+      animations.push(
+        pill.animate(
+          [
+            { opacity: 0, transform: "translate3d(0, 4px, 0) scale(0.94)" },
+            { opacity: 1, transform: "translate3d(0, 0, 0) scale(1)" },
+          ],
+          {
+            duration: Math.min(260, timing.duration),
+            delay: delays[index] ?? 72,
+            easing: timing.easing,
+            fill: "backwards",
+          },
+        ),
+      );
+    }
+    const timer = window.setTimeout(() => {
+      delete container.dataset.turnJustLanded;
+    }, 380);
+    return () => {
+      window.clearTimeout(timer);
+      for (const animation of animations) animation.cancel();
+      delete container.dataset.turnJustLanded;
+    };
+  }, [isInterrupted, turnLandingKey]);
 
   return (
     <div
+      ref={rowRef}
       className="group/timeline-row border-b border-border/60 pb-2 pe-0.5 pt-1"
       data-turn-fold-row="true"
-      data-turn-fold-state={stats?.interrupted ? "interrupted" : "completed"}
+      data-turn-fold-state={isInterrupted ? "interrupted" : "completed"}
     >
       <div className="relative flex items-center gap-1.5">
         <button
@@ -1952,18 +2275,32 @@ function TurnFoldTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "turn-
           className="group/fold flex cursor-pointer select-none items-center gap-1 rounded-md px-1 text-sm leading-relaxed text-muted-foreground tabular-nums transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/70"
           aria-busy={loading}
         >
-          {stats?.interrupted ? (
+          {isInterrupted ? (
             <CircleDotIcon
               aria-hidden="true"
               data-turn-fold-icon="interrupted"
               className="size-3.5 shrink-0 text-warning-foreground/80 transition-colors group-hover/fold:text-warning-foreground"
             />
           ) : (
-            <CheckCircle2Icon
+            <svg
               aria-hidden="true"
+              viewBox="0 0 16 16"
+              fill="none"
               data-turn-fold-icon="completed"
+              data-turn-fold-check="true"
               className="size-3.5 shrink-0 text-success-foreground/80 transition-colors group-hover/fold:text-success-foreground"
-            />
+            >
+              <circle cx="8" cy="8" r="6.25" stroke="currentColor" strokeWidth="1.5" />
+              <path
+                d="M5.2 8.2l1.9 1.9 3.7-3.9"
+                stroke="currentColor"
+                strokeWidth="1.6"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                pathLength={100}
+                data-turn-fold-check-mark="true"
+              />
+            </svg>
           )}
           <span>
             {row.label}
@@ -1983,8 +2320,9 @@ function TurnFoldTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "turn-
           >
             {stats.toolCallCount > 0 ? (
               <span
+                data-turn-fold-pill="tools"
                 data-turn-fold-tools={stats.toolCallCount}
-                className="inline-flex items-center gap-1 rounded-full bg-muted/60 px-1.5 py-0.5 font-medium"
+                className="inline-flex items-center gap-1 rounded-full bg-muted/60 px-1.5 py-0.5 font-medium tabular-nums"
               >
                 <WrenchIcon className="size-2.5 shrink-0 opacity-75" />
                 <span>{stats.toolCallCount}</span>
@@ -1992,8 +2330,9 @@ function TurnFoldTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "turn-
             ) : null}
             {stats.changedFileCount > 0 ? (
               <span
+                data-turn-fold-pill="files"
                 data-turn-fold-files={stats.changedFileCount}
-                className="inline-flex items-center gap-1 rounded-full bg-muted/60 px-1.5 py-0.5 font-mono text-2xs"
+                className="inline-flex items-center gap-1 rounded-full bg-muted/60 px-1.5 py-0.5 font-mono text-2xs tabular-nums"
               >
                 {stats.additions > 0 || stats.deletions > 0 ? (
                   <>

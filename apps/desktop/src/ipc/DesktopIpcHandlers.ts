@@ -47,8 +47,12 @@ import {
   getSystemLocale,
   getPreferredSystemLanguages,
   getPrimaryPasteEnabled,
+  getLinuxPortalAppearance,
+  getLinuxWindowState,
   getWindowFullscreenState,
+  getWindowZoomState,
   openExternal,
+  performLinuxWindowControlAction,
   readMedia,
   restartAudioService,
   openSystemSettings,
@@ -61,6 +65,8 @@ import {
   pickProjectFavicon,
   pickThemeFiles,
   setTheme,
+  setTrayState,
+  setWindowZoom,
   syncHtmlFullscreen,
   showContextMenu,
 } from "./methods/window.ts";
@@ -110,6 +116,12 @@ export const installDesktopIpcHandlers = Effect.fn("desktop.ipc.installHandlers"
   yield* ipc.handleSync(getPreferredSystemLanguages);
   yield* ipc.handleSync(getPrimaryPasteEnabled);
   yield* ipc.handleSync(getWindowFullscreenState);
+  yield* ipc.handleSync(getLinuxWindowState);
+  yield* ipc.handle(performLinuxWindowControlAction);
+  yield* ipc.handleSync(getLinuxPortalAppearance);
+  yield* ipc.handleSync(getWindowZoomState);
+  yield* ipc.handle(setWindowZoom);
+  yield* ipc.handle(setTrayState);
   yield* ipc.handleSync(getLocalEnvironmentBootstraps);
   yield* ipc.handleSync(getLocalEnvironmentEnabled);
   yield* ipc.handle(setLocalEnvironmentEnabled);

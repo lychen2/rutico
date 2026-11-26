@@ -5,6 +5,7 @@ import { MessageCircle, Trash2 } from "lucide-react";
 import { useLayoutEffect, useRef, useState, type ReactNode } from "react";
 
 import { Button } from "~/components/ui/button";
+import { Kbd, KbdGroup } from "~/components/ui/kbd";
 import {
   PullRequestMarkdownTextarea,
   type PullRequestCompletionScope,
@@ -14,9 +15,17 @@ import {
   TextFieldSpeechControls,
   type TextFieldSpeech,
 } from "~/speech/useTextFieldSpeech";
+import { cn, isMacPlatform } from "~/lib/utils";
 import { textDirection } from "~/textDirection";
 
 import { isCommentSubmitShortcut } from "./commentSubmitShortcut";
+
+function formatCompactRangePill(rangeLabel: string): string {
+  const trimmed = rangeLabel.trim();
+  if (!trimmed) return "";
+  if (/^L\d/i.test(trimmed)) return trimmed;
+  return `L${trimmed.replace("-", "–")}`;
+}
 
 interface DiffCommentSecondaryAction {
   readonly label: string;
@@ -42,6 +51,9 @@ interface DiffCommentAnnotationProps {
   pending?: boolean;
   secondaryAction?: DiffCommentSecondaryAction;
   focusOnMount?: boolean;
+  /** Play a one-shot 260ms top-to-bottom accent settle beam right after committing a draft. */
+  justCommitted?: boolean;
+  onCommitPulseEnd?: () => void;
   /** Set only for pull request comments, where `@` completes the repository's users. */
   completionScope?: PullRequestCompletionScope | null;
 }
@@ -62,6 +74,8 @@ export function DiffCommentAnnotation({
   pending = false,
   secondaryAction,
   focusOnMount = true,
+  justCommitted = false,
+  onCommitPulseEnd,
   completionScope = null,
 }: DiffCommentAnnotationProps) {
   const gt = useGT();
@@ -70,6 +84,9 @@ export function DiffCommentAnnotation({
   const displayedText = kind === "draft" && !onTextChange ? localDraftText : text;
   const trimmedText = displayedText.trim();
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const compactRangePill = formatCompactRangePill(rangeLabel);
+  const submitModLabel =
+    typeof navigator !== "undefined" && isMacPlatform(navigator.platform) ? "⌘" : "Ctrl";
 
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- focuses the draft textarea on the next animation frame after mount
   useLayoutEffect(() => {
@@ -84,17 +101,29 @@ export function DiffCommentAnnotation({
     return (
       <div
         data-diff-comment-annotation
-        className="group/comment flex min-w-0 items-start gap-2.5 border-s-2 border-primary/55 bg-primary/[0.045] px-3 py-2.5 font-sans text-foreground selection:bg-primary selection:text-primary-foreground"
+        data-diff-comment-settled={justCommitted ? "true" : undefined}
+        onAnimationEnd={justCommitted ? onCommitPulseEnd : undefined}
+        className={cn(
+          "group/comment relative flex min-w-0 items-start gap-2.5 border-s-2 border-primary/55 bg-primary/[0.045] px-3 py-2.5 font-sans text-foreground selection:bg-primary selection:text-primary-foreground",
+          justCommitted && "diff-comment-card-settled",
+        )}
         contentEditable={false}
         onPointerDown={(event) => event.stopPropagation()}
       >
         <MessageCircle className="size-3.5 h-5 shrink-0 text-primary/70" aria-hidden="true" />
-        <p
-          className="min-w-0 flex-1 whitespace-pre-wrap text-sm leading-5"
-          dir={textDirection(displayedText)}
-        >
-          {displayedText}
-        </p>
+        <div className="min-w-0 flex-1 space-y-1">
+          {compactRangePill ? (
+            <span className="inline-flex items-center rounded-sm bg-primary/10 px-1.5 py-0.5 font-mono text-3xs tabular-nums text-primary/85">
+              {compactRangePill}
+            </span>
+          ) : null}
+          <p
+            className="min-w-0 whitespace-pre-wrap text-sm leading-5"
+            dir={textDirection(displayedText)}
+          >
+            {displayedText}
+          </p>
+        </div>
         {onDelete ? (
           <span className="-my-1 -mr-1 flex shrink-0 opacity-0 transition-opacity group-hover/comment:opacity-100 focus-within:opacity-100 max-sm:opacity-100">
             <Button
@@ -127,10 +156,18 @@ export function DiffCommentAnnotation({
   const renderDraft = (speech?: TextFieldSpeech) => (
     <div
       data-diff-comment-annotation
-      className="px-3 py-2 font-sans text-foreground caret-foreground selection:bg-primary selection:text-primary-foreground"
+      data-diff-comment-draft="true"
+      className="diff-comment-draft-bloom mx-2 my-1 rounded-lg border border-border/75 bg-card p-2.5 font-sans text-foreground shadow-sm caret-foreground selection:bg-primary selection:text-primary-foreground"
       contentEditable={false}
       onPointerDown={(event) => event.stopPropagation()}
     >
+      {compactRangePill ? (
+        <div className="mb-1.5 flex items-center gap-1.5">
+          <span className="inline-flex items-center rounded-sm border border-border/60 bg-muted/60 px-1.5 py-0.5 font-mono text-3xs tabular-nums text-muted-foreground">
+            {compactRangePill}
+          </span>
+        </div>
+      ) : null}
       <PullRequestMarkdownTextarea
         ref={textareaRef}
         completionScope={completionScope}
@@ -167,8 +204,14 @@ export function DiffCommentAnnotation({
         }}
       />
       <div className="mt-1.5 flex flex-wrap items-center gap-1">
-        <span className="mr-auto text-3xs text-muted-foreground/70">
-          <T>⌘/Ctrl Enter to send</T>
+        <span className="mr-auto inline-flex items-center gap-1.5 text-3xs text-muted-foreground/75">
+          <KbdGroup>
+            <Kbd>{submitModLabel}</Kbd>
+            <Kbd>Enter</Kbd>
+          </KbdGroup>
+          <span>
+            <T>to send</T>
+          </span>
         </span>
         {speech ? <TextFieldSpeechControls speech={speech} disabled={pending} /> : null}
         <Button variant="ghost-muted" size="xs" onClick={onCancel}>

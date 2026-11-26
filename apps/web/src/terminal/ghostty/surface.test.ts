@@ -346,6 +346,88 @@ describe("GhosttyTerminalSurface visibility", () => {
     expect(pasteFromClipboard).toHaveBeenCalledOnce();
   });
 
+  it("emits clipboard feedback on Linux middle-click primary paste and native copy", async () => {
+    vi.stubGlobal("navigator", { platform: "Linux x86_64" });
+    const harness = createHarness();
+    const onClipboardFeedback = vi.fn();
+    const surface = await harness.create({ onClipboardFeedback });
+    Object.assign(surface.input, { select() {} });
+    surface.write("echo linux");
+    surface.selectAll();
+
+    harness.pointer("pointerdown", 5, 4, {}, 1);
+    await Promise.resolve();
+    expect(onClipboardFeedback).toHaveBeenCalledWith("pasted");
+
+    surface.input.dispatchEvent(
+      Object.assign(new Event("copy", { cancelable: true }), {
+        clipboardData: { setData: vi.fn() },
+      }),
+    );
+    expect(onClipboardFeedback).toHaveBeenCalledWith("copied");
+  });
+
+  it("coalesces PTY onResize notifications while resizing and deduplicates identical integer cols x rows", async () => {
+    const harness = createHarness();
+    const onResize = vi.fn();
+    let resizing = false;
+    Object.assign(harness.mount, {
+      closest: (selector: string) =>
+        resizing && selector === "[data-terminal-resizing='true']" ? harness.mount : null,
+    });
+    const surface = await harness.create({ onResize });
+
+    vi.advanceTimersByTime(200);
+    expect(onResize).toHaveBeenCalledTimes(1);
+    const [initialCols, initialRows] = onResize.mock.calls[0]!;
+
+    // Mid-drag pixel changes stay local without flooding PTY onResize.
+    resizing = true;
+    harness.mount.clientWidth = 248;
+    harness.mount.clientHeight = 160;
+    harness.resize();
+    vi.advanceTimersByTime(300);
+    expect(onResize).toHaveBeenCalledTimes(1);
+
+    // Settling flushes exactly one PTY notification for the final integer grid.
+    resizing = false;
+    window.dispatchEvent(new Event("t3-terminal-resize-settled"));
+    expect(onResize).toHaveBeenCalledTimes(2);
+    const [settledCols, settledRows] = onResize.mock.calls[1]!;
+    expect(settledCols).toBeGreaterThan(initialCols);
+    expect(settledRows).toBeGreaterThan(initialRows);
+
+    // Sub-cell jitter keeping the same integer cols x rows is deduplicated.
+    harness.mount.clientWidth = 249;
+    surface.fit();
+    vi.advanceTimersByTime(200);
+    expect(onResize).toHaveBeenCalledTimes(2);
+  });
+
+  it("reports selection anchor geometry, hovered link anchors, and live output activity", async () => {
+    const harness = createHarness();
+    const onHoveredLinkChange = vi.fn();
+    const onOutputActivity = vi.fn();
+    const surface = await harness.create({ onHoveredLinkChange, onOutputActivity });
+
+    surface.write("https://t3.codes");
+    expect(onOutputActivity).toHaveBeenCalledOnce();
+    harness.flushFrame();
+
+    harness.pointer("pointermove", 8, 0);
+    expect(onHoveredLinkChange).toHaveBeenLastCalledWith(
+      expect.objectContaining({ text: "https://t3.codes" }),
+    );
+    harness.pointer("pointerleave", 8, 0);
+    expect(onHoveredLinkChange).toHaveBeenLastCalledWith(null);
+
+    surface.selectAll();
+    const rect = surface.getSelectionAnchorRect();
+    expect(rect).not.toBeNull();
+    expect(rect!.width).toBeGreaterThan(0);
+    expect(rect!.height).toBeGreaterThan(0);
+  });
+
   it("leaves modified history keys with alternate-screen applications", async () => {
     vi.stubGlobal("navigator", { platform: "Linux x86_64" });
     const harness = createHarness();

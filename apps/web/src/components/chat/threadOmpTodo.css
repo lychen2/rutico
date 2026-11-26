@@ -1,7 +1,6 @@
 [data-omp-todo] {
   position: relative;
-  display: flex;
-  justify-content: center;
+  min-height: 40px;
   min-width: 0;
   color: var(--foreground);
   --todo-surface: oklch(
@@ -9,62 +8,101 @@
   );
   font-size: 12px;
 }
-[data-omp-todo-bar] {
+[data-omp-todo-anchor] {
+  position: absolute;
+  inset-inline: 0;
+  bottom: 0;
+  z-index: 2;
   display: flex;
-  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+}
+[data-omp-todo-shell] {
+  pointer-events: auto;
+  display: flex;
+  flex-direction: column;
   width: fit-content;
-  max-width: 100%;
+  max-width: min(100%, 36rem);
+  min-width: 0;
+  overflow: hidden;
   border: 1px solid var(--border);
-  background: color-mix(in srgb, var(--todo-surface) var(--glass-opacity, 86%), transparent);
+  border-radius: 20px;
+  background: color-mix(in srgb, var(--todo-surface) var(--glass-opacity, 88%), transparent);
   -webkit-backdrop-filter: blur(min(var(--glass-blur, 10px), 10px))
     saturate(var(--glass-saturation, 1.1));
   backdrop-filter: blur(min(var(--glass-blur, 10px), 10px)) saturate(var(--glass-saturation, 1.1));
   box-shadow:
     inset 0 1px 0 rgb(255 255 255 / 45%),
     0 1px 2px rgb(0 0 0 / 5%);
-  min-width: 0;
-  gap: 9px;
-  padding: 11px 14px;
-  min-height: 40px;
-  border-radius: 999px;
-  text-align: start;
-  cursor: pointer;
   transition:
-    border-color 160ms ease-out,
-    background-color 160ms ease-out,
-    box-shadow 160ms ease-out,
-    scale 180ms var(--ease-spring-snappy);
+    border-color 180ms ease-out,
+    border-radius 260ms var(--spring-spatial, var(--ease-drawer)),
+    background-color 180ms ease-out,
+    box-shadow 240ms ease-out;
 
   @variant dark {
     box-shadow:
       inset 0 1px 0 rgb(255 255 255 / 8%),
       0 2px 8px rgb(0 0 0 / 28%);
   }
+}
+[data-omp-todo-shell][data-expanded="true"] {
+  width: min(100%, 36rem);
+  border-radius: 16px;
+  background: color-mix(in srgb, var(--todo-surface) 94%, transparent);
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 55%),
+    0 8px 24px -6px rgb(0 0 0 / 18%);
+
+  @variant dark {
+    box-shadow:
+      inset 0 1px 0 rgb(255 255 255 / 10%),
+      0 10px 28px -6px rgb(0 0 0 / 44%);
+  }
+}
+@supports (corner-shape: superellipse(1.25)) {
+  [data-omp-todo-shell] {
+    corner-shape: superellipse(1.25);
+  }
+}
+[data-omp-todo-bar] {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  min-width: 0;
+  gap: 9px;
+  padding: 10px 14px;
+  min-height: 38px;
+  border-radius: inherit;
+  text-align: start;
+  cursor: pointer;
+  transition:
+    background-color 150ms ease-out,
+    transform 160ms var(--spring-snappy, var(--ease-spring-snappy));
 
   @media (any-hover: hover) {
     &:hover {
-      border-color: color-mix(in srgb, var(--contrast-foreground) 18%, var(--border));
-      background: color-mix(
-        in srgb,
-        var(--todo-surface) calc(var(--glass-opacity, 82%) + 6%),
-        transparent
-      );
+      background: color-mix(in srgb, var(--foreground) 4.5%, transparent);
     }
   }
 
   &:active {
-    scale: 0.975;
+    transform: scale(0.985);
     transition-duration: 65ms;
     transition-timing-function: ease-out;
   }
 }
-[data-omp-todo][data-mode="run"] [data-omp-todo-bar] {
+[data-omp-todo-shell][data-expanded="true"] [data-omp-todo-bar] {
+  border-top: 1px solid color-mix(in srgb, var(--border) 65%, transparent);
+  border-radius: 0 0 15px 15px;
+}
+[data-omp-todo][data-mode="run"] [data-omp-todo-shell] {
   border-color: color-mix(in srgb, var(--info, var(--primary)) 34%, var(--border));
 }
-[data-omp-todo][data-mode="need"] [data-omp-todo-bar] {
+[data-omp-todo][data-mode="need"] [data-omp-todo-shell] {
   border-color: color-mix(in srgb, var(--warning) 42%, var(--border));
 }
-[data-omp-todo][data-mode="done"] [data-omp-todo-bar] {
+[data-omp-todo][data-mode="done"] [data-omp-todo-shell] {
   border-color: color-mix(in srgb, var(--success, #10b981) 36%, var(--border));
 }
 [data-omp-todo-title] {
@@ -181,51 +219,53 @@
   white-space: nowrap;
 }
 [data-omp-todo-body] {
-  position: absolute;
-  z-index: 1;
-  bottom: calc(100% + 6px);
-  width: min(100%, 36rem);
-  border-radius: 16px;
-  background: color-mix(in srgb, var(--todo-surface) 92%, transparent);
-  box-shadow:
-    inset 0 1px 0 rgb(255 255 255 / 55%),
-    0 0 0 1px var(--border),
-    0 6px 20px rgb(0 0 0 / 16%);
   display: grid;
   grid-template-rows: 0fr;
   opacity: 0;
-  transform: translateY(4px);
   visibility: hidden;
   transition:
-    grid-template-rows 240ms var(--ease-drawer),
+    grid-template-rows 260ms var(--spring-spatial, var(--ease-drawer)),
     opacity 180ms ease-out,
-    transform 240ms var(--ease-drawer),
-    visibility 240ms;
-
-  @variant dark {
-    box-shadow:
-      inset 0 1px 0 rgb(255 255 255 / 8%),
-      0 0 0 1px var(--border),
-      0 8px 24px rgb(0 0 0 / 40%);
-  }
+    visibility 260ms;
 }
 [data-omp-todo-body][data-expanded="true"] {
-  -webkit-backdrop-filter: blur(min(var(--glass-blur, 10px), 10px))
-    saturate(var(--glass-saturation, 1.1));
-  backdrop-filter: blur(min(var(--glass-blur, 10px), 10px)) saturate(var(--glass-saturation, 1.1));
   grid-template-rows: 1fr;
   opacity: 1;
-  transform: translateY(0);
   visibility: visible;
 }
 [data-omp-todo-body] > div {
   min-height: 0;
   overflow: hidden;
 }
-[data-omp-todo-list] {
+[data-omp-todo-list-wrap] {
+  position: relative;
   max-height: 45dvh;
   overflow-y: auto;
-  padding: 0 14px 10px;
+  overscroll-behavior: contain;
+}
+[data-omp-todo-active-rail] {
+  position: absolute;
+  top: 0;
+  left: 0;
+  pointer-events: none;
+  border-radius: 8px;
+  opacity: 0;
+  background: color-mix(in oklch, var(--primary) 5%, transparent);
+  transform-origin: top left;
+}
+[data-omp-todo-active-rail]::before {
+  content: "";
+  position: absolute;
+  inset-inline-start: -8px;
+  top: 4px;
+  bottom: 4px;
+  width: 2px;
+  border-radius: 999px;
+  background: var(--primary);
+}
+[data-omp-todo-list] {
+  position: relative;
+  padding: 4px 14px 10px;
 }
 [data-omp-todo-list] > li {
   position: relative;
@@ -309,14 +349,12 @@
   overflow-wrap: anywhere;
 }
 @supports not ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
-  [data-omp-todo-bar],
-  [data-omp-todo-body] {
+  [data-omp-todo-shell] {
     background: var(--todo-surface);
   }
 }
 @media (prefers-reduced-transparency: reduce) {
-  [data-omp-todo-bar],
-  [data-omp-todo-body] {
+  [data-omp-todo-shell] {
     -webkit-backdrop-filter: none;
     backdrop-filter: none;
     background: var(--todo-surface);
@@ -328,6 +366,7 @@
   }
 }
 @media (prefers-reduced-motion: reduce) {
+  [data-omp-todo-shell],
   [data-omp-todo-bar],
   [data-omp-todo-body],
   [data-omp-todo-chevron],
@@ -338,9 +377,6 @@
     transition: none;
   }
   [data-omp-todo-bar]:active {
-    scale: 1;
-  }
-  [data-omp-todo-body] {
     transform: none;
   }
 }

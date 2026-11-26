@@ -72,6 +72,7 @@ export type LinuxWindowSnapshot = {
   readonly png: Buffer;
   readonly window?: LinuxWindowMetadata;
   readonly feedback?: LinuxCaptureFeedback;
+  readonly backend?: LinuxCaptureBackend;
 };
 
 export type LinuxCaptureFeedback = {
@@ -390,11 +391,15 @@ export async function captureLinuxWindow(
   if (isHyprlandCaptureSession()) {
     if (!hyprlandPaths) throw new Error("Hyprland capture setup is unavailable in this build.");
     const { captureHyprlandWindow } = await import("./HyprlandSnapShot.ts");
-    return captureHyprlandWindow(hyprlandPaths, options);
+    const snapshot = await captureHyprlandWindow(hyprlandPaths, options);
+    return { ...snapshot, backend: "hyprland" };
   }
   const { niriSocketPath, captureNiriWindow } = await import("./NiriSnapShot.ts");
   const niri = niriSocketPath();
-  if (niri) return captureNiriWindow(niri);
+  if (niri) {
+    const snapshot = await captureNiriWindow(niri);
+    return { ...snapshot, backend: "niri" };
+  }
   const connection = new LinuxCaptureConnection();
   let retained = false;
   try {
@@ -402,14 +407,17 @@ export async function captureLinuxWindow(
       case "kde": {
         if (!kdePaths) throw new Error("KDE capture setup is unavailable in this build.");
         const { captureKdeWindow } = await import("./KdeSnapShot.ts");
-        return await captureKdeWindow(kdePaths, options);
+        const snapshot = await captureKdeWindow(kdePaths, options);
+        return { ...snapshot, backend: "kde" };
       }
-      case "screenshot-portal":
-        return await connection.capturePortal();
+      case "screenshot-portal": {
+        const snapshot = await connection.capturePortal();
+        return { ...snapshot, backend: "screenshot-portal" };
+      }
       case "gnome-extension": {
         const snapshot = await connection.captureExtension(appId, options);
         retained = snapshot.feedback !== undefined;
-        return snapshot;
+        return { ...snapshot, backend: "gnome-extension" };
       }
       case "picker":
         return undefined;

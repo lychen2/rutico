@@ -1217,7 +1217,7 @@ describe("standalone Mermaid previews", () => {
     await using screen = await render(<MermaidFilePreview text={`flowchart LR\nA ${arrow} B`} />);
     await vi.waitFor(
       () => {
-        const diagram = screen.container.querySelector("svg");
+        const diagram = screen.container.querySelector('[data-slot="mermaid-diagram-stage"] svg');
         expect(diagram?.querySelector("path")).not.toBeNull();
         expect(diagram?.textContent).toContain("A");
         expect(diagram?.textContent).toContain("B");

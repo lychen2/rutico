@@ -12,11 +12,15 @@ import {
 import {
   INITIAL_TERMINAL_OUTPUT_CURSOR,
   readTerminalOutputUpdate,
+  type TerminalBufferState,
   type TerminalOutputCursor,
   type TerminalOutputUpdate,
   type TerminalSessionState,
 } from "@t3tools/client-runtime/state/terminal";
 import {
+  CheckIcon,
+  CopyIcon,
+  MessageSquarePlusIcon,
   Plus,
   Square,
   SquareSplitHorizontal,
@@ -29,7 +33,9 @@ import {
   AuthFilesystemReadScope,
   AuthOrchestrationOperateScope,
   AuthTerminalOperateScope,
+  AuthTerminalReadScope,
   TerminalProcessChangedError,
+  type EnvironmentId,
   type TerminalWriteInput,
   type ContextMenuItem,
   type ProviderInstanceId,
@@ -62,7 +68,8 @@ import { PanelTabCloseButton } from "~/components/ui/panel-tab-close-button";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "~/components/ui/tooltip";
 import { stackedThreadToast, toastManager } from "~/components/ui/toast";
 import { readTextFromClipboard, writeTextToClipboard } from "~/hooks/useCopyToClipboard";
-import { cn } from "~/lib/utils";
+import { cn, isMacPlatform } from "~/lib/utils";
+import { observeVisibleAnimation } from "~/lib/visibleAnimation";
 import { type TerminalContextSelection } from "~/lib/terminalContext";
 import {
   GhosttyTerminalSurface,
@@ -103,6 +110,12 @@ import { terminalEnvironment } from "../state/terminal";
 import { useEnvironmentScope } from "../state/session";
 import { openTerminalLinkInPreview } from "./preview/openTerminalLinkInPreview";
 import { terminalInputWriter } from "./terminal/terminalInputWriter";
+import {
+  nextTerminalDrawerDoubleClickHeight,
+  resolveTerminalDrawerDragHeight,
+  type TerminalDrawerDetentKind,
+} from "./terminal/terminalDrawerDetents";
+import { prefersReducedMotion } from "~/lib/motion/springs";
 import { useAtomCommand } from "../state/use-atom-command";
 import { preventTerminalCloseShortcut } from "../lib/terminalCloseShortcut";
 import { observeResize } from "../lib/observeResize";
@@ -142,8 +155,6 @@ function resolveTerminalDrawerMaxHeight(input: DrawerLayout): number {
     Math.max(0, input.chatColumnHeight - (input.headerHeight ?? 0) - (input.composerHeight ?? 0)),
   );
 }
-
-const DRAG_HEIGHT_PROPERTY = "--terminal-drawer-drag-height";
 
 function clampDrawerHeight(height: number, maxHeight: number): number {
   const safeHeight = Number.isFinite(height) ? height : DEFAULT_THREAD_TERMINAL_HEIGHT;
@@ -412,6 +423,21 @@ export function terminalThemeFromApp(mountElement?: HTMLElement | null): Ghostty
   };
 }
 
+/** Advances a background observer's cursor; only live appended output (never snapshot replay or clear) marks activity. */
+export function advanceBackgroundTerminalOutputCursor(
+  buffer: Pick<TerminalBufferState, "output" | "version">,
+  cursor: TerminalOutputCursor,
+): { readonly cursor: TerminalOutputCursor; readonly hasLiveOutput: boolean } {
+  if (buffer.version === 0) return { cursor, hasLiveOutput: false };
+  const update = readTerminalOutputUpdate(buffer.output, cursor);
+  if (update.type !== "append") {
+    return { cursor: update.cursor, hasLiveOutput: false };
+  }
+  const hasLiveOutput =
+    update.data.length > 0 && buffer.output.nextOffset > buffer.output.textStartOffset;
+  return { cursor: update.cursor, hasLiveOutput };
+}
+
 function terminalSelectionLineRange(position: { start: { y: number }; end: { y: number } }): {
   lineStart: number;
   lineEnd: number;
@@ -420,6 +446,39 @@ function terminalSelectionLineRange(position: { start: { y: number }; end: { y: 
   return {
     lineStart,
     lineEnd: Math.max(lineStart, position.end.y + 1),
+  };
+}
+
+function readTerminalSelectionAction(
+  activeTerminal: Pick<
+    GhosttyTerminalSurface,
+    "hasSelection" | "getSelection" | "getSelectionPosition"
+  > | null,
+  terminalId: string,
+  terminalLabel: string,
+): {
+  clipboardText: string;
+  selection: TerminalContextSelection;
+} | null {
+  if (!activeTerminal || !activeTerminal.hasSelection()) {
+    return null;
+  }
+  const selectionText = activeTerminal.getSelection();
+  const selectionPosition = activeTerminal.getSelectionPosition();
+  const normalizedText = selectionText.replace(/\r\n/g, "\n").replace(/^\n+|\n+$/g, "");
+  if (!selectionPosition || normalizedText.length === 0) {
+    return null;
+  }
+  const { lineStart, lineEnd } = terminalSelectionLineRange(selectionPosition);
+  return {
+    clipboardText: selectionText,
+    selection: {
+      terminalId,
+      terminalLabel,
+      lineStart,
+      lineEnd,
+      text: normalizedText,
+    },
   };
 }
 
@@ -501,6 +560,7 @@ interface TerminalViewportProps {
   providerInstanceId?: ProviderInstanceId;
   onSessionExited: () => void;
   onAddTerminalContext?: (selection: TerminalContextSelection) => void;
+  onOutputActivity?: () => void;
   /** Focuses the viewport when it mounts; otherwise focus arrives through `focusTerminal`. */
   autoFocus?: boolean;
   visible: boolean;
@@ -537,10 +597,12 @@ function TerminalSessionViewport({
   providerInstanceId,
   onSessionExited,
   onAddTerminalContext,
+  onOutputActivity,
   autoFocus = false,
   visible,
   keybindings,
 }: TerminalViewportProps) {
+  const gt = useGT();
   const containerRef = useRef<HTMLDivElement>(null);
   const autoFocusedRef = useRef(false);
   const terminalRef = useRef<GhosttyTerminalSurface | null>(null);
@@ -553,6 +615,43 @@ function TerminalSessionViewport({
   const canOpenHostEditor = useEnvironmentScope(environmentId, AuthOrchestrationOperateScope);
   const canReadFilesystem = useEnvironmentScope(environmentId, AuthFilesystemReadScope);
   const [hoveredLink, setHoveredLink] = useState<{ text: string; fallback?: string } | null>(null);
+  const [hoveredLinkPill, setHoveredLinkPill] = useState<{
+    readonly text: string;
+    readonly left: number;
+    readonly top: number;
+  } | null>(null);
+  const [selectionPill, setSelectionPill] = useState<{
+    readonly left: number;
+    readonly top: number;
+    readonly clipboardText: string;
+  } | null>(null);
+  const [clipboardFeedback, setClipboardFeedback] = useState<{
+    readonly kind: "copied" | "pasted";
+    readonly seq: number;
+  } | null>(null);
+  const clipboardFeedbackTimerRef = useRef<number | null>(null);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Clears the terminal clipboard micro-pulse timer on unmount.
+  useEffect(
+    () => () => {
+      if (clipboardFeedbackTimerRef.current !== null) {
+        window.clearTimeout(clipboardFeedbackTimerRef.current);
+      }
+    },
+    [],
+  );
+  const triggerClipboardFeedback = useEffectEvent((kind: "copied" | "pasted") => {
+    setClipboardFeedback((previous) => ({ kind, seq: (previous?.seq ?? 0) + 1 }));
+    if (clipboardFeedbackTimerRef.current !== null) {
+      window.clearTimeout(clipboardFeedbackTimerRef.current);
+    }
+    clipboardFeedbackTimerRef.current = window.setTimeout(() => {
+      setClipboardFeedback(null);
+      clipboardFeedbackTimerRef.current = null;
+    }, 900);
+  });
+  const notifyOutputActivity = useEffectEvent(() => {
+    onOutputActivity?.();
+  });
   const metadataThreadRef = useContext(FileMetadataThreadContext);
   const serverConfig = useAtomValue(serverEnvironment.configValueAtom(environmentId));
   const hostname = serverConfig?.hostname;
@@ -766,7 +865,7 @@ function TerminalSessionViewport({
         onBinary: (data) => void sendTerminalInput(data, m(msg("Terminal write failed")), "binary"),
         onReply: (data) => void sendTerminalInput(data, m(msg("Terminal write failed")), "reply"),
         onResize: (cols, rows) => void resizeTerminal(cols, rows),
-        onSelectionChange: () => {},
+        onSelectionChange: () => syncSelectionPill(),
         beforeKey: (event) => handleBeforeKey(event),
         onLinkActivate: (text, event) => handleLinkActivate(text, event),
         canActivateLink: (text) => canActivateTerminalLink(text),
@@ -777,6 +876,20 @@ function TerminalSessionViewport({
               ? { text, ...(fallback === undefined ? {} : { fallback }) }
               : null,
           ),
+        onHoveredLinkChange: (info) => {
+          if (!info) {
+            setHoveredLinkPill(null);
+            return;
+          }
+          const maxLeft = Math.max(8, mount.clientWidth - 150);
+          setHoveredLinkPill({
+            text: info.text,
+            left: Math.max(8, Math.min(maxLeft, info.left)),
+            top: info.top >= 32 ? info.top - 26 : info.top + 22,
+          });
+        },
+        onOutputActivity: () => notifyOutputActivity(),
+        onClipboardFeedback: (kind) => triggerClipboardFeedback(kind),
         // Surface listeners start before WASM loading finishes and the terminal handler exists.
         onContextMenu: (event) => {
           if (terminalRef.current) void showTerminalContextMenu(event);
@@ -846,38 +959,49 @@ function TerminalSessionViewport({
 
       const clearSelectionAction = () => {
         selectionActionRequestIdRef.current += 1;
+        setSelectionPill(null);
       };
       setupCleanups.push(clearSelectionAction);
 
-      const readSelectionAction = (): {
-        clipboardText: string;
-        selection: TerminalContextSelection;
-      } | null => {
+      const dismissSelectionPill = () => setSelectionPill(null);
+      mount.addEventListener("wheel", dismissSelectionPill, { passive: true });
+      terminal.input.addEventListener("keydown", dismissSelectionPill);
+      setupCleanups.push(() => {
+        mount.removeEventListener("wheel", dismissSelectionPill);
+        terminal.input.removeEventListener("keydown", dismissSelectionPill);
+      });
+
+      const readSelectionAction = () =>
+        readTerminalSelectionAction(terminalRef.current, terminalId, readTerminalLabel());
+
+      function syncSelectionPill() {
         const activeTerminal = terminalRef.current;
-        if (!activeTerminal || !activeTerminal.hasSelection()) {
-          return null;
+        if (
+          !activeTerminal ||
+          activeTerminal.isPointerSelecting() ||
+          !activeTerminal.hasSelection()
+        ) {
+          setSelectionPill(null);
+          return;
         }
-        const selectionText = activeTerminal.getSelection();
-        const selectionPosition = activeTerminal.getSelectionPosition();
-        const normalizedText = selectionText.replace(/\r\n/g, "\n").replace(/^\n+|\n+$/g, "");
-        if (!selectionPosition || normalizedText.length === 0) {
-          return null;
+        const action = readSelectionAction();
+        const anchor = activeTerminal.getSelectionAnchorRect();
+        if (!action || !anchor) {
+          setSelectionPill(null);
+          return;
         }
-        const { lineStart, lineEnd } = terminalSelectionLineRange(selectionPosition);
-        return {
-          clipboardText: selectionText,
-          selection: {
-            terminalId,
-            terminalLabel: readTerminalLabel(),
-            lineStart,
-            lineEnd,
-            text: normalizedText,
-          },
-        };
-      };
+        const maxLeft = Math.max(8, (mount?.clientWidth ?? 0) - 220);
+        const left = Math.max(8, Math.min(maxLeft, anchor.left));
+        const top = anchor.top >= 40 ? anchor.top - 34 : anchor.top + anchor.height + 6;
+        setSelectionPill({
+          left,
+          top,
+          clipboardText: action.clipboardText,
+        });
+      }
 
       const addSelectionToChat = (clipboardText: string) => {
-        // Output keeps moving the selected rows while a menu is open, so take
+        // Output keeps moving the selected rows while a menu or pill is open, so take
         // the line numbers now, and only if the same text is still selected.
         const current = readSelectionAction();
         if (current?.clipboardText !== clipboardText) return;
@@ -909,6 +1033,7 @@ function TerminalSessionViewport({
             ),
             failureMessage: msg("Failed to copy terminal selection to the clipboard."),
           });
+          triggerClipboardFeedback("copied");
         } catch (error) {
           reportIfCurrent(requestId, error, m(msg("Unable to copy terminal selection")));
         }
@@ -1300,12 +1425,102 @@ function TerminalSessionViewport({
       containerRef.current = null;
     };
   };
+  const isMac = typeof navigator !== "undefined" && isMacPlatform(navigator.platform);
+  const copyShortcutHint = isMac ? "⌘C" : "Ctrl+Shift+C";
+  const linkOpenHint = isMac ? gt("⌘+Click · Open") : gt("Ctrl+Click · Open");
+
   return (
-    <div
-      ref={attachContainer}
-      tabIndex={-1}
-      className="relative h-full w-full overflow-hidden bg-(--terminal-background)"
-    />
+    <div className="relative h-full w-full overflow-hidden bg-(--terminal-background)">
+      <div ref={attachContainer} tabIndex={-1} className="relative h-full w-full overflow-hidden" />
+      {visible && selectionPill ? (
+        <div
+          role="toolbar"
+          aria-label={gt("Terminal selection actions")}
+          className="terminal-selection-pill surface-optical-chrome surface-elevated-rim absolute z-20 flex items-center gap-1 rounded-md px-1 py-0.5 text-2xs text-foreground"
+          style={{ left: selectionPill.left, top: selectionPill.top }}
+          onPointerDown={(event) => event.stopPropagation()}
+        >
+          {onAddTerminalContext ? (
+            <button
+              type="button"
+              onClick={() => {
+                const clipboardText = selectionPill.clipboardText;
+                setSelectionPill(null);
+                // Re-read the live selection at click time so appended lines update line numbers
+                // and changed text is never submitted as stale content.
+                const current = readTerminalSelectionAction(
+                  terminalRef.current,
+                  terminalId,
+                  terminalLabel,
+                );
+                if (current?.clipboardText !== clipboardText) return;
+                onAddTerminalContext(current.selection);
+                terminalRef.current?.clearSelection();
+                terminalRef.current?.focus();
+              }}
+              className="inline-flex cursor-pointer items-center gap-1 rounded-sm px-1.5 py-0.5 font-medium text-foreground transition-colors duration-120 hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
+            >
+              <MessageSquarePlusIcon className="size-3 text-primary" />
+              <T>Add to chat</T>
+            </button>
+          ) : null}
+          {onAddTerminalContext ? (
+            <span aria-hidden="true" className="h-3 w-px bg-border/70" />
+          ) : null}
+          <button
+            type="button"
+            onClick={() => {
+              const text = selectionPill.clipboardText;
+              setSelectionPill(null);
+              void writeTextToClipboard(text, {
+                target: "terminal selection",
+                unavailableMessage: msg(
+                  "Clipboard API is unavailable while copying terminal selection.",
+                ),
+                failureMessage: msg("Failed to copy terminal selection to the clipboard."),
+              })
+                .then(() => triggerClipboardFeedback("copied"))
+                .catch(() => {});
+              terminalRef.current?.focus();
+            }}
+            className="inline-flex cursor-pointer items-center gap-1 rounded-sm px-1.5 py-0.5 text-muted-foreground transition-colors duration-120 hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
+          >
+            <CopyIcon className="size-3" />
+            <T>Copy</T>
+            <span className="font-mono text-3xs text-muted-foreground/80">{copyShortcutHint}</span>
+          </button>
+        </div>
+      ) : null}
+      {visible && hoveredLinkPill && !selectionPill ? (
+        <div
+          aria-hidden="true"
+          className="terminal-link-pill surface-optical-chrome surface-elevated-rim pointer-events-none absolute z-20 rounded-md px-2 py-0.5 font-mono text-3xs text-foreground"
+          style={{ left: hoveredLinkPill.left, top: hoveredLinkPill.top }}
+        >
+          {linkOpenHint}
+        </div>
+      ) : null}
+      {visible && clipboardFeedback ? (
+        <>
+          {clipboardFeedback.kind === "copied" ? (
+            <div
+              key={`flash-${clipboardFeedback.seq}`}
+              aria-hidden="true"
+              className="terminal-copy-flash pointer-events-none absolute inset-0 z-10"
+            />
+          ) : null}
+          <div
+            key={`badge-${clipboardFeedback.seq}`}
+            role="status"
+            aria-live="polite"
+            className="terminal-clipboard-pulse surface-optical-chrome surface-elevated-rim pointer-events-none absolute right-2.5 bottom-2.5 z-20 inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-2xs font-medium text-foreground"
+          >
+            <CheckIcon className="size-3 text-success" />
+            <span>{clipboardFeedback.kind === "copied" ? gt("Copied") : gt("Pasted")}</span>
+          </div>
+        </>
+      ) : null}
+    </div>
   );
 }
 
@@ -1334,6 +1549,8 @@ interface ThreadTerminalDrawerProps {
   onActiveTerminalChange: (terminalId: string) => void;
   onCloseTerminal: (terminalId: string, threadRef?: ScopedThreadRef) => void;
   onHeightChange: (height: number) => void;
+  onCollapseDrawer?: () => void;
+  onPaneWeightsChange?: (groupId: string, weights: number[] | undefined) => void;
   onAddTerminalContext: (selection: TerminalContextSelection) => void;
   keybindings: ResolvedKeybindingsConfig;
   terminalLabelsById?: ReadonlyMap<string, string>;
@@ -1386,14 +1603,41 @@ function TerminalActionButton({
   );
 }
 
+const MIN_SPLIT_PANE_WEIGHT = 0.15;
+const SPLIT_EQUAL_SNAP_EPSILON = 0.025;
+
+function resolveSplitPaneWeights(
+  paneCount: number,
+  weights: readonly number[] | undefined,
+): number[] {
+  if (paneCount <= 0) return [];
+  if (weights && weights.length === paneCount) {
+    const sum = weights.reduce(
+      (total, value) => total + (Number.isFinite(value) && value > 0 ? value : 0),
+      0,
+    );
+    if (sum > 0) return weights.map((value) => value / sum);
+  }
+  const share = 1 / paneCount;
+  return Array.from({ length: paneCount }, () => share);
+}
+
+function buildSplitGridTemplate(weights: readonly number[]): string {
+  return weights.map((weight) => `minmax(0, ${weight.toFixed(4)}fr)`).join(" ");
+}
+
 function TerminalSplitPanes({
+  groupId,
   terminalIds,
   splitDirection,
+  paneWeights,
   activeTerminalId,
   terminalLabelById,
   resolveLaunchLocation,
   onActiveTerminalChange,
   onCloseTerminal,
+  onPaneWeightsChange,
+  onTerminalOutputActivity,
   advancedTypography,
   threadRef,
   threadId,
@@ -1401,13 +1645,17 @@ function TerminalSplitPanes({
   visible,
   keybindings,
 }: {
+  groupId: string;
   terminalIds: readonly string[];
   splitDirection: "horizontal" | "vertical";
+  paneWeights?: readonly number[] | undefined;
   activeTerminalId: string;
   terminalLabelById: ReadonlyMap<string, string>;
   resolveLaunchLocation: (terminalId: string) => TerminalLaunchLocation;
   onActiveTerminalChange: (terminalId: string) => void;
   onCloseTerminal: (terminalId: string, threadRef?: ScopedThreadRef) => void;
+  onPaneWeightsChange?: ((groupId: string, weights: number[] | undefined) => void) | undefined;
+  onTerminalOutputActivity?: ((terminalId: string) => void) | undefined;
   advancedTypography: boolean;
   threadRef: ScopedThreadRef;
   threadId: ThreadId;
@@ -1416,28 +1664,111 @@ function TerminalSplitPanes({
   keybindings: ResolvedKeybindingsConfig;
 }) {
   const gt = useGT();
+  const gridRef = useRef<HTMLDivElement>(null);
+  const splitDragRef = useRef<{
+    pointerId: number;
+    dividerIndex: number;
+    startPos: number;
+    axisSize: number;
+    startWeights: number[];
+    liveWeights: number[];
+    dividerEl: HTMLDivElement;
+  } | null>(null);
   const isSplit = terminalIds.length > 1;
+  const resolvedWeights = resolveSplitPaneWeights(terminalIds.length, paneWeights);
+  const gridTemplate = buildSplitGridTemplate(resolvedWeights);
+
+  const handleDividerPointerDown = (
+    dividerIndex: number,
+    event: ReactPointerEvent<HTMLDivElement>,
+  ) => {
+    if (event.button !== 0 || !isSplit) return;
+    const grid = gridRef.current;
+    if (!grid) return;
+    const axisSize = splitDirection === "vertical" ? grid.clientHeight : grid.clientWidth;
+    if (axisSize <= 0) return;
+    event.preventDefault();
+    event.stopPropagation();
+    event.currentTarget.setPointerCapture(event.pointerId);
+    grid.setAttribute("data-terminal-resizing", "true");
+    event.currentTarget.setAttribute("data-dragging", "true");
+    splitDragRef.current = {
+      pointerId: event.pointerId,
+      dividerIndex,
+      startPos: splitDirection === "vertical" ? event.clientY : event.clientX,
+      axisSize,
+      startWeights: [...resolvedWeights],
+      liveWeights: [...resolvedWeights],
+      dividerEl: event.currentTarget,
+    };
+  };
+
+  const handleDividerPointerMove = (event: ReactPointerEvent<HTMLDivElement>) => {
+    const drag = splitDragRef.current;
+    const grid = gridRef.current;
+    if (!drag || !grid || drag.pointerId !== event.pointerId) return;
+    event.preventDefault();
+    const pos = splitDirection === "vertical" ? event.clientY : event.clientX;
+    const deltaRatio = (pos - drag.startPos) / drag.axisSize;
+    const leftIdx = drag.dividerIndex - 1;
+    const rightIdx = drag.dividerIndex;
+    const pairSum = (drag.startWeights[leftIdx] ?? 0) + (drag.startWeights[rightIdx] ?? 0);
+    const minShare = Math.min(MIN_SPLIT_PANE_WEIGHT, pairSum / 2);
+    let nextLeft = Math.max(
+      minShare,
+      Math.min(pairSum - minShare, (drag.startWeights[leftIdx] ?? 0) + deltaRatio),
+    );
+    const midpoint = pairSum / 2;
+    const snapped = !event.altKey && Math.abs(nextLeft - midpoint) <= SPLIT_EQUAL_SNAP_EPSILON;
+    if (snapped) nextLeft = midpoint;
+    const nextRight = pairSum - nextLeft;
+    const nextWeights = [...drag.startWeights];
+    nextWeights[leftIdx] = nextLeft;
+    nextWeights[rightIdx] = nextRight;
+    drag.liveWeights = nextWeights;
+    const template = buildSplitGridTemplate(nextWeights);
+    if (splitDirection === "vertical") {
+      grid.style.gridTemplateRows = template;
+    } else {
+      grid.style.gridTemplateColumns = template;
+    }
+    if (snapped) drag.dividerEl.setAttribute("data-snapped", "true");
+    else drag.dividerEl.removeAttribute("data-snapped");
+  };
+
+  const handleDividerPointerEnd = (event: ReactPointerEvent<HTMLDivElement>) => {
+    const drag = splitDragRef.current;
+    if (!drag || drag.pointerId !== event.pointerId) return;
+    splitDragRef.current = null;
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+    drag.dividerEl.removeAttribute("data-dragging");
+    drag.dividerEl.removeAttribute("data-snapped");
+    const grid = gridRef.current;
+    grid?.removeAttribute("data-terminal-resizing");
+    window.dispatchEvent(new Event("t3-terminal-resize-settled"));
+    onPaneWeightsChange?.(groupId, drag.liveWeights);
+  };
+
   return (
     <div
+      ref={gridRef}
       className="grid h-full w-full min-w-0 gap-0 overflow-hidden"
       style={
         splitDirection === "vertical"
-          ? {
-              gridTemplateRows: `repeat(${terminalIds.length}, minmax(0, 1fr))`,
-            }
-          : {
-              gridTemplateColumns: `repeat(${terminalIds.length}, minmax(0, 1fr))`,
-            }
+          ? { gridTemplateRows: gridTemplate }
+          : { gridTemplateColumns: gridTemplate }
       }
     >
-      {terminalIds.map((terminalId) => {
+      {terminalIds.map((terminalId, index) => {
         const terminalLaunchLocation = resolveLaunchLocation(terminalId);
         const isActive = terminalId === activeTerminalId;
         return (
           <div
             key={terminalId}
             className={cn(
-              "relative min-h-0 min-w-0",
+              "terminal-split-pane relative min-h-0 min-w-0",
               splitDirection === "vertical"
                 ? "border-t first:border-t-0"
                 : "border-l first:border-l-0",
@@ -1449,16 +1780,54 @@ function TerminalSplitPanes({
               }
             }}
           >
+            {isSplit && index > 0 && (
+              <div
+                role="separator"
+                aria-orientation={splitDirection === "vertical" ? "horizontal" : "vertical"}
+                aria-label={gt("Resize terminal split")}
+                className={cn(
+                  "terminal-split-divider group/split-divider absolute z-20 touch-none",
+                  splitDirection === "vertical"
+                    ? "inset-x-0 -top-1 h-2 cursor-row-resize"
+                    : "inset-y-0 -left-1 w-2 cursor-col-resize",
+                )}
+                onPointerDown={(event) => handleDividerPointerDown(index, event)}
+                onPointerMove={handleDividerPointerMove}
+                onPointerUp={handleDividerPointerEnd}
+                onPointerCancel={handleDividerPointerEnd}
+                onLostPointerCapture={handleDividerPointerEnd}
+                onDoubleClick={(event) => {
+                  event.stopPropagation();
+                  onPaneWeightsChange?.(groupId, undefined);
+                  window.dispatchEvent(new Event("t3-terminal-resize-settled"));
+                }}
+              >
+                <span
+                  aria-hidden="true"
+                  className={cn(
+                    "terminal-split-divider-bar pointer-events-none absolute bg-transparent transition-colors duration-120 ease-out group-hover/split-divider:bg-primary/60 motion-reduce:transition-none",
+                    splitDirection === "vertical"
+                      ? "inset-x-0 top-1 h-0.5"
+                      : "inset-y-0 left-1 w-0.5",
+                  )}
+                />
+              </div>
+            )}
             {isSplit && (
               <span
                 aria-hidden="true"
                 className={cn(
                   "pointer-events-none absolute inset-x-0 top-0 z-10 h-0.5 transition-colors duration-150 ease-out motion-reduce:transition-none",
-                  isActive ? "bg-primary/80" : "bg-transparent",
+                  isActive ? "bg-primary/90" : "bg-transparent",
                 )}
               />
             )}
-            <div className="h-full">
+            <div
+              className={cn(
+                "h-full transition-opacity duration-150 ease-out motion-reduce:transition-none",
+                isSplit && !isActive && "opacity-85",
+              )}
+            >
               <TerminalViewport
                 advancedTypography={advancedTypography}
                 threadRef={threadRef}
@@ -1474,6 +1843,7 @@ function TerminalSplitPanes({
                   : {})}
                 onSessionExited={() => onCloseTerminal(terminalId, threadRef)}
                 onAddTerminalContext={onAddTerminalContext}
+                onOutputActivity={() => onTerminalOutputActivity?.(terminalId)}
                 visible={visible}
                 keybindings={keybindings}
               />
@@ -1488,6 +1858,8 @@ function TerminalSplitPanes({
 function TerminalSidebarGroup({
   terminalGroup,
   activeTerminalId,
+  streamingTerminalIds,
+  unreadTerminalIds,
   showHeader,
   terminalLabelById,
   closeShortcutLabel,
@@ -1497,6 +1869,8 @@ function TerminalSidebarGroup({
 }: {
   terminalGroup: ThreadTerminalGroup;
   activeTerminalId: string;
+  streamingTerminalIds: ReadonlySet<string>;
+  unreadTerminalIds: ReadonlySet<string>;
   showHeader: boolean;
   terminalLabelById: ReadonlyMap<string, string>;
   closeShortcutLabel: string | undefined;
@@ -1544,6 +1918,8 @@ function TerminalSidebarGroup({
       <div className="flex flex-col gap-0.5">
         {terminalGroup.terminalIds.map((terminalId) => {
           const isActive = terminalId === activeTerminalId;
+          const isStreaming = streamingTerminalIds.has(terminalId);
+          const isUnread = !isActive && unreadTerminalIds.has(terminalId);
           const terminalLabel = terminalLabelById.get(terminalId) ?? gt("Terminal");
           const closeTerminalLabel =
             isActive && closeShortcutLabel
@@ -1578,7 +1954,19 @@ function TerminalSidebarGroup({
                 className="flex min-w-0 flex-1 cursor-pointer items-center gap-1 text-left"
                 onClick={() => onActiveTerminalChange(terminalId)}
               >
-                <span className="truncate">{terminalLabel}</span>
+                <span className="min-w-0 flex-1 truncate">{terminalLabel}</span>
+                {isStreaming ? (
+                  <span
+                    ref={observeVisibleAnimation}
+                    aria-label={gt("Terminal active")}
+                    className="terminal-activity-pulse size-1.5 shrink-0 rounded-full bg-primary"
+                  />
+                ) : isUnread ? (
+                  <span
+                    aria-label={gt("Unread terminal output")}
+                    className="size-1.5 shrink-0 rounded-full bg-primary/65"
+                  />
+                ) : null}
               </button>
             </div>
           );
@@ -1586,6 +1974,45 @@ function TerminalSidebarGroup({
       </div>
     </div>
   );
+}
+
+function BackgroundTerminalOutputObserver({
+  environmentId,
+  threadId,
+  terminalId,
+  onOutputActivity,
+}: {
+  readonly environmentId: EnvironmentId;
+  readonly threadId: ThreadId;
+  readonly terminalId: string;
+  readonly onOutputActivity: (terminalId: string) => void;
+}) {
+  const notifyOutputActivity = useEffectEvent(() => {
+    onOutputActivity(terminalId);
+  });
+  const observeAtom = terminalEnvironment.observe({
+    environmentId,
+    input: { threadId, terminalId },
+  });
+  // Read-only observe streams follow live output for unmounted groups without taking PTY size ownership.
+  useAtomMount(observeAtom);
+
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- subscribes imperatively to background terminal output so unmounted groups report live activity without re-rendering React
+  useEffect(() => {
+    let cursor = INITIAL_TERMINAL_OUTPUT_CURSOR;
+    const handleResult = (result: AsyncResult.AsyncResult<TerminalBufferState, unknown>) => {
+      if (!AsyncResult.isSuccess(result)) return;
+      const step = advanceBackgroundTerminalOutputCursor(result.value, cursor);
+      cursor = step.cursor;
+      if (step.hasLiveOutput) {
+        notifyOutputActivity();
+      }
+    };
+    handleResult(appAtomRegistry.get(observeAtom));
+    return appAtomRegistry.subscribe(observeAtom, handleResult);
+  }, [observeAtom]);
+
+  return null;
 }
 
 export default function ThreadTerminalDrawer({
@@ -1612,6 +2039,8 @@ export default function ThreadTerminalDrawer({
   onActiveTerminalChange,
   onCloseTerminal,
   onHeightChange,
+  onCollapseDrawer,
+  onPaneWeightsChange,
   onAddTerminalContext,
   keybindings,
   terminalLabelsById,
@@ -1619,6 +2048,7 @@ export default function ThreadTerminalDrawer({
 }: ThreadTerminalDrawerProps) {
   const gt = useGT();
   const messages = useMessages();
+  const canReadTerminal = useEnvironmentScope(threadRef.environmentId, AuthTerminalReadScope);
   const canOperateTerminal = useEnvironmentScope(threadRef.environmentId, AuthTerminalOperateScope);
   const terminalArea = workspaceAreaProps("terminal", 5, gt("Terminal"));
   const isPanel = mode === "panel";
@@ -1628,17 +2058,43 @@ export default function ThreadTerminalDrawer({
     Schema.Boolean,
   );
   const drawerRef = useRef<HTMLElement | null>(null);
+  const resizeHudRef = useRef<HTMLDivElement | null>(null);
+  const resizeHudTextRef = useRef<HTMLSpanElement | null>(null);
+  const resizeHandleRef = useRef<HTMLDivElement | null>(null);
+  const snapSettleTimerRef = useRef<number | null>(null);
+  const activityTimersRef = useRef(new Map<string, number>());
+  const [streamingTerminalIds, setStreamingTerminalIds] = useState<ReadonlySet<string>>(
+    () => new Set(),
+  );
+  const [unreadTerminalIds, setUnreadTerminalIds] = useState<ReadonlySet<string>>(() => new Set());
   const [drawerLayout, setDrawerLayout] = useState(() => readDrawerLayout(null));
   const [isResizing, setIsResizing] = useState(false);
   const maxDrawerHeight = resolveTerminalDrawerMaxHeight({ ...drawerLayout, composerHeight });
+  const referenceDrawerHeight =
+    drawerLayout.chatColumnHeight ?? drawerLayout.viewportHeight ?? maxDrawerHeight;
   const drawerHeight = clampDrawerHeight(height, maxDrawerHeight);
-  // A drag only writes the drawer's style; the store hears the height once, at
-  // pointerup. The custom property outranks the rendered height while it is set.
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Clears pending spring-snap and terminal output activity timers on unmount.
+  useEffect(
+    () => () => {
+      if (snapSettleTimerRef.current !== null) window.clearTimeout(snapSettleTimerRef.current);
+      for (const timer of activityTimersRef.current.values()) window.clearTimeout(timer);
+      activityTimersRef.current.clear();
+    },
+    [],
+  );
+  // A drag only writes directly to the drawer's height style and leaf HUD ref;
+  // the store hears the settled height once, at pointerup.
   const resizeStateRef = useRef<{
     pointerId: number;
     startY: number;
     startHeight: number;
     height: number;
+    shouldCollapse: boolean;
+    snappedDetent: TerminalDrawerDetentKind | null;
+    cellWidth: number;
+    cellHeight: number;
+    cellPadding: number;
+    paneWidth: number;
     drawer: HTMLElement | null;
   } | null>(null);
 
@@ -1704,6 +2160,9 @@ export default function ThreadTerminalDrawer({
         ...(terminalGroup.splitDirection === "vertical"
           ? { splitDirection: "vertical" as const }
           : {}),
+        ...(terminalGroup.paneWeights?.length === nextTerminalIds.length
+          ? { paneWeights: terminalGroup.paneWeights }
+          : {}),
       });
     }
 
@@ -1759,11 +2218,60 @@ export default function ThreadTerminalDrawer({
       ? groupIndexById
       : (groupIndexByTerminalId.get(resolvedActiveTerminalId) ?? 0);
 
+  const activeGroup = resolvedTerminalGroups[resolvedActiveGroupIndex];
   const visibleTerminalIds =
-    resolvedTerminalGroups[resolvedActiveGroupIndex]?.terminalIds ??
+    activeGroup?.terminalIds ??
     (normalizedTerminalIds.length > 0 ? [resolvedActiveTerminalId] : []);
-  const splitDirection =
-    resolvedTerminalGroups[resolvedActiveGroupIndex]?.splitDirection ?? "horizontal";
+  const visibleTerminalIdSet = new Set(visibleTerminalIds);
+  const backgroundTerminalIds = canReadTerminal
+    ? normalizedTerminalIds.filter((id) => !visibleTerminalIdSet.has(id))
+    : [];
+  const splitDirection = activeGroup?.splitDirection ?? "horizontal";
+  const activeGroupId = activeGroup?.id ?? activeTerminalGroupId;
+  const activeGroupPaneWeights = activeGroup?.paneWeights;
+  if (resolvedActiveTerminalId.length > 0 && unreadTerminalIds.has(resolvedActiveTerminalId)) {
+    const next = new Set(unreadTerminalIds);
+    next.delete(resolvedActiveTerminalId);
+    setUnreadTerminalIds(next);
+  }
+  const readActiveTerminalId = useEffectEvent(() => resolvedActiveTerminalId);
+  const handleTerminalOutputActivity = (sourceTerminalId: string) => {
+    setStreamingTerminalIds((previous) => {
+      if (previous.has(sourceTerminalId)) return previous;
+      const next = new Set(previous);
+      next.add(sourceTerminalId);
+      return next;
+    });
+    if (sourceTerminalId !== readActiveTerminalId()) {
+      setUnreadTerminalIds((previous) => {
+        if (previous.has(sourceTerminalId)) return previous;
+        const next = new Set(previous);
+        next.add(sourceTerminalId);
+        return next;
+      });
+    }
+    const existingTimer = activityTimersRef.current.get(sourceTerminalId);
+    if (existingTimer !== undefined) window.clearTimeout(existingTimer);
+    const timer = window.setTimeout(() => {
+      activityTimersRef.current.delete(sourceTerminalId);
+      setStreamingTerminalIds((previous) => {
+        if (!previous.has(sourceTerminalId)) return previous;
+        const next = new Set(previous);
+        next.delete(sourceTerminalId);
+        return next;
+      });
+    }, 500);
+    activityTimersRef.current.set(sourceTerminalId, timer);
+  };
+  const handleActiveTerminalSelect = (nextTerminalId: string) => {
+    setUnreadTerminalIds((previous) => {
+      if (!previous.has(nextTerminalId)) return previous;
+      const next = new Set(previous);
+      next.delete(nextTerminalId);
+      return next;
+    });
+    onActiveTerminalChange(nextTerminalId);
+  };
   const hasTerminalSidebar = normalizedTerminalIds.length > 1;
   const showGroupHeaders =
     resolvedTerminalGroups.length > 1 ||
@@ -1813,33 +2321,100 @@ export default function ThreadTerminalDrawer({
     });
   };
 
+  const detentLabels: Record<TerminalDrawerDetentKind, string> = {
+    compact: gt("Compact"),
+    balanced: gt("Balanced"),
+    tall: gt("Tall"),
+  };
+  const releaseToCollapseLabel = gt("Release to collapse");
+
+  const updateResizeHud = (state: NonNullable<typeof resizeStateRef.current>) => {
+    const hud = resizeHudRef.current;
+    const textNode = resizeHudTextRef.current;
+    const handle = resizeHandleRef.current;
+    if (!hud || !textNode) return;
+    hud.setAttribute("data-visible", "true");
+    if (state.shouldCollapse && onCollapseDrawer) {
+      hud.setAttribute("data-collapsing", "true");
+      handle?.setAttribute("data-collapsing", "true");
+      textNode.textContent = releaseToCollapseLabel;
+      return;
+    }
+    hud.removeAttribute("data-collapsing");
+    handle?.removeAttribute("data-collapsing");
+    const cols = Math.max(
+      1,
+      Math.floor((state.paneWidth - state.cellPadding * 2) / state.cellWidth),
+    );
+    const rows = Math.max(1, Math.floor((state.height - state.cellPadding * 2) / state.cellHeight));
+    const baseText = `${cols} cols × ${rows} rows`;
+    textNode.textContent = state.snappedDetent
+      ? `${baseText} · ${detentLabels[state.snappedDetent]}`
+      : baseText;
+    if (state.snappedDetent) hud.setAttribute("data-snapped", state.snappedDetent);
+    else hud.removeAttribute("data-snapped");
+  };
+
   const handleResizePointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
     if (event.button !== 0) return;
     event.preventDefault();
     event.currentTarget.setPointerCapture(event.pointerId);
+    const drawer = event.currentTarget.parentElement;
+    const sampleMount = drawer?.querySelector<HTMLElement>("[data-terminal-cell-width]") ?? null;
+    const cellWidth = Number(sampleMount?.dataset.terminalCellWidth) || 7.8;
+    const cellHeight = Number(sampleMount?.dataset.terminalCellHeight) || 17;
+    const cellPadding = Number(sampleMount?.dataset.terminalCellPadding) || 4;
+    const paneWidth = sampleMount?.clientWidth || drawer?.clientWidth || 640;
+    if (snapSettleTimerRef.current !== null) {
+      window.clearTimeout(snapSettleTimerRef.current);
+      snapSettleTimerRef.current = null;
+    }
+    drawer?.removeAttribute("data-drawer-snapping");
+    drawer?.setAttribute("data-terminal-resizing", "true");
     setIsResizing(true);
-    resizeStateRef.current = {
+    const state = {
       pointerId: event.pointerId,
       startY: event.clientY,
       startHeight: drawerHeight,
       height: drawerHeight,
-      drawer: event.currentTarget.parentElement,
+      shouldCollapse: false,
+      snappedDetent: null as TerminalDrawerDetentKind | null,
+      cellWidth,
+      cellHeight,
+      cellPadding,
+      paneWidth,
+      drawer,
     };
+    resizeStateRef.current = state;
+    updateResizeHud(state);
   };
 
   const handleResizePointerMove = (event: ReactPointerEvent<HTMLDivElement>) => {
     const resizeState = resizeStateRef.current;
     if (!resizeState || resizeState.pointerId !== event.pointerId) return;
     event.preventDefault();
-    const clampedHeight = clampDrawerHeight(
-      resizeState.startHeight + (resizeState.startY - event.clientY),
-      maxDrawerHeight,
-    );
-    if (clampedHeight === resizeState.height) {
+    const rawHeight = resizeState.startHeight + (resizeState.startY - event.clientY);
+    const resolved = resolveTerminalDrawerDragHeight({
+      rawHeight,
+      minHeight: MIN_DRAWER_HEIGHT,
+      maxHeight: maxDrawerHeight,
+      referenceHeight: referenceDrawerHeight,
+      bypassSnap: event.altKey,
+    });
+    const changed =
+      resolved.height !== resizeState.height ||
+      resolved.shouldCollapse !== resizeState.shouldCollapse ||
+      resolved.snappedDetent !== resizeState.snappedDetent;
+    if (!changed) {
       return;
     }
-    resizeState.height = clampedHeight;
-    resizeState.drawer?.style.setProperty(DRAG_HEIGHT_PROPERTY, `${clampedHeight}px`);
+    resizeState.height = resolved.height;
+    resizeState.shouldCollapse = resolved.shouldCollapse;
+    resizeState.snappedDetent = resolved.snappedDetent;
+    if (resizeState.drawer) {
+      resizeState.drawer.style.height = `${resolved.height}px`;
+    }
+    updateResizeHud(resizeState);
   };
 
   const handleResizePointerEnd = (event: ReactPointerEvent<HTMLDivElement>) => {
@@ -1850,11 +2425,49 @@ export default function ThreadTerminalDrawer({
     if (event.currentTarget.hasPointerCapture(event.pointerId)) {
       event.currentTarget.releasePointerCapture(event.pointerId);
     }
-    resizeState.drawer?.style.removeProperty(DRAG_HEIGHT_PROPERTY);
+    resizeHudRef.current?.removeAttribute("data-visible");
+    resizeHudRef.current?.removeAttribute("data-collapsing");
+    resizeHudRef.current?.removeAttribute("data-snapped");
+    resizeHandleRef.current?.removeAttribute("data-collapsing");
+    resizeState.drawer?.removeAttribute("data-terminal-resizing");
+    if (resizeState.shouldCollapse && onCollapseDrawer) {
+      if (resizeState.drawer) resizeState.drawer.style.height = `${drawerHeight}px`;
+      window.dispatchEvent(new Event("t3-terminal-resize-settled"));
+      onCollapseDrawer();
+      return;
+    }
+    if (resizeState.drawer) {
+      resizeState.drawer.style.height = `${resizeState.height}px`;
+    }
+    window.dispatchEvent(new Event("t3-terminal-resize-settled"));
     // A drag that ends where it started keeps the stored preference, which may
     // be taller than the capped height the drag started from.
     if (resizeState.height === resizeState.startHeight || resizeState.height === height) return;
     onHeightChange(resizeState.height);
+  };
+
+  const handleResizeDoubleClick = () => {
+    if (isPanel) return;
+    const nextHeight = nextTerminalDrawerDoubleClickHeight({
+      currentHeight: drawerHeight,
+      minHeight: MIN_DRAWER_HEIGHT,
+      maxHeight: maxDrawerHeight,
+      referenceHeight: referenceDrawerHeight,
+    });
+    if (nextHeight === drawerHeight) return;
+    const drawer = drawerRef.current;
+    if (drawer && !prefersReducedMotion()) {
+      drawer.setAttribute("data-terminal-resizing", "true");
+      drawer.setAttribute("data-drawer-snapping", "true");
+      if (snapSettleTimerRef.current !== null) window.clearTimeout(snapSettleTimerRef.current);
+      snapSettleTimerRef.current = window.setTimeout(() => {
+        snapSettleTimerRef.current = null;
+        drawer.removeAttribute("data-drawer-snapping");
+        drawer.removeAttribute("data-terminal-resizing");
+        window.dispatchEvent(new Event("t3-terminal-resize-settled"));
+      }, 240);
+    }
+    onHeightChange(nextHeight);
   };
 
   const drawerLayoutRef = useRef(drawerLayout);
@@ -1878,7 +2491,7 @@ export default function ThreadTerminalDrawer({
         );
         if (liveHeight !== resizeState.height) {
           resizeState.height = liveHeight;
-          resizeState.drawer?.style.setProperty(DRAG_HEIGHT_PROPERTY, `${liveHeight}px`);
+          if (resizeState.drawer) resizeState.drawer.style.height = `${liveHeight}px`;
         }
       }
       if (heightBudgetChanged) setDrawerLayout(layout);
@@ -1908,20 +2521,35 @@ export default function ThreadTerminalDrawer({
   }, [isPanel, visible]);
 
   const resizeHandle = isPanel ? null : (
-    <div
-      data-resizing={isResizing || undefined}
-      className="group/resize absolute inset-x-0 top-0 z-20 h-1.5 cursor-row-resize touch-none any-pointer-coarse:h-4"
-      onPointerDown={handleResizePointerDown}
-      onPointerMove={handleResizePointerMove}
-      onPointerUp={handleResizePointerEnd}
-      onPointerCancel={handleResizePointerEnd}
-      onLostPointerCapture={handleResizePointerEnd}
-    >
-      <span
+    <>
+      <div
+        ref={resizeHandleRef}
+        data-resizing={isResizing || undefined}
+        className="group/resize absolute inset-x-0 top-0 z-20 flex h-2 cursor-row-resize touch-none items-start justify-center any-pointer-coarse:h-4"
+        onPointerDown={handleResizePointerDown}
+        onPointerMove={handleResizePointerMove}
+        onPointerUp={handleResizePointerEnd}
+        onPointerCancel={handleResizePointerEnd}
+        onLostPointerCapture={handleResizePointerEnd}
+        onDoubleClick={handleResizeDoubleClick}
+      >
+        <span
+          aria-hidden="true"
+          className="pointer-events-none absolute inset-x-0 top-0 h-0.5 bg-transparent transition-colors duration-150 ease-out group-hover/resize:bg-primary/50 group-data-resizing/resize:bg-primary/80 group-data-[collapsing=true]/resize:bg-destructive motion-reduce:transition-none"
+        />
+        <span
+          aria-hidden="true"
+          className="pointer-events-none mt-0.5 h-1 w-8 rounded-full bg-border/75 opacity-70 transition-[width,opacity,background-color] duration-150 ease-out group-hover/resize:w-10 group-hover/resize:bg-primary/70 group-hover/resize:opacity-100 group-data-resizing/resize:w-12 group-data-resizing/resize:bg-primary group-data-resizing/resize:opacity-100 group-data-[collapsing=true]/resize:bg-destructive motion-reduce:transition-none"
+        />
+      </div>
+      <div
+        ref={resizeHudRef}
         aria-hidden="true"
-        className="pointer-events-none absolute inset-x-0 top-0 h-0.5 bg-transparent transition-colors duration-150 ease-out group-hover/resize:bg-primary/50 group-data-resizing/resize:bg-primary/80 motion-reduce:transition-none"
-      />
-    </div>
+        className="terminal-resize-hud surface-optical-chrome surface-elevated-rim pointer-events-none absolute top-3 left-1/2 z-30 -translate-x-1/2 rounded-full px-2.5 py-0.5 font-mono text-2xs font-medium text-foreground tabular-nums"
+      >
+        <span ref={resizeHudTextRef} />
+      </div>
+    </>
   );
 
   if (normalizedTerminalIds.length === 0) {
@@ -1932,12 +2560,12 @@ export default function ThreadTerminalDrawer({
         data-thread-terminal-drawer
         data-terminal-owner={isPanel ? "right-panel" : "drawer"}
         className={cn(
-          "relative flex min-w-0 flex-col overflow-hidden bg-background",
+          "terminal-drawer-shell relative flex min-w-0 flex-col overflow-hidden bg-background",
           isPanel
             ? "h-full flex-1"
             : "t3-terminal-drawer-enter z-45 shrink-0 border-t border-border/80",
         )}
-        style={isPanel ? undefined : { height: `var(${DRAG_HEIGHT_PROPERTY}, ${drawerHeight}px)` }}
+        style={isPanel ? undefined : { height: `${drawerHeight}px` }}
       >
         {resizeHandle}
         <Empty size="compact" className="min-h-0">
@@ -1971,14 +2599,21 @@ export default function ThreadTerminalDrawer({
       data-thread-terminal-drawer
       data-terminal-owner={isPanel ? "right-panel" : "drawer"}
       className={cn(
-        "relative flex min-w-0 flex-col overflow-hidden bg-background",
+        "terminal-drawer-shell relative flex min-w-0 flex-col overflow-hidden bg-background",
         isPanel
           ? "h-full flex-1"
           : "t3-terminal-drawer-enter z-45 shrink-0 border-t border-border/80",
       )}
-      style={isPanel ? undefined : { height: `var(${DRAG_HEIGHT_PROPERTY}, ${drawerHeight}px)` }}
+      style={isPanel ? undefined : { height: `${drawerHeight}px` }}
     >
       {resizeHandle}
+      {visible && streamingTerminalIds.has(resolvedActiveTerminalId) ? (
+        <div
+          ref={observeVisibleAnimation}
+          aria-hidden="true"
+          className="terminal-build-hairline pointer-events-none absolute inset-x-0 top-0 z-20"
+        />
+      ) : null}
 
       {!hasTerminalSidebar && (
         <div className="pointer-events-none absolute right-2 top-2 z-20">
@@ -2020,6 +2655,15 @@ export default function ThreadTerminalDrawer({
       )}
 
       <div className="min-h-0 w-full flex-1">
+        {backgroundTerminalIds.map((terminalId) => (
+          <BackgroundTerminalOutputObserver
+            key={terminalId}
+            environmentId={threadRef.environmentId}
+            threadId={threadId}
+            terminalId={terminalId}
+            onOutputActivity={handleTerminalOutputActivity}
+          />
+        ))}
         <div
           className={cn(
             "flex h-full min-h-0 bg-(--terminal-background)",
@@ -2028,13 +2672,17 @@ export default function ThreadTerminalDrawer({
         >
           <div className="min-w-0 flex-1">
             <TerminalSplitPanes
+              groupId={activeGroupId}
               terminalIds={visibleTerminalIds}
               splitDirection={splitDirection}
+              paneWeights={activeGroupPaneWeights}
               activeTerminalId={resolvedActiveTerminalId}
               terminalLabelById={terminalLabelById}
               resolveLaunchLocation={resolveTerminalLaunchLocation}
-              onActiveTerminalChange={onActiveTerminalChange}
+              onActiveTerminalChange={handleActiveTerminalSelect}
               onCloseTerminal={onCloseTerminal}
+              onPaneWeightsChange={onPaneWeightsChange}
+              onTerminalOutputActivity={handleTerminalOutputActivity}
               advancedTypography={advancedTypography}
               threadRef={threadRef}
               threadId={threadId}
@@ -2091,11 +2739,13 @@ export default function ThreadTerminalDrawer({
                     key={terminalGroup.id}
                     terminalGroup={terminalGroup}
                     activeTerminalId={resolvedActiveTerminalId}
+                    streamingTerminalIds={streamingTerminalIds}
+                    unreadTerminalIds={unreadTerminalIds}
                     showHeader={showGroupHeaders}
                     terminalLabelById={terminalLabelById}
                     closeShortcutLabel={closeShortcutLabel}
                     canOperateTerminal={canOperateTerminal}
-                    onActiveTerminalChange={onActiveTerminalChange}
+                    onActiveTerminalChange={handleActiveTerminalSelect}
                     onCloseTerminal={confirmCloseTerminal}
                   />
                 ))}

@@ -7,8 +7,10 @@ import { useMemo, useState } from "react";
 import { Platform } from "react-native";
 import { useGT, useMessages } from "gt-react-native";
 
+import type { EnvironmentId } from "@t3tools/contracts";
 import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/shell";
 import { pickableProjectGroups } from "@t3tools/client-runtime/state/project-grouping";
+import { triggerSemanticHaptic } from "../../lib/hapticChoreography";
 
 import { useProjects } from "../../state/entities";
 import { steadyNavigationThreadShellsAtom } from "../../state/threads";
@@ -149,19 +151,31 @@ export function HomeRouteScreen() {
   );
   const selectedProjectKey =
     resolveHomeProjectFilterScope(projectScopes, projects, listOptions)?.key ?? null;
+  const handleSelectEnvironmentFilter = (environmentId: EnvironmentId | null) => {
+    triggerSemanticHaptic("segmentTick");
+    setSelectedEnvironmentId(environmentId);
+  };
+  const handleSelectProjectFilter = (projectKey: string | null) => {
+    triggerSemanticHaptic("segmentTick");
+    setSelectedProjectKey(projectKey);
+  };
+  const handleStartNewTask = () => {
+    triggerSemanticHaptic("contextClick");
+    startNewTask();
+  };
 
   if (layout.usesSplitView && !nativePrimaryColumn) {
     return (
       <WorkspaceListEmptyDetail
         hasConnections={catalogState.hasConnections}
         onAddConnection={() => openSettings(navigation, "SettingsEnvironmentNew")}
-        onStartNewTask={startNewTask}
+        onStartNewTask={handleStartNewTask}
       />
     );
   }
 
   return (
-    <AndroidHomeFabLayout onStartNewTask={startNewTask}>
+    <AndroidHomeFabLayout onStartNewTask={handleStartNewTask}>
       <>
         <WorkspaceListHeader
           accessibilityLabel={gt("T3 Code, Threads")}
@@ -180,8 +194,8 @@ export function HomeRouteScreen() {
                 projects: projectFilterOptions,
                 selectedEnvironmentId,
                 selectedProjectKey,
-                onEnvironmentChange: setSelectedEnvironmentId,
-                onProjectChange: setSelectedProjectKey,
+                onEnvironmentChange: handleSelectEnvironmentFilter,
+                onProjectChange: handleSelectProjectFilter,
               },
               m,
             ),
@@ -204,8 +218,8 @@ export function HomeRouteScreen() {
           onMoveThread={moveThread}
           onRenameThread={renameThread}
           onRegenerateThreadTitle={regenerateThreadTitle}
-          onEnvironmentChange={setSelectedEnvironmentId}
-          onProjectChange={setSelectedProjectKey}
+          onEnvironmentChange={handleSelectEnvironmentFilter}
+          onProjectChange={handleSelectProjectFilter}
           onOpenSettings={() => selectTab("settings")}
           onSearchQueryChange={setSearchQuery}
           onSelectThread={handleSelectThread}
@@ -222,7 +236,7 @@ export function HomeRouteScreen() {
               },
             });
           }}
-          onStartNewTask={startNewTask}
+          onStartNewTask={handleStartNewTask}
           pendingTasks={pendingTasks}
           projectGroupingMode={listOptions.projectGroupingMode}
           projects={projects}

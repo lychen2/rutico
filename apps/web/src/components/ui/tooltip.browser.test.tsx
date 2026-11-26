@@ -11,8 +11,21 @@ import {
   ComboboxSearchInput,
   ComboboxTrigger,
 } from "./combobox";
-import { SharedTooltipProvider, SharedTooltipTrigger } from "./shared-tooltip";
-import { Tooltip, TooltipPopup, TooltipScrollDismissArea, TooltipTrigger } from "./tooltip";
+import {
+  SharedTooltipProvider,
+  SharedTooltipTrigger,
+  shouldDeferTooltipForPointerSpeed,
+} from "./shared-tooltip";
+import {
+  DEFAULT_TOOLTIP_DELAY_MS,
+  HOVER_CARD_INTENT_CLOSE_DELAY_MS,
+  HOVER_CARD_INTENT_DELAY_MS,
+  PREVIEW_INTENT_DELAY_MS,
+  Tooltip,
+  TooltipPopup,
+  TooltipScrollDismissArea,
+  TooltipTrigger,
+} from "./tooltip";
 
 function TimelineAction({ shared }: { shared: boolean }) {
   if (shared) {
@@ -175,6 +188,37 @@ it("opens a shared tooltip in place the first time", async () => {
     .map((transition) => transition.transitionProperty)
     .filter((property) => ["top", "left", "right", "bottom", "transform"].includes(property));
   expect(moving).toEqual([]);
+});
+
+it("enforces Tip 025 intent timing ladder, 0.1px/ms velocity filter, and instant warm glide", async () => {
+  expect(DEFAULT_TOOLTIP_DELAY_MS).toBe(500);
+  expect(HOVER_CARD_INTENT_DELAY_MS).toBe(700);
+  expect(HOVER_CARD_INTENT_CLOSE_DELAY_MS).toBe(300);
+  expect(PREVIEW_INTENT_DELAY_MS).toBe(900);
+  expect(shouldDeferTooltipForPointerSpeed(0.05)).toBe(false);
+  expect(shouldDeferTooltipForPointerSpeed(0.1)).toBe(false);
+  expect(shouldDeferTooltipForPointerSpeed(0.15)).toBe(true);
+
+  await using screen = await render(
+    <div className="flex gap-8 p-20">
+      <SharedTooltipProvider>
+        <SharedTooltipTrigger label="First action" render={<button type="button" />}>
+          First
+        </SharedTooltipTrigger>
+        <SharedTooltipTrigger label="Second action" render={<button type="button" />}>
+          Second
+        </SharedTooltipTrigger>
+      </SharedTooltipProvider>
+    </div>,
+  );
+
+  // Warm the shared tooltip via keyboard focus on the first trigger.
+  await userEvent.keyboard("{Tab}");
+  await expect.element(page.getByText("First action")).toBeVisible();
+
+  // Moving to the adjacent trigger switches immediately while warm.
+  await userEvent.hover(screen.getByRole("button", { name: "Second" }));
+  await expect.element(page.getByText("Second action")).toBeVisible();
 });
 
 it("closes the shared tooltip when its open trigger is removed", async () => {

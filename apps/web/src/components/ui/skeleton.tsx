@@ -1,8 +1,9 @@
 import { cva, type VariantProps } from "class-variance-authority";
 
 import { cn } from "~/lib/utils";
+import { observeVisibleAnimation } from "~/lib/visibleAnimation";
 
-const skeletonVariants = cva("bg-muted-foreground/15 motion-safe:animate-skeleton", {
+const skeletonVariants = cva("surface-skeleton-sweep bg-muted-foreground/15", {
   variants: {
     shape: {
       block: "rounded-sm",
@@ -16,10 +17,34 @@ const skeletonVariants = cva("bg-muted-foreground/15 motion-safe:animate-skeleto
 function Skeleton({
   className,
   shape,
+  ref,
   ...props
 }: React.ComponentProps<"div"> & VariantProps<typeof skeletonVariants>) {
+  const attachRef = (node: HTMLDivElement | null) => {
+    const cleanup = observeVisibleAnimation(node);
+    if (typeof ref === "function") {
+      const refCleanup = ref(node);
+      return () => {
+        if (typeof refCleanup === "function") refCleanup();
+        cleanup?.();
+      };
+    }
+    if (ref) {
+      ref.current = node;
+    }
+    return () => {
+      if (ref) ref.current = null;
+      cleanup?.();
+    };
+  };
+
   return (
-    <div className={cn(skeletonVariants({ shape }), className)} data-slot="skeleton" {...props} />
+    <div
+      ref={attachRef}
+      className={cn(skeletonVariants({ shape }), className)}
+      data-slot="skeleton"
+      {...props}
+    />
   );
 }
 

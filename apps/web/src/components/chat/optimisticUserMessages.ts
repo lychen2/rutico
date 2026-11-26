@@ -4,8 +4,61 @@ import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 import { AsyncResult, Atom } from "effect/reactivity";
 import type { SetStateAction } from "react";
+import type { FlipRect } from "~/lib/motion/flip";
 import type { ChatMessage } from "../../types";
 import { collectUserMessageBlobPreviewUrls } from "../ChatView.logic";
+
+const USER_MESSAGE_LAUNCH_TTL_MS = 500;
+const USER_MESSAGE_LAUNCH_MAX_ENTRIES = 64;
+
+interface RecordedLaunchOrigin {
+  readonly rect: FlipRect;
+  readonly recordedAt: number;
+}
+
+const pendingUserMessageLaunchOrigins = new Map<string, RecordedLaunchOrigin>();
+
+export function userMessageLaunchKey(threadKey: string, messageId: string): string {
+  return `${threadKey}:${messageId}`;
+}
+
+function pruneExpiredLaunchOrigins(now: number): void {
+  for (const [key, entry] of pendingUserMessageLaunchOrigins) {
+    if (now - entry.recordedAt > USER_MESSAGE_LAUNCH_TTL_MS) {
+      pendingUserMessageLaunchOrigins.delete(key);
+    }
+  }
+}
+
+export function recordUserMessageLaunchOrigin(key: string, rect: FlipRect, now = Date.now()): void {
+  pruneExpiredLaunchOrigins(now);
+  if (pendingUserMessageLaunchOrigins.size >= USER_MESSAGE_LAUNCH_MAX_ENTRIES) {
+    const oldest = pendingUserMessageLaunchOrigins.keys().next().value;
+    if (oldest !== undefined) pendingUserMessageLaunchOrigins.delete(oldest);
+  }
+  pendingUserMessageLaunchOrigins.set(key, { rect, recordedAt: now });
+}
+
+export function consumeUserMessageLaunchOrigin(key: string, now = Date.now()): FlipRect | null {
+  const entry = pendingUserMessageLaunchOrigins.get(key);
+  if (!entry) return null;
+  pendingUserMessageLaunchOrigins.delete(key);
+  if (now - entry.recordedAt > USER_MESSAGE_LAUNCH_TTL_MS) return null;
+  return entry.rect;
+}
+
+export function captureComposerLaunchOriginRect(root?: Element | null): FlipRect | null {
+  const source =
+    root ??
+    (typeof document !== "undefined"
+      ? (document.querySelector('[data-composer-launch-source="true"]') ??
+        document.querySelector('[data-chat-composer-form="true"]'))
+      : null);
+  if (!(source instanceof HTMLElement)) return null;
+  const rect = source.getBoundingClientRect();
+  if (rect.width <= 0 || rect.height <= 0) return null;
+  return { left: rect.left, top: rect.top, width: rect.width, height: rect.height };
+}
 
 /**
  * Messages shown before the server echoes them. An acknowledged message leaves `messages` in the

@@ -18,6 +18,7 @@ import type { ReactNode } from "react";
 
 import { getDiffLineStat } from "~/lib/diffRendering";
 import { cn } from "~/lib/utils";
+import "~/styles/workspace-hubs.css";
 
 import { DiffWorkerPoolProvider } from "../../DiffWorkerPoolProvider";
 import { Alert, AlertDescription, AlertTitle } from "../../ui/alert";
@@ -39,10 +40,15 @@ const ATTENTION_LABELS = {
   accessibility: msg("An accessibility call"),
 } as const satisfies Record<PullRequestReviewGuideAttention["kind"], string>;
 
+const HEADER_RING_RADIUS = 6.5;
+const HEADER_RING_CIRCUMFERENCE = 2 * Math.PI * HEADER_RING_RADIUS;
+
 export function GuideStop({
   stop,
   index,
   stopCount,
+  direction = "initial",
+  reviewedCount = 0,
   railOpen,
   onRailOpenChange,
   stopList,
@@ -59,6 +65,8 @@ export function GuideStop({
   stop: PullRequestReviewGuideStop;
   index: number;
   stopCount: number;
+  direction?: "initial" | "forward" | "backward";
+  reviewedCount?: number;
   railOpen: boolean;
   onRailOpenChange: (open: boolean) => void;
   stopList: ReactNode;
@@ -79,19 +87,64 @@ export function GuideStop({
   const otherFiles = stop.files.filter((file) => !excerptPaths.has(file.path));
 
   const hasNotes = lettered.length > 0;
+  const isTourComplete =
+    stopCount > 0 &&
+    (reviewedCount >= stopCount || (index === stopCount - 1 && reviewedCount >= stopCount - 1));
+  const headerProgress =
+    stopCount > 0 ? Math.min(1, (isTourComplete ? stopCount : index + 1) / stopCount) : 0;
 
   return (
     <div
+      data-slot="guide-stop-stage"
+      data-direction={direction}
       className={cn("grid gap-8", hasNotes && "@min-[90rem]/guide:grid-cols-[minmax(0,1fr)_20rem]")}
     >
       <article className="flex min-w-0 flex-col gap-5">
         <Collapsible open={railOpen} onOpenChange={onRailOpenChange}>
           <header className="flex items-center justify-between gap-2">
-            <p className="text-xs text-muted-foreground tabular-nums @max-[56rem]/guide:hidden">
-              <T>
-                Stop <Var>{index + 1}</Var> of <Var>{stopCount}</Var>
-              </T>
-            </p>
+            <div className="flex items-center gap-2 @max-[56rem]/guide:hidden">
+              <span
+                data-slot="guide-progress-ring"
+                data-complete={isTourComplete ? "true" : undefined}
+                className="relative inline-flex size-4 shrink-0 items-center justify-center"
+              >
+                <svg
+                  aria-hidden="true"
+                  viewBox="0 0 18 18"
+                  className="size-4 -rotate-90 overflow-visible"
+                >
+                  <circle
+                    cx="9"
+                    cy="9"
+                    r={HEADER_RING_RADIUS}
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="1.8"
+                    className="text-border/80"
+                  />
+                  <circle
+                    cx="9"
+                    cy="9"
+                    r={HEADER_RING_RADIUS}
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="1.8"
+                    strokeLinecap="round"
+                    strokeDasharray={HEADER_RING_CIRCUMFERENCE}
+                    strokeDashoffset={HEADER_RING_CIRCUMFERENCE * (1 - headerProgress)}
+                    className={cn(
+                      "transition-[stroke-dashoffset,color] duration-(--duration-fluid) ease-(--spring-fluid) motion-reduce:transition-none",
+                      isTourComplete ? "text-success" : "text-primary",
+                    )}
+                  />
+                </svg>
+              </span>
+              <p className="text-xs text-muted-foreground tabular-nums">
+                <T>
+                  Stop <Var>{index + 1}</Var> of <Var>{stopCount}</Var>
+                </T>
+              </p>
+            </div>
             <CollapsibleTrigger
               render={
                 <Button size="xs" variant="ghost-muted" className="@min-[56rem]/guide:hidden" />

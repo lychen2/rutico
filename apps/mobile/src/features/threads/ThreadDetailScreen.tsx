@@ -81,7 +81,7 @@ import { AuthOrchestrationOperateScope, isProviderNativeSubagentThread } from "@
 import type { QueuedRunEdit } from "../../state/queued-run-edit";
 import type { FollowUpBehavior } from "../../lib/followUpBehavior";
 import type { ActiveTurnComposerAction } from "@t3tools/client-runtime/state/composer-dispatch";
-import * as Haptics from "expo-haptics";
+import { triggerSemanticHaptic } from "../../lib/hapticChoreography";
 import {
   useCallback,
   useEffect,
@@ -356,6 +356,7 @@ const USAGE_LIMITS_PANEL_MIN_HEIGHT = 44;
 const USER_INPUT_TOGGLE_TIMING = {
   duration: USER_INPUT_TOGGLE_DURATION_MS,
   easing: Easing.out(Easing.cubic),
+  reduceMotion: ReduceMotion.System,
 };
 
 // A scheduled wake can happen without a newer server update, so the tracker
@@ -1364,6 +1365,7 @@ function ThreadDetailBody(
       return messageId;
     }
 
+    triggerSemanticHaptic("confirm");
     clearUsageLimitsFor(targetThreadKey);
 
     const nextAnchorMessageId = resolveThreadFeedSubmissionAnchor({
@@ -1463,13 +1465,20 @@ function ThreadDetailBody(
   };
 
   const handleScrollToEnd = () => {
-    void Haptics.selectionAsync();
+    triggerSemanticHaptic("contextClick");
     void scrollMessageToEnd({ animated: !reduceMotion, closeKeyboard: false }).catch(() => {
       freeze.set(false);
     });
   };
 
   const showScrollToEndButton = !props.draftMode && contentPresentationKind === "ready" && !isAtEnd;
+  const hasUnreadStream =
+    showScrollToEndButton &&
+    (props.activeThreadBusy ||
+      selectedThreadFeed.some(
+        (entry) =>
+          entry.type === "message" && entry.message.role === "assistant" && entry.message.streaming,
+      ));
   const { themeAppearance } = useAppearancePreferences();
   const isDarkMode = themeAppearance === "dark";
 
@@ -1695,6 +1704,7 @@ function ThreadDetailBody(
                         : null
                     }
                     showScrollToEnd={showScrollToEndButton}
+                    hasUnreadStream={hasUnreadStream}
                     onScrollToEnd={handleScrollToEnd}
                     agents={agentsSegment}
                     onOpenAgents={() => {

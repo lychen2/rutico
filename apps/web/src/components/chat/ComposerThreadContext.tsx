@@ -10,6 +10,7 @@ import * as DateTime from "effect/DateTime";
 import { msg, useGT, useLocale, useMessages } from "gt-react";
 
 import { tickTextContent } from "~/lib/tickTextContent";
+import { observeVisibleAnimation } from "~/lib/visibleAnimation";
 import { useThreadVisibleTurnItems } from "../../state/entities";
 import { Popover, PopoverPopup, PopoverTitle, PopoverTrigger } from "../ui/popover";
 
@@ -119,6 +120,15 @@ export function ComposerThreadContext({
     input !== undefined && input > 0 && cacheRead !== undefined
       ? Math.round((cacheRead / input) * 100)
       : null;
+  const clampedPercent = percent === null ? null : Math.max(0, Math.min(100, percent));
+  const contextThermal =
+    clampedPercent === null
+      ? "normal"
+      : clampedPercent >= 85
+        ? "critical"
+        : clampedPercent >= 65
+          ? "warm"
+          : "normal";
 
   return (
     <div data-session-footer="">
@@ -128,7 +138,9 @@ export function ComposerThreadContext({
             <span data-session-primary="" className="inline-flex items-center gap-1.5">
               <span className="flex items-center gap-1.5">
                 <span
+                  ref={running ? observeVisibleAnimation : undefined}
                   aria-hidden
+                  data-context-live-dot={running ? "true" : undefined}
                   className={
                     running
                       ? "size-1.5 rounded-full bg-success"
@@ -245,14 +257,22 @@ export function ComposerThreadContext({
         </Popover>
         <span aria-hidden data-v9-stats-sep="" />
         <Popover>
-          <PopoverTrigger render={<button type="button" data-v9-stats-trig="tokens" />}>
+          <PopoverTrigger
+            render={
+              <button
+                type="button"
+                data-v9-stats-trig="tokens"
+                data-context-thermal={contextThermal}
+              />
+            }
+          >
             {total !== null && (
               <span>{gt("{tokens} tokens", { tokens: total.toLocaleString(locale) })}</span>
             )}
             <span className="whitespace-nowrap">
               {gt("Cache hit")} {cachePercent === null ? "–" : `${cachePercent}%`}
             </span>
-            <span className="whitespace-nowrap">
+            <span data-context-percent-pill="" className="whitespace-nowrap">
               {gt("Context", { $context: "context window row label" })}{" "}
               {percent === null
                 ? (extensionUsed ?? (usage ? usage.usedTokens.toLocaleString(locale) : "–"))
@@ -284,14 +304,22 @@ export function ComposerThreadContext({
                       })}
                 {percent === null ? null : ` · ${percent}%`}
               </p>
-              {percent !== null && (
-                <progress
+              {clampedPercent !== null && (
+                <div
+                  role="progressbar"
                   data-context-meter=""
-                  className="mt-1 w-full"
-                  max={100}
-                  value={percent}
+                  data-context-thermal={contextThermal}
+                  aria-valuenow={clampedPercent}
+                  aria-valuemin={0}
+                  aria-valuemax={100}
                   aria-label={gt("Context window")}
-                />
+                  className="mt-1.5 w-full"
+                >
+                  <span
+                    data-context-meter-fill=""
+                    style={{ transform: `scaleX(${clampedPercent / 100})` }}
+                  />
+                </div>
               )}
               {input !== undefined ||
               output !== undefined ||

@@ -3,6 +3,7 @@ import { RefreshIcon } from "~/components/ui/refresh-icon";
 import { scopeProjectRef } from "@t3tools/client-runtime/environment";
 import { createFileRoute, useRouter } from "@tanstack/react-router";
 import { T, useGT } from "gt-react";
+import { CircleAlertIcon } from "lucide-react";
 import { useEffect, useEffectEvent, useRef, useState } from "react";
 
 import { isElectron } from "../env";
@@ -10,8 +11,15 @@ import { NoProjectsHero } from "../components/NoProjectsHero";
 import { sortScopedProjectsForSidebar } from "../components/Sidebar.logic";
 import { Button } from "../components/ui/button";
 import { HostedEmptyState } from "../components/HostedEmptyState";
-import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "../components/ui/empty";
+import {
+  Empty,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyMedia,
+  EmptyTitle,
+} from "../components/ui/empty";
 import { SidebarInset } from "../components/ui/sidebar";
+import { SpecularHeroCard } from "../components/ui/standalone-page";
 import { WorkspacePageHeader } from "../components/WorkspacePageHeader";
 import { useNewThreadHandler } from "../hooks/useHandleNewThread";
 import {
@@ -102,20 +110,25 @@ function DraftStartError({ onRetry }: { readonly onRetry: () => void }) {
     >
       {isElectron ? <WorkspacePageHeader electron /> : null}
       <Empty className="flex-1">
-        <EmptyHeader className="max-w-md">
-          <EmptyTitle>
-            <T>Couldn’t start a new thread</T>
-          </EmptyTitle>
-          <EmptyDescription>
-            <T>The project is still available. Try opening the draft again.</T>
-          </EmptyDescription>
-          <div className="mt-5 flex justify-center">
-            <Button size="sm" onClick={onRetry}>
-              <RefreshIcon size="md" />
-              <T>Try again</T>
-            </Button>
-          </div>
-        </EmptyHeader>
+        <SpecularHeroCard maxWidth="md">
+          <EmptyHeader className="max-w-none">
+            <EmptyMedia className="mb-4" variant="icon">
+              <CircleAlertIcon className="text-destructive" />
+            </EmptyMedia>
+            <EmptyTitle>
+              <T>Couldn’t start a new thread</T>
+            </EmptyTitle>
+            <EmptyDescription>
+              <T>The project is still available. Try opening the draft again.</T>
+            </EmptyDescription>
+            <div className="mt-5 flex justify-center">
+              <Button size="sm" onClick={onRetry}>
+                <RefreshIcon size="md" />
+                <T>Try again</T>
+              </Button>
+            </div>
+          </EmptyHeader>
+        </SpecularHeroCard>
       </Empty>
     </SidebarInset>
   );

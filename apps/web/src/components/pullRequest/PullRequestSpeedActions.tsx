@@ -166,7 +166,8 @@ function SpeedModeGroup({
   const speedMode = use(PullRequestSpeedModeContext);
   return (
     <div
-      className="shrink-0 items-center gap-1 pr-3"
+      data-slot="pr-speed-actions"
+      className="pointer-events-auto absolute inset-y-0 right-0 z-10 shrink-0 items-center gap-1 rounded-r-md bg-gradient-to-l from-background via-background/95 to-transparent pl-6 pr-3 group-data-[selected=true]/pr-row:from-accent group-data-[selected=true]/pr-row:via-accent/95"
       style={{ display: speedMode || busy ? "flex" : "none" }}
       role="group"
       aria-label={label}

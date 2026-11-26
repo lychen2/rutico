@@ -19,7 +19,7 @@ import { scopedThreadKey } from "@t3tools/client-runtime/environment";
 
 import { useChatCanvas } from "../chat/ChatCanvasContext";
 import type { ChatCanvasPreview } from "../chat/chatCanvasLayout";
-import { BrowserSurfaceSlot } from "~/browser/BrowserSurfaceSlot";
+import { BrowserSurfaceSlot, pulseBrowserSurfaceGeometrySync } from "~/browser/BrowserSurfaceSlot";
 import {
   findActiveBrowserRecordingRuntimeTabId,
   useActiveBrowserRecordingTabIds,
@@ -40,6 +40,8 @@ import {
 import { useBrowserLayoutZoomFactor } from "~/browser/useBrowserLayoutZoomFactor";
 import { Button } from "~/components/ui/button";
 import { toastManager } from "~/components/ui/toast";
+import { createVelocityTracker } from "~/lib/motion/rubberBand";
+import { prefersReducedMotion } from "~/lib/motion/springs";
 import { cn } from "~/lib/utils";
 import { useThreadPreviewState } from "~/previewStateStore";
 import {
@@ -63,6 +65,7 @@ import { PreviewUnreachable } from "./PreviewUnreachable";
 import { showPreviewPopup } from "./showPreviewPopup";
 import {
   type PreviewMiniPlayerGesture,
+  resolveMiniPlayerCornerThrow,
   settlePreviewMiniPlayerResize,
   stepPreviewMiniPlayerGesture,
 } from "./previewMiniPlayerGesture";
@@ -460,10 +463,24 @@ function MiniPlayerShell({
   const canvas = useChatCanvas();
   const gestureRef = useRef<PreviewMiniPlayerGesture | null>(null);
   const captureRef = useRef<HTMLElement | null>(null);
+  const [velocityTracker] = useState(() => createVelocityTracker(90));
+  const [throwing, setThrowing] = useState(false);
+  const [docking, setDocking] = useState(false);
+  const throwTimerRef = useRef<number | null>(null);
+  const dockTimerRef = useRef<number | null>(null);
   // Touch toggles the pill after the tap's click so that click cannot land on the newly opened pill.
   const [pillOpen, setPillOpen] = useState(false);
   const handleTappedRef = useRef(false);
   const handleRef = useRef<HTMLDivElement | null>(null);
+
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- clears throw and dock handoff timers when unmounting
+  useEffect(
+    () => () => {
+      if (throwTimerRef.current !== null) window.clearTimeout(throwTimerRef.current);
+      if (dockTimerRef.current !== null) window.clearTimeout(dockTimerRef.current);
+    },
+    [],
+  );
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- document pointerdown listener closes the open pill on an outside press
   useEffect(() => {
     if (!pillOpen) return;
@@ -528,12 +545,35 @@ function MiniPlayerShell({
     };
   }, [heldSourceKey]);
 
+  const handleDockToPanel = () => {
+    if (docking) return;
+    if (prefersReducedMotion()) {
+      onOpenInPanel();
+      return;
+    }
+    setDocking(true);
+    pulseBrowserSurfaceGeometrySync(180);
+    if (dockTimerRef.current !== null) window.clearTimeout(dockTimerRef.current);
+    dockTimerRef.current = window.setTimeout(() => {
+      dockTimerRef.current = null;
+      setDocking(false);
+      onOpenInPanel();
+    }, 135);
+  };
+
   const beginGesture = (
     event: ReactPointerEvent<HTMLElement>,
     direction: BrowserViewportResizeDirection | null,
   ) => {
     if (event.button !== 0 || !frame) return;
     finishGesture();
+    if (throwTimerRef.current !== null) {
+      window.clearTimeout(throwTimerRef.current);
+      throwTimerRef.current = null;
+    }
+    if (throwing) setThrowing(false);
+    velocityTracker.reset();
+    velocityTracker.push(event.clientX, event.clientY, event.timeStamp);
     gestureRef.current = {
       pointerId: event.pointerId,
       pointerType: event.pointerType,
@@ -565,6 +605,7 @@ function MiniPlayerShell({
     if (!gesture.moved) gestureRef.current = { ...gesture, moved: true };
     const store = usePreviewMiniPlayerStore.getState();
     if (step.kind === "move") {
+      velocityTracker.push(event.clientX, event.clientY, event.timeStamp);
       store.move(threadRef, sourceKey, step.position);
       return;
     }
@@ -574,6 +615,34 @@ function MiniPlayerShell({
   const endGesture = (event: ReactPointerEvent<HTMLElement>) => {
     if (gestureRef.current?.pointerId !== event.pointerId) return;
     const gesture = finishGesture();
+    if (
+      event.type === "pointerup" &&
+      gesture?.direction === null &&
+      gesture.moved &&
+      frame &&
+      container
+    ) {
+      velocityTracker.push(event.clientX, event.clientY, event.timeStamp);
+      const { vx, vy } = velocityTracker.getVelocity(event.timeStamp);
+      const targetCorner = resolveMiniPlayerCornerThrow({
+        frame,
+        container,
+        velocityX: vx,
+        velocityY: vy,
+      });
+      if (targetCorner) {
+        if (!prefersReducedMotion()) {
+          setThrowing(true);
+          pulseBrowserSurfaceGeometrySync(310);
+          if (throwTimerRef.current !== null) window.clearTimeout(throwTimerRef.current);
+          throwTimerRef.current = window.setTimeout(() => {
+            throwTimerRef.current = null;
+            setThrowing(false);
+          }, 290);
+        }
+        usePreviewMiniPlayerStore.getState().move(threadRef, sourceKey, targetCorner);
+      }
+    }
     handleTappedRef.current =
       event.type === "pointerup" &&
       gesture?.direction === null &&
@@ -597,9 +666,15 @@ function MiniPlayerShell({
         <section
           aria-label={label}
           data-preview-mini-player={sourceKey}
-          className="pointer-events-none absolute select-none"
+          data-throwing={throwing ? "true" : undefined}
+          data-docking={docking ? "true" : undefined}
+          className={cn(
+            "pointer-events-none absolute select-none",
+            throwing && "mini-player-corner-throw",
+            docking && "mini-player-dock-handoff opacity-0",
+          )}
           style={{
-            left: frame.x,
+            left: docking && container ? container.width - 16 : frame.x,
             top: frame.y,
             width: frame.width,
             height: frame.height,
@@ -637,7 +712,7 @@ function MiniPlayerShell({
                 )}
               />
             </div>
-            <div className="pointer-events-none absolute right-0 top-0 flex h-8 cursor-grab items-center gap-0.5 rounded-lg border border-border/80 bg-popover/92 p-0.5 opacity-0 shadow-lg/20 backdrop-blur-xl transition-opacity group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100 group-data-pill-open:pointer-events-auto group-data-pill-open:opacity-100 active:cursor-grabbing pointer-coarse:right-2.5 pointer-coarse:top-2.5">
+            <div className="mini-player-control-pill surface-optical-chrome surface-elevated-rim pointer-events-none absolute top-0 right-0 flex h-8 origin-top-right scale-90 cursor-grab items-center gap-0.5 rounded-lg p-0.5 opacity-0 group-hover:pointer-events-auto group-hover:scale-100 group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:scale-100 group-focus-within:opacity-100 group-data-pill-open:pointer-events-auto group-data-pill-open:scale-100 group-data-pill-open:opacity-100 active:cursor-grabbing pointer-coarse:top-2.5 pointer-coarse:right-2.5">
               {recording ? (
                 <span aria-hidden className="flex size-6 shrink-0 items-center justify-center">
                   <span className="size-2 rounded-full bg-destructive motion-safe:animate-status-pulse" />
@@ -650,7 +725,7 @@ function MiniPlayerShell({
                     size="icon-xs"
                     aria-label={gt("Open preview in right panel")}
                     onPointerDown={(event) => event.stopPropagation()}
-                    onClick={onOpenInPanel}
+                    onClick={handleDockToPanel}
                   />
                 }
                 label={

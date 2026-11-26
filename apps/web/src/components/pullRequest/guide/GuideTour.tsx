@@ -8,6 +8,7 @@ import { pullRequestEnvironment } from "~/state/pullRequests";
 import { useAtomCommand } from "~/state/use-atom-command";
 
 import { isCommandPaletteOpen } from "~/commandPaletteBus";
+import "~/styles/workspace-hubs.css";
 
 import { GuideRail } from "./GuideRail";
 import { GuideStop } from "./GuideStop";
@@ -48,6 +49,7 @@ export function GuideTour({
   const update = (change: (current: GuideProgress) => Partial<GuideProgress>) =>
     useGuideRunStore.getState().setProgress(key, (current) => ({ ...current, ...change(current) }));
   const [railOpen, setRailOpen] = useState(false);
+  const [stepDirection, setStepDirection] = useState<"initial" | "forward" | "backward">("initial");
 
   const stopCount = guide.stops.length;
   const position = Math.max(Math.min(tour.position, stopCount - 1), 0);
@@ -71,6 +73,9 @@ export function GuideTour({
   const scrollRef = useRef<HTMLDivElement>(null);
   const railRef = useRef<HTMLElement>(null);
   const goTo = (next: number) => {
+    if (next !== position) {
+      setStepDirection(next > position ? "forward" : "backward");
+    }
     const focused = document.activeElement;
     if (scrollRef.current?.contains(focused) && !railRef.current?.contains(focused)) {
       // Keeps focus off the unmounting stop; it is not navigation, so no workspace ring.
@@ -133,6 +138,8 @@ export function GuideTour({
               stop={stop}
               index={position}
               stopCount={stopCount}
+              direction={stepDirection}
+              reviewedCount={tour.seen.size}
               railOpen={railOpen}
               onRailOpenChange={setRailOpen}
               stopList={

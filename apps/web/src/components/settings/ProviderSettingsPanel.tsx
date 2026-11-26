@@ -980,7 +980,7 @@ export function EnvironmentProviderSettings({
   const favorites = settings.favorites.length > 0 ? settings.favorites : NO_FAVORITES;
 
   const representativeProjectId = projectIds[0];
-  const renderProviderInstance = (row: InstanceRow, mode: "list" | "editor") => {
+  const renderProviderInstance = (row: InstanceRow, mode: "list" | "editor", probeIndex = 0) => {
     const showProjectOverride =
       representativeProjectId !== undefined && supportsProjectProviderOverrides;
     return (
@@ -995,6 +995,8 @@ export function EnvironmentProviderSettings({
         isDirty={row.isDirty === true}
         mode={mode}
         selected={mode === "list" && selectedRow?.instanceId === row.instanceId}
+        isProbing={mode === "list" && isRefreshingProviders}
+        probeIndex={probeIndex}
         readOnly={readOnly}
         canWriteSettings={canWriteSettings}
         liveProvider={serverProviders.find((candidate) => candidate.instanceId === row.instanceId)}
@@ -1112,7 +1114,7 @@ export function EnvironmentProviderSettings({
               className="@min-[48rem]/providers:min-h-0 @min-[48rem]/providers:flex-1"
             >
               <div className="divide-y divide-border/50">
-                {rows.map((row) => renderProviderInstance(row, "list"))}
+                {rows.map((row, index) => renderProviderInstance(row, "list", index))}
                 {canAddProvider ? (
                   <button
                     type="button"
@@ -1298,6 +1300,8 @@ function ProviderInstanceRow({
   isDirty,
   mode,
   selected,
+  isProbing,
+  probeIndex,
   readOnly,
   canWriteSettings,
   liveProvider,
@@ -1318,6 +1322,8 @@ function ProviderInstanceRow({
   readonly isDirty: boolean;
   readonly mode: "list" | "editor";
   readonly selected: boolean;
+  readonly isProbing: boolean;
+  readonly probeIndex: number;
   readonly readOnly: boolean;
   readonly canWriteSettings: boolean;
   readonly liveProvider: ServerProvider | undefined;
@@ -1384,6 +1390,8 @@ function ProviderInstanceRow({
       liveProvider={liveProvider}
       mode={mode}
       selected={selected}
+      isProbing={isProbing}
+      probeIndex={probeIndex}
       onSelect={mode === "list" ? () => actions.selectInstance(instanceId) : undefined}
       readOnly={readOnly}
       runtime={

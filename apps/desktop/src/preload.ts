@@ -7,6 +7,9 @@ import type {
   DesktopPreviewRecordingInputEvent,
   DesktopPreviewTabState,
   DesktopSnapShotEvent,
+  DesktopWindowZoomState,
+  LinuxPortalAppearance,
+  LinuxWindowState,
 } from "@t3tools/contracts";
 import { exposeClerkBridge } from "@clerk/electron/preload";
 import { contextBridge, ipcRenderer, webFrame, webUtils } from "electron";
@@ -28,6 +31,72 @@ function isSnapShotEvent(value: unknown): value is DesktopSnapShotEvent {
     typeof type === "string" &&
     SNAP_SHOT_EVENT_TYPES.has(type) &&
     (id === undefined || typeof id === "string")
+  );
+}
+
+function isLinuxWindowState(value: unknown): value is LinuxWindowState {
+  if (typeof value !== "object" || value === null) return false;
+  const candidate = value as Record<string, unknown>;
+  return (
+    typeof candidate.maximized === "boolean" &&
+    typeof candidate.fullscreen === "boolean" &&
+    (candidate.linuxDesktop === undefined ||
+      candidate.linuxDesktop === null ||
+      typeof candidate.linuxDesktop === "string") &&
+    (candidate.isTilingWm === undefined || typeof candidate.isTilingWm === "boolean") &&
+    (candidate.hasNativeWco === undefined || typeof candidate.hasNativeWco === "boolean") &&
+    (candidate.overlayHeight === undefined || typeof candidate.overlayHeight === "number")
+  );
+}
+
+function isPortalAccentColor(value: unknown): boolean {
+  if (typeof value !== "object" || value === null) return false;
+  const candidate = value as Record<string, unknown>;
+  return (
+    typeof candidate.r === "number" &&
+    typeof candidate.g === "number" &&
+    typeof candidate.b === "number" &&
+    Number.isFinite(candidate.r) &&
+    Number.isFinite(candidate.g) &&
+    Number.isFinite(candidate.b) &&
+    candidate.r >= 0 &&
+    candidate.r <= 1 &&
+    candidate.g >= 0 &&
+    candidate.g <= 1 &&
+    candidate.b >= 0 &&
+    candidate.b <= 1
+  );
+}
+
+function isLinuxPortalAppearance(value: unknown): value is LinuxPortalAppearance {
+  if (typeof value !== "object" || value === null) return false;
+  const candidate = value as Record<string, unknown>;
+  return (
+    (candidate.colorScheme === undefined ||
+      candidate.colorScheme === null ||
+      candidate.colorScheme === "dark" ||
+      candidate.colorScheme === "light") &&
+    (candidate.accentColor === undefined ||
+      candidate.accentColor === null ||
+      isPortalAccentColor(candidate.accentColor)) &&
+    (candidate.contrast === undefined ||
+      candidate.contrast === null ||
+      candidate.contrast === "no-preference" ||
+      candidate.contrast === "high")
+  );
+}
+
+function isDesktopWindowZoomState(value: unknown): value is DesktopWindowZoomState {
+  if (typeof value !== "object" || value === null) return false;
+  const candidate = value as Record<string, unknown>;
+  return (
+    typeof candidate.zoomFactor === "number" &&
+    Number.isFinite(candidate.zoomFactor) &&
+    candidate.zoomFactor > 0 &&
+    (candidate.deviceScaleFactor === undefined ||
+      (typeof candidate.deviceScaleFactor === "number" &&
+        Number.isFinite(candidate.deviceScaleFactor) &&
+        candidate.deviceScaleFactor > 0))
   );
 }
 
@@ -301,6 +370,10 @@ contextBridge.exposeInMainWorld("desktopBridge", {
         listener({ state: "up" });
         return;
       }
+      if (hint.state === "committing") {
+        listener({ state: "committing" });
+        return;
+      }
       if (
         hint.state === "down" &&
         "mode" in hint &&
@@ -317,7 +390,61 @@ contextBridge.exposeInMainWorld("desktopBridge", {
   },
   getWindowFullscreenState: () =>
     ipcRenderer.sendSync(IpcChannels.GET_WINDOW_FULLSCREEN_STATE_CHANNEL) === true,
+  getLinuxWindowState: () => {
+    const result: unknown = ipcRenderer.sendSync(IpcChannels.GET_LINUX_WINDOW_STATE_CHANNEL);
+    return isLinuxWindowState(result) ? result : null;
+  },
+  onLinuxWindowStateChange: (listener) => {
+    const wrappedListener = (_event: Electron.IpcRendererEvent, state: unknown) => {
+      if (!isLinuxWindowState(state)) return;
+      listener(state);
+    };
+    ipcRenderer.on(IpcChannels.LINUX_WINDOW_STATE_CHANNEL, wrappedListener);
+    return () => {
+      ipcRenderer.removeListener(IpcChannels.LINUX_WINDOW_STATE_CHANNEL, wrappedListener);
+    };
+  },
+  performLinuxWindowControlAction: (action) =>
+    ipcRenderer.invoke(IpcChannels.LINUX_WINDOW_CONTROL_ACTION_CHANNEL, action),
+  getLinuxPortalAppearance: () => {
+    const result: unknown = ipcRenderer.sendSync(IpcChannels.GET_LINUX_PORTAL_APPEARANCE_CHANNEL);
+    return isLinuxPortalAppearance(result) ? result : null;
+  },
+  onLinuxPortalAppearanceChange: (listener) => {
+    const wrappedListener = (_event: Electron.IpcRendererEvent, appearance: unknown) => {
+      if (!isLinuxPortalAppearance(appearance)) return;
+      listener(appearance);
+    };
+    ipcRenderer.on(IpcChannels.LINUX_PORTAL_APPEARANCE_CHANNEL, wrappedListener);
+    return () => {
+      ipcRenderer.removeListener(IpcChannels.LINUX_PORTAL_APPEARANCE_CHANNEL, wrappedListener);
+    };
+  },
   getWindowZoomFactor: () => webFrame.getZoomFactor(),
+  getWindowZoomState: () => {
+    const result: unknown = ipcRenderer.sendSync(IpcChannels.GET_WINDOW_ZOOM_STATE_CHANNEL);
+    return isDesktopWindowZoomState(result) ? result : null;
+  },
+  onWindowZoomStateChange: (listener) => {
+    const wrappedListener = (_event: Electron.IpcRendererEvent, state: unknown) => {
+      if (!isDesktopWindowZoomState(state)) return;
+      listener(state);
+    };
+    ipcRenderer.on(IpcChannels.WINDOW_ZOOM_STATE_CHANNEL, wrappedListener);
+    return () => {
+      ipcRenderer.removeListener(IpcChannels.WINDOW_ZOOM_STATE_CHANNEL, wrappedListener);
+    };
+  },
+  setWindowZoom: (direction) => ipcRenderer.invoke(IpcChannels.SET_WINDOW_ZOOM_CHANNEL, direction),
+  setTrayState: (state) => ipcRenderer.invoke(IpcChannels.SET_TRAY_STATE_CHANNEL, state),
+  setTaskbarProgress: (input) =>
+    ipcRenderer.invoke(IpcChannels.SET_TASKBAR_PROGRESS_CHANNEL, input),
+  requestWindowAttention: (input) =>
+    ipcRenderer.invoke(IpcChannels.REQUEST_WINDOW_ATTENTION_CHANNEL, input),
+  showNativeNotification: (input) =>
+    ipcRenderer.invoke(IpcChannels.SHOW_NATIVE_NOTIFICATION_CHANNEL, input),
+  closeNativeNotification: (tag) =>
+    ipcRenderer.invoke(IpcChannels.CLOSE_NATIVE_NOTIFICATION_CHANNEL, tag),
   onWindowFullscreenStateChange: (listener) => {
     const wrappedListener = (_event: Electron.IpcRendererEvent, fullscreen: unknown) => {
       if (typeof fullscreen !== "boolean") return;

@@ -1449,7 +1449,6 @@
   "38c19b704e2a7356": "Unicorn",
   "89746f053d54bcf4": "Octopus",
   "ffc3b3858510dee2": "Seedling",
-  "b33ee2521fc7686e": "Plan preview unavailable.",
   "b48540ebc8788b76": "ChatGPT sign-in couldn't finish",
   "52e824623cffe356": "Return to the provider and try again.",
   "68883cb3342998e5": "Reconnect to the environment and try again.",
@@ -1548,7 +1547,6 @@
   "f015055c5e278657": "Unlock viewport aspect ratio",
   "d3e2def23ddae7ad": "Rotate viewport",
   "03602b7aee75e4b2": "Close device toolbar",
-  "03473350af39c96c": "Dimensions",
   "39616a09efe97827": "Standard",
   "46869d51bf04342d": "Lock aspect ratio",
   "7dbe0ec516217751": "Unlock aspect ratio",
@@ -2000,7 +1998,6 @@
   "a10cfdb27152c757": "{count, plural, one {{count} device} other {{count} devices}} connected through {product}. Not you? Review them.",
   "4672f332c89dbcd9": "Review",
   "775a3e99e2638341": "A device wants to connect to {environmentLabel}",
-  "a8befcb9f1c61f60": "{device}. Approve only if it shows code {code}.",
   "ac48cc297029db41": "Approve",
   "c12ca3fea745def0": "Could not approve the device",
   "af63f05ed2f5eeb3": "Deny",
@@ -3101,7 +3098,6 @@
   "09675b4ac9f858dc": "An unexpected router error occurred.",
   "0dacfa40a5cba9c0": "Something went wrong.",
   "734e1a4760896054": "Copy error",
-  "f08afb1daf7281d0": "Page not found",
   "361299a34f2139c5": [
     "This link doesn't point to a page in ",
     {
@@ -3974,47 +3970,6 @@
   "9f53a68da14181e5": "Couldn't load work. Click to retry.",
   "2e5c8e3a72fe169b": "Loading work history",
   "70267e0b78c1df51": "Send a message to start the conversation.",
-  "fcb06624d70ce0f1": [
-    {
-      "i": 1,
-      "k": "_gt_value_1",
-      "v": "v"
-    },
-    " ",
-    {
-      "i": 2,
-      "k": "_gt_value_2",
-      "v": "v"
-    },
-    {
-      "t": "ArrowRightIcon",
-      "i": 3
-    },
-    {
-      "i": 4,
-      "k": "_gt_value_4",
-      "v": "v"
-    },
-    " tokens"
-  ],
-  "2f41c67ef702413b": [
-    "Context compacted ",
-    {
-      "i": 1,
-      "k": "_gt_value_1",
-      "v": "v"
-    },
-    {
-      "t": "ArrowRightIcon",
-      "i": 2
-    },
-    {
-      "i": 3,
-      "k": "_gt_value_3",
-      "v": "v"
-    },
-    " tokens"
-  ],
   "5e304d3afa0b58f1": "Cut off by a steer",
   "60a0764e22592973": "New model",
   "67daabe2b2e6e200": "New",
@@ -4579,7 +4534,6 @@
   "e5428a0daffa236c": "User message",
   "d18107d06a0eb562": "Previous turn",
   "9bcc51263774b2ff": "Next turn",
-  "570979af44ad1b2d": "User message",
   "f7e17fa98210e03d": "Drop files to attach",
   "05d9e1b5134052c8": "Scroll to end",
   "ea106dd9877652ac": "Command approval",
@@ -5437,8 +5391,6 @@
   "7bf0984b4aa3005b": "Android fold controls",
   "42ed341454357e63": "Fold device",
   "1a45e1d0fe008bab": "Unfold device",
-  "42939dde597c8912": "Fold device",
-  "497d24b440a0a956": "Unfold device",
   "57105f046c34d818": "Device controls",
   "a8913f68571ea348": "Home",
   "39214ea3604c08a0": "Back",
@@ -5681,7 +5633,6 @@
   "e8c281b1a85ac547": "Add a comment…",
   "f2160b630793c7b4": "Comment on lines {rangeLabel}",
   "8d12e0769f6d5eb8": "Comment",
-  "40ef11933aa35e8e": "⌘/Ctrl Enter to send",
   "ee90d50efb2fe9fb": "Loading diff…",
   "1601d7e39a52c48f": "Retry loading diff",
   "b7b137472adb6989": "Partial diff preview",
@@ -6332,7 +6283,6 @@
   "26dca8ee72dc5d74": "Could not read settings",
   "52e7a660ce883609": "Still connecting",
   "9a50b20569f2c9e7": "Your saved settings could not be loaded.",
-  "0d22cd9e3b9d94f0": "T3 Code could not confirm this workspace.",
   "573a9e6b17f4e9e3": "Reload",
   "d6c31ff9bb97570e": "Scan limit reached. Some projects or conversations may be missing.",
   "da6f86321113fb7b": "This connection cannot import projects or thread history.",
@@ -7499,8 +7449,6 @@
   "c016508e99843b2e": "Match whole word",
   "ee02309150562d1c": "Use regular expression",
   "ab8e1a4faff53e30": "Search in {project}",
-  "1370b8e1fb4db617": "{results}+ results in {files} files",
-  "124f0bc386f217e5": "{results} results in {files} files",
   "a8813d3506d8df65": "Checking file access…",
   "45c063246b34dde6": "No results found.",
   "f7cc78806ceb0fc1": "Type to search across your project.",
@@ -8025,7 +7973,6 @@
   "79a4f7c1559bfc75": "Add this binding to your Hyprland config, then save. Change the keys if needed.",
   "739c0c6f28537bf3": "Copy shortcut",
   "256a718904049152": "Shortcut",
-  "8e69f303e7e62311": "Press your shortcut. Esc cancels.",
   "8ab8ef3dc5c9ccbe": "Only these changes will be saved. We'll keep a backup.",
   "95e47bf4ef6fd9ca": "Allow T3 Code to read your desktop settings. You'll review any changes here before saving.",
   "0f3ce8b38a3b806f": "Troubleshooting",
@@ -12966,5 +12913,267 @@
   "27d76249d09eb69f": "Review guide ready",
   "faa3bb26abb39c93": "Review guide failed",
   "b7df38b7d8792d78": "Open guide",
-  "9e91e9a77b664e4e": "Could not start a review guide"
+  "9e91e9a77b664e4e": "Could not start a review guide",
+  "edb39baa5476e4b9": "Pixel 7",
+  "b9685f987257fc81": "Fold 5",
+  "de7466f6cf38b24b": "Tablet",
+  "56fb27cf1a726465": "Quick device presets",
+  "cf29a939866a8bf3": "Reset zoom to 100%",
+  "2e353baebd669317": "Clone repository",
+  "76c904b3c050a8d4": "Browse folders",
+  "eb024c2639d007ba": [
+    {
+      "i": 1,
+      "k": "_gt_value_1",
+      "v": "v"
+    },
+    ". Approve only if it shows this code:"
+  ],
+  "ec16ae641b51c4f1": "Hunk navigation",
+  "417555ae5aabce4a": "Previous hunk",
+  "983fc62fc8a50735": "Next hunk",
+  "dd69c3a9bbe01f8f": "Previous hunk",
+  "1c2334ec0c95b7cf": "Next hunk",
+  "eef3955611b6d401": "Press key to open",
+  "c3378d8ea8270eea": "⌘+Click · Open",
+  "9ceae8db4a5d49e1": "Ctrl+Click · Open",
+  "98def48ddd7959e4": "Terminal selection actions",
+  "e0fcfb92d4c0f051": "Pasted",
+  "8aae03346f87a1f0": "Resize terminal split",
+  "0a14a6e84711dd65": "Terminal active",
+  "ae074ee2df576571": "Unread terminal output",
+  "0bde867dbbca0798": "Compact",
+  "49566d9951d1116a": "Tall",
+  "b08b9b10cabb4ccc": "Release to collapse",
+  "ffd3cdd328e21c9d": "Copy",
+  "f287d77b806dbbee": "Minimize window",
+  "35817b3bd12ff86e": "Restore window",
+  "7b64cbbded7ae6dd": "Maximize window",
+  "8d470913e5e1ccbd": "Close window",
+  "06cdd94cddc6eee5": "Page not found",
+  "966432ded52026ac": "Embedded approval frames are blocked to prevent clickjacking.",
+  "de8472ca857b6bc3": "Device pairing",
+  "35241199ed59b3a1": "Target backend",
+  "3cca428b4756034e": "Completing handshake…",
+  "6f7e44f6a2b2db7f": "Copied selection",
+  "4f184e883ab22368": "Copy selection",
+  "d73f28486d4db494": "Hold to revert repositories…",
+  "fd96ce90c1b29188": "Hold to revert files…",
+  "83a0aa97724405d5": "Click again to revert repositories",
+  "5bf625fbc8ef194c": "Click again to revert files",
+  "8c51501e623e9cb1": "Jump to bottom of output",
+  "b2c41734f7c7a146": "Bottom",
+  "d2288b0e771b84e3": "Submitting…",
+  "24b098ef4482a799": "Failed. Try again.",
+  "f21f2df6b49d350d": "Review {branch}",
+  "40eb17950670b8d0": "Review the current changes on {branch} and flag any bugs, regressions, or missing edge cases.",
+  "4bd24552914786c4": "Review the current working tree changes and flag any bugs, regressions, or missing edge cases.",
+  "034d20000b3e76ee": "Explain architecture",
+  "f399f3b4675c0f55": "Walk me through the architecture of {project} and point out where the core logic lives.",
+  "c1249e2e0d59a81e": "Fix failing tests",
+  "07d532a674a838ef": "Run the relevant tests, diagnose any failures, and propose a minimal verified fix.",
+  "373ad0020e702975": "Plan a feature",
+  "f246b3895959fb13": "Help me design a concise implementation plan and check trade-offs before editing code.",
+  "509a6fec8b860cea": "Explore codebase",
+  "15b0f62ef2a70d8e": "Map out the workspace structure and summarize the key entry points.",
+  "68c007ba40b99ea3": "Debug an issue",
+  "b046c36e37d64e3f": "Help me trace the root cause of a bug and verify the fix with a regression test.",
+  "bb1ea2614f9d8eb7": "Automate a task",
+  "fed25a043e25e42a": "Write a clean, reusable script to automate a repetitive workflow task.",
+  "13656ee71c9dfcc8": "Plan a task",
+  "587d7b06108ff7d7": "Break down my goal into clear, ordered implementation steps.",
+  "bec63b7d7a4776fd": "Hide suggestions",
+  "58b7b0e79013a091": "Linked",
+  "70a89f6b60942151": "Diagram view",
+  "af1b37a01a6b26ba": "{count, plural, one {{count} turn} other {{count} turns}}",
+  "d1aee697e818a0a5": [
+    "Rewind to Turn ",
+    {
+      "i": 1,
+      "k": "_gt_value_1",
+      "v": "v"
+    },
+    " ·",
+    " ",
+    {
+      "i": 2,
+      "k": "_gt_value_2",
+      "v": "v"
+    }
+  ],
+  "8a74fc59855af554": "Rewind point",
+  "38ef4c04ccc19e33": [
+    {
+      "i": 1,
+      "k": "_gt_value_1",
+      "v": "v"
+    },
+    " ",
+    {
+      "t": "span",
+      "i": 2,
+      "c": {
+        "i": 3,
+        "k": "_gt_value_3",
+        "v": "v"
+      }
+    },
+    {
+      "t": "ArrowRightIcon",
+      "i": 4
+    },
+    {
+      "i": 5,
+      "k": "_gt_value_5",
+      "v": "v"
+    },
+    " tokens"
+  ],
+  "e68f1b5922d18d00": [
+    "Context compacted",
+    " ",
+    {
+      "t": "span",
+      "i": 1,
+      "c": {
+        "i": 2,
+        "k": "_gt_value_2",
+        "v": "v"
+      }
+    },
+    {
+      "t": "ArrowRightIcon",
+      "i": 3
+    },
+    {
+      "i": 4,
+      "k": "_gt_value_4",
+      "v": "v"
+    },
+    " tokens"
+  ],
+  "c6fa2905d56a750c": "Saved",
+  "9edbd423be034977": "Plan sections",
+  "e3bff3c4a4a7becd": "Sealed",
+  "01754758107694bd": "Copied command",
+  "19d4b890532a5103": "Added",
+  "fe962306e32fb793": "Turn {current} / {total}",
+  "67733c48eaaec73a": "Plan",
+  "aa41f502c96a9cdb": "Drop to attach {count, plural, one {# image} other {# images}}",
+  "092edf8fb50342b8": "Drop to attach {count, plural, one {# file} other {# files}}",
+  "19716fdaca23d08e": "Thinking…",
+  "d9db375d11c22a0e": "Authorizing…",
+  "5a1c91c1746696e1": "Preparing sign-in…",
+  "6ee0b53d64385dce": "Terminal CLI",
+  "b3ab982ad554c0d0": "Hinge angle {angle}",
+  "826cf81a3c0d7476": "Preview 90° tabletop posture",
+  "e1c7405594920fca": "Fold device (0°)",
+  "8abbcca5585f56b7": "Preview 90° tabletop posture",
+  "eccb3ea25c9b64ba": "Unfold device (180°)",
+  "69f0b9e76dddf907": "Copied locator",
+  "9c19fa80cc34e743": "Copy locator for {label}",
+  "482e087baf95e13d": "Inspect element frames",
+  "05bb90e23176c293": "Emulator network is offline. Re-enable Network to restore connectivity.",
+  "84b7bc3c3e9706d9": "to send",
+  "509c2c424cddea93": "Checkerboard backdrop",
+  "3c5905a5f9ed0e36": "Dark backdrop",
+  "8d6e290b30124dee": "Light backdrop",
+  "d2b763f004adca4b": "Page {current} / {count}",
+  "8f88f0a199273985": "Jump to PDF page",
+  "bbfcdcd8bcb82940": "Fit",
+  "d419debb9f60d259": "Joining…",
+  "c8f10d28dead0ebb": "Pending approval",
+  "425be7ecd878142d": "Live",
+  "56a121493ab0f98c": "Guest pass",
+  "ca5ac82c9c5b5f94": "Follow the live thread stream and propose messages for the owner to approve.",
+  "0c54b9cd68f0787f": "State: {value}",
+  "188ed5234240884b": "Reset state filter",
+  "66339a2c61a2ff63": "Reset involvement filter",
+  "268efd1fba1a16c9": "Host: {host}",
+  "f9514e1e51bca2a5": "Clear host filter",
+  "20330322cadd2317": "Assignee: {assignee}",
+  "811cafaf519eb684": "Clear assignee filter",
+  "f0cda74565d99394": "Label: {label}",
+  "c2f1e831f15c5c0d": "Remove label filter {label}",
+  "46cb26c0d9bc6a00": "{count, plural, one {{count} project hidden} other {{count} projects hidden}}",
+  "fcece47c89167146": "Sort: {order}",
+  "43477646cecb44d2": "Reset sort order",
+  "7f485d3cbfd284c9": "Clear all",
+  "7029dbf2b6adb0a3": "Loading workspace",
+  "3513fa14be05d946": "Rutico could not confirm this workspace.",
+  "066217798e6896ad": "Agent",
+  "35178b7c9d9cf160": "{passed}/{total} passed",
+  "4c947f8b8707b087": "{count} neutral",
+  "b2c09188b06721d1": "Match context preview",
+  "b660819f63b144d8": "Loading context…",
+  "fa5598b903274a9e": [
+    {
+      "i": 1,
+      "k": "_gt_value_1",
+      "v": "v"
+    },
+    "+ results in",
+    " ",
+    {
+      "i": 2,
+      "k": "_gt_value_2",
+      "v": "v"
+    },
+    " ",
+    "files"
+  ],
+  "4f512f026514258f": [
+    {
+      "i": 1,
+      "k": "_gt_value_1",
+      "v": "v"
+    },
+    " ",
+    "results in",
+    " ",
+    {
+      "i": 2,
+      "k": "_gt_value_2",
+      "v": "v"
+    },
+    " ",
+    "files"
+  ],
+  "0b2f4479a90cd9a7": "{seconds}s left",
+  "bee8caa7e0b12465": "Device paired",
+  "4f8394b3ac059796": "Paired",
+  "049f81f640bcfc6d": [
+    "Press your shortcut.",
+    " ",
+    {
+      "i": 1,
+      "k": "_gt_value_1",
+      "v": "v"
+    },
+    " ",
+    "cancels."
+  ],
+  "39739541dfa49dde": "Added to {file}",
+  "85a1956124976052": "Ready · on PATH",
+  "99c381b0315c5c86": "Not on PATH",
+  "80e7e1f45e1f3735": "Android emulator host ready",
+  "22f1cea0a78baaf9": "Android ready",
+  "9a528ad31c75648d": "Super",
+  "3658dfe44e4413b2": "Jump to {command}",
+  "e975c5b980fd7a55": "0.5× slow motion",
+  "8cbbe6cc92674786": "Toggle 0.5x slow motion preview",
+  "8dd9d6a52f3dd876": "Replay",
+  "3abaf42fcfa0c875": "CPU and I/O history oscilloscope",
+  "181b99f59c9ed00f": "Active days of the week",
+  "370aa80e162adbf6": "Active",
+  "8e589c76d9bd6f9a": "Inactive",
+  "437234770724e32c": "Next runs:",
+  "0fab88b253372f0d": "Weekly rhythm",
+  "cb20a44dabc40ee5": "minutes",
+  "74ca9a34f7e7d50b": "Live preview",
+  "a504d99ad97e8e26": "Whitespace hidden",
+  "c6e30aa5a3f4cb94": "Previewing {family}",
+  "9d41b6bcc9bce7dc": "Click again to confirm",
+  "aa2d94b8c36e3d31": "Resize workflow pane",
+  "01c987bac1d44224": "Jump to slide"
 }

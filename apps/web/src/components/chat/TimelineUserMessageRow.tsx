@@ -19,7 +19,10 @@ import { useEnvironment } from "../../state/environments";
 import { useEnvironmentQuery } from "../../state/query";
 import { serverEnvironment } from "../../state/server";
 import { replaceComposerContextReferences } from "@t3tools/shared/composerContextReferences";
-import { memo, use, useState, type ReactNode } from "react";
+import { memo, use, useLayoutEffect, useRef, useState, type ReactNode } from "react";
+import { getSpringWaapiTiming, prefersReducedMotion } from "~/lib/motion/springs";
+import { observeVisibleAnimation } from "~/lib/visibleAnimation";
+import { consumeUserMessageLaunchOrigin, userMessageLaunchKey } from "./optimisticUserMessages";
 import {
   createMessageAttachmentPreviewProjector,
   selectMessageImageResources,
@@ -51,6 +54,7 @@ import {
   buildAttachmentVideoAsset,
   buildAttachmentVideoPreview,
   buildExpandedImagePreview,
+  capturePreviewSourceRect,
 } from "./ExpandedImagePreview";
 import {
   SNAP_SHOT_ATTACHMENT_FRAME_CLASS,
@@ -334,6 +338,7 @@ function AutomationMessageRow({ row }: { row: Extract<TimelineRow, { kind: "mess
         )}
         data-user-message-bubble=""
         data-user-message-state={row.message.runId === null ? "launching" : "settled"}
+        data-rewind-target={ctx.revertPreviewMessageId === row.message.id ? "true" : undefined}
       >
         <MessageAuthorHeading>{gt("Automation")}</MessageAuthorHeading>
         <FoldedMessageHeader
@@ -468,6 +473,69 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
   const m = useMessages();
   const { onImageExpand, onFileOpen } = ctx;
   const coarsePointer = useMediaQuery({ pointer: "coarse" });
+  const bubbleRef = useRef<HTMLDivElement | null>(null);
+  const launchAnimationRef = useRef<Animation | null>(null);
+  const launchIdentityKey = userMessageLaunchKey(ctx.routeThreadKey, row.message.id);
+  const isOptimisticLaunching = row.message.runId === null;
+
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- consumes one-shot FLIP launch rect keyed by stable thread+message ID and cancels on LegendList container recycle
+  useLayoutEffect(() => {
+    const bubble = bubbleRef.current;
+    launchAnimationRef.current?.cancel();
+    launchAnimationRef.current = null;
+    if (!bubble) return;
+    bubble.style.transform = "";
+    delete bubble.dataset.userMessageFlip;
+
+    const originRect = consumeUserMessageLaunchOrigin(launchIdentityKey);
+    if (!originRect || prefersReducedMotion() || typeof bubble.animate !== "function") return;
+
+    const targetRect = bubble.getBoundingClientRect();
+    const rawDx =
+      originRect.left + originRect.width * 0.5 - (targetRect.left + targetRect.width * 0.5);
+    const rawDy = originRect.top - targetRect.top;
+    const dx = Math.max(-44, Math.min(44, rawDx));
+    const dy = Math.max(10, Math.min(240, rawDy));
+    if (Math.abs(dx) < 1 && Math.abs(dy) < 1) return;
+
+    bubble.dataset.userMessageFlip = "active";
+    const timing = getSpringWaapiTiming("spatial");
+    const animation = bubble.animate(
+      [
+        {
+          opacity: 0.72,
+          transform: `translate3d(${dx.toFixed(1)}px, ${dy.toFixed(1)}px, 0) scale(0.95)`,
+        },
+        {
+          opacity: 1,
+          transform: "translate3d(0, 0, 0) scale(1)",
+        },
+      ],
+      {
+        duration: 280,
+        easing: timing.easing,
+      },
+    );
+    launchAnimationRef.current = animation;
+    const clear = () => {
+      delete bubble.dataset.userMessageFlip;
+      if (launchAnimationRef.current === animation) {
+        launchAnimationRef.current = null;
+      }
+    };
+    animation.addEventListener("finish", clear, { once: true });
+    return () => {
+      animation.cancel();
+      clear();
+    };
+  }, [launchIdentityKey]);
+
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- binds offscreen animation gating for optimistic sending sheen while message awaits server ack
+  useLayoutEffect(() => {
+    const bubble = bubbleRef.current;
+    if (!bubble || !isOptimisticLaunching) return;
+    return observeVisibleAnimation(bubble);
+  }, [isOptimisticLaunching]);
   // A linked environment's agent sent it from a thread there.
   const senderRef =
     row.message.linkedSender ??
@@ -789,10 +857,13 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
                 type="button"
                 className="group/thumb block h-full w-full cursor-zoom-in"
                 aria-label={gt("Preview {label}", { label: image.name })}
-                onClick={() => {
+                onClick={(event) => {
                   const preview = buildExpandedImagePreview(regularImages, image.id, copySnapshot);
                   if (!preview) return;
-                  ctx.onImageExpand(preview);
+                  ctx.onImageExpand({
+                    ...preview,
+                    sourceRect: capturePreviewSourceRect(event.currentTarget),
+                  });
                 }}
               >
                 {/* Isolate the thumbnail raster from nearby activity repaints in Chromium. */}
@@ -940,6 +1011,7 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
         </div>
       ) : null}
       <div
+        ref={bubbleRef}
         className={cn(
           "relative min-w-0 max-w-[80%] rounded-2xl text-message-foreground",
           (mediaAboveText || row.groupedWithPrevious) && "rounded-tr-md",
@@ -953,6 +1025,7 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
         )}
         data-user-message-bubble=""
         data-user-message-state={row.message.runId === null ? "launching" : "settled"}
+        data-rewind-target={ctx.revertPreviewMessageId === row.message.id ? "true" : undefined}
       >
         {/* Outside the fold so a collapsed message still has a heading to navigate to. */}
         {mediaAboveText ? null : (

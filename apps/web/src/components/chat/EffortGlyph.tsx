@@ -1,5 +1,6 @@
 import type { ProviderOptionDescriptor } from "@t3tools/contracts";
 import { ZapIcon } from "lucide-react";
+import type { CSSProperties } from "react";
 
 import type { ComposerControlSize } from "./ComposerControl";
 
@@ -72,6 +73,7 @@ export function EffortGlyph(props: { count: number; filled: number; size?: Compo
     >
       {effortBarHeights(props.count, maxBar).map((barHeight, index) => {
         const x = index * step;
+        const isFilled = index < props.filled;
         return (
           <rect
             key={x}
@@ -79,8 +81,17 @@ export function EffortGlyph(props: { count: number; filled: number; size?: Compo
             y={maxBar - barHeight}
             width={2}
             height={barHeight}
+            rx={0.5}
             fill="currentColor"
-            opacity={index < props.filled ? 1 : 0.4}
+            data-effort-bar="true"
+            data-filled={isFilled ? "true" : "false"}
+            style={
+              {
+                "--effort-bar-index": index,
+                transformBox: "fill-box",
+                transformOrigin: "center bottom",
+              } as CSSProperties
+            }
           />
         );
       })}

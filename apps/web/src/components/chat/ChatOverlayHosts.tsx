@@ -26,7 +26,9 @@ import {
 } from "../ui/alert-dialog";
 import { Button } from "../ui/button";
 import { Dialog } from "../ui/dialog";
+import { HoldToConfirmButton } from "../ui/hold-to-confirm";
 import { WizardPopup } from "../ui/wizard";
+import { getSpringWaapiTiming, prefersReducedMotion } from "~/lib/motion/springs";
 import { findRevertCheckpoint } from "../../session-logic";
 import { filesystemEnvironment } from "../../state/filesystem";
 import { useEnvironmentQuery } from "../../state/query";
@@ -207,6 +209,60 @@ export function openRevertConfirm(threadKey: string, pending: PendingRevert): vo
   appAtomRegistry.set(revertConfirmAtom, { threadKey, value: pending });
 }
 
+/** Read-only preview of the message being targeted by an open checkpoint rewind confirmation. */
+export function useRevertPreviewMessageId(threadKey: string | null): MessageId | null {
+  return useThreadOverlay(revertConfirmAtom, threadKey)?.messageId ?? null;
+}
+
+const COMPOSER_RESTORE_BLOOM_MS = 380;
+let activeRestoreBloom: { element: HTMLElement; animation: Animation } | null = null;
+
+/** Play a one-shot 380ms amber rim bloom on the composer after a checkpoint rewind restores prompt/attachments. */
+export function triggerComposerRestoreBloom(): void {
+  if (typeof document === "undefined" || prefersReducedMotion()) return;
+  const target =
+    document.querySelector<HTMLElement>('[data-chat-composer-main-surface="true"]') ??
+    document.querySelector<HTMLElement>('[data-chat-composer-form="true"]');
+  if (!target || typeof target.animate !== "function") return;
+  if (activeRestoreBloom) {
+    const previous = activeRestoreBloom;
+    activeRestoreBloom = null;
+    delete previous.element.dataset.composerRestoreBloom;
+    previous.animation.cancel();
+  }
+  target.dataset.composerRestoreBloom = "true";
+  const timing = getSpringWaapiTiming("snappy");
+  const animation = target.animate(
+    [
+      {
+        boxShadow:
+          "0 0 0 0px color-mix(in oklch, var(--warning) 0%, transparent), inset 0 0 0 1px color-mix(in oklch, var(--warning) 62%, transparent)",
+      },
+      {
+        boxShadow:
+          "0 0 0 3px color-mix(in oklch, var(--warning) 24%, transparent), inset 0 0 0 1px color-mix(in oklch, var(--warning) 72%, transparent)",
+        offset: 0.32,
+      },
+      {
+        boxShadow:
+          "0 0 0 0px color-mix(in oklch, var(--warning) 0%, transparent), inset 0 0 0 1px color-mix(in oklch, var(--warning) 0%, transparent)",
+      },
+    ],
+    {
+      duration: COMPOSER_RESTORE_BLOOM_MS,
+      easing: timing.easing,
+    },
+  );
+  const current = { element: target, animation };
+  activeRestoreBloom = current;
+  const clear = () => {
+    delete target.dataset.composerRestoreBloom;
+    if (activeRestoreBloom === current) activeRestoreBloom = null;
+  };
+  animation.addEventListener("finish", clear, { once: true });
+  animation.addEventListener("cancel", clear, { once: true });
+}
+
 export function RevertConfirmHost(props: {
   readonly threadKey: string;
   readonly environmentId: EnvironmentId;
@@ -276,17 +332,32 @@ export function RevertConfirmHost(props: {
           <AlertDialogClose render={<Button variant="outline" />}>
             <T>Cancel</T>
           </AlertDialogClose>
-          <Button
+          <HoldToConfirmButton
             variant="destructive-outline"
             disabled={fileRestore === null}
-            onClick={() => confirm(true)}
+            durationMs={1200}
+            holdLabel={
+              fileRestore === "repositories" ? (
+                <T>Hold to revert repositories…</T>
+              ) : (
+                <T>Hold to revert files…</T>
+              )
+            }
+            armedLabel={
+              fileRestore === "repositories" ? (
+                <T>Click again to revert repositories</T>
+              ) : (
+                <T>Click again to revert files</T>
+              )
+            }
+            onConfirm={() => confirm(true)}
           >
             {fileRestore === "repositories" ? (
               <T>Revert repositories too</T>
             ) : (
               <T>Revert files too</T>
             )}
-          </Button>
+          </HoldToConfirmButton>
           <Button onClick={() => confirm(false)}>
             <T>Revert and keep changes</T>
           </Button>

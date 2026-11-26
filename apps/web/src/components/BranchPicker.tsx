@@ -222,13 +222,25 @@ export function BranchPickerRefItem({
   const hasSecondaryWorktree =
     refName.worktreePath && activeProjectCwd && refName.worktreePath !== activeProjectCwd;
   const badge = refName.current
-    ? gt("current", { $context: "git ref badge, the checked-out branch" })
+    ? {
+        label: gt("current", { $context: "git ref badge, the checked-out branch" }),
+        className: "bg-primary/14 text-primary ring-1 ring-inset ring-primary/25",
+      }
     : hasSecondaryWorktree
-      ? gt("worktree", { $context: "git ref badge, checked out in another worktree" })
+      ? {
+          label: gt("worktree", { $context: "git ref badge, checked out in another worktree" }),
+          className: "bg-info/14 text-info ring-1 ring-inset ring-info/25",
+        }
       : refName.isRemote
-        ? gt("remote", { $context: "git ref badge, a remote branch" })
+        ? {
+            label: gt("remote", { $context: "git ref badge, a remote branch" }),
+            className: "bg-muted text-muted-foreground",
+          }
         : refName.isDefault
-          ? gt("default", { $context: "git ref badge, the default branch" })
+          ? {
+              label: gt("default", { $context: "git ref badge, the default branch" }),
+              className: "bg-secondary text-secondary-foreground",
+            }
           : null;
   return (
     <ComboboxItem
@@ -241,8 +253,22 @@ export function BranchPickerRefItem({
       onContextMenu={onContextMenu}
     >
       <div className="flex w-full min-w-0 items-center justify-between gap-2">
-        <MiddleTruncate value={itemValue} className="flex-1" />
-        {badge && <span className="shrink-0 text-3xs text-muted-foreground/45">{badge}</span>}
+        <span className="flex min-w-0 flex-1 items-center gap-1.5">
+          {refName.current ? (
+            <span aria-hidden="true" className="size-1.5 shrink-0 rounded-full bg-primary" />
+          ) : null}
+          <MiddleTruncate value={itemValue} className="flex-1" />
+        </span>
+        {badge ? (
+          <span
+            className={cn(
+              "shrink-0 rounded-full px-1.5 py-0.5 text-3xs leading-none font-medium",
+              badge.className,
+            )}
+          >
+            {badge.label}
+          </span>
+        ) : null}
       </div>
     </ComboboxItem>
   );
