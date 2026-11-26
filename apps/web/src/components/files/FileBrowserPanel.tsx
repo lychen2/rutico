@@ -32,6 +32,7 @@ import {
   PIERRE_TREE_UNSAFE_CSS,
   pierreTreeStyle,
   titleClippedPierreTreeRow,
+  usePierreTreeRailAndEdgeFade,
 } from "~/pierre-tree-theme";
 
 import { joinHostPath } from "./filePath";
@@ -368,6 +369,9 @@ export default function FileBrowserPanel({
     search.close();
   };
   const searchInputRef = useRef<HTMLInputElement>(null);
+  const treeStageRef = useRef<HTMLDivElement | null>(null);
+  const laserRailRef = useRef<HTMLDivElement | null>(null);
+  usePierreTreeRailAndEdgeFade(treeStageRef, laserRailRef);
   const focusSearch = () => {
     searchInputRef.current?.focus();
     searchInputRef.current?.select();
@@ -671,39 +675,55 @@ export default function FileBrowserPanel({
           </div>
         ) : null
       ) : (
-        <FileTree
-          model={model}
-          aria-label={gt("{projectName} files", { projectName })}
-          className="min-h-0 flex-1 overflow-hidden"
-          onClickCapture={(event) => {
-            if (
-              event.defaultPrevented ||
-              event.button !== 0 ||
-              event.ctrlKey ||
-              event.metaKey ||
-              event.shiftKey ||
-              event.altKey ||
-              dragMention.isDragInProgress()
-            ) {
-              return;
-            }
-            // Pierre emits no change for its sole selected row; read before the click to avoid double opens.
-            const selected = model.getSelectedPaths();
-            const path = selected.length === 1 ? selected[0] : undefined;
-            if (!path || entryKindsRef.current.get(path) !== "file") return;
-            const clickedSelectedRow = event.nativeEvent
-              .composedPath()
-              .some(
-                (node) =>
-                  node instanceof HTMLElement && node.getAttribute("data-item-path") === path,
-              );
-            if (!clickedSelectedRow) return;
-            treeSelectionPathRef.current = path;
-            onOpenFile(panelPath(path));
-          }}
-          style={pierreTreeStyle(resolvedTheme)}
-          onPointerOver={titleClippedPierreTreeRow}
-        />
+        <div
+          ref={treeStageRef}
+          data-pierre-tree-stage
+          data-more-above="false"
+          data-more-below="false"
+          className="pierre-tree-stage relative flex min-h-0 flex-1 flex-col overflow-hidden"
+          style={{ height: "100%" }}
+        >
+          <div
+            ref={laserRailRef}
+            aria-hidden="true"
+            data-slot="pierre-tree-laser-rail"
+            className="pointer-events-none absolute top-0 left-1 z-10 w-0.5 rounded-full bg-primary opacity-0 will-change-transform"
+            style={{ position: "absolute", top: 0, left: 4, pointerEvents: "none" }}
+          />
+          <FileTree
+            model={model}
+            aria-label={gt("{projectName} files", { projectName })}
+            className="min-h-0 flex-1 overflow-hidden"
+            onClickCapture={(event) => {
+              if (
+                event.defaultPrevented ||
+                event.button !== 0 ||
+                event.ctrlKey ||
+                event.metaKey ||
+                event.shiftKey ||
+                event.altKey ||
+                dragMention.isDragInProgress()
+              ) {
+                return;
+              }
+              // Pierre emits no change for its sole selected row; read before the click to avoid double opens.
+              const selected = model.getSelectedPaths();
+              const path = selected.length === 1 ? selected[0] : undefined;
+              if (!path || entryKindsRef.current.get(path) !== "file") return;
+              const clickedSelectedRow = event.nativeEvent
+                .composedPath()
+                .some(
+                  (node) =>
+                    node instanceof HTMLElement && node.getAttribute("data-item-path") === path,
+                );
+              if (!clickedSelectedRow) return;
+              treeSelectionPathRef.current = path;
+              onOpenFile(panelPath(path));
+            }}
+            style={pierreTreeStyle(resolvedTheme)}
+            onPointerOver={titleClippedPierreTreeRow}
+          />
+        </div>
       )}
     </div>
   );

@@ -88,3 +88,39 @@
     opacity: 0;
   }
 }
+
+/* --------------------------------------------------------------------------
+   D18 / C058: Pierre FileTree Tip 008 Dynamic Scroll-Edge Fade & Laser Rail
+   -------------------------------------------------------------------------- */
+
+.pierre-tree-stage[data-more-above="true"][data-more-below="false"] {
+  -webkit-mask-image: linear-gradient(to bottom, transparent 0px, black 18px, black 100%);
+  mask-image: linear-gradient(to bottom, transparent 0px, black 18px, black 100%);
+}
+
+.pierre-tree-stage[data-more-above="false"][data-more-below="true"] {
+  -webkit-mask-image: linear-gradient(
+    to bottom,
+    black 0%,
+    black calc(100% - 18px),
+    transparent 100%
+  );
+  mask-image: linear-gradient(to bottom, black 0%, black calc(100% - 18px), transparent 100%);
+}
+
+.pierre-tree-stage[data-more-above="true"][data-more-below="true"] {
+  -webkit-mask-image: linear-gradient(
+    to bottom,
+    transparent 0px,
+    black 18px,
+    black calc(100% - 18px),
+    transparent 100%
+  );
+  mask-image: linear-gradient(
+    to bottom,
+    transparent 0px,
+    black 18px,
+    black calc(100% - 18px),
+    transparent 100%
+  );
+}
