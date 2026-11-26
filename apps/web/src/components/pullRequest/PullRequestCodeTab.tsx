@@ -97,6 +97,7 @@ import {
 import { APP_BASE_NAME } from "~/branding";
 import { PREFERRED_HIGHLIGHTER } from "~/lib/syntaxHighlighting";
 import { cn } from "~/lib/utils";
+import "~/styles/workspace-hubs.css";
 import { createPullRequestDiffFileContentsLoader } from "~/lib/diffFileContents";
 import {
   buildDiffReviewComment,
@@ -1481,67 +1482,96 @@ function PullRequestCodeTab({
               )}
             </Button>
           ) : null}
-          {filesViewed.enabled && files.length > 0 ? (
-            <span className="flex min-w-0 items-center gap-1 tabular-nums">
-              <span className="shrink-0">
-                {filePaths.filter(isFileViewed).length} / {files.length}
-              </span>
-              <span className="truncate">
-                {viewedFilesStore === "environment"
-                  ? gt("viewed in {app}", { app: APP_BASE_NAME })
-                  : gt("viewed", { $context: "files marked as viewed" })}
-              </span>
-              {viewedFilesStore === "environment" ? (
-                <Tooltip>
-                  <TooltipTrigger render={<span className="flex shrink-0 items-center" />}>
-                    <InfoIcon
-                      aria-label={gt("These ticks are kept here, not on the host")}
-                      className="text-muted-foreground size-3.5"
-                    />
-                  </TooltipTrigger>
-                  <TooltipPopup side="bottom">
-                    <T>
-                      This host keeps no shared record of which files you have read, so these ticks
-                      are kept by this environment. They follow you between the apps connected to
-                      it, but the host's own web UI will not show them.
-                    </T>
-                  </TooltipPopup>
-                </Tooltip>
-              ) : null}
-              {filesViewed.error !== null ? (
-                <Tooltip>
-                  <TooltipTrigger render={<span className="flex shrink-0 items-center" />}>
-                    <TriangleAlertIcon
-                      aria-label={gt("Your ticks could not be read")}
-                      className="size-3.5 text-warning-foreground"
-                    />
-                  </TooltipTrigger>
-                  <TooltipPopup side="bottom">
-                    <T>
-                      The boxes below are whatever was last read, and empty if nothing has been read
-                      yet. <Var>{filesViewed.error}</Var>
-                    </T>
-                  </TooltipPopup>
-                </Tooltip>
-              ) : null}
-              {filesViewed.truncated ? (
-                <Tooltip>
-                  <TooltipTrigger render={<span className="flex shrink-0 items-center" />}>
-                    <TriangleAlertIcon
-                      aria-label={gt("This count covers only part of the change")}
-                      className="size-3.5 text-warning-foreground"
-                    />
-                  </TooltipTrigger>
-                  <TooltipPopup side="bottom">
-                    <T>
-                      This change has more files than the host will report ticks for in one read, so
-                      the count is short and some boxes below start empty.
-                    </T>
-                  </TooltipPopup>
-                </Tooltip>
-              ) : null}
-            </span>
-          ) : null}
+          {filesViewed.enabled && files.length > 0
+            ? (() => {
+                const viewedFileCount = filePaths.filter(isFileViewed).length;
+                const viewedProgressRatio = Math.min(1, viewedFileCount / files.length);
+                const allFilesViewed = viewedFileCount >= files.length;
+                return (
+                  <span
+                    data-slot="pr-viewed-progress-capsule"
+                    data-complete={allFilesViewed ? "true" : undefined}
+                    className={cn(
+                      "inline-flex min-w-0 items-center gap-1.5 rounded-full border px-2 py-0.5 tabular-nums transition-colors duration-200 motion-reduce:transition-none",
+                      allFilesViewed
+                        ? "border-success/45 bg-success/10 text-success-foreground"
+                        : "border-border/70 bg-muted/40 text-muted-foreground",
+                    )}
+                  >
+                    <span
+                      aria-hidden="true"
+                      className="h-1.5 w-10 shrink-0 overflow-hidden rounded-full bg-border/65"
+                    >
+                      <span
+                        data-slot="pr-viewed-progress-fill"
+                        className={cn(
+                          "block size-full origin-left rounded-full transition-transform duration-(--duration-fluid) ease-(--spring-fluid) motion-reduce:transition-none",
+                          allFilesViewed ? "bg-success" : "bg-primary",
+                        )}
+                        style={{ transform: `scaleX(${viewedProgressRatio})` }}
+                      />
+                    </span>
+                    <span className="shrink-0 font-medium text-foreground">
+                      {viewedFileCount} / {files.length}
+                    </span>
+                    <span className="truncate">
+                      {viewedFilesStore === "environment"
+                        ? gt("viewed in {app}", { app: APP_BASE_NAME })
+                        : gt("viewed", { $context: "files marked as viewed" })}
+                    </span>
+                    {viewedFilesStore === "environment" ? (
+                      <Tooltip>
+                        <TooltipTrigger render={<span className="flex shrink-0 items-center" />}>
+                          <InfoIcon
+                            aria-label={gt("These ticks are kept here, not on the host")}
+                            className="text-muted-foreground size-3.5"
+                          />
+                        </TooltipTrigger>
+                        <TooltipPopup side="bottom">
+                          <T>
+                            This host keeps no shared record of which files you have read, so these
+                            ticks are kept by this environment. They follow you between the apps
+                            connected to it, but the host's own web UI will not show them.
+                          </T>
+                        </TooltipPopup>
+                      </Tooltip>
+                    ) : null}
+                    {filesViewed.error !== null ? (
+                      <Tooltip>
+                        <TooltipTrigger render={<span className="flex shrink-0 items-center" />}>
+                          <TriangleAlertIcon
+                            aria-label={gt("Your ticks could not be read")}
+                            className="size-3.5 text-warning-foreground"
+                          />
+                        </TooltipTrigger>
+                        <TooltipPopup side="bottom">
+                          <T>
+                            The boxes below are whatever was last read, and empty if nothing has
+                            been read yet. <Var>{filesViewed.error}</Var>
+                          </T>
+                        </TooltipPopup>
+                      </Tooltip>
+                    ) : null}
+                    {filesViewed.truncated ? (
+                      <Tooltip>
+                        <TooltipTrigger render={<span className="flex shrink-0 items-center" />}>
+                          <TriangleAlertIcon
+                            aria-label={gt("This count covers only part of the change")}
+                            className="size-3.5 text-warning-foreground"
+                          />
+                        </TooltipTrigger>
+                        <TooltipPopup side="bottom">
+                          <T>
+                            This change has more files than the host will report ticks for in one
+                            read, so the count is short and some boxes below start empty.
+                          </T>
+                        </TooltipPopup>
+                      </Tooltip>
+                    ) : null}
+                  </span>
+                );
+              })()
+            : null}
           {withheldContent ? (
             <Tooltip>
               <TooltipTrigger render={<span className="flex shrink-0 items-center" />}>

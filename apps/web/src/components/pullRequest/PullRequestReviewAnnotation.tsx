@@ -22,6 +22,7 @@ import { settlePromise, squashAtomCommandFailure } from "@t3tools/client-runtime
 
 import { RelativeTime } from "~/components/RelativeTime";
 import { cn } from "~/lib/utils";
+import "~/styles/workspace-hubs.css";
 import { SpeechTextField, TextFieldSpeechControls } from "~/speech/useTextFieldSpeech";
 
 import { Button } from "../ui/button";
@@ -314,29 +315,43 @@ export function ReviewThreadCard({
 
   return (
     <div
-      className={cn(CARD_CLASS, !expanded && "py-1")}
+      data-slot="pr-review-thread-card"
+      data-resolved={thread.isResolved ? "true" : "false"}
+      className={cn(
+        CARD_CLASS,
+        "transition-[padding,border-color,background-color] duration-(--duration-fluid) ease-(--spring-fluid) motion-reduce:transition-none",
+        !expanded && "py-1.5",
+        thread.isResolved && "border-success/35 bg-success/[0.04]",
+      )}
       contentEditable={false}
       onPointerDown={(event) => event.stopPropagation()}
     >
       <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-        {thread.isResolved ? (
-          <CircleCheckIcon className="size-3.5 text-success-foreground" />
-        ) : (
-          <CircleIcon className="size-3.5" />
-        )}
         <button
           type="button"
-          className="hover:text-foreground"
+          data-slot="pr-thread-resolved-badge"
+          className={cn(
+            "inline-flex items-center gap-1.5 rounded-full transition-colors duration-180 hover:text-foreground motion-reduce:transition-none",
+            thread.isResolved &&
+              "border border-success/35 bg-success/10 px-2 py-0.5 font-medium text-success-foreground",
+          )}
           aria-expanded={expanded}
           onClick={() => setExpanded((current) => !current)}
         >
-          {thread.isResolved
-            ? gt("Resolved", { $context: "review thread state" })
-            : gt("Open", { $context: "review thread state" })}{" "}
-          ·{" "}
-          {gt("{count, plural, one {{count} comment} other {{count} comments}}", {
-            count: commentCount,
-          })}
+          {thread.isResolved ? (
+            <CircleCheckIcon className="size-3.5 text-success-foreground" />
+          ) : (
+            <CircleIcon className="size-3.5" />
+          )}
+          <span>
+            {thread.isResolved
+              ? gt("Resolved", { $context: "review thread state" })
+              : gt("Open", { $context: "review thread state" })}{" "}
+            ·{" "}
+            {gt("{count, plural, one {{count} comment} other {{count} comments}}", {
+              count: commentCount,
+            })}
+          </span>
         </button>
         {thread.isOutdated ? <span>outdated</span> : null}
         {onFix ? (
@@ -368,15 +383,24 @@ export function ReviewThreadCard({
             variant="ghost"
             className={onFix || onAddToChat ? undefined : "ml-auto"}
             disabled={pending}
-            onClick={onToggleResolved}
+            onClick={() => {
+              if (!thread.isResolved) setExpanded(false);
+              else setExpanded(true);
+              onToggleResolved();
+            }}
           >
             {thread.isResolved ? gt("Unresolve") : gt("Resolve")}
           </Button>
         ) : null}
       </div>
 
-      {expanded ? (
-        <>
+      <div
+        data-slot="pr-thread-collapse"
+        data-open={expanded ? "true" : "false"}
+        aria-hidden={!expanded}
+        inert={!expanded || undefined}
+      >
+        <div data-slot="pr-thread-collapse-inner">
           <div className="mt-2 space-y-3">
             {comments.map((comment) => (
               <article key={comment.id} className="group min-w-0">
@@ -439,7 +463,7 @@ export function ReviewThreadCard({
             </div>
           ) : null}
 
-          {canReply ? (
+          {expanded && canReply ? (
             replying ? (
               <SpeechTextField
                 environmentId={environmentId}
@@ -497,8 +521,8 @@ export function ReviewThreadCard({
               </Button>
             )
           ) : null}
-        </>
-      ) : null}
+        </div>
+      </div>
     </div>
   );
 }
