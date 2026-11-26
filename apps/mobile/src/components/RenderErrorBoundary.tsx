@@ -1,10 +1,12 @@
 import { T, useGT } from "gt-react-native";
-import { Component, type ReactNode } from "react";
+import { Component, useState, type ReactNode } from "react";
 import { ScrollView, View } from "react-native";
 
+import { SymbolView } from "./ui/AppSymbol";
 import { AppText as Text } from "./ui/AppText";
 import { Button } from "./ui/Button";
-import { copyTextWithHaptic } from "../lib/copyTextWithHaptic";
+import { useDeadlinePassed } from "../lib/clock";
+import { tryCopyTextWithHaptic } from "../lib/copyTextWithHaptic";
 
 interface RenderErrorBoundaryProps {
   readonly children: ReactNode;
@@ -85,6 +87,8 @@ export class RenderErrorBoundary extends Component<
   }
 }
 
+const COPIED_FEEDBACK_DURATION_MS = 2000;
+
 export function RenderFailureView(
   props: RenderFailureProps & {
     readonly title?: string;
@@ -94,6 +98,12 @@ export function RenderFailureView(
 ) {
   const gt = useGT();
   const title = props.title ?? gt("This screen couldn't be displayed");
+  const [copiedAtMs, setCopiedAtMs] = useState<number | null>(null);
+  const copyFeedbackEnded = useDeadlinePassed(
+    copiedAtMs === null ? null : copiedAtMs + COPIED_FEEDBACK_DURATION_MS,
+  );
+  const copied = copiedAtMs !== null && !copyFeedbackEnded;
+
   return (
     <ScrollView
       className="flex-1 bg-screen"
@@ -102,20 +112,37 @@ export function RenderFailureView(
         props.bottomInset ? { paddingBottom: 32 + props.bottomInset } : undefined
       }
     >
-      <Text accessibilityRole="header" className="text-center text-xl font-t3-bold">
-        {title}
-      </Text>
-      <Text className="text-center text-sm text-foreground-muted">
-        <T>Try again. If it keeps happening, copy the details for a bug report.</T>
-      </Text>
-      <Text selectable className="text-center font-mono text-xs text-danger-foreground">
-        {props.details.split("\n", 1)[0]?.slice(0, 300)}
-      </Text>
+      <View className="size-12 items-center justify-center rounded-full border border-danger-border bg-danger">
+        <SymbolView
+          name="exclamationmark.triangle"
+          size={22}
+          tintColorClassName="accent-danger-foreground"
+          type="monochrome"
+        />
+      </View>
+      <View className="max-w-sm items-center gap-2">
+        <Text accessibilityRole="header" className="text-center text-xl font-t3-bold">
+          {title}
+        </Text>
+        <Text className="text-center text-sm text-foreground-muted">
+          <T>Try again. If it keeps happening, copy the details for a bug report.</T>
+        </Text>
+      </View>
+      <View className="w-full max-w-md rounded-2xl border border-danger-border bg-card px-4 py-3">
+        <Text selectable className="font-mono text-xs leading-relaxed text-danger-foreground">
+          {props.details.split("\n", 1)[0]?.slice(0, 300)}
+        </Text>
+      </View>
       <View className="w-full max-w-xs gap-2">
         <Button label={gt("Try again")} onPress={props.retry} tone="primary" fullWidth />
         <Button
-          label={gt("Copy details")}
-          onPress={() => copyTextWithHaptic(props.details, { target: "error details" })}
+          icon={copied ? "checkmark" : "doc.on.doc"}
+          label={copied ? gt("Copied") : gt("Copy details")}
+          onPress={() => {
+            void tryCopyTextWithHaptic(props.details, { target: "error details" }).then((ok) => {
+              if (ok) setCopiedAtMs(Date.now());
+            });
+          }}
           fullWidth
         />
         {props.exit ? (

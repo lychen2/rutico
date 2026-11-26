@@ -713,34 +713,51 @@ export function HomeScreen(props: HomeScreenProps) {
   const v2ListEmpty =
     hasSearchQuery && threadSearch.isPending ? (
       <EmptyState
+        iconNode={<AppActivityIndicator size="small" />}
         title={gt("Searching thread messages…")}
         detail={gt('Looking for "{query}" in messages.', { query: props.searchQuery })}
         variant={Platform.OS === "android" ? "plain" : undefined}
       />
     ) : hasSearchQuery && threadSearch.failed ? (
       <EmptyState
+        icon="exclamationmark.triangle"
         title={gt("Search failed")}
         detail={gt('Couldn\'t search messages for "{query}". Change the search to try again.', {
           query: props.searchQuery,
         })}
+        actionLabel={gt("Clear search")}
+        onAction={() => props.onSearchQueryChange("")}
         variant={Platform.OS === "android" ? "plain" : undefined}
       />
     ) : hasSearchQuery ? (
       <EmptyState
+        icon="magnifyingglass"
         title={gt("No results")}
         detail={gt('No threads matching "{query}".', { query: props.searchQuery })}
+        actionLabel={gt("Clear search")}
+        onAction={() => props.onSearchQueryChange("")}
         variant={Platform.OS === "android" ? "plain" : undefined}
       />
     ) : v2ScopedProjectGroup !== null ? (
       <EmptyState
         title={gt("No threads in {name}", { name: v2ScopedProjectGroup.title })}
         detail={gt("Choose another project or create a new task.")}
+        actionLabel={gt("Reset filters")}
+        onAction={() => {
+          props.onProjectChange(null);
+          props.onEnvironmentChange(null);
+        }}
         variant={Platform.OS === "android" ? "plain" : undefined}
       />
     ) : selectedEnvironmentLabel ? (
       <EmptyState
         title={gt("No threads in {name}", { name: selectedEnvironmentLabel })}
         detail={gt("Choose another environment or create a new task.")}
+        actionLabel={gt("Reset filters")}
+        onAction={() => {
+          props.onEnvironmentChange(null);
+          props.onProjectChange(null);
+        }}
         variant={Platform.OS === "android" ? "plain" : undefined}
       />
     ) : (
