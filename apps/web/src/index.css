@@ -2,6 +2,10 @@
 @layer theme, base, clerk, components, utilities;
 @import "tailwindcss";
 @import "./styles/motion-foundation.css";
+@import "./styles/chat-motion.css";
+@import "./styles/workspace-motion.css";
+@import "./styles/desktop-linux.css";
+@import "./styles/shell-motion.css";
 
 @custom-variant dark (&:is(.dark, .dark *));
 @custom-variant light (&:not(.dark, .dark *));
