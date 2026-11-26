@@ -12,6 +12,8 @@ import { useAssetUrls } from "~/assets/assetUrls";
 import { observeResize } from "~/lib/observeResize";
 import { tickTextContent } from "~/lib/tickTextContent";
 import { observeVisibleAnimation } from "../../lib/visibleAnimation";
+import { formatDuration } from "@t3tools/shared/orchestrationTiming";
+import * as DateTime from "effect/DateTime";
 import { T, useGT, useMessages } from "gt-react";
 import { memo, use, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { LegendList, type LegendListRef } from "@legendapp/list/react";
@@ -697,6 +699,78 @@ function LiveActivityContent({
   );
 }
 
+const LIVE_REASONING_BOTTOM_SLACK_PX = 6;
+
+function reasoningDurationLabel(entry: TimelineWorkEntry): string | null {
+  const item = entry.projectedItem?.item;
+  if (!item || !item.startedAt || !item.completedAt) return null;
+  const elapsedMs =
+    DateTime.toEpochMillis(item.completedAt) - DateTime.toEpochMillis(item.startedAt);
+  if (!Number.isFinite(elapsedMs) || elapsedMs < 1000) return null;
+  return formatDuration(elapsedMs);
+}
+
+function LiveReasoningStreamWindow({
+  text,
+  cwd,
+  active,
+  fallbackTitle,
+}: {
+  readonly text: string;
+  readonly cwd: string | undefined;
+  readonly active: boolean;
+  readonly fallbackTitle: string;
+}) {
+  const scrollerRef = useRef<HTMLDivElement>(null);
+  const atBottomRef = useRef(true);
+
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- pins the 3-line living reasoning window to the latest streamed line unless the user scrolled up
+  useLayoutEffect(() => {
+    const scroller = scrollerRef.current;
+    if (!scroller || !active || !atBottomRef.current) return;
+    scroller.scrollTop = scroller.scrollHeight;
+  });
+
+  return (
+    <div
+      data-live-reasoning-shell="true"
+      data-reasoning-window-state={active ? "open" : "compressed"}
+      className="ms-7.5 w-[calc(100%-1.875rem)]"
+    >
+      <div className="min-h-0 overflow-hidden">
+        <div className="relative flex min-w-0 items-stretch gap-2.5 py-0.5">
+          <span
+            ref={active ? observeVisibleAnimation : undefined}
+            aria-hidden="true"
+            data-reasoning-breathing-rail="true"
+            data-reasoning-active={active ? "true" : "false"}
+            className="my-1 w-0.5 shrink-0 rounded-full bg-primary/65"
+          />
+          <div
+            ref={scrollerRef}
+            data-live-reasoning-window="true"
+            onScroll={(event) => {
+              const element = event.currentTarget;
+              atBottomRef.current =
+                element.scrollHeight - element.scrollTop - element.clientHeight <=
+                LIVE_REASONING_BOTTOM_SLACK_PX;
+            }}
+            className="min-w-0 flex-1 overflow-y-auto py-1 text-xs leading-snug text-muted-foreground [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+          >
+            <ChatMarkdown
+              text={text}
+              cwd={cwd}
+              parseRawHtml={false}
+              lineBreaks
+              extensions={thoughtPreviewMarkdown(fallbackTitle)}
+            />
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export function LiveWorkEntryTimelineRow({
   row,
 }: {
@@ -715,11 +789,24 @@ export function LiveWorkEntryTimelineRow({
   if (pendingApproval) return <TimelinePendingApprovalRow approval={pendingApproval} />;
 
   const failed = workEntryDisplayIndicatesToolFailure(row.entry);
+  const reasoningSource =
+    row.thought && !row.expanded
+      ? (row.thought.detail ?? "").slice(0, THOUGHT_PREVIEW_SOURCE_MAX_LENGTH).trim()
+      : row.entry.itemType === "reasoning" && !row.expanded
+        ? (row.entry.detail ?? "").slice(0, THOUGHT_PREVIEW_SOURCE_MAX_LENGTH).trim()
+        : "";
   const thoughtLine =
     row.thought && !row.expanded
       ? liveThoughtLine((row.thought.detail ?? "").slice(0, THOUGHT_PREVIEW_SOURCE_MAX_LENGTH))
       : "";
   const thoughtIsStatus = thoughtLine !== "" && row.entry === row.thought;
+  const isLiveReasoningWindow =
+    !row.expanded &&
+    reasoningSource.length > 0 &&
+    (row.entry.itemType === "reasoning" || row.thought !== undefined);
+  const reasoningEntry = row.thought ?? (row.entry.itemType === "reasoning" ? row.entry : null);
+  const settledThoughtDuration =
+    !row.active && reasoningEntry ? reasoningDurationLabel(reasoningEntry) : null;
   const groupCount = row.groupedEntries.length;
   const groupCountBadge =
     groupCount > 1 ? (
@@ -744,7 +831,7 @@ export function LiveWorkEntryTimelineRow({
       data-live-execution-slot={row.active ? "active" : "settled"}
       className={cn(
         "group/live-work flex w-full max-w-full cursor-pointer rounded-md text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/70",
-        thoughtLine ? "flex-col items-start" : "min-h-6 items-center",
+        thoughtLine || isLiveReasoningWindow ? "flex-col items-start" : "min-h-6 items-center",
       )}
       aria-label={
         failed
@@ -756,37 +843,21 @@ export function LiveWorkEntryTimelineRow({
       aria-expanded={row.expanded}
       onClick={() => ctx.onToggleWorkGroup(row.groupId, row.id)}
     >
-      {thoughtLine ? (
-        <WorkLogRow
-          icon={
-            <span className="flex size-4 items-center justify-center text-icon-muted">
-              <ToolActivityIconView
-                icon={undefined}
-                fallbackName="brain"
-                className="block size-4 shrink-0 stroke-2"
-                muted
-              />
-            </span>
-          }
-          label={
-            <span className="line-clamp-4">
-              <ChatMarkdown
-                inline
-                text={thoughtLine}
-                cwd={ctx.markdownCwd}
-                parseRawHtml={false}
-                extensions={thoughtPreviewMarkdown(gt("Thought"))}
-              />
-            </span>
-          }
-          wrapLabel
-        />
-      ) : null}
       <LiveActivityRow
         label={
-          thoughtIsStatus ? (
+          thoughtIsStatus || (row.entry.itemType === "reasoning" && isLiveReasoningWindow) ? (
             row.active ? (
               gt("Thinking")
+            ) : settledThoughtDuration ? (
+              <span
+                data-reasoning-summary-pill="true"
+                className="inline-flex items-center gap-1.5 tabular-nums"
+              >
+                <span>{gt("Thought")}</span>
+                <span className="rounded-full bg-muted/65 px-1.5 py-0.5 text-2xs font-normal text-muted-foreground">
+                  {settledThoughtDuration}
+                </span>
+              </span>
             ) : (
               gt("Thought")
             )
@@ -818,6 +889,14 @@ export function LiveWorkEntryTimelineRow({
         active={row.active}
         trailingBadge={groupCountBadge}
       />
+      {isLiveReasoningWindow ? (
+        <LiveReasoningStreamWindow
+          text={reasoningSource}
+          cwd={ctx.markdownCwd}
+          active={row.active}
+          fallbackTitle={row.active ? gt("Thinking") : gt("Thought")}
+        />
+      ) : null}
     </button>
   );
 }

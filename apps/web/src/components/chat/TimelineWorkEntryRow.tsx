@@ -38,6 +38,7 @@ import { ChatMarkdownAssetImage } from "./ChatMarkdownMedia";
 import type { ExpandedImagePreview } from "./ExpandedImagePreview";
 import { workGroupImageGallery } from "./markdownImageGallery";
 import { McpSignInAction } from "./McpSignInAction";
+import { formatDuration } from "@t3tools/shared/orchestrationTiming";
 import * as DateTime from "effect/DateTime";
 import { ChevronRightIcon, CircleAlertIcon, XIcon, RotateCcwIcon } from "lucide-react";
 import { Button, InlineButton } from "../ui/button";
@@ -417,6 +418,13 @@ function WorkEntryLogRow(props: WorkEntryRowProps) {
       ? undefined
       : (workEntry.toolIcon ?? workEntry.toolSource?.icon);
   const isReasoning = workEntry.itemType === "reasoning";
+  const reasoningDuration = (() => {
+    if (!isReasoning || workEntry.toolLifecycleStatus === "inProgress") return null;
+    const item = workEntry.projectedItem?.item;
+    if (!item?.startedAt || !item.completedAt) return null;
+    const ms = DateTime.toEpochMillis(item.completedAt) - DateTime.toEpochMillis(item.startedAt);
+    return Number.isFinite(ms) && ms >= 1000 ? formatDuration(ms) : null;
+  })();
   const questionHeading = workEntry.questionAnswer
     ? getQuestionTextPreview(workEntry.questionAnswer)
     : "";
@@ -608,6 +616,14 @@ function WorkEntryLogRow(props: WorkEntryRowProps) {
                 previewText
               )}
             </span>
+            {reasoningDuration ? (
+              <span
+                data-reasoning-summary-pill="true"
+                className="shrink-0 rounded-full bg-muted/60 px-1.5 py-0.5 text-2xs font-normal text-muted-foreground tabular-nums"
+              >
+                {reasoningDuration}
+              </span>
+            ) : null}
             {answerPreview ? (
               <span
                 className={cn(

@@ -485,3 +485,68 @@
     opacity: 1;
   }
 }
+
+/* ==========================================================================
+   D09 / C028: 3-Line Optical-Feathered Living Reasoning Stream & Compression
+   ========================================================================== */
+
+@keyframes chat-reasoning-rail-breathe {
+  0%,
+  100% {
+    opacity: 0.32;
+    transform: scaleY(0.84);
+  }
+  50% {
+    opacity: 0.92;
+    transform: scaleY(1);
+  }
+}
+
+[data-live-reasoning-shell="true"] {
+  display: grid;
+  grid-template-rows: 1fr;
+  opacity: 1;
+  transition:
+    grid-template-rows 240ms var(--spring-snappy),
+    opacity 180ms ease-out;
+}
+
+[data-live-reasoning-shell="true"][data-reasoning-window-state="compressed"] {
+  grid-template-rows: 0fr;
+  opacity: 0;
+  pointer-events: none;
+}
+
+[data-live-reasoning-window="true"] {
+  max-height: calc(3 * 1.45em + 0.5rem);
+  mask-image: linear-gradient(to bottom, transparent 0%, #000 18%, #000 84%, transparent 100%);
+  -webkit-mask-image: linear-gradient(
+    to bottom,
+    transparent 0%,
+    #000 18%,
+    #000 84%,
+    transparent 100%
+  );
+}
+
+[data-reasoning-breathing-rail="true"] {
+  transform-origin: center;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  [data-reasoning-breathing-rail="true"][data-reasoning-active="true"] {
+    animation: chat-reasoning-rail-breathe 1.6s ease-in-out infinite;
+    animation-play-state: var(--visible-animation-state, paused);
+    will-change: var(--visible-animation-will-change, auto);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-live-reasoning-shell="true"] {
+    transition: none;
+  }
+
+  [data-reasoning-breathing-rail="true"] {
+    animation: none;
+  }
+}
