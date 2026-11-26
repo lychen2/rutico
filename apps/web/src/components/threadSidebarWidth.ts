@@ -1,7 +1,25 @@
 export const THREAD_SIDEBAR_WIDTH_STORAGE_KEY = "chat_thread_sidebar_width";
 const THREAD_SIDEBAR_DEFAULT_WIDTH = 16 * 16;
+const SIDEBAR_MAGNETIC_SNAP_THRESHOLD_PX = 8;
 const THREAD_SIDEBAR_MIN_WIDTH = 13 * 16;
 export const THREAD_MAIN_CONTENT_MIN_WIDTH = 40 * 16;
+
+export function snapSidebarWidthToDefault(
+  width: number,
+  minWidth: number,
+  maxWidth: number,
+  bypassSnap: boolean,
+): { readonly width: number; readonly snapped: boolean } {
+  if (
+    !bypassSnap &&
+    THREAD_SIDEBAR_DEFAULT_WIDTH >= minWidth &&
+    THREAD_SIDEBAR_DEFAULT_WIDTH <= maxWidth &&
+    Math.abs(width - THREAD_SIDEBAR_DEFAULT_WIDTH) <= SIDEBAR_MAGNETIC_SNAP_THRESHOLD_PX
+  ) {
+    return { width: THREAD_SIDEBAR_DEFAULT_WIDTH, snapped: true };
+  }
+  return { width, snapped: false };
+}
 
 export function resolveThreadSidebarMinimumWidth(brandWidth: number): number {
   return Math.max(THREAD_SIDEBAR_MIN_WIDTH, Math.ceil(brandWidth));

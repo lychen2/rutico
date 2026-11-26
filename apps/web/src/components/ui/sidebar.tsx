@@ -5,6 +5,7 @@ import { T, useGT } from "gt-react";
 import { PanelLeftCloseIcon, PanelLeftIcon } from "lucide-react";
 import * as React from "react";
 import { cn } from "~/lib/utils";
+import { observeResize } from "~/lib/observeResize";
 import { Button } from "~/components/ui/button";
 import { Input, type InputProps } from "~/components/ui/input";
 import { ScrollArea } from "~/components/ui/scroll-area";
@@ -26,6 +27,7 @@ import {
   writeLocalStorageValue,
 } from "~/hooks/useLocalStorage";
 import { resolveSidebarState, type ResponsiveSidebarState } from "./sidebarState";
+import { snapSidebarWidthToDefault } from "~/components/threadSidebarWidth";
 import * as Schema from "effect/Schema";
 import { announceSidebarVisibility } from "~/lib/accessibilityAnnouncements";
 
@@ -395,7 +397,7 @@ function Sidebar({
         <div
           className={cn(
             "relative w-(--sidebar-width) bg-transparent",
-            "[[data-panel-animations=true]_&]:transition-[width] [[data-panel-animations=true]_&]:[transition-duration:var(--panel-animation-duration)] [[data-panel-animations=true]_&]:ease-(--ease-drawer) motion-reduce:transition-none",
+            "[[data-panel-animations=true]_&]:transition-[width] [[data-panel-animations=true]_&]:[transition-duration:var(--panel-animation-duration)] [[data-panel-animations=true]_&]:ease-(--spring-spatial) motion-reduce:transition-none",
             "group-data-[collapsible=offcanvas]:w-0",
             "group-data-[side=right]:rotate-180",
             variant === "floating" || variant === "inset"
@@ -407,10 +409,7 @@ function Sidebar({
         <div
           className={cn(
             "fixed inset-y-0 z-10 hidden h-svh w-(--sidebar-width) md:flex",
-            "[[data-panel-animations=true]_&]:transition-[left,right,width] [[data-panel-animations=true]_&]:[transition-duration:var(--panel-animation-duration)] [[data-panel-animations=true]_&]:ease-(--ease-drawer) motion-reduce:transition-none",
-            side === "left"
-              ? "left-0 group-data-[collapsible=offcanvas]:left-[calc(var(--sidebar-width)*-1)]"
-              : "right-0 group-data-[collapsible=offcanvas]:right-[calc(var(--sidebar-width)*-1)]",
+            side === "left" ? "left-0" : "right-0",
             variant === "floating" || variant === "inset"
               ? "p-2 group-data-[collapsible=icon]:w-[calc(var(--sidebar-width-icon)+(--spacing(4))+2px)]"
               : "group-data-[collapsible=icon]:w-(--sidebar-width-icon) group-data-[side=left]:border-r group-data-[side=right]:border-l",
@@ -514,7 +513,9 @@ function SidebarRestoreHandle({ options }: { options: SidebarResolvedResizableOp
           wrapper.dataset.sidebarDragState = restorePending ? "expanded" : "collapsed";
         }
         const width = clampSidebarWidth(nextWidth, options);
-        container.style.left = restorePending ? "0px" : `${-width}px`;
+        container.style.transform = restorePending
+          ? "translate3d(0px, 0, 0)"
+          : "translate3d(-100%, 0, 0)";
         for (const element of [container, gap]) {
           element.style.width = `${restorePending || element === container ? width : 0}px`;
           element.style.transitionDuration = "0ms";
@@ -530,7 +531,7 @@ function SidebarRestoreHandle({ options }: { options: SidebarResolvedResizableOp
       },
       cleanup() {
         delete wrapper.dataset.sidebarDragState;
-        container.style.removeProperty("left");
+        container.style.removeProperty("transform");
         for (const element of [container, gap]) {
           element.style.removeProperty("width");
           element.style.removeProperty("transition-duration");
@@ -627,8 +628,12 @@ function SidebarRail({
           `${collapsePending && element !== sidebarContainer ? 0 : value}px`,
         );
       });
-      // Match the offcanvas left offset so releasing a drag cannot restart the slide.
-      if (canCollapse) sidebarContainer.style.left = collapsePending ? `${-value}px` : "0px";
+      // Match the offcanvas GPU translate so releasing a drag cannot restart the slide.
+      if (canCollapse) {
+        sidebarContainer.style.transform = collapsePending
+          ? "translate3d(-100%, 0, 0)"
+          : "translate3d(0px, 0, 0)";
+      }
     };
     widthTargets.forEach((element) => {
       element.style.setProperty("transition-duration", "0ms");
@@ -641,24 +646,36 @@ function SidebarRail({
       edge: side === "left" ? "right" : "left",
       bounds: { min: options.minWidth, max: options.maxWidth },
       cancelOnInterrupt: canCollapse,
-      resize(nextWidth, rawWidth) {
+      resize(nextWidth, rawWidth, meta) {
         const shouldCollapse =
           canCollapse && rawWidth < options.minWidth * (1 - SIDEBAR_COLLAPSE_DRAG_RATIO);
         if (shouldCollapse !== collapsePending) {
           collapsePending = shouldCollapse;
           wrapper.dataset.sidebarDragState = collapsePending ? "collapsed" : "expanded";
         }
+        const snappedResult = snapSidebarWidthToDefault(
+          nextWidth,
+          options.minWidth,
+          options.maxWidth,
+          meta.altKey || collapsePending,
+        );
+        const candidateWidth = snappedResult.width;
+        if (snappedResult.snapped) {
+          rail.dataset.snapped = "true";
+        } else {
+          delete rail.dataset.snapped;
+        }
         const accepted =
           options.shouldAcceptWidth?.({
             currentWidth: width,
-            nextWidth,
+            nextWidth: candidateWidth,
             rail,
             side,
             sidebarRoot,
             wrapper,
           }) ?? true;
         if (accepted) {
-          width = nextWidth;
+          width = candidateWidth;
         }
         setTargetWidth(width);
         return width;
@@ -670,9 +687,10 @@ function SidebarRail({
       },
       cleanup() {
         delete rail.dataset.dragging;
+        delete rail.dataset.snapped;
         if (canCollapse) {
           delete wrapper.dataset.sidebarDragState;
-          sidebarContainer.style.removeProperty("left");
+          sidebarContainer.style.removeProperty("transform");
         }
         widthTargets.forEach((element) => {
           element.style.removeProperty("width");
@@ -820,10 +838,42 @@ function SidebarContent({
 }: React.ComponentProps<"div"> & {
   fixedHeader?: React.ReactNode;
 }) {
+  const scrollAreaRootRef = React.useRef<HTMLDivElement>(null);
+
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- updates Tip 008 scroll-edge fade attributes directly on the scroll area root
+  React.useEffect(() => {
+    const root = scrollAreaRootRef.current;
+    const viewport = root?.querySelector<HTMLElement>('[data-slot="scroll-area-viewport"]');
+    if (!root || !viewport) return;
+
+    const syncScrollEdges = () => {
+      const moreAbove = viewport.scrollTop > 2;
+      const moreBelow = viewport.scrollTop + viewport.clientHeight < viewport.scrollHeight - 2;
+      root.dataset.moreAbove = moreAbove ? "true" : "false";
+      root.dataset.moreBelow = moreBelow ? "true" : "false";
+    };
+
+    syncScrollEdges();
+    viewport.addEventListener("scroll", syncScrollEdges, { passive: true });
+    const stopViewportResize = observeResize(viewport, syncScrollEdges);
+    const stopContentResize =
+      viewport.firstElementChild instanceof HTMLElement
+        ? observeResize(viewport.firstElementChild, syncScrollEdges)
+        : undefined;
+
+    return () => {
+      viewport.removeEventListener("scroll", syncScrollEdges);
+      stopViewportResize();
+      stopContentResize?.();
+    };
+  }, []);
+
   return (
     <>
       {fixedHeader ? <div className="w-full shrink-0">{fixedHeader}</div> : null}
       <ScrollArea
+        ref={scrollAreaRootRef}
+        data-slot="sidebar-scroll-area"
         hideScrollbars
         scrollFade
         scrollFadePadding={false}
