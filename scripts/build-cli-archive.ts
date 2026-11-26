@@ -378,8 +378,20 @@ export const bundleLinuxLibatomic = Effect.fn("bundleLinuxLibatomic")(function* 
       "patchelf --set-rpath",
     );
   } else {
-    yield* Effect.logWarning(
-      "[cli-archive] patchelf not found; skipping $ORIGIN/lib RUNPATH rewrite for local build.",
+    const dynamicSection = yield* readOptionalStdout(
+      ChildProcess.make("readelf", ["-d", input.executablePath]),
+    );
+    const hasOriginLibRunpath =
+      Option.isSome(dynamicSection) &&
+      /\((?:RUNPATH|RPATH)\)[^\n]*\$ORIGIN\/lib(?=$|[:\]\s])/.test(dynamicSection.value);
+    if (!hasOriginLibRunpath) {
+      return yield* new CliArchiveInputMissingError({
+        inputPath: "patchelf",
+        hint: `Install patchelf so ${input.executablePath} sets $ORIGIN/lib RUNPATH for the bundled lib/libatomic.so.1.`,
+      });
+    }
+    yield* Effect.log(
+      "[cli-archive] patchelf not found, but ELF already includes $ORIGIN/lib RUNPATH.",
     );
   }
   yield* Effect.log(`[cli-archive] Bundled ${source} as lib/libatomic.so.1.`);

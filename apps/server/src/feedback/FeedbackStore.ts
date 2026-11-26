@@ -280,12 +280,10 @@ const make = Effect.gen(function* () {
             SELECT 1 AS waiting FROM orchestration_v2_projection_turn_items
             WHERE turn_item_id = ${item.id} AND status = 'waiting'`;
           if (waiting === undefined) return yield* fail("already_answered");
-          // Stored before its card was settled, by a crash or a failed record: settle it now. A
-          // report not known to be refused reads as sent.
+          // Stored before its card was settled, by a crash or a failed record: settle it now.
           const [stored] = yield* sql<{ readonly sent: number; readonly trace: string | null }>`
             SELECT sent, trace FROM agent_feedback WHERE id = ${card.reportId}`;
           if (stored !== undefined) {
-            if (stored.sent !== 1) return yield* settle("cancelled");
             return yield* settle("sent", yield* decodeTrace(stored.trace));
           }
           if (input.answer === "decline") return yield* settle("declined");
@@ -311,9 +309,9 @@ const make = Effect.gen(function* () {
             yield* settle("cancelled");
             return yield* fail("feedback_off");
           }
-          const sent = yield* deliver(report, {});
-          // Telemetry off keeps the report on this machine, so the card says not sent.
-          yield* sent ? settle("sent", trace) : settle("cancelled");
+          yield* deliver(report, {});
+          // Outbound telemetry delivery is disabled; settle as saved locally with the stored trace.
+          yield* settle("sent", trace);
         }),
       )
       .pipe(

@@ -45,9 +45,9 @@ const DOC_RULES = [
   {
     files: "SECURITY.md",
     applyTo:
-      "{apps/server/src/auth,apps/server/src/mcp,apps/server/src/guest,apps/server/src/assets,apps/server/src/peer,apps/server/src/cloud,apps/server/src/policy,infra/relay/src}/**/*.ts",
+      "{apps/server/src/auth,apps/server/src/mcp,apps/server/src/guest,apps/server/src/assets,apps/server/src/peer,apps/server/src/cloud,apps/server/src/policy,apps/server/src/feedback,infra/relay/src}/**/*.ts",
     instructions:
-      "Check security boundary changes against the trust model and real-finding criteria in SECURITY.md.",
+      "Check security and local-only privacy boundary changes against the trust model and real-finding criteria in SECURITY.md.",
   },
   {
     files: "docs/internals/07_server-updates.md",
@@ -55,12 +55,6 @@ const DOC_RULES = [
       "apps/server/src/{serviceLauncher.ts,desktopUpdate/**,cloud/serviceSelectionLock.ts,orchestration-v2/ProviderRuntimeRecoveryService.ts,orchestration-v2/RestartContinuation.ts}",
     instructions:
       "Hold update, rollback, and restart-recovery changes to docs/internals/07_server-updates.md.",
-  },
-  {
-    files: "docs/internals/08_product-analytics.md",
-    applyTo: "{apps/server/src/telemetry,apps/server/src/feedback}/**/*.ts",
-    instructions:
-      "Hold analytics identity, attribution, and privacy boundaries to docs/internals/08_product-analytics.md.",
   },
   {
     files: "docs/internals/09_connection-runtime.md",

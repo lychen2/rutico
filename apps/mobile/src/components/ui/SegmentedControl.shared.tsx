@@ -50,7 +50,8 @@ export function SegmentedControl<Value extends string | number>(
   );
   const minHeight = props.size === "compact" ? 32 : Platform.OS === "android" ? 40 : 36;
   const targetHitHeight = Platform.OS === "android" ? 48 : 44;
-  const verticalHitSlop = Math.max(0, Math.ceil((targetHitHeight - (minHeight - 6)) / 2));
+  // Reserve full 48dp/44pt height on the parent container so RN hit-testing never clips touch area.
+  const verticalTouchPadding = Math.max(0, Math.ceil((targetHitHeight - minHeight) / 2));
   const thumbRimColor =
     colorScheme === "dark" ? "rgba(255, 255, 255, 0.09)" : "rgba(0, 0, 0, 0.06)";
   const thumbElevationStyle =
@@ -64,30 +65,42 @@ export function SegmentedControl<Value extends string | number>(
         };
 
   return (
-    <View collapsable={false} className={props.className}>
+    <View
+      collapsable={false}
+      className={props.className}
+      style={{ minHeight: targetHitHeight, justifyContent: "center" }}
+    >
       <View
         onLayout={(event) => setLayout(event.nativeEvent.layout)}
-        className="flex-row rounded-full p-[3px]"
-        style={{
-          minHeight,
-          backgroundColor: trackColor,
-        }}
+        className="relative flex-row px-[3px]"
+        style={{ minHeight: targetHitHeight }}
       >
-        {selectedIndex >= 0 && width > 0 ? (
-          <Animated.View
-            pointerEvents="none"
-            className="absolute bottom-[3px] start-[3px] top-[3px] rounded-full"
-            style={[
-              {
-                backgroundColor: selectedColor,
-                borderWidth: StyleSheet.hairlineWidth,
-                borderColor: thumbRimColor,
-              },
-              thumbElevationStyle,
-              selectionStyle,
-            ]}
-          />
-        ) : null}
+        <View
+          pointerEvents="none"
+          className="absolute inset-x-0 rounded-full"
+          style={{
+            top: verticalTouchPadding,
+            bottom: verticalTouchPadding,
+            minHeight,
+            backgroundColor: trackColor,
+          }}
+        >
+          {selectedIndex >= 0 && width > 0 ? (
+            <Animated.View
+              pointerEvents="none"
+              className="absolute bottom-[3px] start-[3px] top-[3px] rounded-full"
+              style={[
+                {
+                  backgroundColor: selectedColor,
+                  borderWidth: StyleSheet.hairlineWidth,
+                  borderColor: thumbRimColor,
+                },
+                thumbElevationStyle,
+                selectionStyle,
+              ]}
+            />
+          ) : null}
+        </View>
         {props.options.map((option) => {
           const selected = option.value === props.selected;
           return (
@@ -96,15 +109,17 @@ export function SegmentedControl<Value extends string | number>(
               accessibilityRole={props.role ?? "button"}
               accessibilityLabel={option.accessibilityLabel ?? option.label}
               accessibilityState={{ selected }}
-              hitSlop={{ top: verticalHitSlop, bottom: verticalHitSlop }}
               onPress={() => {
                 if (!selected) {
                   void Haptics.selectionAsync().catch(() => undefined);
                 }
                 props.onSelect(option.value);
               }}
-              className="flex-1 items-center justify-center rounded-full px-2 py-1 active:opacity-70"
-              style={{ minHeight: minHeight - 6 }}
+              className="flex-1 items-center justify-center rounded-full px-2 active:opacity-70"
+              style={{
+                minHeight: targetHitHeight,
+                paddingVertical: verticalTouchPadding + 4,
+              }}
             >
               <AppText
                 textRole="footnote"

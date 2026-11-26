@@ -71,20 +71,39 @@ export function isShownUnderParent(
   return !isListedThreadLineage(lineage) || delegatedUnderParent.has(threadKey(ref));
 }
 
+type AncestorLookupThread = Pick<
+  EnvironmentThreadShell,
+  "id" | "environmentId" | "lineage" | "delegatedFrom" | "archivedAt"
+>;
+
+/** Indexes threads once by environment + thread ID for O(1) ancestor resolution. */
+export function indexThreadsForAncestorLookup<
+  T extends Pick<EnvironmentThreadShell, "id" | "environmentId">,
+>(threads: readonly T[]): ReadonlyMap<string, T> {
+  const byThreadKey = new Map<string, T>();
+  for (const thread of threads) {
+    const key = threadKey({ environmentId: thread.environmentId, threadId: thread.id });
+    if (!byThreadKey.has(key)) byThreadKey.set(key, thread);
+  }
+  return byThreadKey;
+}
+
 // Subagents, side chats and tasks delegated from a listed parent have no list row,
 // so an open one is represented by its nearest listed ancestor. A broken chain
 // (missing or archived parent, cycle) resolves to the thread itself, which then matches no row.
 export function resolveListedAncestorThreadRef(
   ref: ScopedThreadRef,
-  threads: readonly Pick<
-    EnvironmentThreadShell,
-    "id" | "environmentId" | "lineage" | "delegatedFrom" | "archivedAt"
-  >[],
+  threads: readonly AncestorLookupThread[],
+  byThreadKey?: ReadonlyMap<string, AncestorLookupThread>,
 ): ScopedThreadRef {
-  const findThread = (target: ScopedThreadRef) =>
-    threads.find(
-      (thread) => thread.id === target.threadId && thread.environmentId === target.environmentId,
-    );
+  const findThread =
+    byThreadKey !== undefined
+      ? (target: ScopedThreadRef) => byThreadKey.get(threadKey(target))
+      : (target: ScopedThreadRef) =>
+          threads.find(
+            (thread) =>
+              thread.id === target.threadId && thread.environmentId === target.environmentId,
+          );
   const visited = new Set<string>();
   let current = ref;
   let thread = findThread(current);

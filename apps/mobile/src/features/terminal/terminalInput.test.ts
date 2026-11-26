@@ -39,6 +39,12 @@ describe("resolveModifiedTerminalInput", () => {
     },
   );
 
+  it("consumes ctrl without altering tab so a subsequent key is not modified", () => {
+    expect(
+      resolveModifiedTerminalInput({ data: "\t", modifier: "ctrl", hostPlatform: "linux" }),
+    ).toEqual({ kind: "write", data: "\t" });
+  });
+
   it("pastes on ctrl+v for windows, linux, and unknown hosts", () => {
     for (const hostPlatform of ["windows", "linux", "unknown"] as const) {
       expect(resolveModifiedTerminalInput({ data: "v", modifier: "ctrl", hostPlatform })).toEqual({

@@ -2,7 +2,7 @@ import { thrownErrorMessage } from "@t3tools/client-runtime/errors";
 import { m as resolveMessage } from "~/i18n/messages";
 import { managedCapabilityDenial } from "@t3tools/client-runtime/contract-labels";
 import { AUTH_SCOPE_OPTIONS as PAIRING_SCOPE_OPTIONS } from "@t3tools/shared/authScopeOptions";
-import { PlugIcon, PlusIcon, QrCodeIcon } from "lucide-react";
+import { ChevronDownIcon, PlugIcon, PlusIcon, QrCodeIcon } from "lucide-react";
 import { type ReactNode, memo, useId, useRef, useState } from "react";
 import { T, useGT, useMessages } from "gt-react";
 import {
@@ -49,6 +49,7 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "../ui/dialog";
+import { Menu, MenuItem, MenuPopup, MenuTrigger } from "../ui/menu";
 import { Popover, PopoverPopup, PopoverTrigger } from "../ui/popover";
 import { QRCodeSvg } from "../ui/qr-code";
 import { stackedThreadToast, toastManager } from "../ui/toast";
@@ -477,13 +478,45 @@ const PairingLinkListRow = memo(function PairingLinkListRow({
               <Button size="xs" variant="ghost" onClick={handleCopyCode}>
                 <T>Copy code only</T>
               </Button>
-              <Button
-                size="xs"
-                variant="ghost"
-                onClick={() => copyPairingValue(buildRuticoPairingAppLink(qrPairingUrl), "link")}
-              >
-                <T>Copy Rutico app link</T>
-              </Button>
+              <Menu>
+                <MenuTrigger
+                  render={
+                    <Button size="xs" variant="ghost">
+                      <T>Copy Rutico app link</T>
+                      <ChevronDownIcon className="size-3" aria-hidden="true" />
+                    </Button>
+                  }
+                />
+                <MenuPopup align="start">
+                  <MenuItem
+                    onClick={() =>
+                      copyPairingValue(buildRuticoPairingAppLink(qrPairingUrl, "rutico"), "link")
+                    }
+                  >
+                    <T>Rutico (Release)</T>
+                  </MenuItem>
+                  <MenuItem
+                    onClick={() =>
+                      copyPairingValue(
+                        buildRuticoPairingAppLink(qrPairingUrl, "rutico-preview"),
+                        "link",
+                      )
+                    }
+                  >
+                    <T>Rutico Preview / Nightly</T>
+                  </MenuItem>
+                  <MenuItem
+                    onClick={() =>
+                      copyPairingValue(
+                        buildRuticoPairingAppLink(qrPairingUrl, "rutico-dev"),
+                        "link",
+                      )
+                    }
+                  >
+                    <T>Rutico Dev</T>
+                  </MenuItem>
+                </MenuPopup>
+              </Menu>
               <Button
                 size="xs"
                 variant="ghost"

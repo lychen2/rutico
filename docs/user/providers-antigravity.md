@@ -1,7 +1,7 @@
 # Antigravity
 
-T3 Code runs Google's official Antigravity ACP agent on your selected environment.
-T3 manages its own CLI installation and sign-in, separate from your terminal or IDE. Google controls
+T3 Code runs Google's official Antigravity ACP agent on your selected environment as a thin client
+using the system user's native `~/.gemini` Antigravity CLI configuration and sign-in. Google controls
 which models and account access are available through this agent.
 
 ## Set up Antigravity
@@ -52,8 +52,8 @@ space for downloading and staging an update.
 
 Install [Antigravity CLI](https://antigravity.google/docs/getting-started) on the environment.
 Set **Binary path** to its `agy` executable and update it yourself.
-Leave the field blank to use the managed runtime, or a compatible executable on
-`PATH` if no managed runtime is installed.
+Leave the field blank to prefer a compatible `agy` executable on `PATH`, falling back to the
+managed runtime if no `agy` executable is found on `PATH`.
 
 ## Update the managed runtime
 
@@ -85,10 +85,9 @@ Use Antigravity's native `/plan` command for planning. Tool approvals follow [Pe
 Questions with fixed choices still need one of the offered answers, even in
 **Full access**.
 
-On web and desktop, [Edit from here](./composer.md#edit-an-earlier-prompt) works with
-Antigravity. Antigravity cannot rewind its own conversation, so the next turn
-starts a fresh Antigravity session and T3 Code sends it the kept conversation,
-without the turns you removed.
+Antigravity runs as an ACP thin client without synthetic conversation-history replay, and ACP does
+not support native conversation truncation. As a result, [Edit from here](./composer.md#edit-an-earlier-prompt)
+is not available on Antigravity threads.
 
 Use `/compact` to summarize a long conversation when your Antigravity runtime
 offers that command. If it is unavailable, update Antigravity in provider settings
@@ -123,18 +122,17 @@ activity.
 
 ## Accounts and removal
 
-Add an Antigravity provider instance for each Google account in
-**Settings > Providers** on web or desktop. Each has its own sign-in; downloaded
-runtimes are shared on the environment.
+Antigravity provider instances on the same OS user share the native `~/.gemini` Antigravity CLI
+configuration and Google sign-in; downloaded runtimes are also shared on the environment.
 
-| Action                    | Effect                                                            |
-| ------------------------- | ----------------------------------------------------------------- |
-| Disable                   | Stops the instance's sessions and keeps its Google sign-in.       |
-| Sign out                  | Stops the instance's sessions and removes its saved Google login. |
-| Remove downloaded runtime | Removes the shared installation and keeps Google credentials.     |
+| Action                    | Effect                                                                           |
+| ------------------------- | -------------------------------------------------------------------------------- |
+| Disable                   | Stops the instance's sessions and keeps the native Google sign-in.               |
+| Sign out                  | Stops the instance's sessions and signs out of the shared native CLI login.      |
+| Remove downloaded runtime | Removes the shared managed installation and keeps the native Google credentials. |
 
 All three keep thread history and workspace files. Sending `/logout` by itself in
-a thread signs out its instance, including stopping that instance's other sessions.
+a thread signs out the shared native Antigravity login, including stopping that instance's other sessions.
 That needs a client allowed to manage providers, and it has to be your own message:
 `/logout` from an agent or a scheduled task is refused.
 Sign out, then sign in again to replace an account.

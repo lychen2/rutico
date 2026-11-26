@@ -19,6 +19,7 @@ import { isThreadWorking } from "./threadInbox.ts";
 import {
   childThreadInputsTitle,
   createEnvironmentThreadShellAtoms,
+  indexThreadsForAncestorLookup,
   resolveListedAncestorThreadRef,
 } from "./threadShell.ts";
 
@@ -778,5 +779,34 @@ describe("resolveListedAncestorThreadRef", () => {
     expect(rowOf(task.id, environmentId, [parent, task])).toEqual(
       ref(remoteEnvironmentId, parent.id),
     );
+  });
+
+  it("matches linear lookup semantics when given a prebuilt ancestor index", () => {
+    const rootHome = listed("shared-id", environmentId);
+    const rootRemote = listed("shared-id", remoteEnvironmentId);
+    const childHome = subagentOf("child-home", rootHome.id, environmentId);
+    const delegated = listed("delegated", environmentId, {
+      delegatedFrom: {
+        environmentId: remoteEnvironmentId,
+        threadId: rootRemote.id,
+        title: "Remote",
+      },
+    });
+    const orphan = listed("orphan", environmentId, {
+      delegatedFrom: {
+        environmentId: remoteEnvironmentId,
+        threadId: ThreadId.make("missing"),
+        title: "Missing",
+      },
+    });
+    const threads = [rootHome, rootRemote, childHome, delegated, orphan];
+    const index = indexThreadsForAncestorLookup(threads);
+
+    for (const thread of threads) {
+      const target = ref(thread.environmentId, thread.id);
+      expect(resolveListedAncestorThreadRef(target, threads, index)).toEqual(
+        resolveListedAncestorThreadRef(target, threads),
+      );
+    }
   });
 });

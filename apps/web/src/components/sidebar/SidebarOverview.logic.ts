@@ -5,7 +5,10 @@ import {
   type ThreadStructure,
 } from "@t3tools/client-runtime/state/models";
 import { effectiveSnoozed } from "@t3tools/client-runtime/state/thread-settled";
-import { resolveListedAncestorThreadRef } from "@t3tools/client-runtime/state/threads";
+import {
+  indexThreadsForAncestorLookup,
+  resolveListedAncestorThreadRef,
+} from "@t3tools/client-runtime/state/threads";
 import { backgroundWorkHoldsCompletion } from "@t3tools/shared/orchestrationV2PendingBackgroundWork";
 import type { EnvironmentId, ScopedThreadRef } from "@t3tools/contracts";
 import * as DateTime from "effect/DateTime";
@@ -135,10 +138,11 @@ function isDelegatedUnderListedParent(
   ref: ScopedThreadRef,
   key: string,
   liveThreads: readonly EnvironmentThreadShell[],
+  ancestorIndex: ReadonlyMap<string, EnvironmentThreadShell>,
 ): boolean {
   return (
     thread.delegatedFrom !== null &&
-    scopedThreadKey(resolveListedAncestorThreadRef(ref, liveThreads)) !== key
+    scopedThreadKey(resolveListedAncestorThreadRef(ref, liveThreads, ancestorIndex)) !== key
   );
 }
 
@@ -150,6 +154,7 @@ export function buildSidebarOverview(
   disconnectedEnvironmentIds?: ReadonlySet<EnvironmentId>,
 ) {
   const liveThreads = threads.filter((thread) => thread.deletedAt === null);
+  const ancestorIndex = indexThreadsForAncestorLookup(liveThreads);
   const byKey = new Map<string, EnvironmentThreadShell>();
   const running = new Map<string, OverviewRow<ActiveStatus>>();
   const attention: OverviewRow<AttentionStatus>[] = [];
@@ -208,7 +213,7 @@ export function buildSidebarOverview(
       status !== null ||
       thread.archivedAt !== null ||
       thread.lineage.relationshipToParent === "subagent" ||
-      isDelegatedUnderListedParent(thread, ref, key, liveThreads) ||
+      isDelegatedUnderListedParent(thread, ref, key, liveThreads, ancestorIndex) ||
       thread.pendingBackgroundTasks.some((task) => task.kind === "monitor")
     ) {
       continue;
@@ -238,7 +243,7 @@ export function buildSidebarOverview(
     const rootRef =
       thread.lineage.parentThreadId === null && thread.delegatedFrom === null
         ? row.ref
-        : resolveListedAncestorThreadRef(row.ref, liveThreads);
+        : resolveListedAncestorThreadRef(row.ref, liveThreads, ancestorIndex);
     const rootKey = scopedThreadKey(rootRef);
     let group = groups.get(rootKey);
     if (group === undefined) {
@@ -287,7 +292,7 @@ export function buildSidebarOverview(
       if (
         thread.archivedAt !== null ||
         thread.lineage.relationshipToParent === "subagent" ||
-        isDelegatedUnderListedParent(thread, ref, key, liveThreads) ||
+        isDelegatedUnderListedParent(thread, ref, key, liveThreads, ancestorIndex) ||
         effectiveSnoozed(thread, { now })
       ) {
         continue;
@@ -312,6 +317,7 @@ export function collectActiveOverviewKeys(
   disconnectedEnvironmentIds?: ReadonlySet<EnvironmentId>,
 ): ReadonlySet<string> {
   const liveThreads = threads.filter((thread) => thread.deletedAt === null);
+  let ancestorIndex: ReadonlyMap<string, EnvironmentThreadShell> | undefined;
   const keys = new Set<string>();
   for (const thread of liveThreads) {
     if (disconnectedEnvironmentIds?.has(thread.environmentId) === true) continue;
@@ -325,7 +331,8 @@ export function collectActiveOverviewKeys(
     const ref = scopeThreadRef(thread.environmentId, thread.id);
     keys.add(scopedThreadKey(ref));
     if (thread.lineage.parentThreadId !== null || thread.delegatedFrom !== null) {
-      keys.add(scopedThreadKey(resolveListedAncestorThreadRef(ref, liveThreads)));
+      ancestorIndex ??= indexThreadsForAncestorLookup(liveThreads);
+      keys.add(scopedThreadKey(resolveListedAncestorThreadRef(ref, liveThreads, ancestorIndex)));
     }
   }
   return keys;

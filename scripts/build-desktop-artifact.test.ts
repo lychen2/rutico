@@ -1751,6 +1751,27 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
       assert.equal((onWindows.azureSignOptions as Record<string, unknown>).publisherName, "T3");
       assert.notProperty(onWindows, "signtoolOptions");
 
+      const winBuild = yield* createBuildConfig(
+        "win",
+        "nsis",
+        "1.2.3",
+        false,
+        false,
+        undefined,
+        undefined,
+      );
+      assert.equal(winBuild.appId, "io.github.lychen2.rutico");
+      const macBuild = yield* createBuildConfig(
+        "mac",
+        "dmg",
+        "1.2.3",
+        false,
+        false,
+        undefined,
+        undefined,
+      );
+      assert.equal(macBuild.appId, "com.t3tools.t3code");
+
       const onLinux = yield* signedWinConfig("linux");
       assert.notProperty(onLinux, "azureSignOptions");
       const signtoolOptions = onLinux.signtoolOptions as Record<string, unknown>;

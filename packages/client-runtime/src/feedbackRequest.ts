@@ -24,14 +24,14 @@ export function feedbackRequestDisplay(
         ? { kind: "pending" }
         : { kind: "pending-elsewhere", label: resolve(msg("Waiting in the original thread")) };
     case "sent":
-      return { kind: "answered", outcome: "sent", label: resolve(msg("Sent")) };
+      return { kind: "answered", outcome: "sent", label: resolve(msg("Saved locally")) };
     case "declined":
-      return { kind: "answered", outcome: "not-sent", label: resolve(msg("Not sent")) };
+      return { kind: "answered", outcome: "not-sent", label: resolve(msg("Not saved")) };
     case "cancelled":
       return {
         kind: "answered",
         outcome: "not-sent",
-        label: resolve(msg("Closed without sending")),
+        label: resolve(msg("Closed without saving")),
       };
   }
 }

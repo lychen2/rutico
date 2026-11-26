@@ -277,7 +277,7 @@ export const layer: Layer.Layer<ProjectionMaintenanceV2, never, SqlClient.SqlCli
         `.pipe(NodeSqliteClient.readOnly);
         const head = bounds[0]?.sequence ?? 0;
 
-        let deletedEventCount = yield* sql.withTransaction(purgeAllDeletedThreads(sql));
+        let deletedEventCount = yield* purgeAllDeletedThreads(sql, betweenPages);
         const markIsDue =
           mark !== undefined &&
           DateTime.toEpochMillis(now) - Date.parse(mark.updated_at) >=

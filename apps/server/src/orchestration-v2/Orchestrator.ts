@@ -11318,7 +11318,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
             : command.feedbackStatus === "sent"
               ? "completed"
               : "cancelled",
-          title: "Feedback for the T3 team",
+          title: "Local feedback report",
           startedAt: existing?.startedAt ?? now,
           completedAt: pending ? null : now,
           updatedAt: now,
@@ -16088,6 +16088,8 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
               "runtimeRequests",
               "subagents",
               "providerSessions",
+              "providerThreads",
+              "providerTurns",
             ])
             .pipe(
               Effect.mapError(

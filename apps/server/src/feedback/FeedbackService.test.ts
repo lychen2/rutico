@@ -430,9 +430,12 @@ it.effect(
           source: "mcp",
           sent: false,
         });
-        // Telemetry is disabled, so the card closes as cancelled and keeps only the outline.
+        // Telemetry upload is disabled; the card settles as saved locally with the stored trace.
         expect(local.trace).toEqual(card.conversationTrace);
-        expect(closed).toMatchObject({ feedbackStatus: "cancelled", preview: card.preview });
+        expect(closed).toMatchObject({
+          feedbackStatus: "sent",
+          preview: { ...card.preview, trace: card.conversationTrace },
+        });
         expect(closed.conversationTrace).toBeUndefined();
 
         const kept = yield* feedback.submit({ ...input, subject: "t3 thread show" }, fromThread);
@@ -593,14 +596,14 @@ it.effect(
         const withoutText = yield* Queue.take(cards);
         expect(withoutText.preview).toEqual(card.preview);
         expect(withoutText.conversationTrace).toBeUndefined();
-        // On: the conversation is stored locally while the card closes without sending telemetry.
+        // On: the conversation is stored locally and the card settles as saved locally with that trace.
         const included = yield* approved(cards, fiveTurns, true);
         expect(included.stored.trace).toEqual(included.card.conversationTrace);
-        expect(included.closed.preview.trace).toEqual(included.card.preview.trace);
+        expect(included.closed.preview.trace).toEqual(included.card.conversationTrace);
         expect(included.closed.conversationTrace).toBeUndefined();
         expect([...(yield* Ref.get(shown)).values()].map((shown) => shown.feedbackStatus)).toEqual([
-          "cancelled",
-          "cancelled",
+          "sent",
+          "sent",
         ]);
         const stored = (yield* listFeedbackReports).slice(0, 2).toReversed();
         expect(stored.map((report) => report.trace)).toEqual([outline, conversation]);
@@ -688,9 +691,10 @@ it.effect("returns as the card is shown, and stores locally only on Send, once",
         ).toBe("not_found");
       }
 
-      // Send: stored locally as requested, card closes cancelled since telemetry upload is disabled.
+      // Send: stored locally as requested (sent = false, no outbound upload), card settles as saved ("sent").
       const { card, closed: answeredCard, stored } = yield* approved(cards, requested);
-      expect(answeredCard.feedbackStatus).toBe("cancelled");
+      expect(answeredCard.feedbackStatus).toBe("sent");
+      expect(stored?.sent).toBe(false);
       expect({
         kind: stored?.kind,
         subject: stored?.subject,
@@ -718,7 +722,7 @@ it.effect("returns as the card is shown, and stores locally only on Send, once",
           failure: { reason: "already_answered" },
         });
         const status = (yield* Ref.get(shown)).get(raced.turnItemId)?.feedbackStatus;
-        expect((yield* listFeedbackReports).length - before).toBe(status === "cancelled" ? 1 : 0);
+        expect((yield* listFeedbackReports).length - before).toBe(status === "sent" ? 1 : 0);
         yield* Queue.take(cards);
         expect(yield* Queue.size(cards)).toBe(0);
       }
@@ -748,7 +752,7 @@ it.effect("Send works after the turn stopped, while a later turn runs, and after
       yield* Ref.set(runId, RunId.make("run:2"));
       // A store started after the card was shown, as after a restart, answers from the card.
       yield* answer(card, "send", true).pipe(Effect.provide(Store.layer));
-      expect((yield* Queue.take(cards)).feedbackStatus).toBe("cancelled");
+      expect((yield* Queue.take(cards)).feedbackStatus).toBe("sent");
       const [stored] = yield* listFeedbackReports;
       expect(stored).toMatchObject({ trace: card.conversationTrace, sent: false });
     }).pipe(Effect.provide(layer));
@@ -771,7 +775,7 @@ it.effect("Send refuses while Off and closes the card; When I ask and Automatic 
       const onRequest = yield* show(cards, requested);
       yield* Ref.set(mode, "on-request");
       yield* answer(onRequest, "send");
-      expect((yield* Queue.take(cards)).feedbackStatus).toBe("cancelled");
+      expect((yield* Queue.take(cards)).feedbackStatus).toBe("sent");
       expect(yield* listFeedbackReports).toHaveLength(1);
     }).pipe(Effect.provide(layer));
   }),
@@ -783,7 +787,7 @@ it.effect("a report stored before its card was settled settles the card on the n
     yield* Effect.gen(function* () {
       const status = (card: CardRecord) =>
         Ref.get(shown).pipe(Effect.map((all) => all.get(card.turnItemId)?.feedbackStatus));
-      // Stored locally (sent = 0): the card closes unsent, with the outline only.
+      // Stored locally (sent = 0): the next answer settles the card with the stored trace.
       const keptCard = yield* show(cards, requested);
       yield* Ref.set(failRecords, true);
       expect(yield* Effect.result(answer(keptCard, "send", true))).toMatchObject({
@@ -794,7 +798,10 @@ it.effect("a report stored before its card was settled settles the card on the n
       yield* Ref.set(failRecords, false);
       yield* answer(keptCard, "send").pipe(Effect.provide(Store.layer));
       const closed = yield* Queue.take(cards);
-      expect(closed).toMatchObject({ feedbackStatus: "cancelled", preview: keptCard.preview });
+      expect(closed).toMatchObject({
+        feedbackStatus: "sent",
+        preview: { ...keptCard.preview, trace: keptCard.conversationTrace },
+      });
       expect(closed.conversationTrace).toBeUndefined();
       expect((yield* Effect.flip(answer(keptCard, "send"))).reason).toBe("already_answered");
       expect(yield* listFeedbackReports).toHaveLength(1);
@@ -825,7 +832,7 @@ it.effect("a card is shown while an answer waits for the settings lock", () =>
       yield* Deferred.succeed(done, undefined);
       yield* Fiber.join(holder);
       yield* Fiber.join(parked);
-      expect((yield* Queue.take(cards)).feedbackStatus).toBe("cancelled");
+      expect((yield* Queue.take(cards)).feedbackStatus).toBe("sent");
     }).pipe(Effect.provide(layer));
   }),
 );
@@ -852,7 +859,7 @@ it.effect("a Send refused while Off settles the card before a later Send can sto
       yield* Deferred.await(closing.entered);
       // Agent feedback is turned back on, and a second Send would be held as it closes the card.
       yield* Ref.set(mode, "auto");
-      const marking = yield* gate("cancelled");
+      const marking = yield* gate("sent");
       const second = yield* Effect.forkChild(Effect.result(answer(card, "send", true)));
       const reachedSent = yield* Effect.forkChild(
         Deferred.await(marking.entered).pipe(Effect.timeoutOption("1 second")),

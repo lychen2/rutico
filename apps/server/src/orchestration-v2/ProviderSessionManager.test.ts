@@ -5243,6 +5243,150 @@ it.effect.each([
 );
 
 it.effect(
+  "ProviderSessionManagerV2 interrupts and unloads a hard-deleted thread using the detach snapshot while sibling thread keeps running",
+  () =>
+    Effect.gen(function* () {
+      const state = yield* Ref.make(emptyState);
+      const settings = yield* ServerSettings.ServerSettingsService.pipe(
+        Effect.provide(ServerSettings.layerTest()),
+      );
+      const effect = Effect.gen(function* () {
+        const eventSink = yield* EventSink.EventSinkV2;
+        const projectionStore = yield* ProjectionStore.ProjectionStoreV2;
+        const idAllocator = yield* IdAllocator.IdAllocatorV2;
+        const manager = yield* ProviderSessionManager.ProviderSessionManagerV2;
+        const now = yield* DateTime.now;
+        const projectId = yield* idAllocator.allocate.project({
+          fixtureName: "provider-session-manager-hard-delete-detach",
+        });
+        const activeThreadId = yield* idAllocator.allocate.thread({
+          fixtureName: "provider-session-manager-hard-delete-sibling",
+          projectId,
+        });
+        const deletedThreadId = yield* idAllocator.allocate.thread({
+          fixtureName: "provider-session-manager-hard-delete-target",
+          projectId,
+        });
+        const providerSessionId = idAllocator.derive.providerSession({
+          providerInstanceId: modelSelection.instanceId,
+        });
+
+        const deletedCreatedEvent = yield* makeThreadCreatedEvent({
+          idAllocator,
+          threadId: deletedThreadId,
+          now,
+        });
+        yield* eventSink.write({
+          events: [
+            yield* makeThreadCreatedEvent({ idAllocator, threadId: activeThreadId, now }),
+            deletedCreatedEvent,
+          ],
+        });
+        const deletedProviderThread = makeProviderThread({
+          idAllocator,
+          threadId: deletedThreadId,
+          providerSessionId,
+          now,
+        });
+        const deletedTurnId = idAllocator.derive.providerTurn({
+          driver: CODEX_DRIVER,
+          nativeTurnId: "native-turn-hard-deleted",
+        });
+        const deletedRunId = idAllocator.derive.run({ threadId: deletedThreadId, ordinal: 1 });
+        yield* eventSink.write({
+          events: [
+            {
+              id: yield* idAllocator.allocate.event({ threadId: deletedThreadId }),
+              type: "provider-thread.updated",
+              threadId: deletedThreadId,
+              driver: CODEX_DRIVER,
+              occurredAt: now,
+              payload: deletedProviderThread,
+            },
+            {
+              id: yield* idAllocator.allocate.event({ threadId: deletedThreadId }),
+              type: "provider-turn.updated",
+              threadId: deletedThreadId,
+              runId: deletedRunId,
+              driver: CODEX_DRIVER,
+              occurredAt: now,
+              payload: {
+                id: deletedTurnId,
+                providerThreadId: deletedProviderThread.id,
+                nodeId: idAllocator.derive.rootNode({ runId: deletedRunId }),
+                runAttemptId: null,
+                nativeTurnRef: null,
+                ordinal: 1,
+                status: "running",
+                startedAt: now,
+                completedAt: null,
+              },
+            },
+          ],
+        });
+
+        yield* manager.open({
+          threadId: activeThreadId,
+          providerSessionId,
+          modelSelection,
+          runtimePolicy,
+        });
+        yield* manager.open({
+          threadId: deletedThreadId,
+          providerSessionId,
+          modelSelection,
+          runtimePolicy,
+        });
+
+        // Commit thread.deleted so EventSink hard-deletes provider_threads and provider_turns before detach runs.
+        yield* eventSink.write({
+          events: [
+            {
+              id: yield* idAllocator.allocate.event({ threadId: deletedThreadId }),
+              type: "thread.deleted",
+              threadId: deletedThreadId,
+              occurredAt: now,
+              payload: { ...deletedCreatedEvent.payload, deletedAt: now, updatedAt: now },
+            },
+          ],
+        });
+        const afterDelete = yield* projectionStore.getThreadRecords(deletedThreadId, [
+          "providerThreads",
+          "providerTurns",
+        ]);
+        assert.deepEqual(afterDelete.providerThreads, []);
+        assert.deepEqual(afterDelete.providerTurns, []);
+
+        yield* manager.detach({
+          providerSessionId,
+          threadId: deletedThreadId,
+          detail: "Thread deleted.",
+          revokeMcpCredential: true,
+          providerThreads: [deletedProviderThread],
+          activeProviderTurns: [
+            { providerThreadId: deletedProviderThread.id, providerTurnId: deletedTurnId },
+          ],
+        });
+
+        assert.equal((yield* Ref.get(state)).interruptCount, 1);
+        assert.deepEqual((yield* Ref.get(state)).unloadedNativeThreadIds, ["native-thread"]);
+        assert.isTrue(Option.isSome(yield* manager.get(providerSessionId)));
+        assert.equal((yield* Ref.get(state)).closeCount, 0);
+      });
+
+      yield* effect.pipe(
+        Effect.provide(
+          layerTest({
+            state,
+            idleTimeoutMs: 1000,
+            serverSettingsLayer: Layer.succeed(ServerSettings.ServerSettingsService, settings),
+          }),
+        ),
+      );
+    }),
+);
+
+it.effect(
   "ProviderSessionManagerV2 detaching a parent keeps an attached delegated child's thread loaded",
   () =>
     Effect.gen(function* () {
