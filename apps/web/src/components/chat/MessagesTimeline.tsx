@@ -1724,6 +1724,14 @@ const ConversationTimeline = memo(function ConversationTimeline({
               atEnd={minimapAtEnd}
               stripMap={minimapStripMap}
               onWheel={forwardMinimapWheel}
+              onScrub={(item) => {
+                navigateTimeline();
+                void listRef.current?.scrollToIndex({
+                  index: item.rowIndex,
+                  animated: false,
+                  viewOffset: TIMELINE_MINIMAP_TARGET_OFFSET,
+                });
+              }}
               onSelect={(item) => {
                 navigateTimeline();
                 void listRef.current?.scrollToIndex({

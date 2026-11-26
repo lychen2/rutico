@@ -181,3 +181,118 @@ it("pulses the active row on ThreadFindBar jumps and skips repeat pulses on the 
     CSS.highlights.delete("t3-thread-find-active");
   }
 });
+
+it("scrubs directly via GPU translate3d with zero per-frame React re-renders and renders semantic markers", async () => {
+  const onScrub = vi.fn();
+  const onSelect = vi.fn();
+  let renderCount = 0;
+  const semanticItems: readonly TimelineMinimapItem[] = [
+    {
+      id: "row-turn-1",
+      rowIndex: 0,
+      userText: "Draft plan",
+      assistantText: "Proposed plan",
+      semantic: "plan",
+    },
+    {
+      id: "row-turn-2",
+      rowIndex: 2,
+      userText: "Run tests",
+      assistantText: "Command failed",
+      semantic: "error",
+    },
+    {
+      id: "row-turn-3",
+      rowIndex: 4,
+      userText: "Spawn subagent",
+      assistantText: "Delegated",
+      semantic: "fork",
+    },
+  ];
+  function TrackedMinimap() {
+    renderCount += 1;
+    return (
+      <TimelineMinimap
+        hasPersistentGutter
+        hitStrip={{ left: 0, width: 24 }}
+        currentIndex={0}
+        atEnd={false}
+        items={semanticItems}
+        stripMap={new Map()}
+        onWheel={() => {}}
+        onSelect={onSelect}
+        onScrub={onScrub}
+      />
+    );
+  }
+
+  await using screen = await render(
+    <div data-assistant-citation-viewport="true" className="relative h-96 w-full">
+      <TrackedMinimap />
+    </div>,
+    { router: false },
+  );
+
+  expect(renderCount).toBe(1);
+  expect(screen.container.querySelector('[data-minimap-semantic="plan"]')).not.toBeNull();
+  expect(screen.container.querySelector('[data-minimap-semantic="error"]')).not.toBeNull();
+  expect(screen.container.querySelector('[data-minimap-semantic="fork"]')).not.toBeNull();
+
+  const rail = screen.container.querySelector<HTMLButtonElement>(
+    '[data-testid="timeline-minimap"] button[aria-label^="Jump to message"]',
+  )!;
+  const rect = rail.getBoundingClientRect();
+
+  rail.dispatchEvent(
+    new PointerEvent("pointerdown", {
+      bubbles: true,
+      button: 0,
+      buttons: 1,
+      pointerId: 7,
+      clientX: rect.left + 8,
+      clientY: rect.top + 2,
+    }),
+  );
+  rail.dispatchEvent(
+    new PointerEvent("pointermove", {
+      bubbles: true,
+      buttons: 1,
+      pointerId: 7,
+      clientX: rect.left + 8,
+      clientY: rect.top + rect.height * 0.5,
+    }),
+  );
+  rail.dispatchEvent(
+    new PointerEvent("pointermove", {
+      bubbles: true,
+      buttons: 1,
+      pointerId: 7,
+      clientX: rect.left + 8,
+      clientY: rect.bottom - 2,
+    }),
+  );
+
+  const card = screen.container.querySelector<HTMLElement>('[data-minimap-preview-card="true"]')!;
+  expect(card.dataset.minimapPreviewVisible).toBe("true");
+  expect(card.dataset.minimapScrubbing).toBe("true");
+  expect(card.style.transform).toContain("translate3d(");
+  expect(card.querySelector('[data-minimap-turn-badge="true"]')?.textContent).toBe("Turn 3 / 3");
+  expect(renderCount).toBe(1);
+
+  rail.dispatchEvent(
+    new PointerEvent("pointerup", {
+      bubbles: true,
+      button: 0,
+      buttons: 0,
+      pointerId: 7,
+      clientX: rect.left + 8,
+      clientY: rect.bottom - 2,
+    }),
+  );
+
+  await vi.waitFor(() => {
+    expect(onScrub).toHaveBeenCalled();
+  });
+  expect(onScrub.mock.calls.at(-1)?.[0]).toEqual(semanticItems[2]);
+  expect(renderCount).toBe(1);
+});

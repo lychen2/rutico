@@ -1266,3 +1266,72 @@
     animation: none;
   }
 }
+
+/* ==========================================================================
+   D12 / C039: 120fps Direct-DOM Drag-to-Scrub TimelineMinimap & Semantic Dots
+   ========================================================================== */
+
+[data-minimap-strip] {
+  transform: translateY(-50%) scaleX(0.333);
+  transition:
+    transform 180ms var(--spring-snappy),
+    background-color 140ms ease-out;
+  will-change: transform;
+}
+
+[data-minimap-scrubbing="true"] [data-minimap-strip] {
+  transition: background-color 90ms ease-out;
+}
+
+[data-minimap-strip][data-minimap-active="true"] {
+  background-color: color-mix(in oklch, var(--muted-foreground) 78%, transparent);
+}
+
+[data-minimap-preview-card="true"] {
+  opacity: 0;
+  visibility: hidden;
+  transition:
+    opacity 130ms ease-out,
+    transform 140ms var(--spring-snappy),
+    visibility 0ms linear 130ms;
+  will-change: transform, opacity;
+}
+
+[data-minimap-preview-card="true"][data-minimap-preview-visible="true"] {
+  opacity: 1;
+  visibility: visible;
+  transition:
+    opacity 130ms ease-out,
+    transform 140ms var(--spring-snappy),
+    visibility 0ms linear 0ms;
+}
+
+[data-minimap-preview-card="true"][data-minimap-scrubbing="true"] {
+  transition:
+    opacity 90ms ease-out,
+    visibility 0ms linear 0ms;
+}
+
+[data-minimap-preview-card="true"][data-minimap-scrubbing="true"] [data-minimap-turn-badge="true"] {
+  color: var(--primary);
+}
+
+[data-minimap-semantic="plan"] {
+  background-color: var(--primary);
+}
+
+[data-minimap-semantic="error"] {
+  background-color: var(--destructive);
+}
+
+[data-minimap-semantic="fork"] {
+  background-color: var(--chart-3, var(--info, var(--primary)));
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-minimap-strip],
+  [data-minimap-preview-card="true"],
+  [data-minimap-preview-card="true"][data-minimap-preview-visible="true"] {
+    transition: none;
+  }
+}

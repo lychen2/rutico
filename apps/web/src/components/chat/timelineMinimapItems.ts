@@ -13,11 +13,14 @@ import { markdownTree } from "~/markdown/wordsHast";
 
 import type { MessagesTimelineRow } from "./MessagesTimeline.logic";
 
+export type TimelineMinimapSemantic = "plan" | "error" | "fork";
+
 export interface TimelineMinimapItem {
   readonly id: string;
   readonly rowIndex: number;
   readonly userText: string | null;
   readonly assistantText: string | null;
+  readonly semantic?: TimelineMinimapSemantic | null;
 }
 
 export function deriveTimelineMinimapItems(
@@ -30,14 +33,55 @@ export function deriveTimelineMinimapItems(
       continue;
     }
 
+    const semantic = resolveSemanticMarkerForTurn(rows, index);
     items.push({
       id: row.id,
       rowIndex: index,
       userText: isAttachmentOnlyBootstrapPrompt(row.message.text) ? "" : row.message.text,
       assistantText: resolveFinalAssistantTextForTurn(rows, index),
+      ...(semantic ? { semantic } : {}),
     });
   }
   return items;
+}
+
+function resolveSemanticMarkerForTurn(
+  rows: ReadonlyArray<MessagesTimelineRow>,
+  userRowIndex: number,
+): TimelineMinimapSemantic | null {
+  let hasPlan = false;
+  let hasFork = false;
+  for (let index = userRowIndex + 1; index < rows.length; index += 1) {
+    const row = rows[index];
+    if (!row) continue;
+    if (row.kind === "message" && row.message.role === "user") {
+      break;
+    }
+    if (
+      (row.kind === "context-compaction" && row.failed) ||
+      (row.kind === "event" &&
+        (row.projectedItem.item.type === "error" || row.projectedItem.item.status === "failed")) ||
+      (row.kind === "work" &&
+        row.groupedEntries.some(
+          (entry) => entry.tone === "error" || entry.toolLifecycleStatus === "failed",
+        )) ||
+      (row.kind === "work-live" &&
+        (row.entry.tone === "error" || row.entry.toolLifecycleStatus === "failed"))
+    ) {
+      return "error";
+    }
+    if (row.kind === "proposed-plan") {
+      hasPlan = true;
+    } else if (
+      row.kind === "attempt-fold" ||
+      (row.kind === "event" && row.projectedItem.item.type === "subagent")
+    ) {
+      hasFork = true;
+    }
+  }
+  if (hasPlan) return "plan";
+  if (hasFork) return "fork";
+  return null;
 }
 
 function resolveFinalAssistantTextForTurn(
