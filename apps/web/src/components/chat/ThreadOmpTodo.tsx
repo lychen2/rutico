@@ -3,6 +3,7 @@ import type { OrchestrationV2ProjectedTurnItem } from "@t3tools/contracts";
 import { useGT } from "gt-react";
 import { CheckIcon, ChevronDownIcon } from "lucide-react";
 import { useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode } from "react";
+import { Button } from "../ui/button";
 import { observeVisibleAnimation } from "~/lib/visibleAnimation";
 import "./threadOmpTodo.css";
 
@@ -261,16 +262,17 @@ export function ThreadOmpTodo({
               <span data-omp-todo-count>
                 {completed}/{steps.length}
               </span>
-              <button
-                type="button"
-                className="ms-auto rounded-full bg-secondary px-2 py-1"
+              <Button
+                size="xs"
+                variant="ghost-muted"
+                className="ms-auto"
                 onClick={() => {
                   triggerRef.current?.click();
                   triggerRef.current?.focus();
                 }}
               >
                 {gt("Collapse")}
-              </button>
+              </Button>
             </div>
             <ol data-omp-todo-list>
               {steps.map((step) => (
