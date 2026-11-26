@@ -3,3 +3,32 @@
    Reserved modular stylesheet pre-imported by index.css for conflict-free
    parallel Stage 2 edits.
    ========================================================================== */
+
+/* --------------------------------------------------------------------------
+   D17 / C054: Floating Hunk Navigation HUD
+   -------------------------------------------------------------------------- */
+
+.diff-hunk-hud {
+  transition:
+    opacity var(--duration-micro) ease-out,
+    transform var(--duration-snappy) var(--spring-snappy);
+}
+
+@starting-style {
+  .diff-hunk-hud {
+    opacity: 0;
+    transform: translate3d(0, 6px, 0) scale(0.96);
+  }
+}
+
+.diff-hunk-hud-progress {
+  transition: transform var(--duration-snappy) var(--spring-snappy);
+  will-change: transform;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .diff-hunk-hud,
+  .diff-hunk-hud-progress {
+    transition: none;
+  }
+}

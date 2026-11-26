@@ -11,6 +11,7 @@ interface FileRevealHandle {
     | {
         getRenderedItems?(): readonly {
           id: string;
+          element?: HTMLElement | undefined;
           instance: {
             getDiffForSearch?(): FileDiffMetadata | undefined;
             revealLine?(line: number): boolean;
@@ -69,6 +70,8 @@ export function createCodeViewFileReveal() {
     positionedFile?: boolean;
     loadingFile?: boolean;
     settling?: boolean;
+    onRevealed?: (handle: FileRevealHandle) => void;
+    didNotifyRevealed?: boolean;
   } | null = null;
   const flush = () => {
     if (pending === null || viewer === null) return;
@@ -138,12 +141,18 @@ export function createCodeViewFileReveal() {
     const target = pending;
     // The diff's first load can remount the viewer or re-render it right after this scroll, which
     // loses it; the range is positioned once more on the next render that can hold it.
-    pending = target.range && !target.settling ? { ...target, settling: true } : null;
+    pending =
+      target.range && !target.settling
+        ? { ...target, settling: true, didNotifyRevealed: true }
+        : null;
     viewer.scrollTo(
       target.range
         ? { type: "range", id: target.id, range: target.range, align: "center" }
         : { type: "item", id: target.id, align: "start" },
     );
+    if (!target.didNotifyRevealed && target.onRevealed) {
+      target.onRevealed(viewer);
+    }
   };
   return {
     attach(next: FileRevealHandle | null) {
@@ -163,8 +172,16 @@ export function createCodeViewFileReveal() {
       viewer = next;
       flush();
     },
-    request(fileKey: string, range?: SelectedLineRange) {
-      pending = { id: fileKey, ...(range ? { range } : {}) };
+    request(
+      fileKey: string,
+      range?: SelectedLineRange,
+      options?: { readonly onRevealed?: (handle: FileRevealHandle) => void },
+    ) {
+      pending = {
+        id: fileKey,
+        ...(range ? { range } : {}),
+        ...(options?.onRevealed ? { onRevealed: options.onRevealed } : {}),
+      };
       flush();
     },
     /** The user scrolled; a reveal still being positioned must not pull them back. */

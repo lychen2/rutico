@@ -207,10 +207,73 @@ export const DIFF_VIEW_UNSAFE_CSS = `${DIFF_SURFACE_THEME_UNSAFE_CSS}
   }
 }
 
+@keyframes diff-hunk-spotlight-bar {
+  0% {
+    opacity: 0;
+    transform: scaleY(0.25);
+  }
+  20% {
+    opacity: 1;
+    transform: scaleY(1);
+  }
+  70% {
+    opacity: 0.9;
+    transform: scaleY(1);
+  }
+  100% {
+    opacity: 0;
+    transform: scaleY(1);
+  }
+}
+
+@keyframes diff-hunk-spotlight-wash {
+  0% {
+    opacity: 0;
+  }
+  18% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
+[data-column-number][data-hunk-spotlight="true"],
+[data-line][data-hunk-spotlight="true"] {
+  position: relative;
+}
+
+[data-column-number][data-hunk-spotlight="true"]::after {
+  content: "";
+  position: absolute;
+  inset-block: 0;
+  inset-inline-start: 0;
+  width: 3px;
+  background-color: var(--primary, var(--diffs-modified-base));
+  pointer-events: none;
+  transform-origin: top center;
+  animation: diff-hunk-spotlight-bar 420ms var(--spring-snappy, cubic-bezier(0.23, 1, 0.32, 1)) both;
+}
+
+[data-line][data-hunk-spotlight="true"]::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background-color: color-mix(in oklch, var(--primary, var(--diffs-modified-base)) 14%, transparent);
+  pointer-events: none;
+  animation: diff-hunk-spotlight-wash 420ms ease-out both;
+}
+
 @media (prefers-reduced-motion: reduce) {
   [data-diff],
   [data-file] {
     transition: none;
+  }
+
+  [data-column-number][data-hunk-spotlight="true"]::after,
+  [data-line][data-hunk-spotlight="true"]::after {
+    animation: none;
+    opacity: 0.55;
   }
 }
 `;

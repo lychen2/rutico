@@ -209,6 +209,8 @@ interface DiffPanelSessionStoreState {
     defaults: ReadonlySet<string>,
     update: (current: ReadonlySet<string>) => ReadonlySet<string>,
   ) => void;
+  activeHunkIndexByScopeKey: Record<string, number>;
+  setActiveHunkIndex: (scopeKey: string, index: number) => void;
   // Null follows the diffIgnoreWhitespace setting until the panel toggle is used.
   ignoreWhitespace: boolean | null;
   setIgnoreWhitespace: (ignoreWhitespace: boolean) => void;
@@ -225,6 +227,14 @@ export const useDiffPanelSessionStore = create<DiffPanelSessionStoreState>()((se
       if (next === current) return state;
       return {
         collapsedFileKeysByScopeKey: { ...state.collapsedFileKeysByScopeKey, [scopeKey]: next },
+      };
+    }),
+  activeHunkIndexByScopeKey: {},
+  setActiveHunkIndex: (scopeKey, index) =>
+    set((state) => {
+      if (state.activeHunkIndexByScopeKey[scopeKey] === index) return state;
+      return {
+        activeHunkIndexByScopeKey: { ...state.activeHunkIndexByScopeKey, [scopeKey]: index },
       };
     }),
   ignoreWhitespace: null,

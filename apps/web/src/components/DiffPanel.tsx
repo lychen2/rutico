@@ -14,7 +14,9 @@ import {
   type RunId,
 } from "@t3tools/contracts";
 import {
+  ArrowDownIcon,
   ArrowRightIcon,
+  ArrowUpIcon,
   CheckIcon,
   ChevronDownIcon,
   Columns2Icon,
@@ -84,8 +86,16 @@ import { AnnotatableCodeView, type AnnotatableCodeViewHandle } from "./diffs/Ann
 import { DiffFileTree } from "./diffs/DiffFileTree";
 import { FileExplorerPane } from "./files/FileExplorerPane";
 import { diffFileTreeEntries } from "./diffs/diffFileTree.logic";
+import {
+  buildDiffHunkAnchors,
+  flashHunkSpotlightInShadowDom,
+  isEditableOrTerminalEventTarget,
+  resolveNextHunkIndex,
+} from "./diffs/diffHunkNav";
 import { getDiffHeaderClickAction } from "./diffs/diffHeaderClick";
 import { Button } from "./ui/button";
+import { AnimatedNumber } from "./ui/animated-number";
+import { Kbd } from "./ui/kbd";
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia } from "./ui/empty";
 import { ToggleGroup, Toggle } from "./ui/toggle-group";
 import { Switch } from "./ui/switch";
@@ -808,6 +818,15 @@ export default function DiffPanel({
     collapsed:
       collapsedDiffFileKeys.has(fileKey) || fileDiff.cacheKey?.endsWith(":pending") === true,
   }));
+  const hunkAnchors = buildDiffHunkAnchors(codeViewFiles);
+  const storedHunkIndex = useDiffPanelSessionStore((state) =>
+    collapseScopeKey ? state.activeHunkIndexByScopeKey[collapseScopeKey] : undefined,
+  );
+  const clampedHunkIndex =
+    storedHunkIndex !== undefined && storedHunkIndex >= 0 && storedHunkIndex < hunkAnchors.length
+      ? storedHunkIndex
+      : null;
+  const displayedHunkIndex = clampedHunkIndex ?? 0;
   const pendingFiles = renderableFiles.filter(
     (file) => file.cacheKey?.endsWith(":pending") && isFileShown(file),
   );
@@ -845,6 +864,42 @@ export default function DiffPanel({
     codeViewReveal.request(file.fileKey);
     return true;
   };
+  const stepToHunk = useStableCallback((direction: -1 | 1) => {
+    if (hunkAnchors.length === 0) return;
+    const nextIndex = resolveNextHunkIndex(clampedHunkIndex, direction, hunkAnchors.length);
+    const anchor = hunkAnchors[nextIndex];
+    if (!anchor) return;
+    if (collapseScopeKey) {
+      useDiffPanelSessionStore.getState().setActiveHunkIndex(collapseScopeKey, nextIndex);
+    }
+    codeViewScroll.discard();
+    updateCollapsedDiffFiles((current) => {
+      if (!current.has(anchor.fileKey)) return current;
+      const next = new Set(current);
+      next.delete(anchor.fileKey);
+      return next;
+    });
+    if (lazySource) requestFile(anchor.filePath);
+    codeViewReveal.request(anchor.fileKey, anchor.range, {
+      onRevealed: (handle) => {
+        flashHunkSpotlightInShadowDom(handle.getInstance()?.getRenderedItems?.(), anchor);
+      },
+    });
+  });
+
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- binds window [ / ] keyboard shortcuts for diff hunk stepping while panel is visible
+  useEffect(() => {
+    if (!visible || hunkAnchors.length === 0) return;
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.defaultPrevented || event.metaKey || event.ctrlKey || event.altKey) return;
+      if (event.key !== "[" && event.key !== "]") return;
+      if (isEditableOrTerminalEventTarget(event)) return;
+      event.preventDefault();
+      stepToHunk(event.key === "]" ? 1 : -1);
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [visible, hunkAnchors.length, stepToHunk]);
 
   // A file another view asked to reveal (a chat diff link): retried as the diff loads until it
   // holds the file, then not again until a new request, so it does not undo what the user did since.
@@ -1701,7 +1756,7 @@ export default function DiffPanel({
             ) : lazySource || renderablePatch?.kind === "files" ? (
               <div className="flex min-h-0 flex-1 overflow-hidden">
                 <div
-                  className="min-h-0 min-w-0 flex-1"
+                  className="relative min-h-0 min-w-0 flex-1"
                   onClickCapture={(event) => {
                     const action = getDiffHeaderClickAction(event.nativeEvent);
                     if (action?.type === "open") openDiffFile(action.filePath);
@@ -1806,6 +1861,79 @@ export default function DiffPanel({
                       ...(currentLoadDiffFiles ? { loadDiffFiles } : {}),
                     }}
                   />
+                  {hunkAnchors.length > 0 ? (
+                    <div
+                      role="region"
+                      aria-label={gt("Hunk navigation")}
+                      data-slot="diff-hunk-hud"
+                      className="diff-hunk-hud surface-optical-chrome surface-elevated-rim pointer-events-auto absolute right-3 bottom-3 z-20 flex flex-col overflow-hidden rounded-lg"
+                    >
+                      <div className="flex items-center gap-0.5 px-1 py-0.5">
+                        <Tooltip>
+                          <TooltipTrigger
+                            render={
+                              <Button
+                                type="button"
+                                size="icon-micro"
+                                variant="ghost"
+                                aria-label={gt("Previous hunk")}
+                                onClick={() => stepToHunk(-1)}
+                              />
+                            }
+                          >
+                            <ArrowUpIcon className="size-3.5" />
+                          </TooltipTrigger>
+                          <TooltipPopup side="top">
+                            <span className="inline-flex items-center gap-1.5">
+                              <span>
+                                <T>Previous hunk</T>
+                              </span>
+                              <Kbd>[</Kbd>
+                            </span>
+                          </TooltipPopup>
+                        </Tooltip>
+                        <span
+                          aria-live="polite"
+                          className="select-none px-1.5 font-mono text-2xs tabular-nums text-foreground/85"
+                        >
+                          <AnimatedNumber value={displayedHunkIndex + 1} />
+                          <span className="mx-0.5 text-muted-foreground/70">/</span>
+                          <span className="text-muted-foreground">{hunkAnchors.length}</span>
+                        </span>
+                        <Tooltip>
+                          <TooltipTrigger
+                            render={
+                              <Button
+                                type="button"
+                                size="icon-micro"
+                                variant="ghost"
+                                aria-label={gt("Next hunk")}
+                                onClick={() => stepToHunk(1)}
+                              />
+                            }
+                          >
+                            <ArrowDownIcon className="size-3.5" />
+                          </TooltipTrigger>
+                          <TooltipPopup side="top">
+                            <span className="inline-flex items-center gap-1.5">
+                              <span>
+                                <T>Next hunk</T>
+                              </span>
+                              <Kbd>]</Kbd>
+                            </span>
+                          </TooltipPopup>
+                        </Tooltip>
+                      </div>
+                      <div aria-hidden="true" className="h-[2px] w-full bg-border/40">
+                        <div
+                          className="diff-hunk-hud-progress h-full w-full origin-left bg-primary/80"
+                          style={{
+                            transform: `scaleX(${Math.min(1, (displayedHunkIndex + 1) / hunkAnchors.length)})`,
+                          }}
+                        />
+                      </div>
+                    </div>
+                  ) : null}
                 </div>
                 {fileTreeOpen ? (
                   <FileExplorerPane
