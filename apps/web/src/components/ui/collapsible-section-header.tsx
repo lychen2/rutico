@@ -3,9 +3,15 @@ import { ChevronDownIcon } from "lucide-react";
 import { cn } from "../../lib/utils";
 
 const tones = {
-  muted: { label: "text-sidebar-muted-foreground", line: "bg-sidebar-border/50" },
-  emphasized: { label: "text-sidebar-foreground/80", line: "bg-sidebar-foreground/25" },
-  accent: { label: "text-primary", line: "bg-primary/50" },
+  muted: {
+    label: "text-sidebar-muted-foreground any-hover:text-sidebar-foreground",
+    line: "bg-sidebar-border/50",
+  },
+  emphasized: {
+    label: "text-sidebar-foreground/80 any-hover:text-sidebar-foreground",
+    line: "bg-sidebar-foreground/25",
+  },
+  accent: { label: "text-primary any-hover:text-primary/85", line: "bg-primary/50" },
 } as const;
 
 export function CollapsibleSectionHeader({
@@ -27,7 +33,7 @@ export function CollapsibleSectionHeader({
       type="button"
       aria-expanded={expanded}
       className={cn(
-        "flex h-8 w-full cursor-pointer items-center gap-2 rounded-md text-left text-xs font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/70",
+        "flex h-8 w-full cursor-pointer items-center gap-2 rounded-md text-left text-xs font-medium transition-colors duration-150 ease-out motion-reduce:transition-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/70",
         variant === "panel" ? "ps-2 pe-2.5" : "px-2",
         tones[tone].label,
       )}
@@ -41,7 +47,10 @@ export function CollapsibleSectionHeader({
       {accessory}
       <ChevronDownIcon
         aria-hidden
-        className={cn("size-3 shrink-0 transition-transform", !expanded && "-rotate-90")}
+        className={cn(
+          "size-3 shrink-0 transition-transform duration-180 ease-(--ease-drawer) motion-reduce:transition-none",
+          !expanded && "-rotate-90",
+        )}
       />
     </button>
   );
