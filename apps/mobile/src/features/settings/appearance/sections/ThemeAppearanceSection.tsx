@@ -18,6 +18,7 @@ import {
   type MobileThemeMode,
 } from "../../../../lib/mobileTheme";
 import { getMobileUniwindThemeName } from "../../../../lib/mobileThemeRuntime";
+import { extractMaterialYouTonalSwatches } from "../../../../lib/materialYouTheme";
 import type { MessageResolver } from "../../../../i18n/messages";
 import { cn } from "../../../../lib/cn";
 import { useAppearancePreferences } from "../AppearancePreferencesProvider";
@@ -325,6 +326,57 @@ function SectionLabel({ children }: { readonly children: string }) {
   return <Text className="px-2 text-sm font-t3-medium text-foreground-muted">{children}</Text>;
 }
 
+const SWATCH_LABELS = {
+  primary: msg("Primary", { $context: "Material You color role" }),
+  secondary: msg("Secondary", { $context: "Material You color role" }),
+  surface: msg("Surface", { $context: "Material You color role" }),
+  accent: msg("Accent", { $context: "Material You color role" }),
+} as const;
+
+function MaterialYouTonalShowcase() {
+  const gt = useGT();
+  const m = useMessages();
+  const { systemColorPalettes, systemColorsActive, themeAppearance } = useAppearancePreferences();
+  const palette = systemColorPalettes?.[themeAppearance];
+  if (!palette) return null;
+  const swatches = extractMaterialYouTonalSwatches(palette, themeAppearance);
+
+  return (
+    <View
+      testID="material-you-tonal-showcase"
+      className={cn(
+        "gap-3 rounded-[24px] border bg-grouped-card px-4 py-3.5",
+        systemColorsActive ? "border-primary/60" : "border-border",
+      )}
+    >
+      <View className="flex-row items-center justify-between gap-2">
+        <Text className="text-sm font-t3-medium text-foreground">{gt("Wallpaper palette")}</Text>
+        <Text className="text-xs text-foreground-muted">
+          {systemColorsActive ? gt("Dynamic active") : gt("Material You")}
+        </Text>
+      </View>
+      <View className="flex-row items-center justify-between gap-2">
+        {swatches.map((swatch) => (
+          <View key={swatch.id} className="flex-1 items-center gap-1.5">
+            <View
+              className="size-11 items-center justify-center rounded-full border"
+              style={{
+                backgroundColor: swatch.ring,
+                borderColor: swatch.container,
+              }}
+            >
+              <View className="size-6 rounded-full" style={{ backgroundColor: swatch.core }} />
+            </View>
+            <Text className="text-xs text-foreground-muted" numberOfLines={1}>
+              {m(SWATCH_LABELS[swatch.id])}
+            </Text>
+          </View>
+        ))}
+      </View>
+    </View>
+  );
+}
+
 export function ThemeAppearanceSection() {
   const gt = useGT();
   const m = useMessages();
@@ -356,6 +408,8 @@ export function ThemeAppearanceSection() {
           ))}
         </View>
       </View>
+
+      {systemColorsAvailable ? <MaterialYouTonalShowcase /> : null}
 
       <View className="gap-3">
         <SectionLabel>{gt("Themes")}</SectionLabel>

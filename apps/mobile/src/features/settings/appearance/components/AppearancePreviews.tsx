@@ -19,11 +19,14 @@ export function AppearancePreviewSeparator() {
   return <View className="h-px bg-separator" />;
 }
 
-export function TextAppearancePreview(props: { readonly fontSize: number }) {
+export function TextAppearancePreview(props: {
+  readonly fontSize: number;
+  readonly previewing?: boolean;
+}) {
   const sizes = resolveMarkdownFontSizes(props.fontSize);
 
   return (
-    <View className="gap-1 p-4">
+    <View className={props.previewing ? "gap-1 bg-primary/5 p-4" : "gap-1 p-4"}>
       <Text
         className="text-foreground"
         style={{ fontSize: sizes.m, lineHeight: sizes.bodyLineHeight }}
@@ -40,7 +43,10 @@ export function TextAppearancePreview(props: { readonly fontSize: number }) {
   );
 }
 
-export function TerminalAppearancePreview(props: { readonly fontSize: number }) {
+export function TerminalAppearancePreview(props: {
+  readonly fontSize: number;
+  readonly previewing?: boolean;
+}) {
   const { themeAppearance: scheme, themeId } = useAppearancePreferences();
   const theme = getMobileTerminalTheme(themeId, scheme);
   const lineHeight = Math.round(props.fontSize * 1.6);
@@ -55,7 +61,7 @@ export function TerminalAppearancePreview(props: { readonly fontSize: number }) 
   ];
 
   return (
-    <View className="p-4">
+    <View className={props.previewing ? "bg-primary/5 p-4" : "p-4"}>
       <Text style={span(theme.foreground)}>
         <Text style={span(theme.palette[2])}>→ </Text>
         <Text style={span(theme.palette[6])}>t3code </Text>
@@ -132,6 +138,7 @@ const CODE_PREVIEW_LINES: ReadonlyArray<CodePreviewLine> = [
 export function CodeAppearancePreview(props: {
   readonly fontSize: number;
   readonly wordBreak: boolean;
+  readonly previewing?: boolean;
 }) {
   const surface = resolveMobileCodeSurface(props.fontSize);
 
@@ -179,7 +186,7 @@ export function CodeAppearancePreview(props: {
 
   if (props.wordBreak) {
     return (
-      <View className="p-4">
+      <View className={props.previewing ? "bg-primary/5 p-4" : "p-4"}>
         {CODE_PREVIEW_LINES.map((line, index) => (
           <View className="flex-row" key={line.id}>
             {lineNumber(line, index)}
@@ -191,7 +198,7 @@ export function CodeAppearancePreview(props: {
   }
 
   return (
-    <View className="flex-row p-4">
+    <View className={props.previewing ? "flex-row bg-primary/5 p-4" : "flex-row p-4"}>
       <View>{CODE_PREVIEW_LINES.map((line, index) => lineNumber(line, index))}</View>
       <ScrollView
         horizontal

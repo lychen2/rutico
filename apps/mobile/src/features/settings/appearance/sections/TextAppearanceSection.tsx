@@ -1,6 +1,8 @@
 import { useGT } from "gt-react-native";
+import { useState } from "react";
 import {
   BASE_FONT_SIZE_STEP,
+  DEFAULT_BASE_FONT_SIZE,
   MAX_BASE_FONT_SIZE,
   MIN_BASE_FONT_SIZE,
 } from "../../../../lib/appearancePreferences";
@@ -17,18 +19,23 @@ export function TextAppearanceSection() {
   const gt = useGT();
   const { isReady, appearance, setBaseFontSize, mathRenderingEnabled, setMathRenderingEnabled } =
     useAppearancePreferences();
+  const [previewSize, setPreviewSize] = useState<number | null>(null);
+  const displayedSize = previewSize ?? appearance.baseFontSize;
 
   return (
     <SettingsSection title={gt("Text", { $context: "settings section for text size" })}>
-      <TextAppearancePreview fontSize={appearance.baseFontSize} />
+      <TextAppearancePreview fontSize={displayedSize} previewing={previewSize !== null} />
       <AppearancePreviewSeparator />
       <FontSizeSliderRow
+        defaultValue={DEFAULT_BASE_FONT_SIZE}
         disabled={!isReady}
+        formatValueLabel={(size) => gt("{size} pt", { size })}
         icon="textformat.size"
         label={gt("Text size")}
         max={MAX_BASE_FONT_SIZE}
         min={MIN_BASE_FONT_SIZE}
         onChange={setBaseFontSize}
+        onPreviewChange={setPreviewSize}
         step={BASE_FONT_SIZE_STEP}
         value={appearance.baseFontSize}
         valueLabel={gt("{size} pt", { size: appearance.baseFontSize })}
