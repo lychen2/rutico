@@ -189,7 +189,7 @@ function shouldOpenDefaultBrowserProfileFromMenuClick(pointerType: string | unde
 }
 
 const SURFACE_DISABLED_REASONS = {
-  browser: msg("Browser previews are only available in the T3 Code desktop app."),
+  browser: msg("Browser previews are only available in the Rutico desktop app."),
   terminal: msg("Terminal surfaces are only available from a project thread."),
   files: msg("Files are only available when a project is open."),
   diff: msg("Diff is only available for server threads in Git repositories."),
@@ -507,8 +507,8 @@ function RightPanelEmptyState(props: {
         "pb-(--workspace-topbar-height)",
       )}
     >
-      <div className="w-full max-w-xs py-6">
-        <h3 className="mb-3 text-center font-medium text-foreground text-sm">
+      <div className="surface-glass w-full max-w-xs rounded-2xl border border-border/50 px-3.5 py-4 dark:border-white/8">
+        <h3 className="mb-2.5 text-center font-medium text-balance text-foreground text-sm tracking-tight">
           <T>Open a surface</T>
         </h3>
         <div className="flex flex-col gap-0.5">
@@ -528,7 +528,7 @@ function RightPanelEmptyState(props: {
                   type="button"
                   onClick={action.onClick}
                   className={cn(
-                    "flex h-8 w-full cursor-pointer items-center gap-2.5 rounded-(--control-radius) px-2.5 text-left text-sm transition-colors group-hover:bg-accent/60",
+                    "flex h-8 w-full cursor-pointer items-center gap-2.5 rounded-(--control-radius) px-2.5 text-left text-sm outline-none transition-[background-color,color,scale] duration-150 ease-out focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring active:scale-[0.985] group-hover:bg-accent/60 motion-reduce:transition-none motion-reduce:active:scale-100",
                     isHighlighted(action) && "bg-accent/60",
                   )}
                 >
@@ -1015,7 +1015,12 @@ function RightPanelTab(
             render={
               <button
                 type="button"
-                className="cursor-pointer flex size-4 shrink-0 items-center justify-center rounded-sm hover:bg-muted"
+                className={cn(
+                  "flex size-4 shrink-0 cursor-pointer items-center justify-center rounded-sm outline-none transition-[background-color,color,scale] duration-150 ease-out hover:bg-muted focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring active:scale-90 motion-reduce:transition-none motion-reduce:active:scale-100",
+                  audio === "audible"
+                    ? "text-primary"
+                    : "text-muted-foreground hover:text-foreground",
+                )}
                 aria-label={
                   audio === "muted"
                     ? gt("Unmute {title}", { title })
@@ -1029,9 +1034,9 @@ function RightPanelTab(
                 }}
               >
                 {audio === "muted" ? (
-                  <VolumeOffIcon className="size-3" />
+                  <VolumeOffIcon key="muted" className="t3-icon-pop size-3" />
                 ) : (
-                  <Volume2Icon className="size-3" />
+                  <Volume2Icon key="audible" className="t3-icon-pop size-3" />
                 )}
               </button>
             }
@@ -1553,19 +1558,26 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
             </SortableTabList>
             {props.open !== false ? (
               <Menu open={addSurfaceMenuOpen} onOpenChange={setAddSurfaceMenuOpen}>
-                <MenuTrigger
-                  ref={addSurfaceTriggerRef}
-                  render={
-                    <Button
-                      aria-label={gt("Add panel surface")}
-                      className="shrink-0"
-                      size="icon-xs"
-                      variant="ghost-muted"
-                    />
-                  }
-                >
-                  <Plus className="size-3.5" />
-                </MenuTrigger>
+                <Tooltip>
+                  <TooltipTrigger
+                    render={
+                      <MenuTrigger
+                        ref={addSurfaceTriggerRef}
+                        render={
+                          <Button
+                            aria-label={gt("Add panel surface")}
+                            className="shrink-0"
+                            size="icon-xs"
+                            variant="ghost-muted"
+                          />
+                        }
+                      />
+                    }
+                  >
+                    <Plus className="size-3.5" />
+                  </TooltipTrigger>
+                  <TooltipPopup side="bottom">{gt("Add panel surface")}</TooltipPopup>
+                </Tooltip>
                 <MenuPopup
                   align="start"
                   side="bottom"
