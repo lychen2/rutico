@@ -1,9 +1,33 @@
-import { describe, expect, it, vi } from "vite-plus/test";
+import { Atom, AtomRegistry } from "effect/reactivity";
+import type { EnvironmentId, ThreadId } from "@t3tools/contracts";
+import { beforeEach, describe, expect, it, vi } from "vite-plus/test";
 
-vi.mock("expo-haptics", () => ({ selectionAsync: vi.fn() }));
-vi.mock("../../state/threads", () => ({ environmentThreadDetails: {} }));
+const harness = vi.hoisted(() => ({
+  appActive: true,
+  selectionAsync: vi.fn(async () => {}),
+  impactAsync: vi.fn(async () => {}),
+  threadAtom: null as Atom.Writable<unknown, unknown> | null,
+}));
 
-import { shouldTickStreamHaptic } from "./threadStreamHaptics";
+vi.mock("expo-haptics", () => ({
+  ImpactFeedbackStyle: { Light: "light" },
+  selectionAsync: harness.selectionAsync,
+  impactAsync: harness.impactAsync,
+}));
+vi.mock("../../lib/appState", () => ({
+  isAppActive: () => harness.appActive,
+}));
+vi.mock("../../state/threads", () => ({
+  environmentThreadDetails: {
+    threadAtom: () => harness.threadAtom,
+  },
+}));
+
+import {
+  shouldFireStreamCompleteHaptic,
+  shouldTickStreamHaptic,
+  threadStreamHaptics,
+} from "./threadStreamHaptics";
 
 const mark = (id: string, textLength: number) => ({ id, textLength });
 
@@ -40,5 +64,88 @@ describe("shouldTickStreamHaptic", () => {
         now: 5_000,
       }),
     ).toBe(false);
+  });
+});
+
+describe("shouldFireStreamCompleteHaptic", () => {
+  it("fires only when an observed streaming message settles into a completed message", () => {
+    expect(
+      shouldFireStreamCompleteHaptic({
+        previous: mark("a", 40),
+        latest: null,
+        completedMessagePresent: true,
+      }),
+    ).toBe(true);
+    expect(
+      shouldFireStreamCompleteHaptic({
+        previous: mark("a", 40),
+        latest: null,
+        completedMessagePresent: false,
+      }),
+    ).toBe(false);
+    expect(
+      shouldFireStreamCompleteHaptic({
+        previous: null,
+        latest: null,
+        completedMessagePresent: true,
+      }),
+    ).toBe(false);
+  });
+});
+
+describe("threadStreamHaptics foreground gating & completion", () => {
+  beforeEach(() => {
+    harness.appActive = true;
+    harness.selectionAsync.mockClear();
+    harness.impactAsync.mockClear();
+  });
+
+  it("suppresses haptics while backgrounded and fires a light completion impact in the foreground", () => {
+    harness.threadAtom = Atom.make<unknown>({
+      projection: {
+        messages: [{ id: "m1", role: "assistant", streaming: true, text: "Hello" }],
+      },
+    });
+    const registry = AtomRegistry.make();
+    const unmount = registry.mount(
+      threadStreamHaptics({
+        environmentId: "env-haptic-1" as EnvironmentId,
+        threadId: "thread-haptic-1" as ThreadId,
+      }),
+    );
+
+    try {
+      // Initial seed stays silent.
+      expect(harness.selectionAsync).not.toHaveBeenCalled();
+      expect(harness.impactAsync).not.toHaveBeenCalled();
+
+      // Backgrounded updates stay silent.
+      harness.appActive = false;
+      registry.set(harness.threadAtom, {
+        projection: {
+          messages: [{ id: "m2", role: "assistant", streaming: true, text: "Hi" }],
+        },
+      });
+      expect(harness.selectionAsync).not.toHaveBeenCalled();
+
+      // Returning to foreground resumes ticking for new streams and fires Light on completion.
+      harness.appActive = true;
+      registry.set(harness.threadAtom, {
+        projection: {
+          messages: [{ id: "m3", role: "assistant", streaming: true, text: "Done?" }],
+        },
+      });
+      expect(harness.selectionAsync).toHaveBeenCalledTimes(1);
+
+      registry.set(harness.threadAtom, {
+        projection: {
+          messages: [{ id: "m3", role: "assistant", streaming: false, text: "Done!" }],
+        },
+      });
+      expect(harness.impactAsync).toHaveBeenCalledTimes(1);
+      expect(harness.impactAsync).toHaveBeenCalledWith("light");
+    } finally {
+      unmount();
+    }
   });
 });
