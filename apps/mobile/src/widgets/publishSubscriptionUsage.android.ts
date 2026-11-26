@@ -19,11 +19,15 @@ export async function publishSubscriptionUsage(snapshot: SubscriptionUsageSnapsh
       if (event.source === "SubscriptionUsage" && tapUrl) void tryOpenExternalUrl(tapUrl);
     });
   }
+  const widgetExpiry = requireOptionalNativeModule<{
+    schedule: (name: string, deadlines: number[]) => void;
+    setLaunchUrl?: (name: string, url: string | null) => void;
+  }>("T3WidgetExpiry");
+  // Persist the active Usage deep link so the native Glance provider opens Rutico from cold start.
+  widgetExpiry?.setLaunchUrl?.("SubscriptionUsage", snapshot.url ?? null);
   widget.updateSnapshot(snapshot);
   // Android lacks timelines; alarms re-render snapshots at expiry to mark readings stale.
-  requireOptionalNativeModule<{ schedule: (name: string, deadlines: number[]) => void }>(
-    "T3WidgetExpiry",
-  )?.schedule(
+  widgetExpiry?.schedule(
     "SubscriptionUsage",
     snapshot.providers.map((provider) => provider.expiresAt).filter((at) => at > 0),
   );

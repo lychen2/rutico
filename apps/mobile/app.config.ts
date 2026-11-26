@@ -463,8 +463,14 @@ const config: ExpoConfig = {
     "./plugins/withIosCocoaPodsUuidCache.cjs",
     // Compile out the unused pedometer to avoid an iOS motion purpose string.
     ["expo-sensors", { motionPermission: false }],
-    // Mods run in reverse order; expo-widgets must create and wipe the target before assets are added.
-    ...(!isIosPersonalTeamBuild ? ["./plugins/withWidgetLogoAsset.cjs", widgetsPlugin] : []),
+    // Mods run in reverse order; expo-widgets must create and wipe the target before assets/providers are patched.
+    ...(!isIosPersonalTeamBuild
+      ? [
+          "./plugins/withWidgetLogoAsset.cjs",
+          "./plugins/withAndroidWidgetDeepLink.cjs",
+          widgetsPlugin,
+        ]
+      : []),
     "./plugins/withAndroidNetworkSecurityConfig.cjs",
     "./plugins/withAndroidGradleHeap.cjs",
     "./plugins/withAndroidInputBackground.cjs",
