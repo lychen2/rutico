@@ -112,3 +112,18 @@ it.each([1280, 390])("names each group by a heading outside it at %ipx wide", as
   }
   expect(page.getByRole("tree").query()).toBeNull();
 });
+
+it("offers a Clear search recovery button when no settings match", async () => {
+  await page.viewport(1280, 800);
+  await using _screen = await renderNav();
+  const search = page.getByRole("combobox", { name: "Search settings" });
+  await search.fill("zzzz-no-match");
+
+  await expect.element(page.getByText("No settings found")).toBeVisible();
+  const clearButton = page.getByRole("button", { name: "Clear search" });
+  await expect.element(clearButton).toBeVisible();
+
+  await clearButton.click();
+  await expect.element(search).toHaveValue("");
+  await expect.element(search).toHaveFocus();
+});
