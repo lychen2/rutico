@@ -1,8 +1,18 @@
 import type { SubagentPillSegment } from "@t3tools/client-runtime/state/thread-subagents";
+import { useIsFocused } from "@react-navigation/native";
 import { GlassContainer, GlassView } from "expo-glass-effect";
 import { useGT } from "gt-react-native";
 import { Fragment, type ReactNode, useEffect, useRef, useState } from "react";
-import { type LayoutChangeEvent, Pressable, useWindowDimensions, View } from "react-native";
+import {
+  Animated as RNAnimated,
+  Easing as RNEasing,
+  type LayoutChangeEvent,
+  Platform,
+  Pressable,
+  useAnimatedValue,
+  useWindowDimensions,
+  View,
+} from "react-native";
 import Animated, {
   Easing,
   FadeIn,
@@ -20,6 +30,8 @@ import { AppActivityIndicator } from "../../components/ui/AppActivityIndicator";
 import { AppText as Text } from "../../components/ui/AppText";
 import { SymbolView } from "../../components/ui/AppSymbol";
 import { ControlPill } from "../../components/ui/ControlPill";
+import { GlassBackdrop } from "../../components/ui/GlassBackdrop";
+import { useAppActive } from "../../lib/appState";
 import { NATIVE_LIQUID_GLASS_SUPPORTED } from "../../native/native-glass";
 import { BrowserPreviewButton } from "../browser/browser-preview-button";
 import { DevicePreviewButton } from "../devices/device-preview-button";
@@ -343,10 +355,38 @@ export function FloatingWorkingControl(props: {
         <View pointerEvents="box-none" className="flex-row items-center gap-4">
           <Animated.View
             pointerEvents={capsuleInteractive ? "box-none" : "none"}
-            className="h-11 items-center justify-center overflow-hidden rounded-full border border-border bg-glass-fallback shadow-md shadow-black/10"
-            style={capsuleStyle}
+            style={[
+              capsuleStyle,
+              Platform.OS === "android"
+                ? {
+                    borderRadius: 9999,
+                    overflow: "visible",
+                    boxShadow: [
+                      {
+                        offsetX: 0,
+                        offsetY: 4,
+                        blurRadius: 14,
+                        color:
+                          props.colorScheme === "dark"
+                            ? "rgba(0, 0, 0, 0.34)"
+                            : "rgba(0, 0, 0, 0.12)",
+                      },
+                    ],
+                  }
+                : {
+                    borderRadius: 9999,
+                    overflow: "visible",
+                    shadowColor: "#000000",
+                    shadowOpacity: props.colorScheme === "dark" ? 0.22 : 0.08,
+                    shadowRadius: 16,
+                    shadowOffset: { width: 0, height: 6 },
+                  },
+            ]}
           >
-            {capsuleContent}
+            <View className="h-11 items-center justify-center overflow-hidden rounded-full border border-border">
+              <GlassBackdrop />
+              {capsuleContent}
+            </View>
           </Animated.View>
 
           <Animated.View
@@ -384,6 +424,57 @@ export function FloatingWorkingControl(props: {
         />
       )}
     </Animated.View>
+  );
+}
+
+function ConnectionDangerDot() {
+  const appActive = useAppActive();
+  const isFocused = useIsFocused();
+  const reducedMotion = useReducedMotion();
+  const shouldPulse = appActive && isFocused && !reducedMotion;
+  const pulse = useAnimatedValue(0, { useNativeDriver: true });
+
+  // Uses native Animated instead of Reanimated withRepeat so continuous motion never starves
+  // React commits while DISABLE_COMMIT_PAUSING_MECHANISM is enabled.
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- drives a subtle native pulsing halo on the disconnected status dot while focused and foregrounded
+  useEffect(() => {
+    pulse.setValue(0);
+    if (!shouldPulse) return;
+    const loop = RNAnimated.loop(
+      RNAnimated.timing(pulse, {
+        toValue: 1,
+        duration: 1800,
+        easing: RNEasing.out(RNEasing.quad),
+        useNativeDriver: true,
+      }),
+    );
+    loop.start();
+    return () => {
+      loop.stop();
+      pulse.setValue(0);
+    };
+  }, [pulse, shouldPulse]);
+
+  const opacity = pulse.interpolate({
+    inputRange: [0, 1],
+    outputRange: [0.55, 0],
+  });
+  const scale = pulse.interpolate({
+    inputRange: [0, 1],
+    outputRange: [1, 2.1],
+  });
+
+  return (
+    <View className="relative size-2 items-center justify-center">
+      {shouldPulse ? (
+        <RNAnimated.View
+          pointerEvents="none"
+          className="absolute inset-0 rounded-full bg-danger-foreground"
+          style={{ opacity, transform: [{ scale }] }}
+        />
+      ) : null}
+      <View className="size-2 rounded-full bg-danger-foreground" />
+    </View>
   );
 }
 
@@ -435,7 +526,7 @@ function FloatingStatusLabel(props: {
         onLayout={props.onLayout}
         onPress={props.status.onPress}
       >
-        <View className="h-2 w-2 rounded-full bg-red-500" />
+        <ConnectionDangerDot />
         <Text
           className="max-w-[260px] shrink font-t3-medium text-xs text-foreground"
           numberOfLines={1}
