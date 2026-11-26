@@ -72,6 +72,7 @@ import { copyPullRequestLink, sharePullRequestLink } from "./pullRequestLink";
 import { pullRequestStatus } from "./pullRequestStatus";
 import { use, useEffect, useEffectEvent, useMemo, useRef, useState } from "react";
 import { Platform, Pressable, StyleSheet, View } from "react-native";
+import { triggerSemanticHaptic } from "../../lib/hapticChoreography";
 import { tryOpenExternalUrl } from "../../lib/openExternalUrl";
 import { RefreshControl } from "../../components/ui/RefreshControl";
 import { NativeScrollView } from "../../native/NativeScrollViewMarker";
@@ -273,7 +274,10 @@ function PullRequestIdentity(props: {
         <Pressable
           accessibilityRole="button"
           accessibilityLabel={gt("Copy base branch {branch}", { branch: pr.baseBranch })}
-          onPress={() => void Clipboard.setStringAsync(pr.baseBranch)}
+          onPress={() => {
+            triggerSemanticHaptic("contextClick");
+            void Clipboard.setStringAsync(pr.baseBranch);
+          }}
           className="min-w-0 shrink active:opacity-70"
           hitSlop={8}
         >
@@ -285,7 +289,10 @@ function PullRequestIdentity(props: {
         <Pressable
           accessibilityRole="button"
           accessibilityLabel={gt("Copy head branch {branch}", { branch: pr.headBranch })}
-          onPress={() => void Clipboard.setStringAsync(pr.headBranch)}
+          onPress={() => {
+            triggerSemanticHaptic("contextClick");
+            void Clipboard.setStringAsync(pr.headBranch);
+          }}
           className="min-w-0 shrink active:opacity-70"
           hitSlop={8}
         >
@@ -455,6 +462,7 @@ export function PullRequestRouteScreen({ route }: StaticScreenProps<PullRequestP
   });
   const selectSection = (next: typeof section) => {
     if (next === section) return;
+    triggerSemanticHaptic("segmentTick");
     const from = shown(requestedSection.current);
     const current =
       currentScrollOffset.current.tab === from

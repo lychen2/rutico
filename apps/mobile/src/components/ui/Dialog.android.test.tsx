@@ -39,6 +39,7 @@ vi.mock("../../features/settings/appearance/useScaledTextRole", () => ({
   useScaledTextRole: () => ({}),
 }));
 vi.mock("../../lib/mobileTheme", () => ({ themeColorWithContrast: () => "#ffffff" }));
+vi.mock("../../lib/hapticChoreography", () => ({ triggerSemanticHaptic: vi.fn() }));
 
 import * as Dialog from "./Dialog.android";
 
