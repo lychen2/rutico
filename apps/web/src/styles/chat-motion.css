@@ -1531,3 +1531,156 @@
     animation: none;
   }
 }
+
+/* ==========================================================================
+   D13 / C044: Tip 013 Single-Sweep 1px Metallic Rim & Border-Only Aura States
+   ========================================================================== */
+
+[data-chat-composer-main-surface="true"] {
+  transition: box-shadow 200ms ease-out;
+}
+
+[data-chat-composer-main-surface="true"] > [data-composer-rim-sweep="true"] {
+  position: absolute;
+  inset: 0;
+  z-index: 25;
+  border-radius: inherit;
+  padding: 1px;
+  overflow: hidden;
+  pointer-events: none;
+  -webkit-mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  mask-composite: exclude;
+}
+
+[data-chat-composer-main-surface="true"] > [data-composer-rim-sweep="true"]::before {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 220%;
+  aspect-ratio: 1;
+  opacity: 0;
+  transform: translate(-50%, -50%) rotate(0deg);
+  background: conic-gradient(
+    from 0deg,
+    transparent 0deg,
+    color-mix(in oklch, var(--composer-rim-accent, var(--primary)) 82%, white) 48deg,
+    transparent 124deg,
+    transparent 360deg
+  );
+}
+
+/* Quiet border-only hairline tints per composer aura state (zero neon blur). */
+[data-chat-composer-main-surface="true"][data-composer-aura="focused"] {
+  --composer-rim-accent: var(--primary);
+  box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--primary) 22%, transparent);
+}
+
+[data-chat-composer-main-surface="true"][data-composer-aura="editing-queue"] {
+  --composer-rim-accent: var(--warning);
+  box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--warning) 44%, transparent);
+}
+
+[data-chat-composer-main-surface="true"][data-composer-aura="pending-input"] {
+  --composer-rim-accent: var(--info, var(--primary));
+  box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--info, var(--primary)) 36%, transparent);
+}
+
+[data-chat-composer-main-surface="true"][data-composer-aura="dispatch-steer"] {
+  --composer-rim-accent: var(--primary);
+  box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--primary) 34%, transparent);
+}
+
+[data-chat-composer-main-surface="true"][data-composer-aura="dispatch-queue"] {
+  --composer-rim-accent: var(--info, var(--primary));
+  box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--info, var(--primary)) 30%, transparent);
+}
+
+[data-chat-composer-main-surface="true"][data-composer-aura="ultrathink"] {
+  --composer-rim-accent: #8b5cf6;
+}
+
+/* Refine ultrathink-frame into a quiet 1px metallic rim instead of a 2px heavy band. */
+[data-chat-composer-main-surface="true"].ultrathink-frame::before {
+  padding: 1px;
+  opacity: 0.72;
+}
+
+[data-chat-composer-main-surface="true"][data-composer-aura="ultrathink"]
+  > [data-composer-rim-sweep="true"]::before {
+  background: conic-gradient(
+    from 0deg,
+    transparent 0deg,
+    #38bdf8 34deg,
+    #a855f7 68deg,
+    #f59e0b 98deg,
+    transparent 148deg,
+    transparent 360deg
+  );
+}
+
+@keyframes chat-composer-rim-sweep-once {
+  0% {
+    opacity: 0;
+    transform: translate(-50%, -50%) rotate(-36deg);
+  }
+  18% {
+    opacity: 0.92;
+  }
+  78% {
+    opacity: 0.68;
+  }
+  100% {
+    opacity: 0;
+    transform: translate(-50%, -50%) rotate(324deg);
+  }
+}
+
+@keyframes chat-composer-rim-glint-once {
+  0% {
+    opacity: 0;
+    transform: translate(-50%, -50%) rotate(-45deg);
+  }
+  28% {
+    opacity: 0.52;
+  }
+  100% {
+    opacity: 0;
+    transform: translate(-50%, -50%) rotate(225deg);
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  /* Tip 013 + Astra P1-5: single GPU rotate() pass on mode entry, zero infinite loop. */
+  [data-chat-composer-main-surface="true"][data-composer-aura="ultrathink"]
+    > [data-composer-rim-sweep="true"]::before {
+    animation: chat-composer-rim-sweep-once 900ms cubic-bezier(0.22, 1, 0.36, 1) 1 forwards;
+  }
+
+  [data-chat-composer-main-surface="true"]:is(
+      [data-composer-aura="focused"],
+      [data-composer-aura="editing-queue"],
+      [data-composer-aura="pending-input"],
+      [data-composer-aura="dispatch-steer"]
+    )
+    > [data-composer-rim-sweep="true"]::before {
+    animation: chat-composer-rim-glint-once 560ms cubic-bezier(0.22, 1, 0.36, 1) 1 forwards;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-chat-composer-main-surface="true"] {
+    transition: none;
+  }
+
+  [data-chat-composer-main-surface="true"] > [data-composer-rim-sweep="true"]::before {
+    animation: none;
+    opacity: 0;
+  }
+}
