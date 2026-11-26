@@ -408,47 +408,55 @@ export function HostedBrowserWebview(props: {
             top: layout.viewportY * fitScale,
             width: layout.viewportWidth * fitScale,
             height: layout.viewportHeight * fitScale,
-            transformStyle: viewportTransform && fullDetail ? "preserve-3d" : undefined,
           }}
         >
-          <webview
-            ref={setWebviewRef}
-            // Electron needs allowpopups at attachment. React drops boolean values for unknown attributes.
-            {...({ allowpopups: "true" } as unknown as { readonly allowpopups?: boolean })}
-            src={webviewGeneration === 0 ? initialSrc : recoverySrc}
-            partition={config.partition}
-            webpreferences={config.webPreferences}
-            {...(config.preloadUrl ? { preload: config.preloadUrl } : {})}
-            data-preview-tab={runtimeTabId}
-            data-preview-server-tab={tabId}
-            data-preview-viewport-mode={effectiveViewport._tag}
-            data-preview-viewport-key={browserViewportSettingKey(effectiveViewport)}
-            data-preview-css-width={
-              fittedSourceViewport
-                ? fittedSourceViewport.width
-                : effectiveViewport._tag === "fill"
-                  ? Math.max(1, Math.round(layout.viewportWidth / layoutZoomFactor))
-                  : effectiveViewport.width
-            }
-            data-preview-css-height={
-              fittedSourceViewport
-                ? fittedSourceViewport.height
-                : effectiveViewport._tag === "fill"
-                  ? Math.max(1, Math.round(layout.viewportHeight / layoutZoomFactor))
-                  : effectiveViewport.height
-            }
-            aria-hidden={active ? undefined : true}
-            className={cn(
-              "absolute top-0 left-0 flex overflow-hidden bg-white",
-              active && !layout.fillsPanel && "ring-1 ring-border/70 shadow-sm",
-            )}
+          {/* Keep preserve-3d off the overflow-hidden frame: CSS grouping properties flatten 3D
+              contexts and drop matrix3d's z-terms, blurring scaled full-detail desktop captures. */}
+          <div
+            className="relative size-full"
             style={{
-              width: layout.viewportWidth / layout.viewportScale,
-              height: layout.viewportHeight / layout.viewportScale,
-              transform: viewportTransform,
-              transformOrigin: "top left",
+              transformStyle: viewportTransform && fullDetail ? "preserve-3d" : undefined,
             }}
-          />
+          >
+            <webview
+              ref={setWebviewRef}
+              // Electron needs allowpopups at attachment. React drops boolean values for unknown attributes.
+              {...({ allowpopups: "true" } as unknown as { readonly allowpopups?: boolean })}
+              src={webviewGeneration === 0 ? initialSrc : recoverySrc}
+              partition={config.partition}
+              webpreferences={config.webPreferences}
+              {...(config.preloadUrl ? { preload: config.preloadUrl } : {})}
+              data-preview-tab={runtimeTabId}
+              data-preview-server-tab={tabId}
+              data-preview-viewport-mode={effectiveViewport._tag}
+              data-preview-viewport-key={browserViewportSettingKey(effectiveViewport)}
+              data-preview-css-width={
+                fittedSourceViewport
+                  ? fittedSourceViewport.width
+                  : effectiveViewport._tag === "fill"
+                    ? Math.max(1, Math.round(layout.viewportWidth / layoutZoomFactor))
+                    : effectiveViewport.width
+              }
+              data-preview-css-height={
+                fittedSourceViewport
+                  ? fittedSourceViewport.height
+                  : effectiveViewport._tag === "fill"
+                    ? Math.max(1, Math.round(layout.viewportHeight / layoutZoomFactor))
+                    : effectiveViewport.height
+              }
+              aria-hidden={active ? undefined : true}
+              className={cn(
+                "absolute top-0 left-0 flex overflow-hidden bg-white",
+                active && !layout.fillsPanel && "ring-1 ring-border/70 shadow-sm",
+              )}
+              style={{
+                width: layout.viewportWidth / layout.viewportScale,
+                height: layout.viewportHeight / layout.viewportScale,
+                transform: viewportTransform,
+                transformOrigin: "top left",
+              }}
+            />
+          </div>
         </div>
         {active && effectiveViewport._tag !== "fill" && !fittedSourceViewport ? (
           <>
