@@ -36,15 +36,18 @@ import { canSnooze } from "@t3tools/client-runtime/state/thread-settled";
 import { threadChipCopyTarget } from "@t3tools/client-runtime/thread-reference";
 import type { MenuAction } from "@react-native-menu/menu";
 import { useNavigation } from "@react-navigation/native";
+import * as Haptics from "expo-haptics";
 import { msg, T, useGT, useMessages } from "gt-react-native";
 import { memo, useCallback, useMemo, useState, type ComponentProps } from "react";
 import { Platform, Pressable, Text as RNText, useWindowDimensions, View } from "react-native";
 import type { SwipeableMethods } from "react-native-gesture-handler/ReanimatedSwipeable";
 
 import type { ThreadListProvider } from "../../state/thread-list-environments";
+import { AppActivityIndicator } from "../../components/ui/AppActivityIndicator";
 import { SymbolView, type AppSymbolName } from "../../components/ui/AppSymbol";
 import { AppText as Text } from "../../components/ui/AppText";
 import { Menu } from "../../components/ui/Menu";
+import { ThreadDisclosureChevron } from "../../components/ui/ThreadDisclosureChevron";
 import { EnvironmentMachineSymbol } from "../../components/EnvironmentMachineSymbol";
 import { ProjectFavicon } from "../../components/ProjectFavicon";
 import {
@@ -247,7 +250,9 @@ function ThreadListV2Section(props: {
   const snoozed = props.tone === "snoozed";
   const sidebarPane = props.pane === "sidebar";
   const className = cn(
-    "mb-1.5 mt-4 flex-row items-center gap-2.5",
+    props.disclosure
+      ? "mt-1.5 min-h-[44px] flex-row items-center gap-2.5 py-2.5"
+      : "mb-1.5 mt-4 flex-row items-center gap-2.5",
     props.pane === "sidebar" ? "px-3" : "px-5",
   );
   const content = (
@@ -271,8 +276,9 @@ function ThreadListV2Section(props: {
         )}
       />
       {props.disclosure ? (
-        <SymbolView
-          name="chevron.down"
+        <ThreadDisclosureChevron
+          expanded={props.disclosure.expanded}
+          collapsedDirection="down"
           size={10}
           tintColorClassName={
             sidebarPane
@@ -281,8 +287,6 @@ function ThreadListV2Section(props: {
                 ? "accent-icon-muted"
                 : "accent-foreground-muted"
           }
-          type="monochrome"
-          style={{ transform: [{ rotate: props.disclosure.expanded ? "180deg" : "0deg" }] }}
         />
       ) : null}
     </>
@@ -299,7 +303,10 @@ function ThreadListV2Section(props: {
       }}
       className={className}
       disabled={props.disclosure.disabled}
-      onPress={props.disclosure.onToggle}
+      onPress={() => {
+        void Haptics.selectionAsync().catch(() => undefined);
+        props.disclosure?.onToggle();
+      }}
       style={({ pressed }) => ({ opacity: pressed ? 0.6 : 1 })}
     >
       {content}
@@ -416,17 +423,35 @@ export const ThreadListV2ShowMoreRow = memo(function ThreadListV2ShowMoreRow(pro
             )
           : label
       }
+      accessibilityState={{
+        busy: props.state === "loading",
+        disabled: props.state === "loading",
+      }}
       disabled={props.state === "loading"}
       onPress={props.onPress}
-      className="mx-4 mt-2 items-center rounded-lg border border-dashed border-border py-2.5"
+      className={cn(
+        "mx-4 mt-2 min-h-[44px] flex-row items-center justify-center gap-2 rounded-lg border border-dashed px-4 py-2.5 android:min-h-[48px]",
+        props.state === "failed" ? "border-danger-border" : "border-border",
+      )}
       style={({ pressed }) => ({ opacity: pressed ? 0.6 : 1 })}
     >
+      {props.state === "loading" ? (
+        <AppActivityIndicator
+          size="small"
+          colorClassName={
+            props.pane === "sidebar" ? "accent-drawer-foreground-muted" : "accent-foreground-muted"
+          }
+        />
+      ) : null}
       <Text
-        className={
-          props.pane === "sidebar"
-            ? "text-xs font-t3-medium text-drawer-foreground-muted"
-            : "text-xs font-t3-medium text-foreground-muted"
-        }
+        className={cn(
+          "text-xs font-t3-medium",
+          props.state === "failed"
+            ? "text-danger-foreground"
+            : props.pane === "sidebar"
+              ? "text-drawer-foreground-muted"
+              : "text-foreground-muted",
+        )}
       >
         {label}
       </Text>
