@@ -12,6 +12,7 @@ import {
   type ThreadFindAnnouncement,
 } from "./threadFind";
 import { THREAD_DETAILS_CARD_GAP } from "./threadDetailsCardLayout";
+import { isTimelineRowVisibleInViewport, scheduleTimelineTargetHighlight } from "./TimelineMinimap";
 
 interface ThreadFindBarProps {
   readonly open: boolean;
@@ -36,6 +37,10 @@ export const THREAD_FIND_BAR_RESERVED_HEIGHT = 36 + THREAD_DETAILS_CARD_GAP;
 
 export function ThreadFindBar(props: ThreadFindBarProps) {
   const inputRef = useRef<HTMLInputElement | null>(null);
+  const lastHighlightedRef = useRef<{ navigationId: number; rowId: string | null }>({
+    navigationId: -1,
+    rowId: null,
+  });
   const gt = useGT();
 
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- focuses and selects the input DOM node when the bar opens or a find shortcut fires
@@ -50,6 +55,52 @@ export function ThreadFindBar(props: ThreadFindBarProps) {
   ]);
 
   const hasQuery = props.query.trim().length > 0;
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- triggers a brief DOM arrival wash on the target timeline row when find navigation settles
+  useEffect(() => {
+    if (!props.open || !hasQuery) {
+      lastHighlightedRef.current = { navigationId: -1, rowId: null };
+      return;
+    }
+    if (
+      !props.settled ||
+      props.status !== null ||
+      props.counting === true ||
+      props.matchCount === 0
+    ) {
+      return;
+    }
+    if (lastHighlightedRef.current.navigationId === props.navigationId) return;
+    lastHighlightedRef.current.navigationId = props.navigationId;
+
+    return scheduleTimelineTargetHighlight(() => {
+      if (typeof CSS === "undefined" || !CSS.highlights) return "skip";
+      const highlight = CSS.highlights.get("t3-thread-find-active");
+      if (!highlight) return null;
+      for (const range of highlight) {
+        const node = range.startContainer;
+        const element = node instanceof Element ? node : node.parentElement;
+        const row = element?.closest<HTMLElement>("[data-timeline-row-id]") ?? null;
+        if (!row) continue;
+        const rowId = row.dataset.timelineRowId ?? null;
+        if (rowId !== null && rowId === lastHighlightedRef.current.rowId) {
+          return "skip";
+        }
+        const viewport = row.closest<HTMLElement>("[data-assistant-citation-viewport]");
+        if (!isTimelineRowVisibleInViewport(row, viewport)) return null;
+        lastHighlightedRef.current.rowId = rowId;
+        return row;
+      }
+      return null;
+    });
+  }, [
+    hasQuery,
+    props.counting,
+    props.matchCount,
+    props.navigationId,
+    props.open,
+    props.settled,
+    props.status,
+  ]);
   const noResults = hasQuery && !props.status && !props.counting && props.matchCount === 0;
   let label = "";
   if (hasQuery) {

@@ -13,6 +13,116 @@ import {
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { cn } from "~/lib/utils";
 
+const ARRIVAL_HIGHLIGHT_DURATION_MS = 600;
+const ARRIVAL_HIGHLIGHT_ATTR = "data-timeline-arrival-highlight";
+
+let activeArrivalHighlight: { element: HTMLElement; animation: Animation } | null = null;
+
+function isRowVisibleInViewport(row: HTMLElement, viewport: HTMLElement | null): boolean {
+  if (!viewport) return true;
+  const viewportRect = viewport.getBoundingClientRect();
+  if (viewportRect.height === 0) return true;
+  const rowRect = row.getBoundingClientRect();
+  return rowRect.bottom > viewportRect.top && rowRect.top < viewportRect.bottom;
+}
+
+function pulseTimelineTargetRow(element: HTMLElement): void {
+  if (
+    typeof window === "undefined" ||
+    window.matchMedia("(prefers-reduced-motion: reduce)").matches ||
+    typeof element.animate !== "function"
+  ) {
+    return;
+  }
+  if (activeArrivalHighlight) {
+    const previous = activeArrivalHighlight;
+    activeArrivalHighlight = null;
+    previous.element.removeAttribute(ARRIVAL_HIGHLIGHT_ATTR);
+    previous.animation.cancel();
+  }
+  element.setAttribute(ARRIVAL_HIGHLIGHT_ATTR, "true");
+  const animation = element.animate(
+    [
+      {
+        backgroundColor: "color-mix(in srgb, var(--primary) 10%, transparent)",
+        boxShadow: "inset 0 0 0 1px color-mix(in srgb, var(--primary) 20%, transparent)",
+        borderRadius: "12px",
+      },
+      {
+        backgroundColor: "color-mix(in srgb, var(--primary) 7%, transparent)",
+        boxShadow: "inset 0 0 0 1px color-mix(in srgb, var(--primary) 14%, transparent)",
+        borderRadius: "12px",
+        offset: 0.25,
+      },
+      {
+        backgroundColor: "transparent",
+        boxShadow: "inset 0 0 0 1px transparent",
+        borderRadius: "12px",
+      },
+    ],
+    {
+      duration: ARRIVAL_HIGHLIGHT_DURATION_MS,
+      easing: "ease-out",
+    },
+  );
+  const current = { element, animation };
+  activeArrivalHighlight = current;
+  const clear = () => {
+    element.removeAttribute(ARRIVAL_HIGHLIGHT_ATTR);
+    if (activeArrivalHighlight === current) {
+      activeArrivalHighlight = null;
+    }
+  };
+  animation.addEventListener("finish", clear, { once: true });
+  animation.addEventListener("cancel", clear, { once: true });
+}
+
+export function scheduleTimelineTargetHighlight(
+  findTarget: () => HTMLElement | "skip" | null,
+  maxFrames = 30,
+): () => void {
+  if (
+    typeof window === "undefined" ||
+    window.matchMedia("(prefers-reduced-motion: reduce)").matches
+  ) {
+    return () => {};
+  }
+  let cancelled = false;
+  let frameId: number | null = null;
+  let attempts = 0;
+
+  const probe = () => {
+    frameId = null;
+    if (cancelled) return;
+    const target = findTarget();
+    if (target === "skip") return;
+    if (target?.isConnected) {
+      pulseTimelineTargetRow(target);
+      return;
+    }
+    attempts += 1;
+    if (attempts < maxFrames) {
+      frameId = requestAnimationFrame(probe);
+    }
+  };
+
+  frameId = requestAnimationFrame(probe);
+  return () => {
+    cancelled = true;
+    if (frameId !== null) {
+      cancelAnimationFrame(frameId);
+      frameId = null;
+    }
+  };
+}
+
+export function isTimelineRowVisibleInViewport(
+  row: HTMLElement,
+  viewport: HTMLElement | null,
+): boolean {
+  return isRowVisibleInViewport(row, viewport);
+}
+
 // A release outside the window can skip `mouseup`, so the next button-free
 // `mousemove` also counts.
 function onMouseButtonsReleased(onRelease: () => void): () => void {
@@ -51,10 +161,39 @@ export function TimelineMinimap({
 }) {
   const gt = useGT();
   const [activeIndex, setActiveIndex] = useState<number | null>(null);
+  const rootRef = useRef<HTMLDivElement | null>(null);
+  const pendingHighlightCleanupRef = useRef<(() => void) | null>(null);
   const wheelTargetRef = (node: HTMLDivElement | null) => {
     if (!node) return;
+    rootRef.current = node;
     node.addEventListener("wheel", onWheel, { passive: false });
-    return () => node.removeEventListener("wheel", onWheel);
+    return () => {
+      node.removeEventListener("wheel", onWheel);
+      pendingHighlightCleanupRef.current?.();
+      pendingHighlightCleanupRef.current = null;
+      if (rootRef.current === node) {
+        rootRef.current = null;
+      }
+    };
+  };
+
+  const selectItem = (item: TimelineMinimapItem) => {
+    onSelect(item);
+    pendingHighlightCleanupRef.current?.();
+    const viewport =
+      rootRef.current?.closest<HTMLElement>("[data-assistant-citation-viewport]") ??
+      rootRef.current?.parentElement ??
+      null;
+    const escapedId =
+      typeof CSS !== "undefined" && typeof CSS.escape === "function"
+        ? CSS.escape(item.id)
+        : item.id.replace(/["\\]/g, "\\$&");
+    const rowSelector = `[data-timeline-row-id="${escapedId}"]`;
+    pendingHighlightCleanupRef.current = scheduleTimelineTargetHighlight(() => {
+      const scope: ParentNode = viewport ?? document;
+      const row = scope.querySelector<HTMLElement>(rowSelector);
+      return row && isRowVisibleInViewport(row, viewport) ? row : null;
+    });
   };
 
   const pressedOnStripRef = useRef(false);
@@ -144,7 +283,7 @@ export function TimelineMinimap({
             disabled={previousItem === null}
             interactive={navigationInteractive}
             onClick={() => {
-              if (previousItem) onSelect(previousItem);
+              if (previousItem) selectItem(previousItem);
             }}
           />
           <button
@@ -157,7 +296,7 @@ export function TimelineMinimap({
               const nextIndex = resolveActiveIndexFromPointer(event);
               const selectedItem = nextIndex === null ? null : (items[nextIndex] ?? null);
               if (selectedItem) {
-                onSelect(selectedItem);
+                selectItem(selectedItem);
               }
               event.currentTarget.blur();
             }}
@@ -178,7 +317,7 @@ export function TimelineMinimap({
               } else if (event.key === "Enter" || event.key === " ") {
                 event.preventDefault();
                 if (activeItem) {
-                  onSelect(activeItem);
+                  selectItem(activeItem);
                 }
               }
             }}
@@ -257,7 +396,7 @@ export function TimelineMinimap({
             disabled={nextItem === null}
             interactive={navigationInteractive}
             onClick={() => {
-              if (nextItem) onSelect(nextItem);
+              if (nextItem) selectItem(nextItem);
             }}
           />
         </div>
