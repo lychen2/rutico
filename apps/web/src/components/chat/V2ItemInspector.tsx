@@ -80,7 +80,13 @@ function StructuredValue({
   const isJson = highlightJson && isJsonToolText(text);
   if (!text) return null;
   return (
-    <pre className={cn("max-h-80 overflow-auto text-muted-foreground", monoClassName)}>
+    <pre
+      data-telemetry-well="true"
+      className={cn(
+        "max-h-80 overflow-auto rounded-lg border border-border/75 bg-code/70 px-3 py-2 text-muted-foreground [scrollbar-width:thin]",
+        monoClassName,
+      )}
+    >
       {language || isJson ? (
         <RenderErrorBoundary fallback={text}>
           <Suspense fallback={text}>
@@ -91,6 +97,47 @@ function StructuredValue({
         text
       )}
     </pre>
+  );
+}
+
+function DiffMiniGauge({
+  additions,
+  deletions,
+}: {
+  readonly additions: number;
+  readonly deletions: number;
+}) {
+  const total = additions + deletions;
+  const barCount = 5;
+  const greenCount =
+    total === 0
+      ? 0
+      : additions > 0 && deletions === 0
+        ? barCount
+        : additions === 0
+          ? 0
+          : Math.max(1, Math.min(barCount - 1, Math.round((additions / total) * barCount)));
+  const redCount = total === 0 ? 0 : deletions === 0 ? 0 : barCount - greenCount;
+  return (
+    <span
+      aria-hidden="true"
+      data-diff-mini-gauge="true"
+      className="inline-flex items-center gap-0.5"
+    >
+      {[0, 1, 2, 3, 4].map((slot) => (
+        <span
+          key={slot}
+          className={cn(
+            "h-2 w-1 rounded-xs",
+            slot < greenCount
+              ? "bg-diff-addition"
+              : slot < greenCount + redCount
+                ? "bg-diff-deletion"
+                : "bg-border/75",
+          )}
+        />
+      ))}
+    </span>
   );
 }
 
@@ -200,6 +247,7 @@ function ToolCallBody(
     readonly command?: string;
     readonly args?: unknown;
     readonly toolName?: string | null;
+    readonly running?: boolean;
     readonly exitCode?: number | undefined;
     /** Replaces fetched output. */
     readonly outputSlot?: ReactNode;
@@ -209,9 +257,18 @@ function ToolCallBody(
   return (
     <div className={cn("space-y-1.5", monoClassName)}>
       <ToolOutputImages {...props} />
-      {call.command ? <ShellCommandBlock command={call.command} /> : null}
+      {call.command ? (
+        <ShellCommandBlock
+          command={call.command}
+          running={props.running === true}
+          exitCode={props.exitCode}
+        />
+      ) : null}
       {call.args ? (
-        <div className="text-foreground/85">
+        <div
+          data-telemetry-well="true"
+          className="space-y-1 rounded-lg border border-border/75 bg-code/70 px-3 py-2 text-foreground/85"
+        >
           {call.args.map(([key, value]) => (
             <div key={key}>
               <span className="text-muted-foreground">{key} </span>
@@ -230,8 +287,8 @@ function ToolCallBody(
       ) : null}
       {call.argsText ? <StructuredValue value={call.argsText} highlightJson /> : null}
       {props.outputSlot ?? <ToolOutput {...props} />}
-      {props.exitCode !== undefined && props.exitCode !== 0 ? (
-        <div className="text-destructive">
+      {!call.command && props.exitCode !== undefined && props.exitCode !== 0 ? (
+        <div className="inline-flex items-center rounded-full bg-destructive/14 px-2 py-0.5 text-2xs font-medium text-destructive tabular-nums">
           <T>
             exit <Var>{props.exitCode}</Var>
           </T>
@@ -278,6 +335,7 @@ export const V2ItemInspector = memo(function V2ItemInspector(props: V2ItemInspec
       {item.type === "command_execution" ? (
         <ToolCallBody
           command={item.input}
+          running={item.status === "running" || item.status === "pending"}
           exitCode={item.exitCode}
           {...outputState}
           onImageExpand={props.onImageExpand}
@@ -296,21 +354,32 @@ export const V2ItemInspector = memo(function V2ItemInspector(props: V2ItemInspec
       ) : null}
 
       {item.type === "file_change" ? (
-        <div className="space-y-2">
+        <div
+          data-telemetry-card="file_change"
+          className="space-y-2 rounded-lg border border-border/75 bg-code/70 px-3 py-2"
+        >
           <div className="flex flex-wrap items-center gap-2">
-            <span className="font-mono text-muted-foreground">
+            <span className="min-w-0 truncate font-mono text-foreground/85">
               {formatWorkspaceRelativePath(item.fileName, props.workspaceRoot)}
             </span>
             {item.additions !== undefined || item.deletions !== undefined ? (
-              <span>
-                <span className="text-diff-addition">+{formatDiffCount(item.additions ?? 0)}</span>{" "}
-                <span className="text-diff-deletion">-{formatDiffCount(item.deletions ?? 0)}</span>
+              <span className="inline-flex items-center gap-1.5 font-mono tabular-nums">
+                <DiffMiniGauge additions={item.additions ?? 0} deletions={item.deletions ?? 0} />
+                <span>
+                  <span className="text-diff-addition">
+                    +{formatDiffCount(item.additions ?? 0)}
+                  </span>{" "}
+                  <span className="text-diff-deletion">
+                    -{formatDiffCount(item.deletions ?? 0)}
+                  </span>
+                </span>
               </span>
             ) : null}
             {props.onOpenToolDiff ? (
               <Button
                 size="xs"
                 variant="outline"
+                className="ms-auto"
                 onClick={() =>
                   props.onOpenToolDiff?.({
                     threadId: props.projectedItem.sourceThreadId,
@@ -343,24 +412,52 @@ export const V2ItemInspector = memo(function V2ItemInspector(props: V2ItemInspec
       ) : null}
 
       {item.type === "file_search" && item.pattern?.trim() ? (
-        <div className={cn("text-foreground/85", monoClassName)}>{item.pattern}</div>
+        <div
+          data-telemetry-well="true"
+          className={cn(
+            "rounded-lg border border-border/75 bg-code/70 px-3 py-1.5 text-foreground/85",
+            monoClassName,
+          )}
+        >
+          {item.pattern}
+        </div>
       ) : null}
 
       {item.type === "web_search" && item.patterns?.length ? (
-        <div className={cn("text-foreground/85", monoClassName)}>{item.patterns.join("\n")}</div>
+        <div
+          data-telemetry-well="true"
+          className={cn(
+            "rounded-lg border border-border/75 bg-code/70 px-3 py-1.5 text-foreground/85",
+            monoClassName,
+          )}
+        >
+          {item.patterns.join("\n")}
+        </div>
       ) : null}
 
       {item.type === "file_search" && item.results?.length ? (
-        <ul className="space-y-1">
+        <ul className="space-y-1.5">
           {item.results.map((result) => (
-            <li key={JSON.stringify(result)}>
-              <span className="font-mono text-foreground/80">
-                {formatWorkspaceRelativePath(result.fileName, props.workspaceRoot)}
-                {result.line === undefined ? "" : `:${result.line}`}
-                {result.column === undefined ? "" : `:${result.column}`}
-              </span>
+            <li
+              key={JSON.stringify(result)}
+              data-telemetry-card="file_search_hit"
+              className="rounded-lg border border-border/70 bg-code/60 px-2.5 py-1.5"
+            >
+              <div className="flex flex-wrap items-center gap-1.5">
+                <span className="min-w-0 truncate font-mono text-foreground/85">
+                  {formatWorkspaceRelativePath(result.fileName, props.workspaceRoot)}
+                </span>
+                {result.line !== undefined ? (
+                  <span className="shrink-0 rounded-md border border-border/70 bg-muted/70 px-1.5 py-0.5 font-mono text-2xs text-muted-foreground tabular-nums">
+                    L{result.line}
+                    {result.column === undefined ? "" : `:${result.column}`}
+                  </span>
+                ) : null}
+              </div>
               {result.preview ? (
-                <p className="mt-0.5 whitespace-pre-wrap text-muted-foreground">{result.preview}</p>
+                <p className="mt-1 whitespace-pre-wrap font-mono text-2xs text-muted-foreground">
+                  {result.preview}
+                </p>
               ) : null}
             </li>
           ))}
