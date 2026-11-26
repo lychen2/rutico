@@ -1120,21 +1120,28 @@ function V9ActivityHeatmapCard({
   metric,
   selectedProvider,
   referenceTime,
+  heatmapWindow,
 }: {
   readonly environmentIds: ReadonlySet<EnvironmentId>;
   readonly hiddenProviders: ReadonlySet<UsageProviderKind>;
   readonly metric: "cost" | "tokens";
   readonly selectedProvider: UsageProviderKind | null;
   readonly referenceTime?: string;
+  readonly heatmapWindow?: UsageSummaryInput;
 }) {
   const text = useUiText();
-  const [window] = useState(() =>
-    makeWindow(7, referenceTime === undefined ? undefined : new Date(referenceTime), "hour"),
+  const [window] = useState(
+    () =>
+      heatmapWindow ??
+      makeWindow(7, referenceTime === undefined ? undefined : new Date(referenceTime), "hour"),
   );
   const usage = useUsage(window, environmentIds, hiddenProviders);
   const [sheetOpen, setSheetOpen] = useState(false);
   const [sheetView, setSheetView] = useState("grid");
-  const [sheetHovered, setSheetHovered] = useState<{ label: string; value: number } | null>(null);
+  const [sheetHovered, setSheetHovered] = useState<{
+    readonly label: string;
+    readonly value: number | null;
+  } | null>(null);
   const hmGridRef = useRef<HTMLDivElement>(null);
   const hmReadoutRef = useRef<HTMLSpanElement>(null);
   const hmActiveNodesRef = useRef<HTMLElement[]>([]);
@@ -1147,6 +1154,7 @@ function V9ActivityHeatmapCard({
     selectedProvider,
   );
   const merged = mergeUsageEnvironments(scoped);
+  const hasMeasuredSummary = scoped.some((env) => env.summary !== null);
 
   const timeZone = window.timeZone;
   const dayFormat = new Intl.DateTimeFormat("en-CA", {
@@ -1169,10 +1177,16 @@ function V9ActivityHeatmapCard({
     const dayKey = dayFormat.format(at);
     const hr = Number.parseInt(hourFormat.format(at), 10) % 24;
     if (!allDaysOrdered.includes(dayKey)) allDaysOrdered.push(dayKey);
-    coveredSlots.add(`${dayKey}#${hr}`);
+    if (hasMeasuredSummary) {
+      coveredSlots.add(`${dayKey}#${hr}`);
+    }
   }
   // Keep the 7 most recent calendar days so the matrix stays a clean 7×24 grid like V9.
-  const days = allDaysOrdered.slice(-7);
+  const lastDay = allDaysOrdered.at(-1) ?? window.untilDay;
+  const lastDayMs = Date.parse(`${lastDay}T00:00:00Z`);
+  const days = Number.isFinite(lastDayMs)
+    ? enumerateDays(new Date(lastDayMs - 6 * 86_400_000).toISOString().slice(0, 10), lastDay)
+    : allDaysOrdered.slice(-7);
   const weekdayOf = days.map((day) => new Date(`${day}T12:00:00Z`).getUTCDay());
   const grid = days.map(() => Array.from({ length: 24 }, () => 0));
   const hitGrid = days.map(() => Array.from({ length: 24 }, () => ({ cached: 0, input: 0 })));
@@ -1316,6 +1330,10 @@ function V9ActivityHeatmapCard({
       hmReadoutRef.current.textContent = dot.dataset.readout ?? defaultReadout;
     }
   };
+  const missingDataLabel = text("{day} {hour} · Missing data", { day: "", hour: "" })
+    .replace(/^\s*·\s*/, "")
+    .trim();
+
   const openDelegatedV9Cell = (target: EventTarget | null) => {
     const dot = (target as HTMLElement | null)?.closest<HTMLElement>('[data-ctv9="hm-dot"]');
     if (!dot) return;
@@ -1323,10 +1341,11 @@ function V9ActivityHeatmapCard({
     const hour = Number(dot.dataset.hour);
     const day = days[row];
     if (!Number.isInteger(row) || !Number.isInteger(hour) || day === undefined) return;
+    const covered = coveredSlots.has(`${day}#${hour}`);
     const val = grid[row]?.[hour] ?? 0;
     const hrText = `${String(hour).padStart(2, "0")}:00`;
     setSheetView("grid");
-    setSheetHovered({ label: `${day} ${hrText}`, value: val });
+    setSheetHovered({ label: `${day} ${hrText}`, value: covered ? val : null });
     setSheetOpen(true);
   };
 
@@ -1535,12 +1554,27 @@ function V9ActivityHeatmapCard({
           <Toggle value="week">{text("By weekday")}</Toggle>
           <Toggle value="day">{text("Time of day")}</Toggle>
         </ToggleGroup>
-        <div className="usage-readout" data-usage-readout role="status">
+        <div
+          className="usage-readout"
+          data-usage-readout
+          data-hm-state={
+            sheetHovered
+              ? sheetHovered.value === null
+                ? "missing"
+                : sheetHovered.value <= 0
+                  ? "zero"
+                  : "active"
+              : undefined
+          }
+          role="status"
+        >
           <div>
             <span>{sheetHovered?.label ?? text("Hover over an hour to see its usage")}</span>
             <strong>
               {sheetHovered
-                ? format(sheetHovered.value)
+                ? sheetHovered.value === null
+                  ? missingDataLabel
+                  : format(sheetHovered.value)
                 : text("7-day total: {value}", {
                     value: format(grid.flat().reduce((a, b) => a + b, 0)),
                   })}
@@ -1560,44 +1594,63 @@ function V9ActivityHeatmapCard({
                     <text x={0} y={r * 30 + 20}>
                       {weekdayLabel(r)}
                     </text>
-                    {row.map((value, h) => (
-                      <rect
-                        key={HOURS[h]}
-                        data-heat-cell
-                        data-value={value}
-                        x={40 + h * (632 / 24) + 1.5}
-                        y={r * 30 + 4}
-                        width={632 / 24 - 3}
-                        height={24}
-                        rx={5}
-                        fill={
-                          sheetLevel(value) === 0
-                            ? "var(--muted)"
-                            : accentTier(4 - Math.min(4, sheetLevel(value)))
-                        }
-                        stroke={
-                          sheetHovered?.label === `${days[r]} ${String(h).padStart(2, "0")}:00`
-                            ? "var(--foreground)"
-                            : "none"
-                        }
-                        strokeWidth={1.5}
-                        tabIndex={0}
-                        role="img"
-                        aria-label={`${days[r]} ${h}:00 · ${format(value)}`}
-                        onMouseEnter={() =>
-                          setSheetHovered({
-                            label: `${days[r]} ${String(h).padStart(2, "0")}:00`,
-                            value,
-                          })
-                        }
-                        onFocus={() =>
-                          setSheetHovered({
-                            label: `${days[r]} ${String(h).padStart(2, "0")}:00`,
-                            value,
-                          })
-                        }
-                      />
-                    ))}
+                    {row.map((value, h) => {
+                      const day = days[r]!;
+                      const hrText = `${String(h).padStart(2, "0")}:00`;
+                      const cellLabel = `${day} ${hrText}`;
+                      const covered = coveredSlots.has(`${day}#${h}`);
+                      const cellState = !covered ? "missing" : value <= 0 ? "zero" : "active";
+                      const isSelected = sheetHovered?.label === cellLabel;
+                      return (
+                        <rect
+                          key={HOURS[h]}
+                          data-heat-cell
+                          data-hm-state={cellState}
+                          data-value={covered ? value : undefined}
+                          x={40 + h * (632 / 24) + 1.5}
+                          y={r * 30 + 4}
+                          width={632 / 24 - 3}
+                          height={24}
+                          rx={5}
+                          fill={
+                            !covered
+                              ? "transparent"
+                              : sheetLevel(value) === 0
+                                ? "var(--muted)"
+                                : accentTier(4 - Math.min(4, sheetLevel(value)))
+                          }
+                          stroke={
+                            isSelected
+                              ? "var(--foreground)"
+                              : !covered
+                                ? "var(--muted-foreground)"
+                                : "none"
+                          }
+                          strokeDasharray={!covered && !isSelected ? "3 2" : undefined}
+                          strokeOpacity={!covered && !isSelected ? 0.55 : undefined}
+                          strokeWidth={isSelected ? 1.5 : !covered ? 1 : 0}
+                          tabIndex={0}
+                          role="img"
+                          aria-label={
+                            covered
+                              ? `${cellLabel} · ${format(value)}`
+                              : `${cellLabel} · ${missingDataLabel}`
+                          }
+                          onMouseEnter={() =>
+                            setSheetHovered({
+                              label: cellLabel,
+                              value: covered ? value : null,
+                            })
+                          }
+                          onFocus={() =>
+                            setSheetHovered({
+                              label: cellLabel,
+                              value: covered ? value : null,
+                            })
+                          }
+                        />
+                      );
+                    })}
                   </g>
                 ))}
                 {[0, 6, 12, 18].map((hour) => (
@@ -1693,6 +1746,7 @@ interface V9CostDashboardProps {
   readonly chatGptAction?: ReactNode;
   readonly loading?: boolean;
   readonly heatmapReferenceTime?: string;
+  readonly heatmapWindow?: UsageSummaryInput;
 }
 
 /** V9 TAB 6: Dedicated Cost Page. */
@@ -1722,6 +1776,7 @@ export function V9CostDashboard({
   chatGptAction,
   loading = false,
   heatmapReferenceTime,
+  heatmapWindow,
 }: V9CostDashboardProps) {
   const text = useUiText();
   const areaGradId = useId();
@@ -2587,6 +2642,7 @@ export function V9CostDashboard({
           metric="cost"
           selectedProvider={selectedProvider}
           {...(heatmapReferenceTime !== undefined ? { referenceTime: heatmapReferenceTime } : {})}
+          {...(heatmapWindow !== undefined ? { heatmapWindow } : {})}
         />
 
         <section data-ctv9="card" data-usage-card>
@@ -2698,6 +2754,7 @@ interface V9TokensDashboardProps {
   readonly onSelectModel: (key: string) => void;
   readonly loading?: boolean;
   readonly heatmapReferenceTime?: string;
+  readonly heatmapWindow?: UsageSummaryInput;
 }
 
 function summarizeThroughputRate(
@@ -2733,6 +2790,7 @@ export function V9TokensDashboard({
   onSelectModel,
   loading = false,
   heatmapReferenceTime,
+  heatmapWindow,
 }: V9TokensDashboardProps) {
   const text = useUiText();
   const [hoveredIndex, setHoveredIndex] = useState<number | null>(null);
@@ -3268,6 +3326,7 @@ export function V9TokensDashboard({
           metric="tokens"
           selectedProvider={selectedProvider}
           {...(heatmapReferenceTime !== undefined ? { referenceTime: heatmapReferenceTime } : {})}
+          {...(heatmapWindow !== undefined ? { heatmapWindow } : {})}
         />
 
         <section data-ctv9="card" data-usage-card>

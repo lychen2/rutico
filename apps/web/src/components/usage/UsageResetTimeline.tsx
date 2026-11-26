@@ -1,4 +1,4 @@
-import { useId, useState } from "react";
+import { useEffect, useId, useState } from "react";
 import { limitPoolId, type LimitPool } from "@t3tools/shared/usageLimits";
 import { readUiLocale } from "~/i18n";
 import { useUiText } from "~/i18n/useUiText";
@@ -71,7 +71,12 @@ export function UsageResetTimeline({
     );
   };
   const [active, setActive] = useState<string | null>(null);
-  const { dates, x, left, width } = resetTimelineGeometry(now, v9);
+  const [clockOffset, setClockOffset] = useState<{
+    readonly propNow: number;
+    readonly elapsedMs: number;
+  }>({ propNow: now, elapsedMs: 0 });
+  const effectiveNow = clockOffset.propNow === now ? now + clockOffset.elapsedMs : now;
+  const { dates, x, left, width } = resetTimelineGeometry(effectiveNow, v9);
   const stamp = (at: number) =>
     new Date(at).toLocaleString(readUiLocale(), {
       weekday: "short",
@@ -88,7 +93,7 @@ export function UsageResetTimeline({
         .flatMap((group) =>
           group.members.flatMap((member) => {
             const at = Date.parse(member.window.resetsAt ?? "");
-            if (!(at > now && at < dates[7]!)) return [];
+            if (!(at > effectiveNow && at < dates[7]!)) return [];
             return [
               {
                 key: `${group.id}:${member.account.key}`,
@@ -96,9 +101,9 @@ export function UsageResetTimeline({
                 kind: member.window.kind,
                 label: quotaWindowLabel(group.label, readUiLocale() === "zh-CN"),
                 remaining: group.remainingPercent,
-                runOut: quotaReadingStale(member.account.limits, now)
+                runOut: quotaReadingStale(member.account.limits, effectiveNow)
                   ? null
-                  : quotaForecast(member.window, now).runOutAt,
+                  : quotaForecast(member.window, effectiveNow).runOutAt,
               },
             ];
           }),
@@ -106,18 +111,38 @@ export function UsageResetTimeline({
         .toSorted((a, b) => a.at - b.at),
     }))
     .filter((lane) => lane.events.length > 0);
-  if (!lanes.length) return null;
-
-  const activeId = active ?? highlighted;
-  const selected = lanes.find((lane) => limitPoolId(lane.pool) === activeId);
   const nearestResetAt = lanes.reduce<number | null>((soonest, lane) => {
     const firstAt = lane.events[0]?.at;
     if (firstAt === undefined) return soonest;
     return soonest === null || firstAt < soonest ? firstAt : soonest;
   }, null);
+
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- advances reset countdown and expires passed reset markers without triggering provider probes
+  useEffect(() => {
+    if (nearestResetAt === null) return;
+    const startedAtWallMs = Date.now();
+    const baseElapsedMs = clockOffset.propNow === now ? clockOffset.elapsedMs : 0;
+    const syncClock = () => {
+      const elapsed = Math.max(0, Date.now() - startedAtWallMs);
+      setClockOffset({ propNow: now, elapsedMs: baseElapsedMs + elapsed });
+    };
+    const interval = globalThis.setInterval(syncClock, 60_000);
+    const untilResetMs = Math.max(1, nearestResetAt - effectiveNow);
+    const resetTimer =
+      untilResetMs <= 2_147_483_647 ? globalThis.setTimeout(syncClock, untilResetMs) : undefined;
+    return () => {
+      globalThis.clearInterval(interval);
+      if (resetTimer !== undefined) globalThis.clearTimeout(resetTimer);
+    };
+  }, [now, effectiveNow, nearestResetAt, clockOffset.propNow, clockOffset.elapsedMs]);
+
+  if (!lanes.length) return null;
+
+  const activeId = active ?? highlighted;
+  const selected = lanes.find((lane) => limitPoolId(lane.pool) === activeId);
   const nextResetCountdown = (() => {
     if (nearestResetAt === null) return null;
-    const remainingMs = Math.max(0, nearestResetAt - now);
+    const remainingMs = Math.max(0, nearestResetAt - effectiveNow);
     const totalMinutes = Math.max(1, Math.round(remainingMs / 60_000));
     const daysLeft = Math.floor(totalMinutes / (24 * 60));
     const hoursLeft = Math.floor((totalMinutes % (24 * 60)) / 60);
@@ -134,7 +159,7 @@ export function UsageResetTimeline({
     const topY = 34;
     const rowH = 56;
     const height = Math.max(140, topY + 14 + lanes.length * rowH + 24);
-    const nowX = x(now);
+    const nowX = x(effectiveNow);
 
     return (
       <div data-reset-calendar data-lv9="gantt-wrap">
@@ -270,10 +295,12 @@ export function UsageResetTimeline({
             const hasGap = Boolean(
               gapEvent &&
               gapEvent.runOut !== null &&
-              gapEvent.at > Math.max(now, gapEvent.runOut) + 1_800_000,
+              gapEvent.at > Math.max(effectiveNow, gapEvent.runOut) + 1_800_000,
             );
             const runAt =
-              hasGap && gapEvent?.runOut != null ? Math.max(now, gapEvent.runOut) : main.at;
+              hasGap && gapEvent?.runOut != null
+                ? Math.max(effectiveNow, gapEvent.runOut)
+                : main.at;
             const runX = x(runAt);
             const resX = x(main.at);
             const laneCol = hasGap ? "var(--v9-red)" : "var(--v9-green)";
@@ -532,8 +559,8 @@ export function UsageResetTimeline({
           ))}
           <line
             data-timeline-now
-            x1={x(now)}
-            x2={x(now)}
+            x1={x(effectiveNow)}
+            x2={x(effectiveNow)}
             y1={28}
             y2={height}
             stroke="var(--primary)"
@@ -541,16 +568,16 @@ export function UsageResetTimeline({
           />
           <circle
             data-timeline-now-beacon
-            cx={x(now)}
+            cx={x(effectiveNow)}
             cy={28}
             r={5.5}
             fill="var(--primary)"
             fillOpacity={0.25}
           />
-          <circle cx={x(now)} cy={28} r={2.75} fill="var(--primary)" />
-          <text x={x(now) + 8} y={32} fill="var(--primary)">
+          <circle cx={x(effectiveNow)} cy={28} r={2.75} fill="var(--primary)" />
+          <text x={x(effectiveNow) + 8} y={32} fill="var(--primary)">
             {text("Now")}{" "}
-            {new Date(now).toLocaleTimeString(readUiLocale(), {
+            {new Date(effectiveNow).toLocaleTimeString(readUiLocale(), {
               hour: "2-digit",
               minute: "2-digit",
               hourCycle: "h23",
@@ -624,7 +651,7 @@ export function UsageResetTimeline({
                   })}
                 </text>
                 <line
-                  x1={x(now)}
+                  x1={x(effectiveNow)}
                   x2={1064}
                   y1={cy}
                   y2={cy}
@@ -633,8 +660,8 @@ export function UsageResetTimeline({
                   strokeLinecap="round"
                 />
                 <line
-                  x1={x(now)}
-                  x2={x(Math.max(now, early?.runOut ?? lane.events.at(-1)!.at))}
+                  x1={x(effectiveNow)}
+                  x2={x(Math.max(effectiveNow, early?.runOut ?? lane.events.at(-1)!.at))}
                   y1={cy}
                   y2={cy}
                   stroke="var(--usage-lane)"
@@ -645,9 +672,9 @@ export function UsageResetTimeline({
                   <>
                     <rect
                       data-timeline-gap
-                      x={x(Math.max(now, early.runOut))}
+                      x={x(Math.max(effectiveNow, early.runOut))}
                       y={cy - 6}
-                      width={Math.max(0, x(early.at) - x(Math.max(now, early.runOut)))}
+                      width={Math.max(0, x(early.at) - x(Math.max(effectiveNow, early.runOut)))}
                       height={12}
                       rx={3}
                       fill={`url(#${id})`}
@@ -658,15 +685,15 @@ export function UsageResetTimeline({
                         <rect
                           data-timeline-gap-preview
                           className="usage-timeline-gap-preview"
-                          x={x(Math.max(now, early.runOut))}
+                          x={x(Math.max(effectiveNow, early.runOut))}
                           y={cy - 6}
-                          width={Math.max(8, x(early.at) - x(Math.max(now, early.runOut)))}
+                          width={Math.max(8, x(early.at) - x(Math.max(effectiveNow, early.runOut)))}
                           height={12}
                           rx={4}
                         />
                         <text
                           className="usage-timeline-gap-preview-label"
-                          x={(x(Math.max(now, early.runOut)) + x(early.at)) / 2}
+                          x={(x(Math.max(effectiveNow, early.runOut)) + x(early.at)) / 2}
                           y={cy + 30}
                           textAnchor="middle"
                         >
@@ -675,7 +702,7 @@ export function UsageResetTimeline({
                       </>
                     ) : (
                       <text
-                        x={(x(Math.max(now, early.runOut)) + x(early.at)) / 2}
+                        x={(x(Math.max(effectiveNow, early.runOut)) + x(early.at)) / 2}
                         y={cy + 30}
                         textAnchor="middle"
                       >
@@ -696,10 +723,10 @@ export function UsageResetTimeline({
                             provider: lane.name,
                           })}
                         </title>
-                        <circle cx={x(Math.max(now, early.runOut))} cy={cy} r={7.5} />
+                        <circle cx={x(Math.max(effectiveNow, early.runOut))} cy={cy} r={7.5} />
                         <circle
                           className="usage-timeline-rc-core"
-                          cx={x(Math.max(now, early.runOut))}
+                          cx={x(Math.max(effectiveNow, early.runOut))}
                           cy={cy}
                           r={3}
                         />

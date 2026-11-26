@@ -766,3 +766,133 @@ it("toggles bar drill-down on real pointer clicks, hits equal-width bar buckets 
     vi.mocked(useUsage).mockReset();
   }
 });
+
+it("distinguishes unmeasured missing heatmap cells from true zero cells on hover and Enter drill-down", async () => {
+  using _locale = testUiLocale("en");
+  using _theme = appleTheme();
+  const envs = analysisFixture();
+  const merged = mergeUsageEnvironments(envs);
+  // Valid 7-day hourly window in UTC: hours 16..23 on 2026-11-16 are unmeasured (missing),
+  // while hours 00..12 and 15 on 2026-11-16 are measured with true $0.00 cost.
+  const validSevenDayWindow = {
+    sinceDay: UsageDay.make("2026-11-09"),
+    untilDay: UsageDay.make("2026-11-16"),
+    timeZone: "UTC",
+    resolution: "hour" as const,
+    sinceTime: "2026-11-09T16:00:00.000Z",
+    untilTime: "2026-11-16T16:00:00.000Z",
+  };
+  vi.mocked(useUsage).mockReturnValue({
+    merged,
+    environments: envs,
+    selectedEnvironments: envs,
+    isPending: false,
+    isPartial: false,
+    shown: null,
+    refresh: vi.fn(async () => {}),
+  });
+  try {
+    await using screen = await render(
+      <V9CostDashboard
+        merged={merged}
+        previous={undefined}
+        selectedEnvironments={envs}
+        priorEnvironments={[]}
+        environmentIds={new Set([EnvironmentId.make("test")])}
+        hiddenProviders={new Set()}
+        rankedProviders={["codex", "claude"]}
+        shownWindow={{
+          sinceDay: UsageDay.make("2026-11-10"),
+          untilDay: UsageDay.make("2026-11-16"),
+          timeZone: "UTC",
+          resolution: "day",
+        }}
+        periods={[
+          "2026-11-10",
+          "2026-11-11",
+          "2026-11-12",
+          "2026-11-13",
+          "2026-11-14",
+          "2026-11-15",
+          "2026-11-16",
+        ]}
+        hourly={false}
+        formatPeriod={(day) => day.slice(5)}
+        windowDays={7}
+        periodOptions={[{ days: 7, label: "7 days" }]}
+        onSelectWindow={() => {}}
+        chartStyle="bar"
+        onChangeChartStyle={() => {}}
+        selectedProvider={null}
+        onSelectProvider={() => {}}
+        selectedPeriod={null}
+        onSelectPeriod={() => {}}
+        onSelectModel={() => {}}
+        heatmapWindow={validSevenDayWindow}
+      />,
+    );
+
+    const missingDot = screen.container.querySelector<HTMLElement>(
+      '[data-ctv9="hm-dot"][data-row="6"][data-hour="20"]',
+    )!;
+    const zeroDot = screen.container.querySelector<HTMLElement>(
+      '[data-ctv9="hm-dot"][data-row="6"][data-hour="8"]',
+    )!;
+    expect(missingDot.getAttribute("data-hm-state")).toBe("missing");
+    expect(zeroDot.getAttribute("data-hm-state")).toBe("zero");
+
+    const cardReadout = () =>
+      missingDot
+        .closest('[data-ctv9="card"]')!
+        .querySelector<HTMLElement>('[data-ctv9="card-sub"]')!.textContent ?? "";
+
+    // Hover distinguishes missing from zero on the 7x24 card.
+    await userEvent.hover(missingDot);
+    expect(cardReadout()).toContain("Missing data");
+    expect(cardReadout()).not.toContain("$0.00");
+    await userEvent.hover(zeroDot);
+    expect(cardReadout()).toContain("Zero usage");
+    expect(cardReadout()).not.toContain("Missing data");
+
+    // Keyboard Enter drill-down on a missing cell must NOT report $0.00.
+    missingDot.focus();
+    await userEvent.keyboard("{Enter}");
+    const dialog = page.getByRole("dialog");
+    await expect.element(dialog).toBeVisible();
+    const sheetReadout = () => dialog.element().querySelector<HTMLElement>("[data-usage-readout]")!;
+    expect(sheetReadout().getAttribute("data-hm-state")).toBe("missing");
+    expect(sheetReadout().textContent).toContain("2026-11-16 20:00");
+    expect(sheetReadout().textContent).toContain("Missing data");
+    expect(sheetReadout().textContent).not.toContain("$0.00");
+
+    // Hovering cells inside the details sheet also distinguishes missing from true zero.
+    const sheetMissingCell = dialog
+      .element()
+      .querySelector<SVGRectElement>('[data-heat-cell][data-hm-state="missing"]')!;
+    const sheetZeroCell = dialog
+      .element()
+      .querySelector<SVGRectElement>('[data-heat-cell][data-hm-state="zero"]')!;
+    expect(sheetMissingCell.getAttribute("data-value")).toBeNull();
+    expect(sheetZeroCell.getAttribute("data-value")).toBe("0");
+    await userEvent.hover(sheetZeroCell);
+    expect(sheetReadout().getAttribute("data-hm-state")).toBe("zero");
+    expect(sheetReadout().textContent).toContain("$0.00");
+    await userEvent.hover(sheetMissingCell);
+    expect(sheetReadout().getAttribute("data-hm-state")).toBe("missing");
+    expect(sheetReadout().textContent).toContain("Missing data");
+    expect(sheetReadout().textContent).not.toContain("$0.00");
+
+    // Close and press Enter on a true zero dot: sheet reports $0.00 with state="zero".
+    await userEvent.keyboard("{Escape}");
+    await expect.element(dialog).not.toBeInTheDocument();
+    zeroDot.focus();
+    await userEvent.keyboard("{Enter}");
+    await expect.element(dialog).toBeVisible();
+    expect(sheetReadout().getAttribute("data-hm-state")).toBe("zero");
+    expect(sheetReadout().textContent).toContain("2026-11-16 08:00");
+    expect(sheetReadout().textContent).toContain("$0.00");
+    expect(sheetReadout().textContent).not.toContain("Missing data");
+  } finally {
+    vi.mocked(useUsage).mockReset();
+  }
+});

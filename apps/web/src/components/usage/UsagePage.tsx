@@ -332,6 +332,57 @@ export function UsagePage() {
   useEffect(() => {
     if (showingLimits && connectedLimitsEnvironments) autoRefreshLimits();
   }, [showingLimits, connectedLimitsEnvironments]);
+  const hiddenLimitDrivers = new Set(
+    [...hiddenProviders].map((provider) => PROVIDER_PRESENTATION[provider].driverKind),
+  );
+  const nearestVisibleResetAt = showingLimits
+    ? (() => {
+        let soonest: number | null = null;
+        const observeWindows = (
+          windows: readonly { readonly resetsAt?: string | null | undefined }[] | undefined,
+        ) => {
+          for (const entry of windows ?? []) {
+            const at = Date.parse(entry.resetsAt ?? "");
+            if (Number.isFinite(at) && at > limitsNow && (soonest === null || at < soonest)) {
+              soonest = at;
+            }
+          }
+        };
+        for (const [environmentId, presentation] of presentationsWithProviders) {
+          if (selectedEnvironmentIds !== null && !selectedEnvironmentIds.has(environmentId))
+            continue;
+          const config = presentation.serverConfig;
+          if (!config) continue;
+          for (const provider of config.providers) {
+            if (hiddenLimitDrivers.has(provider.driver)) continue;
+            observeWindows(provider.usageLimits?.windows);
+          }
+          for (const source of config.usageLimitSources ?? []) {
+            for (const account of source.accounts) {
+              if (hiddenLimitDrivers.has(account.driver)) continue;
+              observeWindows(account.usageLimits?.windows);
+            }
+          }
+        }
+        return soonest;
+      })()
+    : null;
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- advances display-only limits clock without triggering quota re-probes
+  useEffect(() => {
+    if (!showingLimits) return;
+    const syncClock = () => setLimitsNow(Date.now());
+    const interval = globalThis.setInterval(syncClock, 60_000);
+    const untilResetMs =
+      nearestVisibleResetAt !== null ? Math.max(1, nearestVisibleResetAt - limitsNow) : null;
+    const resetTimer =
+      untilResetMs !== null && untilResetMs <= 2_147_483_647
+        ? globalThis.setTimeout(syncClock, untilResetMs)
+        : undefined;
+    return () => {
+      globalThis.clearInterval(interval);
+      if (resetTimer !== undefined) globalThis.clearTimeout(resetTimer);
+    };
+  }, [showingLimits, limitsNow, nearestVisibleResetAt]);
   const days = enumerateDays(shownWindow.sinceDay, shownWindow.untilDay);
   const hours =
     shownWindow.sinceTime === undefined || shownWindow.untilTime === undefined
