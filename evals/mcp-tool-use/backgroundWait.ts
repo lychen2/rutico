@@ -84,6 +84,7 @@ export const makeBackgroundWait = Effect.fn("evaluateMcpToolUse.makeBackgroundWa
             get: () => Effect.succeedSome(runtime),
           }),
           ServerSettings.layerTest(),
+          SqlitePersistence.layerMemory,
           CommandReceiptStore.layer.pipe(Layer.provide(SqlitePersistence.layerMemory)),
         ),
       ),

@@ -286,7 +286,7 @@ const make = Effect.gen(function* () {
       if (!displayedAggregate && !alert && !previousAggregate && job.state !== null) return;
       const data: Record<string, string> = {
         t3_kind: "agent_activity",
-        ...androidRecipientData(job.userId, job.deviceId),
+        ...androidRecipientData(job.userId, job.deviceId, target.app_version),
         updated_at: String(now.epochMilliseconds),
         ...androidActivityData(displayedAggregate),
         ...alert,

@@ -7,12 +7,17 @@ import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Ref from "effect/Ref";
 import * as Schema from "effect/Schema";
+import * as Schedule from "effect/Schedule";
 import * as Semaphore from "effect/Semaphore";
 
 import * as Electron from "electron";
 import { msg } from "gt-i18n";
 
-import { type DesktopSnapShotEvent, DEFAULT_CLIENT_SETTINGS } from "@t3tools/contracts";
+import {
+  type DatabaseMigrationProgress,
+  type DesktopSnapShotEvent,
+  DEFAULT_CLIENT_SETTINGS,
+} from "@t3tools/contracts";
 
 import * as DesktopAssets from "../app/DesktopAssets.ts";
 import * as DesktopClerk from "../app/DesktopClerk.ts";
@@ -331,6 +336,7 @@ const RUTICO_SPLASH_EMBLEM_SVG =
 export function buildConnectingSplashDataUrl(
   shouldUseDarkColors: boolean,
   persistedTheme?: string | null,
+  progress?: DatabaseMigrationProgress | null,
 ): string {
   const background = getInitialWindowBackgroundColor(shouldUseDarkColors, persistedTheme);
   const foreground = shouldUseDarkColors ? "#f6f4fc" : "#1c1729";
@@ -338,7 +344,10 @@ export function buildConnectingSplashDataUrl(
   const accent = shouldUseDarkColors ? "#b4a3fd" : "#684dc6";
   const track = shouldUseDarkColors ? "rgba(180,163,253,0.22)" : "rgba(104,77,198,0.18)";
   const hairline = shouldUseDarkColors ? "rgba(255,255,255,0.08)" : "rgba(28,23,41,0.08)";
-  const html = `<!doctype html><html><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'"><style>html,body{margin:0;height:100%}body{box-sizing:border-box;background:${background};color:${foreground};border:1px solid ${hairline};border-radius:12px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif;-webkit-font-smoothing:antialiased;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;-webkit-user-select:none;user-select:none;-webkit-app-region:drag}.emblem{display:block;color:${foreground}}.status{display:flex;align-items:center;gap:9px;color:${label};font-size:12.5px;line-height:1.2;letter-spacing:-0.005em}.spinner{width:14px;height:14px;box-sizing:border-box;border:2px solid ${track};border-top-color:${accent};border-radius:50%;animation:spin .8s linear infinite}@keyframes spin{to{transform:rotate(360deg)}}@media (prefers-reduced-motion: reduce){.spinner{animation:none;border-color:${accent};opacity:0.55}}</style></head><body>${RUTICO_SPLASH_EMBLEM_SVG}<div class="status"><div class="spinner" aria-hidden="true"></div><span>Connecting to WSL…</span></div></body></html>`;
+  const message = progress
+    ? `Upgrading database (${progress.current} of ${progress.total})`
+    : "Connecting to WSL…";
+  const html = `<!doctype html><html><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'"><style>html,body{margin:0;height:100%}body{box-sizing:border-box;background:${background};color:${foreground};border:1px solid ${hairline};border-radius:12px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif;-webkit-font-smoothing:antialiased;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;-webkit-user-select:none;user-select:none;-webkit-app-region:drag}.emblem{display:block;color:${foreground}}.status{display:flex;align-items:center;gap:9px;color:${label};font-size:12.5px;line-height:1.2;letter-spacing:-0.005em}.spinner{width:14px;height:14px;box-sizing:border-box;border:2px solid ${track};border-top-color:${accent};border-radius:50%;animation:spin .8s linear infinite}@keyframes spin{to{transform:rotate(360deg)}}@media (prefers-reduced-motion: reduce){.spinner{animation:none;border-color:${accent};opacity:0.55}}</style></head><body>${RUTICO_SPLASH_EMBLEM_SVG}<div class="status"><div class="spinner" aria-hidden="true"></div><span>${message}</span></div></body></html>`;
   return `data:text/html;charset=utf-8,${encodeURIComponent(html)}`;
 }
 
@@ -849,6 +858,8 @@ export const make = Effect.gen(function* () {
         event.preventDefault();
         return;
       }
+      // The guest always runs the app's own preload, whatever the element asked for.
+      webPreferences.preload = environment.previewPickPreloadPath;
       webPreferences.sandbox = true;
       webPreferences.nodeIntegration = false;
       webPreferences.nodeIntegrationInSubFrames = false;
@@ -1407,15 +1418,34 @@ export const make = Effect.gen(function* () {
     }
     yield* rendererHistory.register(splash.webContents, { surface: "splash" });
     yield* Ref.set(splashWindowRef, Option.some(splash));
+    let renderedUrl: string | undefined;
+    const progressFiber = runFork(
+      Effect.gen(function* () {
+        if (splash.isDestroyed() || (yield* Ref.get(desktopState.quitting))) return;
+        const progress = yield* Ref.get(desktopState.databaseMigrationProgress);
+        const url = buildConnectingSplashDataUrl(shouldUseDarkColors, persistedTheme, progress);
+        if (url === renderedUrl) return;
+        const loaded = yield* Effect.promise(() =>
+          splash.loadURL(url).then(
+            () => true,
+            () => false,
+          ),
+        );
+        if (loaded) renderedUrl = url;
+      }).pipe(Effect.repeat(Schedule.spaced("1 second"))),
+    );
     splash.once("closed", () => {
-      void runPromise(Ref.set(splashWindowRef, Option.none()));
+      runFork(
+        Fiber.interrupt(progressFiber).pipe(
+          Effect.andThen(Ref.set(splashWindowRef, Option.none())),
+        ),
+      );
     });
     splash.once("ready-to-show", () => {
       if (!splash.isDestroyed()) {
         splash.show();
       }
     });
-    void splash.loadURL(buildConnectingSplashDataUrl(shouldUseDarkColors, persistedTheme));
     yield* logWindowInfo("connecting splash shown");
   }).pipe(
     Effect.catch((error) =>

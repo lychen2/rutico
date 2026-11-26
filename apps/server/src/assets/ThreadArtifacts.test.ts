@@ -1,6 +1,7 @@
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { expect, it } from "@effect/vitest";
 import { ThreadId } from "@t3tools/contracts";
+import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
@@ -46,8 +47,8 @@ it.effect("lists only existing artifacts recorded by this thread in its worktree
     yield* fs.writeFileString(path.join(attachmentsDir, `${pageId}.html`), "<p>Tool page</p>");
     yield* fs.writeFileString(path.join(attachmentsDir, "saved-image.png"), "attachment bytes");
     const timestamp = "2026-01-01T00:00:00.000Z";
-    const older = new Date(timestamp);
-    const newer = new Date("2026-01-02T00:00:00.000Z");
+    const older = DateTime.toDateUtc(DateTime.makeUnsafe(timestamp));
+    const newer = DateTime.toDateUtc(DateTime.makeUnsafe("2026-01-02T00:00:00.000Z"));
     yield* fs.utimes(path.join(attachmentsDir, "saved-image.png"), older, older);
     yield* fs.utimes(path.join(output, "plot.png"), newer, newer);
     const other = ThreadId.make("artifact-other-thread");

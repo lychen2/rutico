@@ -23,7 +23,7 @@ it("pulses a subtle arrival highlight on minimap jumps and clears when finished"
       </div>
       <TimelineMinimap
         hasPersistentGutter
-        hitStripWidth={24}
+        hitStrip={{ left: 0, width: 24 }}
         currentIndex={1}
         atEnd={false}
         items={MINIMAP_ITEMS}
@@ -79,7 +79,7 @@ it("skips the arrival highlight under prefers-reduced-motion", async () => {
       </div>
       <TimelineMinimap
         hasPersistentGutter
-        hitStripWidth={24}
+        hitStrip={{ left: 0, width: 24 }}
         currentIndex={1}
         atEnd={false}
         items={MINIMAP_ITEMS}

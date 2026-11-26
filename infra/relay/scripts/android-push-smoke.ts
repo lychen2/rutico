@@ -103,7 +103,7 @@ const main = Effect.gen(function* () {
         alert: title !== null,
         data: {
           t3_kind: "agent_activity",
-          ...androidRecipientData(device.userId, device.deviceId),
+          ...androidRecipientData(device.userId, device.deviceId, null),
           updated_at: String(now),
           active: String(active),
           activity_title: active

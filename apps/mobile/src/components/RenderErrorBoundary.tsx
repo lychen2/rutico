@@ -7,6 +7,7 @@ import { AppText as Text } from "./ui/AppText";
 import { Button } from "./ui/Button";
 import { useDeadlinePassed } from "../lib/clock";
 import { tryCopyTextWithHaptic } from "../lib/copyTextWithHaptic";
+import { errorDetailsPreview } from "./RenderErrorBoundary.logic";
 
 interface RenderErrorBoundaryProps {
   readonly children: ReactNode;
@@ -130,7 +131,7 @@ export function RenderFailureView(
       </View>
       <View className="w-full max-w-md rounded-2xl border border-danger-border bg-card px-4 py-3">
         <Text selectable className="font-mono text-xs leading-relaxed text-danger-foreground">
-          {props.details.split("\n", 1)[0]?.slice(0, 300)}
+          {errorDetailsPreview(props.details)}
         </Text>
       </View>
       <View className="w-full max-w-xs gap-2">

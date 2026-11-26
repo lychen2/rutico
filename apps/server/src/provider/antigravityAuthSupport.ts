@@ -247,6 +247,7 @@ function antigravityEnvironment(
     baseEnv.SSL_CERT_DIR === undefined
       ? { SSL_CERT_FILE: profile.caBundlePath }
       : {}),
+    // agy's troubleshooting docs specify "true"; the interactive CLI keeps self-updating with "1".
     AGY_CLI_DISABLE_AUTO_UPDATE: "true",
     BROWSER: profile.browserCommand,
     PYTHONUNBUFFERED: "1",

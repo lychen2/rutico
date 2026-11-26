@@ -1,8 +1,7 @@
 import { useUiText } from "~/i18n/useUiText";
 import { formatPercent } from "@t3tools/shared/usageFormat";
 import type { ReactNode } from "react";
-
-import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
+import { SharedTooltipTrigger } from "../ui/shared-tooltip";
 
 export interface ShareSegment {
   readonly label: string;
@@ -35,20 +34,21 @@ export function UsageShareBar({
       {/* The legend below carries every figure; the bar's tooltips are pointer-only. */}
       <div aria-hidden className="flex h-2 gap-0.5">
         {visible.map((segment) => (
-          <Tooltip key={uiText(segment.label)}>
-            <TooltipTrigger
-              render={
-                <div
-                  className="h-full min-w-1 rounded-xs first:rounded-l-full last:rounded-r-full"
-                  style={{ flex: `${segment.value} 1 0`, backgroundColor: segment.color }}
-                />
-              }
-            />
-            <TooltipPopup>
-              {uiText(segment.label)} · {format(segment.value)} ·{" "}
-              {formatPercent(segment.value / total)}
-            </TooltipPopup>
-          </Tooltip>
+          <SharedTooltipTrigger
+            key={uiText(segment.label)}
+            render={
+              <div
+                className="h-full min-w-1 rounded-xs first:rounded-l-full last:rounded-r-full"
+                style={{ flex: `${segment.value} 1 0`, backgroundColor: segment.color }}
+              />
+            }
+            label={
+              <>
+                {uiText(segment.label)} · {format(segment.value)} ·{" "}
+                {formatPercent(segment.value / total)}
+              </>
+            }
+          />
         ))}
       </div>
       <ul aria-label={label} className="flex flex-wrap gap-x-4 gap-y-1 text-xs">

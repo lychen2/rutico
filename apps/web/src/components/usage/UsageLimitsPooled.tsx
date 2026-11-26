@@ -56,6 +56,7 @@ import { UsageCount } from "./UsageMotion";
 import { readUiLocale } from "~/i18n";
 import {
   CHATGPT_USAGE_URL,
+  collectHttpQuotaSources,
   collectLimitAccounts,
   collectExternalUsageLinks,
   collectLimitPools,
@@ -1466,6 +1467,7 @@ export function UsageLimitsPooled({
     .find((a) => quotaReadingStale(a.limits, now));
   const notices = collectLimitNotices(presentations);
   const externalLinks = collectExternalUsageLinks(presentations);
+  const quotaSources = collectHttpQuotaSources(presentations);
   const headline = limitsHeadline(pools, titles, now);
   const healthSummary = summarizeHealth(health);
   const sentence = healthSentence(uiText, healthSummary);
@@ -1591,7 +1593,7 @@ export function UsageLimitsPooled({
           </div>
         </div>
 
-        {pools.length === 0 && externalLinks.length === 0 ? (
+        {pools.length === 0 && externalLinks.length === 0 && quotaSources.length === 0 ? (
           <div
             data-usage-limits-empty
             className="flex min-h-56 flex-col items-center justify-center gap-2 text-center"
@@ -1675,6 +1677,35 @@ export function UsageLimitsPooled({
               ) : null
             }
           </Popover>
+          {quotaSources.map((source) => (
+            <section
+              key={source.key}
+              data-lv9="lv9-external"
+              className="space-y-3 rounded-xl border p-4"
+            >
+              <h2 className="text-sm font-medium">{source.label}</h2>
+              {source.quotaAccounts?.map((account) => (
+                <div key={account.id} className="space-y-1">
+                  <h3 className="text-sm font-medium">{account.label}</h3>
+                  {account.windows.map((window) => {
+                    const reset = formatResetsIn(window, now);
+                    return (
+                      <div
+                        key={window.id}
+                        className="flex justify-between gap-3 text-sm text-muted-foreground"
+                      >
+                        <span>{window.label}</span>
+                        <span>
+                          {uiText("{remaining}% left", { remaining: remainingPercent(window) })}
+                          {reset ? ` · ${reset}` : ""}
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
+              ))}
+            </section>
+          ))}
           {externalLinks.map((link) => (
             <section
               key={link.url}
@@ -1816,7 +1847,7 @@ export function UsageLimitsPooled({
             : uiText("Official quota data · Bars show used quota; markers show elapsed time.")}
         </p>
       )}
-      {pools.length === 0 && externalLinks.length === 0 ? (
+      {pools.length === 0 && externalLinks.length === 0 && quotaSources.length === 0 ? (
         <div
           data-usage-limits-empty
           className="flex min-h-56 flex-col items-center justify-center gap-2 text-center"
@@ -1861,6 +1892,31 @@ export function UsageLimitsPooled({
             ) : null
           }
         </Popover>
+        {quotaSources.map((source) => (
+          <section key={source.key} className="space-y-3 rounded-xl border p-4">
+            <h2 className="text-sm font-medium">{source.label}</h2>
+            {source.quotaAccounts?.map((account) => (
+              <div key={account.id} className="space-y-1">
+                <h3 className="text-sm font-medium">{account.label}</h3>
+                {account.windows.map((window) => {
+                  const reset = formatResetsIn(window, now);
+                  return (
+                    <div
+                      key={window.id}
+                      className="flex justify-between gap-3 text-sm text-muted-foreground"
+                    >
+                      <span>{window.label}</span>
+                      <span>
+                        {uiText("{remaining}% left", { remaining: remainingPercent(window) })}
+                        {reset ? ` · ${reset}` : ""}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+            ))}
+          </section>
+        ))}
         {externalLinks.map((link) => (
           <section
             key={link.url}

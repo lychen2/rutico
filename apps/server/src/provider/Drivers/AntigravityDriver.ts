@@ -36,6 +36,7 @@ import {
 } from "../../textGeneration/AntigravityTextGeneration.ts";
 import { makeAntigravityAuth, type AntigravityAuth } from "../AntigravityAuth.ts";
 import * as AntigravityInstallation from "../AntigravityInstallation.ts";
+import { makeAntigravityUsageProbe } from "../antigravityUsageLimits.ts";
 import { brokenRuntimeError } from "../providerCompatibility.ts";
 import * as AntigravityUsage from "./AntigravityUsage.ts";
 import {
@@ -49,7 +50,9 @@ import {
   type AntigravityAuthConfig,
 } from "../antigravityAuthSupport.ts";
 import {
+  antigravityModelOptions,
   antigravitySessionMode,
+  antigravityThinkingConfig,
   makeAntigravityAcpRuntime,
   type AntigravityAcpRuntimeInput,
 } from "../acp/AntigravityAcpSupport.ts";
@@ -65,7 +68,6 @@ import {
 import { makeAcpNativeLoggerFactory } from "@t3tools/provider-acp/server/nativeLogging";
 import { ProviderDriverError } from "../Errors.ts";
 import { makeAntigravityProvider } from "../AntigravityProvider.ts";
-import { makeAntigravityUsageProbe } from "../antigravityUsageLimits.ts";
 import * as ProviderEventLoggers from "@t3tools/provider-core/server/ProviderEventLoggers";
 import * as ModelCatalog from "@t3tools/provider-core/server/ModelCatalog";
 import {
@@ -468,7 +470,10 @@ export const AntigravityDriver: ProviderDriver<
 
     const publishCatalog = Effect.fn("AntigravityDriver.publishCatalog")(function* (
       started: AcpSessionRuntime.AcpSessionRuntimeStartResult,
-      runtime: Pick<AcpSessionRuntime.AcpSessionRuntime["Service"], "getEvents" | "drainEvents">,
+      runtime: Pick<
+        AcpSessionRuntime.AcpSessionRuntime["Service"],
+        "getEvents" | "drainEvents" | "setModel"
+      >,
     ) {
       yield* provider.onSessionStarted(started);
       yield* authFlow.onSignedInElsewhere;
@@ -477,23 +482,27 @@ export const AntigravityDriver: ProviderDriver<
           return Deferred.succeed(event.acknowledge, undefined).pipe(Effect.asVoid);
         }
         if (event._tag === "ConfigOptionsUpdated") {
-          return provider.onConfigOptionsUpdated(event.configOptions);
+          return provider.onConfigOptionsUpdated(event.configOptions, { fromCatalogProbe: true });
         }
         return event._tag === "AvailableCommandsUpdated"
           ? provider.onAvailableCommands(event.availableCommands)
           : Effect.void;
       }).pipe(Effect.forkScoped);
+      // Thinking levels differ per model and are reported only for the selected one.
+      const configOptions = started.sessionSetupResult.configOptions ?? [];
+      const current = configOptions.find((option) => option.id === "model")?.currentValue;
+      if (antigravityThinkingConfig(configOptions) !== undefined && typeof current === "string") {
+        for (const model of [...antigravityModelOptions(configOptions), { value: current }]) {
+          yield* runtime.setModel(model.value).pipe(Effect.ignore);
+        }
+      }
       yield* runtime.drainEvents;
     }, Effect.scoped);
 
     const authFlow: AntigravityAuth = yield* makeAntigravityAuth({
       instanceId,
       makeRuntime: makeDisposableRuntime,
-      // A new sign-in may be another account; drop any in-flight quota read first.
-      onAuthenticated: (started, runtime) =>
-        Effect.suspend(() => provider.onSignedIn).pipe(
-          Effect.andThen(publishCatalog(started, runtime)),
-        ),
+      onAuthenticated: publishCatalog,
       onSignedOut: Effect.suspend(() => provider.onSignedOut),
       usesBrowser: antigravityAuthUsesBrowser(auth.authMethod),
       codeLogin,
@@ -599,8 +608,10 @@ export const AntigravityDriver: ProviderDriver<
           (snapshot) => snapshot.slashCommands?.some((command) => command.name === "goal") === true,
         ),
       ),
-      onSessionStarted: (started, cwd) =>
-        provider.onSessionStarted(started, cwd).pipe(Effect.andThen(authFlow.onSignedInElsewhere)),
+      onSessionStarted: (started, cwd, session) =>
+        provider
+          .onSessionStarted(started, cwd, session)
+          .pipe(Effect.andThen(authFlow.onSignedInElsewhere)),
       onSessionEvent: (event, cwd) => {
         if (event._tag === "ConfigOptionsUpdated") {
           return provider.onConfigOptionsUpdated(event.configOptions);
@@ -667,7 +678,9 @@ export const AntigravityDriver: ProviderDriver<
               detail: isAntigravitySignInRequiredError(cause)
                 ? "Sign in to Antigravity in provider settings before refreshing models."
                 : cause._tag === "ProviderSetupError" &&
-                    (cause.operation === "configure" || cause.operation === "start")
+                    (cause.operation === "configure" ||
+                      cause.operation === "resolve" ||
+                      cause.operation === "start")
                   ? cause.detail
                   : cause._tag === "AcpTransportError" &&
                       isProviderSetupError(cause.cause) &&
