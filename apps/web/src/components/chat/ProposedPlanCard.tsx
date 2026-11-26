@@ -170,7 +170,7 @@ export const ProposedPlanCard = memo(function ProposedPlanCard({
   const copyLabel = isCopied ? gt("Copied") : gt("Copy to clipboard");
 
   return (
-    <div className="rounded-2xl border border-border/80 bg-card/70 p-4 shadow-xs inset-shadow-2xs inset-shadow-white/65 backdrop-blur-md transition-[border-color,box-shadow] duration-200 ease-out hover:border-border motion-reduce:transition-none dark:border-white/[0.08] dark:inset-shadow-white/10 dark:hover:border-white/[0.14] sm:p-5">
+    <div className="rounded-2xl border border-border/80 bg-card/94 p-4 shadow-xs inset-shadow-2xs inset-shadow-white/65 transition-[border-color,box-shadow] duration-200 ease-out hover:border-border motion-reduce:transition-none dark:border-white/[0.08] dark:bg-card/90 dark:inset-shadow-white/10 dark:hover:border-white/[0.14] sm:p-5">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex min-w-0 items-center gap-2">
           <Badge variant="secondary">{gt("Plan", { $context: "badge, noun" })}</Badge>

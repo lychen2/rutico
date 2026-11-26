@@ -14,7 +14,7 @@ export function RuticoHeroBackdrop({
     <div
       aria-hidden="true"
       className={cn(
-        "pointer-events-none z-0 select-none overflow-hidden",
+        "pointer-events-none z-0 select-none overflow-hidden contain-strict transform-gpu",
         isWorkspace ? "fixed inset-0" : "absolute inset-0",
       )}
     >
@@ -39,23 +39,10 @@ export function RuticoHeroBackdrop({
       />
       <div
         className={cn(
-          "absolute inset-0 bg-gradient-to-r",
-          isWorkspace
-            ? "from-background/90 via-background/74 to-background/25 dark:from-background/94 dark:via-background/84 dark:to-background/45"
-            : "from-background/94 via-background/72 to-background/15 dark:from-background/96 dark:via-background/84 dark:to-background/40",
+          "absolute inset-0",
+          isWorkspace ? "rutico-backdrop-scrim-workspace" : "rutico-backdrop-scrim-hero",
         )}
       />
-      <div className="absolute inset-0 bg-gradient-to-t from-background/85 via-transparent to-background/35" />
-      <div
-        className={cn(
-          "absolute inset-0 bg-radial to-transparent",
-          isWorkspace
-            ? "from-background/45 via-background/15"
-            : "from-background/50 via-background/20",
-        )}
-      />
-      {/* Attenuate wallpaper intensity under OS high contrast or boosted Appearance contrast. */}
-      <div className="absolute inset-0 bg-background/[calc(var(--appearance-contrast-boost,0%)*0.65)] contrast-more:bg-background/70" />
     </div>
   );
 }

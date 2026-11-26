@@ -71,7 +71,7 @@ export function MarkdownCodeBlockFrame({
       <div
         {...headerProps}
         className={cn(
-          "chat-markdown-codeblock-header sticky top-0 z-10 flex items-center justify-between gap-2 rounded-t-lg bg-inherit pt-1.5 pr-1.5 pb-1 pl-3 backdrop-blur-md select-none",
+          "chat-markdown-codeblock-header sticky top-0 z-10 flex items-center justify-between gap-2 rounded-t-lg border-b border-border/35 bg-secondary/98 pt-1.5 pr-1.5 pb-1 pl-3 select-none dark:border-white/[0.06] dark:bg-card/96",
           headerProps?.className,
         )}
       >

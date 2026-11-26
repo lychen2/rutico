@@ -527,9 +527,9 @@ function QueuedMessage(props: {
       {/* Dashed and unfilled: a turn that has not been sent yet. */}
       <div
         className={cn(
-          "flex min-w-0 max-w-[80%] flex-col rounded-2xl border border-dashed bg-background/55 backdrop-blur-xs text-sm transition-colors duration-150 motion-reduce:transition-none [@media(prefers-reduced-transparency:reduce)]:bg-background/95 [@media(prefers-reduced-transparency:reduce)]:backdrop-blur-none",
+          "flex min-w-0 max-w-[80%] flex-col rounded-2xl border border-dashed bg-background/88 text-sm transition-colors duration-150 motion-reduce:transition-none dark:bg-background/82",
           props.isEditing
-            ? "border-primary/60 bg-background/70 text-foreground"
+            ? "border-primary/60 bg-background/94 text-foreground"
             : attribution === "guest"
               ? "border-guest/50 text-muted-foreground"
               : "border-muted-foreground/40 text-muted-foreground",
