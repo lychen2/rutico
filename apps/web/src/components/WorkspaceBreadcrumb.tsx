@@ -66,7 +66,10 @@ export function WorkspaceBreadcrumbSeparator({
   readonly children?: ReactNode;
 }) {
   return (
-    <li aria-hidden="true" className={cn("flex shrink-0 items-center text-icon-muted", className)}>
+    <li
+      aria-hidden="true"
+      className={cn("flex shrink-0 select-none items-center text-icon-muted opacity-45", className)}
+    >
       {children}
     </li>
   );
