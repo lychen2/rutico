@@ -16,6 +16,7 @@ import {
   useWorktreeBaseBranch,
 } from "../worktreeRepositoryChoiceStore";
 import { cn } from "../lib/utils";
+import { AnimatedWidth } from "./AnimatedWidth";
 import { ComposerContextLabel } from "./ComposerContextLabel";
 import { ComposerControl } from "./chat/ComposerControl";
 import { useComposerMenuProps } from "./chat/composerEventScope";
@@ -96,6 +97,20 @@ export const WorktreeRepositoriesControl = memo(function WorktreeRepositoriesCon
       >
         <FolderGitIcon className="size-3 shrink-0" aria-hidden />
         <ComposerContextLabel>{selection.label}</ComposerContextLabel>
+        {choices.length > 1 ? (
+          <AnimatedWidth className="shrink-0">
+            <span
+              className={cn(
+                "inline-flex items-center rounded-full px-1.5 py-0.5 text-3xs leading-none font-medium tabular-nums",
+                selection.needsChoice
+                  ? "bg-warning/18 text-warning-foreground"
+                  : "bg-muted text-muted-foreground",
+              )}
+            >
+              {selected.size}/{choices.length}
+            </span>
+          </AnimatedWidth>
+        ) : null}
       </MenuTrigger>
       <MenuPopup align="start" side="top" {...composerFloatingLayerProps}>
         {choices.length > FILTER_ABOVE_CHOICES ? (
