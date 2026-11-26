@@ -1101,8 +1101,8 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
     background: var(--background);
     box-shadow: 0 1px 2px color-mix(in srgb, var(--contrast-foreground) 12%, transparent);
     transition:
-      transform 120ms ease,
-      box-shadow 120ms ease;
+      transform 160ms var(--ease-spring-snappy),
+      box-shadow 160ms ease-out;
   }
 
   .settings-slider::-moz-range-thumb {
@@ -1113,26 +1113,34 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
     background: var(--background);
     box-shadow: 0 1px 2px color-mix(in srgb, var(--contrast-foreground) 12%, transparent);
     transition:
-      transform 120ms ease,
-      box-shadow 120ms ease;
+      transform 160ms var(--ease-spring-snappy),
+      box-shadow 160ms ease-out;
   }
 
-  .settings-slider:hover::-webkit-slider-thumb {
-    transform: scale(1.08);
-    box-shadow: 0 1px 3px color-mix(in srgb, var(--contrast-foreground) 20%, transparent);
-  }
+  @media (hover: hover) {
+    .settings-slider:hover::-webkit-slider-thumb {
+      transform: scale(1.08);
+      box-shadow: 0 1px 3px color-mix(in srgb, var(--contrast-foreground) 20%, transparent);
+    }
 
-  .settings-slider:hover::-moz-range-thumb {
-    transform: scale(1.08);
-    box-shadow: 0 1px 3px color-mix(in srgb, var(--contrast-foreground) 20%, transparent);
+    .settings-slider:hover::-moz-range-thumb {
+      transform: scale(1.08);
+      box-shadow: 0 1px 3px color-mix(in srgb, var(--contrast-foreground) 20%, transparent);
+    }
   }
 
   .settings-slider:active::-webkit-slider-thumb {
     transform: scale(0.94);
+    box-shadow:
+      0 0 0 4px color-mix(in srgb, var(--primary) 18%, transparent),
+      0 1px 2px color-mix(in srgb, var(--contrast-foreground) 14%, transparent);
   }
 
   .settings-slider:active::-moz-range-thumb {
     transform: scale(0.94);
+    box-shadow:
+      0 0 0 4px color-mix(in srgb, var(--primary) 18%, transparent),
+      0 1px 2px color-mix(in srgb, var(--contrast-foreground) 14%, transparent);
   }
 
   .settings-slider:focus-visible {
@@ -1149,6 +1157,26 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
     box-shadow:
       inset 0 0 0 1px var(--background),
       inset 0 0 0 3px var(--ring);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .settings-slider::-webkit-slider-thumb {
+      transition: none;
+    }
+
+    .settings-slider::-moz-range-thumb {
+      transition: none;
+    }
+
+    .settings-slider:hover::-webkit-slider-thumb,
+    .settings-slider:active::-webkit-slider-thumb {
+      transform: none;
+    }
+
+    .settings-slider:hover::-moz-range-thumb,
+    .settings-slider:active::-moz-range-thumb {
+      transform: none;
+    }
   }
 
   @media (forced-colors: active) {
