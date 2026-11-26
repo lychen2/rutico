@@ -1,8 +1,8 @@
-import { describe, expect, it } from "vite-plus/test";
+import { describe, expect, it, vi } from "vite-plus/test";
 import { page } from "vite-plus/test/browser";
 
 import { render } from "../../../test/render";
-import { AnchoredToastProvider, ToastProvider, toastManager } from "./toast";
+import { AnchoredToastProvider, ToastProvider, anchoredToastManager, toastManager } from "./toast";
 
 describe("toastManager", () => {
   it("shows a toast added before any provider mounted", async () => {
@@ -102,5 +102,125 @@ describe("toastManager", () => {
     for (const id of ids) {
       toastManager.close(id);
     }
+  });
+
+  it("renders a pauseable semantic countdown hairline for timed toasts and omits it when timeout is 0", async () => {
+    await using _screen = await render(<ToastProvider>{null}</ToastProvider>);
+
+    const timedId = toastManager.add({
+      type: "info",
+      title: "Timed notification",
+      timeout: 4200,
+    });
+    const persistentId = toastManager.add({
+      type: "warning",
+      title: "Persistent notification",
+      timeout: 0,
+    });
+
+    await expect.element(page.getByText("Timed notification")).toBeVisible();
+    await expect.element(page.getByText("Persistent notification")).toBeVisible();
+
+    const roots = Array.from(document.querySelectorAll<HTMLElement>('[data-slot="toast-root"]'));
+    const timedRoot = roots.find((node) => node.textContent?.includes("Timed notification"));
+    const persistentRoot = roots.find((node) =>
+      node.textContent?.includes("Persistent notification"),
+    );
+
+    const hairline = timedRoot?.querySelector<HTMLElement>('[data-slot="toast-countdown"]');
+    expect(hairline).not.toBeNull();
+    expect(hairline?.style.getPropertyValue("--toast-countdown-duration")).toBe("4200ms");
+    expect(hairline?.dataset.toastCountdownType).toBe("info");
+    expect(persistentRoot?.querySelector('[data-slot="toast-countdown"]')).toBeNull();
+
+    toastManager.close(timedId);
+    toastManager.close(persistentId);
+  });
+
+  it("dismisses a toast on a quick horizontal flick meeting the 0.11px/ms threshold", async () => {
+    await using _screen = await render(<ToastProvider position="top-right">{null}</ToastProvider>);
+
+    const toastId = toastManager.add({
+      type: "info",
+      title: "Swipeable toast",
+      timeout: 0,
+    });
+    await expect.element(page.getByText("Swipeable toast")).toBeVisible();
+
+    const root = Array.from(
+      document.querySelectorAll<HTMLElement>('[data-slot="toast-root"]'),
+    ).find((node) => node.textContent?.includes("Swipeable toast"))!;
+    expect(root).not.toBeNull();
+    // Base UI calls setPointerCapture on pointerdown; synthetic PointerEvents have no native active pointer.
+    vi.spyOn(root, "setPointerCapture").mockImplementation(() => {});
+    vi.spyOn(root, "releasePointerCapture").mockImplementation(() => {});
+    vi.spyOn(root, "hasPointerCapture").mockReturnValue(true);
+
+    const startTime = 1_000;
+    const nowSpy = vi.spyOn(performance, "now");
+    nowSpy.mockReturnValue(startTime);
+    root.dispatchEvent(
+      new PointerEvent("pointerdown", {
+        bubbles: true,
+        button: 0,
+        pointerId: 7,
+        clientX: 100,
+        clientY: 20,
+      }),
+    );
+
+    nowSpy.mockReturnValue(startTime + 20);
+    root.dispatchEvent(
+      new PointerEvent("pointermove", {
+        bubbles: true,
+        button: 0,
+        pointerId: 7,
+        clientX: 112,
+        clientY: 20,
+      }),
+    );
+    expect(root.style.getPropertyValue("--toast-swipe-tilt")).not.toBe("");
+
+    nowSpy.mockReturnValue(startTime + 40);
+    root.dispatchEvent(
+      new PointerEvent("pointerup", {
+        bubbles: true,
+        button: 0,
+        pointerId: 7,
+        clientX: 124,
+        clientY: 20,
+      }),
+    );
+    nowSpy.mockRestore();
+
+    await expect.element(page.getByText("Swipeable toast")).not.toBeInTheDocument();
+    toastManager.close(toastId);
+  });
+
+  it("renders a directional AnchoredToast micro-pill with crisp emerald check mark on success", async () => {
+    await using screen = await render(
+      <AnchoredToastProvider>
+        <button data-testid="copy-anchor" type="button">
+          Copy
+        </button>
+      </AnchoredToastProvider>,
+    );
+
+    const anchor = screen.container.querySelector<HTMLButtonElement>(
+      '[data-testid="copy-anchor"]',
+    )!;
+    const anchoredId = anchoredToastManager.add({
+      type: "success",
+      title: "Copied!",
+      timeout: 0,
+      positionerProps: { anchor, side: "top" },
+      data: { tooltipStyle: true },
+    });
+
+    await expect.element(page.getByText("Copied!")).toBeVisible();
+    const pill = document.querySelector<HTMLElement>('[data-toast-micro-pill="true"]');
+    expect(pill).not.toBeNull();
+    expect(pill?.querySelector('[data-slot="toast-micro-check"]')).not.toBeNull();
+    anchoredToastManager.close(anchoredId);
   });
 });

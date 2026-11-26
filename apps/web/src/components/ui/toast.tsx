@@ -4,10 +4,13 @@ import { Toast } from "@base-ui/react/toast";
 import { msg, useGT } from "gt-react";
 import {
   useEffect,
+  useRef,
   useState,
+  useSyncExternalStore,
   type CSSProperties,
   type ComponentPropsWithoutRef,
   type KeyboardEvent,
+  type PointerEvent as ReactPointerEvent,
   type ReactNode,
 } from "react";
 import { type ScopedThreadRef, type ThreadId } from "@t3tools/contracts";
@@ -23,6 +26,7 @@ import {
 } from "lucide-react";
 
 import { cn } from "~/lib/utils";
+import { createVelocityTracker, type VelocityTracker } from "~/lib/motion/rubberBand";
 import { AnimatedHeight } from "~/components/AnimatedHeight";
 import { Button, buttonVariants } from "~/components/ui/button";
 import { Collapsible, CollapsiblePanel, CollapsibleTrigger } from "~/components/ui/collapsible";
@@ -32,10 +36,13 @@ import {
   buildVisibleToastLayout,
   hasAnyToastAction,
   hasVisibleToastAction,
+  resolveToastCountdownMs,
   resolveToastStackLayer,
+  shouldDismissToastBySwipeVelocity,
   shouldHideCollapsedToastContent,
   shouldPlayToastCompletionSheen,
   shouldRenderThreadScopedToast,
+  type ToastSwipeDirection,
 } from "./toast.logic";
 import { useThreadRouteTarget } from "~/hooks/useThreadRouteTarget";
 import { SharedTooltipTrigger } from "./shared-tooltip";
@@ -586,15 +593,56 @@ function ToastProvider({ children, position = "top-right", ...props }: ToastProv
   );
 }
 
+function subscribeDocumentVisibility(onChange: () => void): () => void {
+  if (typeof window === "undefined" || typeof document === "undefined") return () => {};
+  document.addEventListener("visibilitychange", onChange);
+  window.addEventListener("focus", onChange);
+  window.addEventListener("blur", onChange);
+  return () => {
+    document.removeEventListener("visibilitychange", onChange);
+    window.removeEventListener("focus", onChange);
+    window.removeEventListener("blur", onChange);
+  };
+}
+
+function readDocumentVisibleAndFocused(): boolean {
+  if (typeof document === "undefined") return true;
+  return document.visibilityState === "visible" && document.hasFocus();
+}
+
+function useDocumentActive(): boolean {
+  return useSyncExternalStore(
+    subscribeDocumentVisibility,
+    readDocumentVisibleAndFocused,
+    () => true,
+  );
+}
+
+interface ToastSwipeGesture {
+  readonly pointerId: number;
+  readonly startX: number;
+  readonly tracker: VelocityTracker;
+}
+
+const TOAST_SWIPE_TILT_DEG_PER_PX = 0.035;
+const TOAST_SWIPE_TILT_MAX_DEG = 4.5;
+
 function Toasts({ position }: { position: ToastPosition }) {
   const { toasts } = Toast.useToastManager<ThreadToastData>();
   const activeThreadRef = useActiveThreadRefFromRoute();
+  const documentActive = useDocumentActive();
+  const swipeGesturesRef = useRef<Map<ToastId, ToastSwipeGesture>>(new Map());
   const gt = useGT();
   const isTop = position.startsWith("top");
   const visibleToasts = toasts.filter((toast) =>
     shouldRenderThreadScopedToast(toast.data, activeThreadRef),
   );
   const visibleToastLayout = buildVisibleToastLayout(visibleToasts);
+  const swipeDirections: ToastSwipeDirection[] = position.includes("center")
+    ? [isTop ? "up" : "down"]
+    : position.includes("left")
+      ? ["left", isTop ? "up" : "down"]
+      : ["right", isTop ? "up" : "down"];
 
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- prunes the module-level remaining-time map of toasts the manager has dropped
   useEffect(() => {
@@ -604,7 +652,60 @@ function Toasts({ position }: { position: ToastPosition }) {
         threadToastVisibleTimeoutRemainingMs.delete(toastId);
       }
     }
+    for (const toastId of swipeGesturesRef.current.keys()) {
+      if (!activeToastIds.has(toastId)) {
+        swipeGesturesRef.current.delete(toastId);
+      }
+    }
   }, [toasts]);
+
+  const handleToastPointerDown = (toastId: ToastId, event: ReactPointerEvent<HTMLDivElement>) => {
+    if (event.button !== 0 && event.pointerType === "mouse") return;
+    const tracker = createVelocityTracker(90);
+    tracker.push(event.clientX, event.clientY, performance.now());
+    swipeGesturesRef.current.set(toastId, {
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      tracker,
+    });
+  };
+
+  const handleToastPointerMove = (toastId: ToastId, event: ReactPointerEvent<HTMLDivElement>) => {
+    const gesture = swipeGesturesRef.current.get(toastId);
+    if (!gesture || gesture.pointerId !== event.pointerId) return;
+    gesture.tracker.push(event.clientX, event.clientY, performance.now());
+    const dx = event.clientX - gesture.startX;
+    const clampedTilt = Math.max(
+      -TOAST_SWIPE_TILT_MAX_DEG,
+      Math.min(TOAST_SWIPE_TILT_MAX_DEG, dx * TOAST_SWIPE_TILT_DEG_PER_PX),
+    );
+    event.currentTarget.style.setProperty("--toast-swipe-tilt", `${clampedTilt.toFixed(2)}deg`);
+  };
+
+  const handleToastPointerEnd = (
+    toastId: ToastId,
+    onClose: (() => void) | undefined,
+    cancelled: boolean,
+    event: ReactPointerEvent<HTMLDivElement>,
+  ) => {
+    const gesture = swipeGesturesRef.current.get(toastId);
+    event.currentTarget.style.removeProperty("--toast-swipe-tilt");
+    if (!gesture || gesture.pointerId !== event.pointerId) return;
+    swipeGesturesRef.current.delete(toastId);
+    if (cancelled) return;
+    const now = performance.now();
+    gesture.tracker.push(event.clientX, event.clientY, now);
+    const velocity = gesture.tracker.getVelocity(now);
+    if (
+      shouldDismissToastBySwipeVelocity({
+        vxPerMs: velocity.vxPerMs,
+        vyPerMs: velocity.vyPerMs,
+        swipeDirections,
+      })
+    ) {
+      handleToastDismissClick(toastManager, toastId, onClose);
+    }
+  };
 
   return (
     <Toast.Portal data-slot="toast-portal">
@@ -636,6 +737,7 @@ function Toasts({ position }: { position: ToastPosition }) {
             type: toast.type,
             hasAction: hasAnyToastAction(toast),
           });
+          const countdownMs = resolveToastCountdownMs(toast);
           const bodyDescriptor = deriveToastBodyDescriptor(toast);
           const { stackedActionLayout, inlineContentEndPad } = bodyDescriptor;
 
@@ -661,10 +763,10 @@ function Toasts({ position }: { position: ToastPosition }) {
                   : "h-auto",
                 "data-[position*=top]:[--toast-calc-offset-y:calc(var(--toast-offset-y)+var(--toast-index)*var(--toast-gap)+var(--toast-swipe-movement-y))]",
                 "data-[position*=bottom]:[--toast-calc-offset-y:calc(var(--toast-offset-y)*-1+var(--toast-index)*var(--toast-gap)*-1+var(--toast-swipe-movement-y))]",
-                "data-[position*=top]:transform-[translateX(var(--toast-swipe-movement-x))_translateY(calc(var(--toast-swipe-movement-y)+(var(--toast-index)*var(--toast-peek))+(var(--toast-shrink)*var(--toast-calc-height))))_scale(var(--toast-scale))]",
-                "data-[position*=bottom]:transform-[translateX(var(--toast-swipe-movement-x))_translateY(calc(var(--toast-swipe-movement-y)-(var(--toast-index)*var(--toast-peek))-(var(--toast-shrink)*var(--toast-calc-height))))_scale(var(--toast-scale))]",
+                "data-[position*=top]:transform-[translateX(var(--toast-swipe-movement-x))_translateY(calc(var(--toast-swipe-movement-y)+(var(--toast-index)*var(--toast-peek))+(var(--toast-shrink)*var(--toast-calc-height))))_scale(var(--toast-scale))_rotate(var(--toast-swipe-tilt,0deg))]",
+                "data-[position*=bottom]:transform-[translateX(var(--toast-swipe-movement-x))_translateY(calc(var(--toast-swipe-movement-y)-(var(--toast-index)*var(--toast-peek))-(var(--toast-shrink)*var(--toast-calc-height))))_scale(var(--toast-scale))_rotate(var(--toast-swipe-tilt,0deg))]",
                 "data-limited:opacity-0",
-                "data-position:data-expanded:transform-[translateX(var(--toast-swipe-movement-x))_translateY(var(--toast-calc-offset-y))]",
+                "data-position:data-expanded:transform-[translateX(var(--toast-swipe-movement-x))_translateY(var(--toast-calc-offset-y))_rotate(var(--toast-swipe-tilt,0deg))]",
                 "data-starting-style:opacity-0",
                 "motion-safe:data-[position*=top]:data-starting-style:transform-[translateY(calc(-100%-var(--toast-inset)))]",
                 "motion-safe:data-[position*=bottom]:data-starting-style:transform-[translateY(calc(100%+var(--toast-inset)))]",
@@ -685,19 +787,21 @@ function Toasts({ position }: { position: ToastPosition }) {
               data-slot="toast-root"
               data-toast-layer={String(stackLayer)}
               key={toast.id}
+              onPointerCancel={(event) =>
+                handleToastPointerEnd(toast.id, toast.data?.onClose, true, event)
+              }
+              onPointerDown={(event) => handleToastPointerDown(toast.id, event)}
+              onPointerMove={(event) => handleToastPointerMove(toast.id, event)}
+              onPointerUp={(event) =>
+                handleToastPointerEnd(toast.id, toast.data?.onClose, false, event)
+              }
               style={
                 {
                   "--toast-index": visibleIndex,
                   "--toast-offset-y": `${offsetY}px`,
                 } as CSSProperties
               }
-              swipeDirection={
-                position.includes("center")
-                  ? [isTop ? "up" : "down"]
-                  : position.includes("left")
-                    ? ["left", isTop ? "up" : "down"]
-                    : ["right", isTop ? "up" : "down"]
-              }
+              swipeDirection={swipeDirections}
               toast={toast}
             >
               <ThreadToastVisibleAutoDismiss
@@ -711,6 +815,20 @@ function Toasts({ position }: { position: ToastPosition }) {
                   data-slot="toast-completion-sheen"
                   data-toast-sheen-type={toast.type}
                   key={`sheen-${toast.type}`}
+                />
+              ) : null}
+              {countdownMs !== null ? (
+                <div
+                  aria-hidden="true"
+                  data-slot="toast-countdown"
+                  data-toast-countdown-type={
+                    typeof toast.type === "string" ? toast.type : "default"
+                  }
+                  data-toast-paused={
+                    toast.data?.dismissAfterVisibleMs && !documentActive ? "true" : "false"
+                  }
+                  key={`countdown-${typeof toast.type === "string" ? toast.type : "default"}-${countdownMs}`}
+                  style={{ "--toast-countdown-duration": `${countdownMs}ms` } as CSSProperties}
                 />
               ) : null}
               <div className={toastCornerDismissClass}>
@@ -813,14 +931,32 @@ function AnchoredToasts() {
               >
                 <Toast.Root
                   className={cn(
-                    "group/toast dropdown-glass relative origin-(--transform-origin) overflow-visible text-balance text-popover-foreground text-xs shadow-xl shadow-black/25 transition-[scale,opacity] duration-180 ease-(--ease-spring-snappy) data-ending-style:duration-120 data-ending-style:ease-(--ease-exit) motion-safe:data-ending-style:scale-98 motion-safe:data-starting-style:scale-98 data-ending-style:opacity-0 data-starting-style:opacity-0 motion-reduce:transition-opacity motion-reduce:duration-150",
-                    tooltipStyle ? "rounded-md" : "rounded-lg",
+                    "group/toast dropdown-glass relative origin-(--transform-origin) overflow-visible text-balance text-popover-foreground text-xs shadow-xl shadow-black/25",
+                    tooltipStyle ? "rounded-full" : "rounded-lg",
                   )}
                   data-slot="toast-popup"
+                  data-toast-micro-pill={tooltipStyle ? "true" : undefined}
                   toast={toast}
                 >
                   {tooltipStyle ? (
-                    <Toast.Content className="pointer-events-auto px-2 py-1">
+                    <Toast.Content className="pointer-events-auto flex items-center gap-1.5 px-2.5 py-1 font-medium">
+                      {toast.type === "success" ? (
+                        <svg
+                          aria-hidden="true"
+                          className="size-3.5 shrink-0 text-success"
+                          data-slot="toast-micro-check"
+                          fill="none"
+                          viewBox="0 0 14 14"
+                        >
+                          <path
+                            d="M2.75 7.25 5.75 10.25 11.25 4.25"
+                            stroke="currentColor"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            strokeWidth="1.8"
+                          />
+                        </svg>
+                      ) : null}
                       <Toast.Title data-slot="toast-title" />
                     </Toast.Content>
                   ) : (

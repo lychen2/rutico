@@ -531,3 +531,136 @@ html[data-palette-dragging="true"] [data-slot="thread-context-drag-ghost"] .drag
     animation: none;
   }
 }
+
+/* ==========================================================================
+   D28 / C093: Pauseable 2px Countdown Hairline, Velocity-Tilted Swipe Dismiss
+   & Directional AnchoredToast Micro-Pills
+   ========================================================================== */
+
+@keyframes toast-countdown-drain {
+  from {
+    transform: scaleX(1);
+  }
+  to {
+    transform: scaleX(0);
+  }
+}
+
+@keyframes toast-micro-check-draw {
+  from {
+    stroke-dashoffset: 18;
+    opacity: 0.35;
+  }
+  to {
+    stroke-dashoffset: 0;
+    opacity: 1;
+  }
+}
+
+[data-slot="toast-root"][data-swiping] {
+  transition: none;
+}
+
+[data-slot="toast-countdown"] {
+  position: absolute;
+  inset-inline: 0;
+  bottom: 0;
+  height: 2px;
+  overflow: hidden;
+  border-radius: 0 0 inherit inherit;
+  pointer-events: none;
+}
+
+[data-slot="toast-countdown"]::after {
+  content: "";
+  display: block;
+  width: 100%;
+  height: 100%;
+  transform-origin: left center;
+  background-color: color-mix(in oklch, var(--primary) 68%, transparent);
+  animation: toast-countdown-drain var(--toast-countdown-duration, 5000ms) linear 1 forwards;
+  animation-play-state: running;
+}
+
+[data-slot="toast-countdown"][data-toast-countdown-type="success"]::after {
+  background-color: color-mix(in oklch, var(--success) 75%, transparent);
+}
+
+[data-slot="toast-countdown"][data-toast-countdown-type="error"]::after {
+  background-color: color-mix(in oklch, var(--destructive) 78%, transparent);
+}
+
+[data-slot="toast-countdown"][data-toast-countdown-type="warning"]::after {
+  background-color: color-mix(in oklch, var(--warning) 78%, transparent);
+}
+
+[data-slot="toast-countdown"][data-toast-countdown-type="info"]::after {
+  background-color: color-mix(in oklch, var(--info) 75%, transparent);
+}
+
+[data-slot="toast-viewport"]:hover [data-slot="toast-countdown"]::after,
+[data-slot="toast-viewport"]:focus-within [data-slot="toast-countdown"]::after,
+[data-slot="toast-root"][data-expanded] [data-slot="toast-countdown"]::after,
+[data-slot="toast-root"][data-swiping] [data-slot="toast-countdown"]::after,
+[data-slot="toast-countdown"][data-toast-paused="true"]::after {
+  animation-play-state: paused;
+}
+
+[data-slot="toast-popup"] {
+  transition:
+    transform 190ms var(--spring-snappy),
+    opacity 150ms ease-out;
+}
+
+[data-slot="toast-popup"][data-starting-style] {
+  opacity: 0;
+  transform: scale(0.94);
+}
+
+[data-slot="toast-positioner"][data-side="top"] [data-slot="toast-popup"][data-starting-style] {
+  transform: translate3d(0, 5px, 0) scale(0.94);
+}
+
+[data-slot="toast-positioner"][data-side="bottom"] [data-slot="toast-popup"][data-starting-style] {
+  transform: translate3d(0, -5px, 0) scale(0.94);
+}
+
+[data-slot="toast-positioner"][data-side="left"] [data-slot="toast-popup"][data-starting-style] {
+  transform: translate3d(5px, 0, 0) scale(0.94);
+}
+
+[data-slot="toast-positioner"][data-side="right"] [data-slot="toast-popup"][data-starting-style] {
+  transform: translate3d(-5px, 0, 0) scale(0.94);
+}
+
+[data-slot="toast-popup"][data-ending-style] {
+  opacity: 0;
+  transform: scale(0.96);
+  transition:
+    transform 120ms var(--ease-exit, ease-out),
+    opacity 120ms var(--ease-exit, ease-out);
+}
+
+[data-slot="toast-micro-check"] path {
+  stroke-dasharray: 18;
+  stroke-dashoffset: 0;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  [data-slot="toast-micro-check"] path {
+    animation: toast-micro-check-draw 260ms var(--ease-out-expo) both;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-slot="toast-countdown"]::after,
+  [data-slot="toast-micro-check"] path {
+    animation: none;
+  }
+
+  [data-slot="toast-popup"],
+  [data-slot="toast-popup"][data-ending-style] {
+    transition: opacity 150ms ease-out;
+    transform: none;
+  }
+}
