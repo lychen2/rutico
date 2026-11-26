@@ -58,8 +58,8 @@ export function SidebarThreadHeader({
 
   return (
     <div className="flex items-center gap-1">
-      <div className="flex h-8 min-w-0 flex-1 items-center gap-2 rounded-md px-2 py-1.5 text-sm font-medium text-sidebar-muted-foreground hover:bg-sidebar-row-hover hover:text-sidebar-foreground focus-within:bg-sidebar-row-hover focus-within:text-sidebar-foreground focus-within:ring-1 focus-within:ring-inset focus-within:ring-ring/70">
-        <SearchIcon className="size-4 shrink-0 text-(--sidebar-icon-color)" />
+      <div className="group/search flex h-8 min-w-0 flex-1 items-center gap-2 rounded-md px-2 py-1.5 text-sm font-medium text-sidebar-muted-foreground transition-[background-color,color,box-shadow] duration-150 ease-out hover:bg-sidebar-row-hover hover:text-sidebar-foreground focus-within:bg-sidebar-row-hover focus-within:text-sidebar-foreground focus-within:ring-1 focus-within:ring-inset focus-within:ring-ring/70 motion-reduce:transition-none">
+        <SearchIcon className="size-4 shrink-0 text-(--sidebar-icon-color) transition-colors duration-150 group-focus-within/search:text-sidebar-foreground motion-reduce:transition-none" />
         <SidebarInput
           ref={searchInputRef}
           nativeInput
@@ -81,19 +81,28 @@ export function SidebarThreadHeader({
           className="min-w-0 flex-1"
         />
         {isSearching ? (
-          <Button
-            type="button"
-            size="icon-micro"
-            variant="ghost-muted"
-            className="shrink-0"
-            aria-label={gt("Clear thread search")}
-            onClick={() => {
-              onClearSearch();
-              searchInputRef.current?.focus();
-            }}
-          >
-            <XIcon className="size-3" />
-          </Button>
+          <>
+            <span
+              aria-hidden="true"
+              data-testid="sidebar-search-match-count"
+              className="shrink-0 rounded-full bg-sidebar-control-surface/80 px-1.5 py-0.5 text-2xs leading-none font-medium tabular-nums text-sidebar-muted-foreground ring-1 ring-inset ring-sidebar-border/40 dark:ring-white/6"
+            >
+              {searchResultCount}
+            </span>
+            <Button
+              type="button"
+              size="icon-micro"
+              variant="ghost-muted"
+              className="shrink-0"
+              aria-label={gt("Clear thread search")}
+              onClick={() => {
+                onClearSearch();
+                searchInputRef.current?.focus();
+              }}
+            >
+              <XIcon className="t3-icon-pop size-3" />
+            </Button>
+          </>
         ) : null}
       </div>
       <div className="flex shrink-0 items-center">
