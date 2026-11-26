@@ -273,6 +273,7 @@ export function MermaidDiagram({
     <div
       className="chat-markdown-mermaid overflow-x-auto"
       data-markdown-mermaid=""
+      data-mermaid-reveal="true"
       data-markdown-copy={serializeCodeBlockToMarkdown(source, "mermaid")}
     >
       {renderError ? <DiagramError message={renderError} source={source} /> : null}

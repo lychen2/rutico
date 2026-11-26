@@ -236,3 +236,79 @@
     animation: none;
   }
 }
+
+/* ==========================================================================
+   D06 / C021: Mermaid Clip-Path Morph, MarkdownTable Hover Band & Details Rail
+   ========================================================================== */
+
+@keyframes chat-mermaid-reveal {
+  from {
+    opacity: 0.25;
+    clip-path: inset(0 0 10% 0 round 8px);
+    transform: translate3d(0, 4px, 0);
+  }
+  to {
+    opacity: 1;
+    clip-path: inset(0 0 0 0 round 8px);
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+@keyframes chat-details-rail-draw {
+  from {
+    opacity: 0;
+    transform: scaleY(0);
+  }
+  to {
+    opacity: 1;
+    transform: scaleY(1);
+  }
+}
+
+@keyframes chat-table-copy-pop {
+  0% {
+    transform: scale(0.76);
+  }
+  55% {
+    transform: scale(1.14);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+@media (hover: hover) and (pointer: fine) {
+  [data-markdown-table="true"] tbody tr {
+    transition: background-color 140ms ease-out;
+  }
+
+  [data-markdown-table="true"] tbody tr:hover {
+    background-color: color-mix(in oklch, var(--contrast-foreground) 4.5%, transparent);
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  [data-mermaid-reveal="true"] {
+    animation: chat-mermaid-reveal 260ms var(--spring-spatial) both;
+  }
+
+  [data-markdown-details-open="true"] [data-markdown-details-rail="true"] {
+    animation: chat-details-rail-draw 220ms var(--spring-snappy) both;
+  }
+
+  [data-table-copy-check="true"] {
+    animation: chat-table-copy-pop 240ms var(--spring-bouncy) both;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-mermaid-reveal="true"],
+  [data-markdown-details-open="true"] [data-markdown-details-rail="true"],
+  [data-table-copy-check="true"] {
+    animation: none;
+  }
+
+  [data-markdown-table="true"] tbody tr {
+    transition: none;
+  }
+}
