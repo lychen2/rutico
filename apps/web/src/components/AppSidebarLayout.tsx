@@ -3,6 +3,7 @@ import { useGT } from "gt-react";
 import * as Schema from "effect/Schema";
 import {
   useEffect,
+  useRef,
   useState,
   useSyncExternalStore,
   type CSSProperties,
@@ -65,11 +66,133 @@ import {
   useSidebarVisibility,
 } from "./ui/sidebar";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "./ui/tooltip";
+import { AnimatedNumber } from "./ui/animated-number";
 import { appAtomRegistry } from "../rpc/atomRegistry";
 import { registerCommands, registerMenuAction } from "../shortcuts/dispatcher";
 import { resolveThreadRouteRef } from "../threadRoutes";
 
 const MACOS_TRAFFIC_LIGHTS_LEFT_INSET = "var(--desktop-window-controls-inset, 90px)";
+const ZOOM_HUD_AUTO_HIDE_MS = 1400;
+
+function formatDeviceScaleFactorBadge(scaleFactor: number): string {
+  const rounded = Math.round(scaleFactor * 100) / 100;
+  return `${rounded}× DPI`;
+}
+
+function DesktopZoomHud() {
+  const gt = useGT();
+  const [zoomState, setZoomState] = useState<{
+    readonly percent: number;
+    readonly deviceScaleFactor: number;
+    readonly visible: boolean;
+  }>(() => {
+    const initial = window.desktopBridge?.getWindowZoomState?.();
+    const factor = initial?.zoomFactor ?? window.desktopBridge?.getWindowZoomFactor?.() ?? 1;
+    const scale = initial?.deviceScaleFactor ?? window.devicePixelRatio ?? 1;
+    return {
+      percent: Math.round(factor * 100),
+      deviceScaleFactor: Number.isFinite(scale) && scale > 0 ? scale : 1,
+      visible: false,
+    };
+  });
+  const hideTimerRef = useRef<number | undefined>(undefined);
+  const pinnedRef = useRef(false);
+  const lastPercentRef = useRef(zoomState.percent);
+
+  const scheduleHide = () => {
+    window.clearTimeout(hideTimerRef.current);
+    if (pinnedRef.current) return;
+    hideTimerRef.current = window.setTimeout(() => {
+      setZoomState((current) => (current.visible ? { ...current, visible: false } : current));
+    }, ZOOM_HUD_AUTO_HIDE_MS);
+  };
+
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- subscribes to main-process zoom/DPI broadcasts to drive the transient Zoom HUD
+  useEffect(() => {
+    const bridge = window.desktopBridge;
+    if (typeof bridge?.onWindowZoomStateChange !== "function") return;
+    const unsubscribe = bridge.onWindowZoomStateChange((next) => {
+      const nextPercent = Math.round(next.zoomFactor * 100);
+      const nextScale =
+        typeof next.deviceScaleFactor === "number" &&
+        Number.isFinite(next.deviceScaleFactor) &&
+        next.deviceScaleFactor > 0
+          ? next.deviceScaleFactor
+          : window.devicePixelRatio || 1;
+      const zoomChanged = nextPercent !== lastPercentRef.current;
+      lastPercentRef.current = nextPercent;
+      setZoomState((current) => ({
+        percent: nextPercent,
+        deviceScaleFactor: nextScale,
+        visible: zoomChanged ? true : current.visible,
+      }));
+      if (zoomChanged) {
+        window.clearTimeout(hideTimerRef.current);
+        if (!pinnedRef.current) {
+          hideTimerRef.current = window.setTimeout(() => {
+            setZoomState((current) => (current.visible ? { ...current, visible: false } : current));
+          }, ZOOM_HUD_AUTO_HIDE_MS);
+        }
+      }
+    });
+    return () => {
+      unsubscribe();
+      window.clearTimeout(hideTimerRef.current);
+    };
+  }, []);
+
+  const isLinuxClient = window.desktopBridge?.getClientPlatform() === "linux";
+  const isFractionalScale =
+    Math.abs(zoomState.deviceScaleFactor - Math.round(zoomState.deviceScaleFactor)) > 0.01;
+  const showDpiBadge = isFractionalScale || (isLinuxClient && zoomState.deviceScaleFactor !== 1);
+
+  return (
+    <div
+      role="status"
+      aria-live="polite"
+      aria-hidden={!zoomState.visible}
+      data-slot="desktop-zoom-hud"
+      data-visible={zoomState.visible ? "true" : "false"}
+      className="t3-zoom-hud surface-optical-chrome"
+      onMouseEnter={() => {
+        pinnedRef.current = true;
+        window.clearTimeout(hideTimerRef.current);
+      }}
+      onMouseLeave={() => {
+        pinnedRef.current = false;
+        scheduleHide();
+      }}
+      onFocus={() => {
+        pinnedRef.current = true;
+        window.clearTimeout(hideTimerRef.current);
+      }}
+      onBlur={() => {
+        pinnedRef.current = false;
+        scheduleHide();
+      }}
+    >
+      <AnimatedNumber value={zoomState.percent} format={(value) => `${value}%`} />
+      {showDpiBadge ? (
+        <span className="t3-zoom-hud-dpi" data-slot="desktop-zoom-dpi">
+          {formatDeviceScaleFactorBadge(zoomState.deviceScaleFactor)}
+        </span>
+      ) : null}
+      {zoomState.percent !== 100 ? (
+        <button
+          type="button"
+          className="t3-zoom-hud-reset"
+          tabIndex={zoomState.visible ? 0 : -1}
+          aria-label={gt("Reset zoom to 100%")}
+          onClick={() => {
+            void window.desktopBridge?.setWindowZoom?.("reset");
+          }}
+        >
+          100%
+        </button>
+      ) : null}
+    </div>
+  );
+}
 
 function subscribeToViewportWidth(onChange: () => void): () => void {
   window.addEventListener("resize", onChange);
@@ -505,6 +628,7 @@ export function AppSidebarLayout({
         {children}
         <BackgroundThreadAnnouncer />
         <SidebarControl showSidebar={showSidebar} />
+        {isElectron ? <DesktopZoomHud /> : null}
         {isElectron ? <HistorySwipeNavigation /> : null}
       </SidebarProvider>
     </PanelAnimationSuppressionProvider>

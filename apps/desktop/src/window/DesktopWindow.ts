@@ -14,7 +14,9 @@ import { msg } from "gt-i18n";
 
 import {
   type DesktopSnapShotEvent,
+  type DesktopWindowZoomState,
   type LinuxWindowState,
+  type MainWindowZoomDirection,
   DEFAULT_CLIENT_SETTINGS,
 } from "@t3tools/contracts";
 
@@ -39,6 +41,7 @@ import {
   TRACKPAD_SCROLL_BEGIN_CHANNEL,
   TRACKPAD_SCROLL_END_CHANNEL,
   WINDOW_FULLSCREEN_STATE_CHANNEL,
+  WINDOW_ZOOM_STATE_CHANNEL,
 } from "../ipc/channels.ts";
 import {
   PASSKEY_BRIDGE_ARGUMENT,
@@ -71,6 +74,29 @@ export function buildLinuxWindowState(
     hasNativeWco,
     overlayHeight: TITLEBAR_HEIGHT,
   };
+}
+
+export function buildDesktopWindowZoomState(
+  window: Pick<Electron.BrowserWindow, "getBounds" | "webContents">,
+): DesktopWindowZoomState {
+  const rawZoom =
+    typeof window.webContents.getZoomFactor === "function" ? window.webContents.getZoomFactor() : 1;
+  const zoomFactor = Number.isFinite(rawZoom) && rawZoom > 0 ? rawZoom : 1;
+  let deviceScaleFactor = 1;
+  try {
+    if (
+      typeof window.getBounds === "function" &&
+      typeof Electron.screen?.getDisplayMatching === "function"
+    ) {
+      const display = Electron.screen.getDisplayMatching(window.getBounds());
+      if (Number.isFinite(display?.scaleFactor) && display.scaleFactor > 0) {
+        deviceScaleFactor = display.scaleFactor;
+      }
+    }
+  } catch {
+    deviceScaleFactor = 1;
+  }
+  return { zoomFactor, deviceScaleFactor };
 }
 
 class ContextMenuImageCopyError extends Schema.TaggedError<ContextMenuImageCopyError>()(
@@ -166,7 +192,7 @@ export type DesktopWindowError =
   | ElectronWindow.ElectronWindowCreateError
   | PreviewManager.PreviewManagerError;
 
-export type MainWindowZoomDirection = "in" | "out" | "reset";
+export type { MainWindowZoomDirection };
 export type MainWindowContentsCommand = "reload" | "forceReload" | "toggleDevTools";
 
 export class DesktopWindow extends Context.Service<
@@ -742,6 +768,9 @@ export const make = Effect.gen(function* () {
       direction === "reset" ? 0 : webContents.getZoomLevel() + (direction === "in" ? 0.5 : -0.5),
     );
     if (environment.platform === "darwin") syncMacosWindowButtons(window);
+    if (!window.isDestroyed() && !webContents.isDestroyed()) {
+      webContents.send(WINDOW_ZOOM_STATE_CHANNEL, buildDesktopWindowZoomState(window));
+    }
     // App zoom propagates to guests; restore each preview's own zoom.
     yield* previewManager.reapplyZoom();
   });
@@ -1210,10 +1239,23 @@ export const make = Effect.gen(function* () {
       scheduleBoundsPersist();
       emitLinuxWindowState();
     };
+    let lastKnownScaleFactor = buildDesktopWindowZoomState(window).deviceScaleFactor ?? 1;
+    const emitWindowZoomStateIfScaleChanged = () => {
+      if (window.isDestroyed() || window.webContents.isDestroyed()) return;
+      const state = buildDesktopWindowZoomState(window);
+      const nextScale = state.deviceScaleFactor ?? 1;
+      if (Math.abs(nextScale - lastKnownScaleFactor) < 0.001) return;
+      lastKnownScaleFactor = nextScale;
+      window.webContents.send(WINDOW_ZOOM_STATE_CHANNEL, state);
+    };
+    const handleMove = () => {
+      scheduleBoundsPersist();
+      emitWindowZoomStateIfScaleChanged();
+    };
     window.on("focus", () => handleWindowFocusChange(true));
     window.on("blur", () => handleWindowFocusChange(false));
     window.on("resize", scheduleBoundsPersist);
-    window.on("move", scheduleBoundsPersist);
+    window.on("move", handleMove);
     window.on("maximize", handleMaximizeChange);
     window.on("unmaximize", handleMaximizeChange);
     window.on("close", () => {

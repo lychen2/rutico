@@ -5,11 +5,13 @@ import {
   DesktopEnvironmentBootstrapSchema,
   DesktopMediaReadSchema,
   DesktopThemeSchema,
+  DesktopWindowZoomStateSchema,
   EDITORS,
   EditorId,
   LinuxPortalAppearanceSchema,
   LinuxWindowControlActionSchema,
   LinuxWindowStateSchema,
+  MainWindowZoomDirectionSchema,
   PickedThemeFileSchema,
   PickFolderOptionsSchema,
   PRIMARY_LOCAL_ENVIRONMENT_ID,
@@ -43,7 +45,8 @@ import * as ElectronMenu from "../../electron/ElectronMenu.ts";
 import * as ElectronShell from "../../electron/ElectronShell.ts";
 import * as ElectronTheme from "../../electron/ElectronTheme.ts";
 import * as ElectronWindow from "../../electron/ElectronWindow.ts";
-import { buildLinuxWindowState } from "../../window/DesktopWindow.ts";
+import * as DesktopWindow from "../../window/DesktopWindow.ts";
+import { buildDesktopWindowZoomState, buildLinuxWindowState } from "../../window/DesktopWindow.ts";
 import * as Electron from "electron";
 import { msg } from "gt-i18n";
 import * as MacPermissions from "../../permissions/MacPermissions.ts";
@@ -182,6 +185,39 @@ export const getLinuxPortalAppearance = DesktopIpc.makeSyncIpcMethod({
     }
     const electronTheme = yield* ElectronTheme.ElectronTheme;
     return yield* electronTheme.linuxPortalAppearance;
+  }),
+});
+
+export const getWindowZoomState = DesktopIpc.makeSyncIpcMethod({
+  channel: IpcChannels.GET_WINDOW_ZOOM_STATE_CHANNEL,
+  result: Schema.NullOr(DesktopWindowZoomStateSchema),
+  handler: Effect.fn("desktop.ipc.window.getWindowZoomState")(function* () {
+    const electronWindow = yield* ElectronWindow.ElectronWindow;
+    const window = yield* electronWindow.currentMainOrFirst;
+    if (Option.isNone(window) || window.value.isDestroyed()) {
+      return null;
+    }
+    return buildDesktopWindowZoomState(window.value);
+  }),
+});
+
+export const setWindowZoom = DesktopIpc.makeIpcMethod({
+  channel: IpcChannels.SET_WINDOW_ZOOM_CHANNEL,
+  payload: MainWindowZoomDirectionSchema,
+  result: Schema.Void,
+  handler: Effect.fn("desktop.ipc.window.setWindowZoom")(function* (direction, event) {
+    const electronWindow = yield* ElectronWindow.ElectronWindow;
+    const main = yield* electronWindow.main;
+    if (
+      event === undefined ||
+      Option.isNone(main) ||
+      main.value.isDestroyed() ||
+      main.value.webContents.id !== event.sender.id
+    ) {
+      return;
+    }
+    const desktopWindow = yield* DesktopWindow.DesktopWindow;
+    yield* desktopWindow.zoomMain(direction);
   }),
 });
 

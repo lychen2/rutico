@@ -35,6 +35,10 @@ vi.mock("electron", async (importOriginal) => ({
         bounds: { x: 0, y: 0, width: 1920, height: 1080 },
       },
     ]),
+    getDisplayMatching: vi.fn(() => ({
+      scaleFactor: 1.5,
+      bounds: { x: 0, y: 0, width: 1920, height: 1080 },
+    })),
   },
 }));
 
@@ -51,7 +55,11 @@ import * as ElectronMenu from "../electron/ElectronMenu.ts";
 import * as ElectronShell from "../electron/ElectronShell.ts";
 import * as ElectronTheme from "../electron/ElectronTheme.ts";
 import * as ElectronWindow from "../electron/ElectronWindow.ts";
-import { LINUX_WINDOW_STATE_CHANNEL, SNAP_SHOT_EVENT_CHANNEL } from "../ipc/channels.ts";
+import {
+  LINUX_WINDOW_STATE_CHANNEL,
+  SNAP_SHOT_EVENT_CHANNEL,
+  WINDOW_ZOOM_STATE_CHANNEL,
+} from "../ipc/channels.ts";
 import { resolveLinuxDesktopSessionInfo } from "../app/DesktopEarlyElectronStartup.ts";
 import * as DesktopServerExposure from "../backend/DesktopServerExposure.ts";
 import * as DesktopWindow from "./DesktopWindow.ts";
@@ -2171,6 +2179,37 @@ describe("DesktopWindow", () => {
         assert.equal(yield* Ref.get(createCount), 1);
         assert.equal(fakeWindow.send.mock.calls.length, 0);
         assert.equal(onReveal.mock.calls.length, 0);
+      }).pipe(Effect.provide(layer));
+    }),
+  );
+
+  it.effect("broadcasts zoomFactor and display scaleFactor when main window zooms", () =>
+    Effect.gen(function* () {
+      const fakeWindow = makeFakeBrowserWindow();
+      const createCount = yield* Ref.make(0);
+      const mainWindow = yield* Ref.make<Option.Option<Electron.BrowserWindow>>(Option.none());
+      const layer = layerTest({
+        window: fakeWindow.window,
+        createCount,
+        mainWindow,
+        platform: "linux",
+      });
+
+      yield* Effect.gen(function* () {
+        const desktopWindow = yield* DesktopWindow.DesktopWindow;
+        yield* desktopWindow.handleBackendReady(new URL("http://127.0.0.1:3773"));
+        fakeWindow.send.mockClear();
+
+        yield* desktopWindow.zoomMain("in");
+        assert.equal(fakeWindow.send.mock.calls.length, 1);
+        const [channel, payload] = fakeWindow.send.mock.calls[0]!;
+        assert.equal(channel, WINDOW_ZOOM_STATE_CHANNEL);
+        assert.equal((payload as { deviceScaleFactor?: number }).deviceScaleFactor, 1.5);
+        assert.isAbove((payload as { zoomFactor: number }).zoomFactor, 1);
+
+        yield* desktopWindow.zoomMain("reset");
+        const [, resetPayload] = fakeWindow.send.mock.calls[1]!;
+        assert.equal((resetPayload as { zoomFactor: number }).zoomFactor, 1);
       }).pipe(Effect.provide(layer));
     }),
   );

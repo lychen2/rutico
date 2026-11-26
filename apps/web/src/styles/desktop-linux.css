@@ -142,3 +142,136 @@ html.electron-linux[data-linux-portal-contrast="high"] :focus-visible {
   outline-width: 2px;
   outline-offset: 2px;
 }
+
+/* ==========================================================================
+   D30 / C099: Unfocused Linux Window Semantic Material Dimming & Optical Zoom HUD
+   Pure semantic CSS custom properties — zero whole-tree filter().
+   ========================================================================== */
+
+html.electron-linux {
+  --linux-focus-bevel-opacity: 1;
+  --linux-focus-chrome-opacity: 1;
+  --linux-focus-accent-mix: 100%;
+}
+
+html.electron-linux[data-desktop-window-focused="false"] {
+  --linux-focus-bevel-opacity: 0.36;
+  --linux-focus-chrome-opacity: 0.78;
+  --linux-focus-accent-mix: 68%;
+  --toolbar-border: color-mix(in oklch, var(--border) 64%, transparent);
+  --sidebar-border: color-mix(in oklch, var(--border) 62%, transparent);
+}
+
+html.electron-linux[data-desktop-window-focused]
+  :is(
+    .drag-region,
+    [data-app-sidebar] [data-slot="sidebar-header"],
+    [data-app-sidebar] [data-slot="sidebar-footer"],
+    [data-workspace-header]
+  ) {
+  transition:
+    opacity 140ms var(--spring-fluid, cubic-bezier(0.23, 1, 0.32, 1)),
+    border-color 140ms var(--spring-fluid, cubic-bezier(0.23, 1, 0.32, 1)),
+    color 140ms var(--spring-fluid, cubic-bezier(0.23, 1, 0.32, 1));
+}
+
+html.electron-linux[data-desktop-window-focused="false"]
+  :is(
+    .drag-region:not([data-app-sidebar] *) > *,
+    [data-app-sidebar] [data-slot="sidebar-header"],
+    [data-app-sidebar] [data-slot="sidebar-footer"]
+  ) {
+  opacity: var(--linux-focus-chrome-opacity);
+}
+
+html.electron-linux[data-desktop-window-focused="false"] .linux-window-control-btn {
+  opacity: 0.65;
+}
+
+.t3-zoom-hud {
+  position: fixed;
+  top: calc(var(--workspace-topbar-height, 40px) + 12px);
+  right: 16px;
+  z-index: 90;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px 6px 12px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 550;
+  letter-spacing: -0.01em;
+  color: var(--foreground);
+  box-shadow:
+    inset 0 1px 0 color-mix(in oklch, #ffffff 14%, transparent),
+    0 10px 28px -8px color-mix(in oklch, #000000 32%, transparent);
+  opacity: 0;
+  transform: translate3d(0, -6px, 0) scale(0.96);
+  pointer-events: none;
+  transition:
+    opacity 180ms var(--spring-snappy, cubic-bezier(0.23, 1, 0.32, 1)),
+    transform 220ms var(--spring-snappy, cubic-bezier(0.23, 1, 0.32, 1));
+  will-change: transform, opacity;
+}
+
+.t3-zoom-hud[data-visible="true"] {
+  opacity: 1;
+  transform: translate3d(0, 0, 0) scale(1);
+  pointer-events: auto;
+}
+
+.t3-zoom-hud-dpi {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 6px;
+  border-radius: 999px;
+  font-size: 10.5px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--muted-foreground);
+  background-color: color-mix(in oklch, var(--foreground) 7%, transparent);
+}
+
+.t3-zoom-hud-reset {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 22px;
+  padding: 0 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--foreground);
+  background-color: color-mix(in oklch, var(--foreground) 10%, transparent);
+  cursor: pointer;
+  transition:
+    background-color 120ms ease-out,
+    transform 100ms ease-out;
+}
+
+.t3-zoom-hud-reset:hover {
+  background-color: color-mix(in oklch, var(--foreground) 16%, transparent);
+}
+
+.t3-zoom-hud-reset:active {
+  transform: scale(0.95);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html.electron-linux[data-desktop-window-focused]
+    :is(
+      .drag-region,
+      [data-app-sidebar] [data-slot="sidebar-header"],
+      [data-app-sidebar] [data-slot="sidebar-footer"],
+      [data-workspace-header]
+    ),
+  .t3-zoom-hud,
+  .t3-zoom-hud-reset {
+    transition: none;
+  }
+
+  .t3-zoom-hud {
+    transform: none;
+  }
+}

@@ -1142,6 +1142,15 @@ export const LinuxPortalAppearanceSchema = Schema.Struct({
 });
 export type LinuxPortalAppearance = typeof LinuxPortalAppearanceSchema.Type;
 
+export const DesktopWindowZoomStateSchema = Schema.Struct({
+  zoomFactor: Schema.Finite.check(Schema.isGreaterThan(0)),
+  deviceScaleFactor: Schema.optionalKey(Schema.Finite.check(Schema.isGreaterThan(0))),
+});
+export type DesktopWindowZoomState = typeof DesktopWindowZoomStateSchema.Type;
+
+export const MainWindowZoomDirectionSchema = Schema.Literals(["in", "out", "reset"]);
+export type MainWindowZoomDirection = typeof MainWindowZoomDirectionSchema.Type;
+
 export interface DesktopBridge {
   getAppBranding: () => DesktopAppBranding | null;
   getPathForFile: (file: File) => string;
@@ -1257,6 +1266,9 @@ export interface DesktopBridge {
     listener: (appearance: LinuxPortalAppearance) => void,
   ) => () => void;
   getWindowZoomFactor: () => number;
+  getWindowZoomState?: () => DesktopWindowZoomState | null;
+  onWindowZoomStateChange?: (listener: (state: DesktopWindowZoomState) => void) => () => void;
+  setWindowZoom?: (direction: MainWindowZoomDirection) => Promise<void>;
   getUpdateState: () => Promise<DesktopUpdateState>;
   /** `minimumVersion` is a track switch's checked release; nothing older is offered after. */
   setUpdateChannel: (

@@ -7,6 +7,7 @@ import type {
   DesktopPreviewRecordingInputEvent,
   DesktopPreviewTabState,
   DesktopSnapShotEvent,
+  DesktopWindowZoomState,
   LinuxPortalAppearance,
   LinuxWindowState,
 } from "@t3tools/contracts";
@@ -82,6 +83,20 @@ function isLinuxPortalAppearance(value: unknown): value is LinuxPortalAppearance
       candidate.contrast === null ||
       candidate.contrast === "no-preference" ||
       candidate.contrast === "high")
+  );
+}
+
+function isDesktopWindowZoomState(value: unknown): value is DesktopWindowZoomState {
+  if (typeof value !== "object" || value === null) return false;
+  const candidate = value as Record<string, unknown>;
+  return (
+    typeof candidate.zoomFactor === "number" &&
+    Number.isFinite(candidate.zoomFactor) &&
+    candidate.zoomFactor > 0 &&
+    (candidate.deviceScaleFactor === undefined ||
+      (typeof candidate.deviceScaleFactor === "number" &&
+        Number.isFinite(candidate.deviceScaleFactor) &&
+        candidate.deviceScaleFactor > 0))
   );
 }
 
@@ -400,6 +415,21 @@ contextBridge.exposeInMainWorld("desktopBridge", {
     };
   },
   getWindowZoomFactor: () => webFrame.getZoomFactor(),
+  getWindowZoomState: () => {
+    const result: unknown = ipcRenderer.sendSync(IpcChannels.GET_WINDOW_ZOOM_STATE_CHANNEL);
+    return isDesktopWindowZoomState(result) ? result : null;
+  },
+  onWindowZoomStateChange: (listener) => {
+    const wrappedListener = (_event: Electron.IpcRendererEvent, state: unknown) => {
+      if (!isDesktopWindowZoomState(state)) return;
+      listener(state);
+    };
+    ipcRenderer.on(IpcChannels.WINDOW_ZOOM_STATE_CHANNEL, wrappedListener);
+    return () => {
+      ipcRenderer.removeListener(IpcChannels.WINDOW_ZOOM_STATE_CHANNEL, wrappedListener);
+    };
+  },
+  setWindowZoom: (direction) => ipcRenderer.invoke(IpcChannels.SET_WINDOW_ZOOM_CHANNEL, direction),
   onWindowFullscreenStateChange: (listener) => {
     const wrappedListener = (_event: Electron.IpcRendererEvent, fullscreen: unknown) => {
       if (typeof fullscreen !== "boolean") return;

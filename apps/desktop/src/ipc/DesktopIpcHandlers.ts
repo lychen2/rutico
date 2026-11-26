@@ -49,6 +49,7 @@ import {
   getLinuxPortalAppearance,
   getLinuxWindowState,
   getWindowFullscreenState,
+  getWindowZoomState,
   openExternal,
   performLinuxWindowControlAction,
   readMedia,
@@ -63,6 +64,7 @@ import {
   pickProjectFavicon,
   pickThemeFiles,
   setTheme,
+  setWindowZoom,
   syncHtmlFullscreen,
   showContextMenu,
 } from "./methods/window.ts";
@@ -114,6 +116,8 @@ export const installDesktopIpcHandlers = Effect.fn("desktop.ipc.installHandlers"
   yield* ipc.handleSync(getLinuxWindowState);
   yield* ipc.handle(performLinuxWindowControlAction);
   yield* ipc.handleSync(getLinuxPortalAppearance);
+  yield* ipc.handleSync(getWindowZoomState);
+  yield* ipc.handle(setWindowZoom);
   yield* ipc.handleSync(getLocalEnvironmentBootstraps);
   yield* ipc.handleSync(getLocalEnvironmentEnabled);
   yield* ipc.handle(setLocalEnvironmentEnabled);
