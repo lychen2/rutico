@@ -1,4 +1,5 @@
 import { useAtomValue } from "@effect/atom-react";
+import * as Haptics from "expo-haptics";
 import { useGT } from "gt-react-native";
 import { useCallback, useEffect, useEffectEvent, useMemo, useRef, useState } from "react";
 import { BackHandler, Keyboard, Pressable, ScrollView, StyleSheet, View } from "react-native";
@@ -23,6 +24,7 @@ import { AppText as Text } from "../../components/ui/AppText";
 import { IconButton } from "../../components/ui/IconButton";
 import { PaneContext } from "../../components/ui/Pane";
 import { RuticoMobileBackdrop } from "../../components/RuticoMobileBackdrop";
+import { useAppActive } from "../../lib/appState";
 import { cn } from "../../lib/cn";
 import { themeColorWithAlpha } from "../../lib/mobileTheme";
 import { scopedThreadKey } from "../../lib/scopedEntities";
@@ -55,13 +57,18 @@ const TAB_INDICATOR_SPRING = {
   reduceMotion: ReduceMotion.System,
 } as const;
 
-function PulsingStatusDot(props: { readonly tone: "warning" | "primary" }) {
+function PulsingStatusDot(props: {
+  readonly tone: "warning" | "primary";
+  readonly active: boolean;
+}) {
+  const appActive = useAppActive();
   const reducedMotion = useReducedMotion();
+  const shouldPulse = props.active && appActive && !reducedMotion;
   const pulse = useSharedValue(0);
 
-  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- drives continuous Reanimated breathing halo on active agent status pills
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- drives continuous Reanimated breathing halo on active agent status pills when visible and foregrounded
   useEffect(() => {
-    if (reducedMotion) {
+    if (!shouldPulse) {
       cancelAnimation(pulse);
       pulse.set(0);
       return;
@@ -80,14 +87,14 @@ function PulsingStatusDot(props: { readonly tone: "warning" | "primary" }) {
     return () => {
       cancelAnimation(pulse);
     };
-  }, [pulse, reducedMotion]);
+  }, [pulse, shouldPulse]);
 
   const haloStyle = useAnimatedStyle(() => {
     const value = pulse.get();
     return {
-      opacity: reducedMotion ? 0 : interpolate(value, [0, 1], [0.6, 0], Extrapolation.CLAMP),
+      opacity: shouldPulse ? interpolate(value, [0, 1], [0.6, 0], Extrapolation.CLAMP) : 0,
       transform: [
-        { scale: reducedMotion ? 1 : interpolate(value, [0, 1], [1, 2.3], Extrapolation.CLAMP) },
+        { scale: shouldPulse ? interpolate(value, [0, 1], [1, 2.3], Extrapolation.CLAMP) : 1 },
       ],
     };
   });
@@ -98,14 +105,14 @@ function PulsingStatusDot(props: { readonly tone: "warning" | "primary" }) {
         pointerEvents="none"
         className={cn(
           "absolute inset-0 rounded-full",
-          props.tone === "warning" ? "bg-warning" : "bg-primary",
+          props.tone === "warning" ? "bg-warning-foreground" : "bg-primary",
         )}
         style={haloStyle}
       />
       <View
         className={cn(
           "size-1.5 rounded-full",
-          props.tone === "warning" ? "bg-warning" : "bg-primary",
+          props.tone === "warning" ? "bg-warning-foreground" : "bg-primary",
         )}
       />
     </View>
@@ -174,6 +181,7 @@ function WorkbenchTabsBar(props: {
               key={pane.key}
               accessibilityRole="button"
               accessibilityState={{ selected }}
+              hitSlop={6}
               onLayout={(event) => {
                 const { x, width } = event.nativeEvent.layout;
                 setLayouts((previous) =>
@@ -182,9 +190,12 @@ function WorkbenchTabsBar(props: {
                     : { ...previous, [pane.key]: { x, width } },
                 );
               }}
-              onPress={() => props.onSelectPane?.(pane.key)}
+              onPress={() => {
+                void Haptics.selectionAsync().catch(() => undefined);
+                props.onSelectPane?.(pane.key);
+              }}
               className={cn(
-                "rounded-full border px-3 py-1",
+                "min-h-[36px] justify-center rounded-full border px-3 py-1.5 active:opacity-70",
                 selected ? "border-transparent bg-transparent" : "border-border/70 bg-card/65",
               )}
             >
@@ -295,7 +306,10 @@ export function AndroidPaseoPanels(props: AndroidPaseoPanelsProps) {
   }, [enabled, hasWorkbench]);
 
   const commitPanel = useCallback(
-    (panel: -1 | 0 | 1) => {
+    (panel: -1 | 0 | 1, changed: boolean) => {
+      if (changed) {
+        void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => undefined);
+      }
       Keyboard.dismiss();
       if (panel === 0) {
         setActivePanel(0);
@@ -372,7 +386,7 @@ export function AndroidPaseoPanels(props: AndroidPaseoPanelsProps) {
           const destination =
             nextPanel === -1 ? drawerWidth : nextPanel === 1 && hasWorkbench ? -workbenchWidth : 0;
           panelOffset.set(withSpring(destination, SPRING_CONFIG));
-          runOnJS(commitPanel)(nextPanel);
+          runOnJS(commitPanel)(nextPanel, nextPanel !== activePanel);
         }),
     [
       activePanel,
@@ -592,7 +606,9 @@ export function AndroidPaseoPanels(props: AndroidPaseoPanelsProps) {
                       <Pressable
                         key={scopedThreadKey(thread.environmentId, thread.id)}
                         accessibilityRole="button"
+                        hitSlop={6}
                         onPress={() => {
+                          void Haptics.selectionAsync().catch(() => undefined);
                           closePanels();
                           outerLayoutValue.selectDetail?.({
                             name: "Thread",
@@ -603,13 +619,16 @@ export function AndroidPaseoPanels(props: AndroidPaseoPanelsProps) {
                           });
                         }}
                         className={cn(
-                          "max-w-[160px] flex-row items-center gap-1.5 rounded-full border px-2.5 py-1",
+                          "min-h-[36px] max-w-[160px] flex-row items-center gap-1.5 rounded-full border px-3 py-1.5 active:opacity-70",
                           needsAttention
                             ? "border-primary/70 bg-primary/20"
                             : "border-border/75 bg-card/75",
                         )}
                       >
-                        <PulsingStatusDot tone={needsAttention ? "warning" : "primary"} />
+                        <PulsingStatusDot
+                          tone={needsAttention ? "warning" : "primary"}
+                          active={activePanel === -1}
+                        />
                         <Text numberOfLines={1} className="text-xs font-t3-medium text-foreground">
                           {thread.title}
                         </Text>
