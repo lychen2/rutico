@@ -2,7 +2,7 @@ import { startPaletteThreadDrag } from "./CommandPalette.drag";
 import { useLegendListRef } from "~/hooks/useLegendListRef";
 import { type ResolvedKeybindingsConfig } from "@t3tools/contracts";
 import { LegendList, type LegendListRef } from "@legendapp/list/react";
-import { ChevronRightIcon } from "lucide-react";
+import { ChevronRightIcon, SearchIcon } from "lucide-react";
 import { type ReactNode, type RefObject, useState } from "react";
 import { T } from "gt-react";
 import { cn } from "~/lib/utils";
@@ -24,6 +24,7 @@ import {
   CommandListVirtualized,
   CommandShortcut,
 } from "./ui/command";
+import { Empty, EmptyDescription, EmptyHeader, EmptyMedia } from "./ui/empty";
 import { getVirtualizedScrollFadeClassName } from "./ui/scroll-area";
 import { ProjectPinButton } from "./ProjectPinButton";
 import { SearchMatchHintLine, ThreadSearchMatchExcerpt } from "./ThreadSearchMatch";
@@ -39,14 +40,21 @@ interface CommandPaletteResultsProps {
 
 function CommandPaletteEmptyState(props: { emptyStateMessage?: string; isActionsOnly: boolean }) {
   return (
-    <div className="py-10 text-center text-sm text-muted-foreground">
-      {props.emptyStateMessage ??
-        (props.isActionsOnly ? (
-          <T>No matching actions.</T>
-        ) : (
-          <T>No matching commands, projects, or threads.</T>
-        ))}
-    </div>
+    <Empty size="compact">
+      <EmptyMedia variant="icon">
+        <SearchIcon className="size-4.5 text-muted-foreground" />
+      </EmptyMedia>
+      <EmptyHeader>
+        <EmptyDescription>
+          {props.emptyStateMessage ??
+            (props.isActionsOnly ? (
+              <T>No matching actions.</T>
+            ) : (
+              <T>No matching commands, projects, or threads.</T>
+            ))}
+        </EmptyDescription>
+      </EmptyHeader>
+    </Empty>
   );
 }
 
@@ -313,7 +321,7 @@ function CommandPaletteResultRow(props: {
       ) : null}
       {shortcutLabel ? <CommandShortcut>{shortcutLabel}</CommandShortcut> : null}
       {props.item.kind === "submenu" ? (
-        <ChevronRightIcon className="-me-0.5 ms-auto size-4 shrink-0 text-muted-foreground/70" />
+        <ChevronRightIcon className="-me-0.5 ms-auto size-4 shrink-0 text-muted-foreground/70 transition-transform duration-150 ease-(--ease-drawer) motion-safe:in-data-selected:translate-x-0.5 motion-safe:in-data-highlighted:translate-x-0.5 motion-safe:in-data-active:translate-x-0.5 motion-reduce:transition-none" />
       ) : null}
     </CommandItem>
   );
