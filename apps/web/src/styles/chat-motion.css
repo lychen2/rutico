@@ -550,3 +550,94 @@
     animation: none;
   }
 }
+
+/* ==========================================================================
+   D09 / C029: WorkGroup & TurnFold Optical Spine Rail + Decaying Cascade
+   ========================================================================== */
+
+@keyframes chat-work-spine-draw {
+  from {
+    opacity: 0;
+    transform: scaleY(0);
+  }
+  to {
+    opacity: 1;
+    transform: scaleY(1);
+  }
+}
+
+@keyframes chat-work-cascade-in {
+  from {
+    opacity: 0;
+    transform: translate3d(-4px, 4px, 0);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+[data-work-log-spine="true"] > [data-work-log-spine-rail="true"] {
+  position: absolute;
+  inset-inline-start: 0.375rem;
+  top: 0.375rem;
+  bottom: 0.375rem;
+  width: 1px;
+  border-radius: 9999px;
+  pointer-events: none;
+  transform-origin: top center;
+  background-image: linear-gradient(
+    to bottom,
+    color-mix(in oklch, var(--border) 90%, transparent) 0%,
+    color-mix(in oklch, var(--border) 75%, transparent) 85%,
+    transparent 100%
+  );
+}
+
+[data-work-log-spine="true"] [data-work-log-grouped-row="true"]::before {
+  content: "";
+  position: absolute;
+  inset-inline-start: -0.4375rem;
+  top: 0.65rem;
+  width: 5px;
+  height: 5px;
+  border-radius: 9999px;
+  pointer-events: none;
+  background-color: color-mix(in oklch, var(--border) 85%, transparent);
+  opacity: 0;
+  transform: scale(0.7);
+  transition:
+    opacity 140ms ease-out,
+    background-color 140ms ease-out,
+    transform 160ms var(--spring-snappy);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  [data-work-log-spine="true"] [data-work-log-grouped-row="true"]:hover::before,
+  [data-work-log-spine="true"] [data-work-log-grouped-row="true"]:focus-within::before {
+    opacity: 1;
+    background-color: color-mix(in oklch, var(--primary) 78%, var(--contrast-foreground));
+    transform: scale(1);
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  [data-work-log-spine="true"] > [data-work-log-spine-rail="true"] {
+    animation: chat-work-spine-draw 240ms var(--spring-snappy) both;
+  }
+
+  [data-work-cascade-row="true"] {
+    animation: chat-work-cascade-in 210ms var(--spring-snappy) var(--work-cascade-delay, 0ms) both;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-work-log-spine="true"] > [data-work-log-spine-rail="true"],
+  [data-work-cascade-row="true"] {
+    animation: none;
+  }
+
+  [data-work-log-spine="true"] [data-work-log-grouped-row="true"]::before {
+    transition: none;
+  }
+}

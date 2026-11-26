@@ -587,8 +587,17 @@ const ConversationTimeline = memo(function ConversationTimeline({
   };
 
   // Turn and attempt folds reveal later rows rather than growing their own row.
+  const [revealingTurnFoldRunId, setRevealingTurnFoldRunId] = useState<RunId | null>(null);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- clears one-shot TurnFold expand stagger after 360ms so recycled virtual rows never replay
+  useEffect(() => {
+    if (revealingTurnFoldRunId === null) return;
+    const timer = window.setTimeout(() => setRevealingTurnFoldRunId(null), 360);
+    return () => window.clearTimeout(timer);
+  }, [revealingTurnFoldRunId]);
   const onToggleTurnFold = (runId: RunId) => {
     preserveDisclosurePosition(`turn-fold:${runId}`);
+    const expanding = !expandedRunIds.has(runId);
+    setRevealingTurnFoldRunId(expanding ? runId : null);
     setExpandedRunIds((existing) => {
       const next = new Set(existing);
       if (next.has(runId)) {
@@ -1519,27 +1528,57 @@ const ConversationTimeline = memo(function ConversationTimeline({
       return next;
     });
   });
-  const renderItem = ({ item }: { item: MessagesTimelineRow }) => (
-    <TimelineRowCtx value={sharedState}>
-      <div
-        className="messages-timeline-row-frame"
-        onPlayCapture={(event) => onAudioPlaybackChange(item.id, event)}
-        onPauseCapture={(event) => onAudioPlaybackChange(item.id, event)}
-        onEndedCapture={(event) => onAudioPlaybackChange(item.id, event)}
-      >
+  const revealingTurnFoldDelays = new Map<string, number>();
+  if (revealingTurnFoldRunId !== null) {
+    const foldIndex = rows.findIndex(
+      (row) => row.kind === "turn-fold" && row.runId === revealingTurnFoldRunId,
+    );
+    const delays = [0, 24, 44, 60, 72, 80] as const;
+    if (foldIndex >= 0) {
+      let cascadeCount = 0;
+      for (let i = foldIndex + 1; i < rows.length && cascadeCount < delays.length; i += 1) {
+        const candidate = rows[i]!;
+        if (
+          candidate.kind === "turn-fold" ||
+          (candidate.kind === "message" && candidate.message.role === "user")
+        ) {
+          break;
+        }
+        revealingTurnFoldDelays.set(candidate.id, delays[cascadeCount]!);
+        cascadeCount += 1;
+      }
+    }
+  }
+  const renderItem = ({ item }: { item: MessagesTimelineRow }) => {
+    const foldCascadeDelay = revealingTurnFoldDelays.get(item.id);
+    return (
+      <TimelineRowCtx value={sharedState}>
         <div
-          ref={observeLaneWidth}
-          // An HTML preview can run wider than this lane, which stays the chat column's width.
-          className={cn("chat-content-lane", item.kind !== "html-render" && "overflow-x-clip")}
-          data-timeline-root="true"
+          className="messages-timeline-row-frame"
+          onPlayCapture={(event) => onAudioPlaybackChange(item.id, event)}
+          onPauseCapture={(event) => onAudioPlaybackChange(item.id, event)}
+          onEndedCapture={(event) => onAudioPlaybackChange(item.id, event)}
         >
-          <AudioPreviewUnmountContext value={onAudioUnmount}>
-            <TimelineRowContent row={item} />
-          </AudioPreviewUnmountContext>
+          <div
+            ref={observeLaneWidth}
+            // An HTML preview can run wider than this lane, which stays the chat column's width.
+            className={cn("chat-content-lane", item.kind !== "html-render" && "overflow-x-clip")}
+            data-timeline-root="true"
+            data-work-cascade-row={foldCascadeDelay !== undefined ? "true" : undefined}
+            style={
+              foldCascadeDelay !== undefined
+                ? ({ "--work-cascade-delay": `${foldCascadeDelay}ms` } as React.CSSProperties)
+                : undefined
+            }
+          >
+            <AudioPreviewUnmountContext value={onAudioUnmount}>
+              <TimelineRowContent row={item} />
+            </AudioPreviewUnmountContext>
+          </div>
         </div>
-      </div>
-    </TimelineRowCtx>
-  );
+      </TimelineRowCtx>
+    );
+  };
   const listExtraData = { identity: listIdentityKey, rowCount: rows.length, sharedState };
   const timelineListFooter = (
     <TimelineListFooter

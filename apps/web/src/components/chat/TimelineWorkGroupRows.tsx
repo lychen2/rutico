@@ -15,7 +15,16 @@ import { observeVisibleAnimation } from "../../lib/visibleAnimation";
 import { formatDuration } from "@t3tools/shared/orchestrationTiming";
 import * as DateTime from "effect/DateTime";
 import { T, useGT, useMessages } from "gt-react";
-import { memo, use, useLayoutEffect, useRef, useState, type ReactNode } from "react";
+import {
+  memo,
+  use,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type CSSProperties,
+  type ReactNode,
+} from "react";
 import { LegendList, type LegendListRef } from "@legendapp/list/react";
 import { workEntryDisplayIndicatesToolFailure } from "../../session-logic";
 import ChatMarkdown from "../ChatMarkdown";
@@ -141,6 +150,7 @@ function WorkingTimer({ createdAt }: { createdAt: string }) {
 }
 
 const compactWorkEntryHeight = 24;
+const WORK_GROUP_CASCADE_DELAYS_MS = [0, 24, 44, 60, 72, 80] as const;
 
 // The thumbnail strip below the group is its own virtualized row, so the gallery an expanded
 // entry opens is built from the same entries rather than from the strip's mounted images.
@@ -213,6 +223,20 @@ function ExpandedWorkGroupEntries({
   const listRef = useRef<LegendListRef>(null);
   const [expandedContentHeight, setExpandedContentHeight] = useState(0);
   const [fades, setFades] = useState({ top: false, bottom: false, viewportHeight: 0 });
+  const [initialCascadeDelays, setInitialCascadeDelays] = useState<ReadonlyMap<string, number>>(
+    () =>
+      new Map(
+        entries
+          .slice(0, WORK_GROUP_CASCADE_DELAYS_MS.length)
+          .map((entry, idx) => [entry.id, WORK_GROUP_CASCADE_DELAYS_MS[idx]!]),
+      ),
+  );
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- clears the one-shot initial expand stagger after 360ms so virtualized row recycling never replays entrance motion
+  useEffect(() => {
+    if (initialCascadeDelays.size === 0) return;
+    const timer = window.setTimeout(() => setInitialCascadeDelays(new Map()), 360);
+    return () => window.clearTimeout(timer);
+  }, [initialCascadeDelays.size]);
   const [appendState, setAppendState] = useState({ entries, follow: false });
   // Capture the pre-change edge once per incoming array, before new layout
   // metrics arrive. Edge/viewport changes never turn a status update into a follow.
@@ -287,9 +311,21 @@ function ExpandedWorkGroupEntries({
     return observeResize(content ? [element, content] : element, updateScrollFades);
   }, [updateScrollFades]);
 
-  const renderEntry = ({ item }: { item: TimelineWorkEntry }) => (
-    <SimpleWorkEntryRow key={item.id} workEntry={item} workspaceRoot={workspaceRoot} />
-  );
+  const renderEntry = ({ item }: { item: TimelineWorkEntry }) => {
+    const cascadeDelay = initialCascadeDelays.get(item.id);
+    if (cascadeDelay === undefined) {
+      return <SimpleWorkEntryRow key={item.id} workEntry={item} workspaceRoot={workspaceRoot} />;
+    }
+    return (
+      <div
+        key={item.id}
+        data-work-cascade-row="true"
+        style={{ "--work-cascade-delay": `${cascadeDelay}ms` } as CSSProperties}
+      >
+        <SimpleWorkEntryRow workEntry={item} workspaceRoot={workspaceRoot} />
+      </div>
+    );
+  };
 
   const updateExpandedContentHeight = () => {
     const state = listRef.current?.getState();
