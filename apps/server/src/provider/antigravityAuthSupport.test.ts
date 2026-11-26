@@ -931,4 +931,43 @@ it.layer(NodeServices.layer)("Antigravity profile preparation", (it) => {
       expect(yield* fs.exists(path.join(profile.acpDirectory, "settings.json"))).toBe(false);
     }),
   );
+
+  it.effect(
+    "removes stale keyring-unavailable marker for native profiles only when Linux keyring is unlocked",
+    () =>
+      Effect.gen(function* () {
+        const fs = yield* FileSystem.FileSystem;
+        const path = yield* Path.Path;
+        const temporaryDirectory = yield* fs.makeTempDirectoryScoped();
+        const userHome = path.join(temporaryDirectory, "home");
+        const profileDirectory = path.join(temporaryDirectory, "profile");
+        const markerPath = path.join(
+          userHome,
+          ".gemini",
+          "antigravity-cli",
+          "cache",
+          "antigravity-keyring-unavailable",
+        );
+        yield* fs.makeDirectory(path.dirname(markerPath), { recursive: true });
+        yield* fs.writeFileString(markerPath, "2026-11-26T01:41:04Z\n");
+
+        yield* prepareAntigravityProfile({
+          profileDirectory,
+          userHome,
+          platform: "linux",
+          nativeProfile: true,
+          probeKeyringLockState: () => Effect.succeed("locked"),
+        });
+        expect(yield* fs.exists(markerPath)).toBe(true);
+
+        yield* prepareAntigravityProfile({
+          profileDirectory,
+          userHome,
+          platform: "linux",
+          nativeProfile: true,
+          probeKeyringLockState: () => Effect.succeed("unlocked"),
+        });
+        expect(yield* fs.exists(markerPath)).toBe(false);
+      }),
+  );
 });

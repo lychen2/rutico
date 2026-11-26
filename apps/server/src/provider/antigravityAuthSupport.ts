@@ -20,6 +20,10 @@ import * as AcpErrors from "effect-acp/errors";
 import { collectUint8StreamText } from "@t3tools/provider-core/server/collectStreamText";
 import type * as AcpSessionRuntime from "@t3tools/provider-acp/server/AcpSessionRuntime";
 import {
+  clearStaleAntigravityKeyringUnavailableMarker,
+  type LinuxKeyringLockState,
+} from "./antigravityKeyringGuard.ts";
+import {
   antigravityUserSkillDirectories,
   resolveAntigravityUserHome,
 } from "./Drivers/AntigravitySkills.ts";
@@ -403,6 +407,9 @@ export const prepareAntigravityProfile = Effect.fn("prepareAntigravityProfile")(
   readonly userHome?: string;
   readonly tempDirectory?: string;
   readonly nativeProfile?: boolean;
+  readonly probeKeyringLockState?: (
+    environment: NodeJS.ProcessEnv,
+  ) => Effect.Effect<LinuxKeyringLockState, never, ChildProcessSpawner.ChildProcessSpawner>;
 }) {
   const auth = input.auth ?? ANTIGRAVITY_PERSONAL_AUTH;
   const fs = yield* FileSystem.FileSystem;
@@ -561,6 +568,14 @@ export const prepareAntigravityProfile = Effect.fn("prepareAntigravityProfile")(
     if (platform === "win32") {
       yield* copyAntigravityUserConfigFiles({ profileDirectory: geminiHome, userHome });
     }
+  } else {
+    yield* clearStaleAntigravityKeyringUnavailableMarker({
+      platform,
+      userHome,
+      environment: input.baseEnv ?? process.env,
+      authMethod: auth.authMethod,
+      ...(input.probeKeyringLockState ? { probeLockState: input.probeKeyringLockState } : {}),
+    });
   }
   return profile;
 });

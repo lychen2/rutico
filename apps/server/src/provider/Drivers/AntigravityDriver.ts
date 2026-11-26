@@ -158,8 +158,9 @@ export const AntigravityDriver: ProviderDriver<
     };
     const authConfigIssue = antigravityAuthConfigIssue(auth);
     const processEnvironment = yield* mergeProviderInstanceEnvironment(environment);
+    const platform = yield* HostProcess.Platform;
     const userHome = resolveAntigravityUserHome(
-      yield* HostProcess.Platform,
+      platform,
       processEnvironment,
       yield* HostProcess.HomeDirectory,
     );
@@ -555,8 +556,14 @@ export const AntigravityDriver: ProviderDriver<
       authMethod: auth.authMethod,
       resolveExecutable: installation.resolve(settings.binaryPath, processEnvironment),
       environment: processEnvironment,
+      platform,
+      userHome,
       makeProbeCwd: fileSystem.makeTempDirectoryScoped({ prefix: "t3-antigravity-usage-" }),
-    }).pipe(Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner));
+    }).pipe(
+      Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner),
+      Effect.provideService(FileSystem.FileSystem, fileSystem),
+      Effect.provideService(Path.Path, path),
+    );
     const provider = yield* makeAntigravityProvider(settings, {
       environment: processEnvironment,
       stampIdentity: classifyModels,

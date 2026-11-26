@@ -1,9 +1,12 @@
 import type { AntigravitySettings, ServerProviderUsageWindow } from "@t3tools/contracts";
+import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as Clock from "effect/Clock";
 import * as Digest from "effect/crypto/Digest";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
+import * as FileSystem from "effect/FileSystem";
 import * as Option from "effect/Option";
+import * as Path from "effect/Path";
 import * as Schema from "effect/Schema";
 import type * as Scope from "effect/Scope";
 import * as Stream from "effect/Stream";
@@ -14,6 +17,10 @@ import {
   makeUnavailableUsageLimits,
   makeUsageLimits,
 } from "@t3tools/provider-core/server/usageLimits";
+import {
+  prepareAntigravityCliUsageKeyringState,
+  type LinuxKeyringLockState,
+} from "./antigravityKeyringGuard.ts";
 
 export function antigravityUserAgent(platform: NodeJS.Platform, architecture: NodeJS.Architecture) {
   return `antigravity/hub/2.24.0 (aidev_client; os_type=${platform}; arch=${architecture}; cl=963137146)`;
@@ -272,19 +279,57 @@ const collectStdout = Effect.fn("AntigravityUsageProbe.collectStdout")(function*
  * Reads Antigravity quota via the official `agy -p "/usage" --output-format json` CLI command.
  * Never reads OAuth tokens, OS keyrings, Windows Credential Manager, or Google endpoints directly.
  */
-export const makeAntigravityUsageProbe = Effect.fn("makeAntigravityUsageProbe")(function* (input: {
+export const makeAntigravityUsageProbe = Effect.fn("makeAntigravityUsageProbe")(function* <
+  ResolveError = never,
+  ProbeCwdError = never,
+>(input: {
   readonly authMethod: AntigravitySettings["authMethod"];
-  readonly resolveExecutable: Effect.Effect<{ readonly executablePath: string }, unknown>;
+  readonly resolveExecutable: Effect.Effect<{ readonly executablePath: string }, ResolveError>;
   readonly environment: NodeJS.ProcessEnv;
   readonly cwd?: string;
-  readonly makeProbeCwd?: Effect.Effect<string, unknown, Scope.Scope>;
+  readonly makeProbeCwd?: Effect.Effect<string, ProbeCwdError, Scope.Scope>;
+  readonly platform?: NodeJS.Platform;
+  readonly userHome?: string;
+  readonly probeKeyringLockState?: (
+    environment: NodeJS.ProcessEnv,
+  ) => Effect.Effect<LinuxKeyringLockState, never, ChildProcessSpawner.ChildProcessSpawner>;
 }) {
   const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
+  const fsOption = yield* Effect.serviceOption(FileSystem.FileSystem);
+  const pathOption = yield* Effect.serviceOption(Path.Path);
+  const hostPlatformOption = yield* Effect.serviceOption(HostProcess.Platform);
 
   const read = Effect.gen(function* () {
     const checkedAt = DateTime.formatIso(yield* DateTime.now);
     if (input.authMethod !== "oauth-personal" && input.authMethod !== "oauth-business") {
       return makeUnavailableUsageLimits({ checkedAt, reason: "unsupported" });
+    }
+    const cliEnv = buildCliUsageEnvironment(input.environment);
+    if (Option.isSome(fsOption) && Option.isSome(pathOption)) {
+      const userHome = input.userHome ?? cliEnv.HOME ?? "";
+      const platform =
+        input.platform ??
+        Option.getOrElse(hostPlatformOption, (): NodeJS.Platform =>
+          HostProcess.Platform.defaultValue(),
+        );
+      const keyringState = yield* prepareAntigravityCliUsageKeyringState({
+        platform,
+        userHome,
+        environment: cliEnv,
+        authMethod: input.authMethod,
+        ...(input.probeKeyringLockState ? { probeLockState: input.probeKeyringLockState } : {}),
+      }).pipe(
+        Effect.provideService(FileSystem.FileSystem, fsOption.value),
+        Effect.provideService(Path.Path, pathOption.value),
+        Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner),
+      );
+      if (keyringState === "locked") {
+        return makeUnavailableUsageLimits({
+          checkedAt,
+          reason: "probeFailed",
+          message: "OS keyring is locked. Unlock your keyring and refresh Antigravity usage.",
+        });
+      }
     }
     const executable = yield* input.resolveExecutable;
     const requestedAt = yield* Clock.currentTimeMillis;
@@ -297,7 +342,7 @@ export const makeAntigravityUsageProbe = Effect.fn("makeAntigravityUsageProbe")(
           executable.executablePath,
           ["-p", "/usage", "--output-format", "json", "--print-timeout", "15s"],
           {
-            env: buildCliUsageEnvironment(input.environment),
+            env: cliEnv,
             ...(probeCwd === undefined ? {} : { cwd: probeCwd }),
             extendEnv: false,
             shell: false,
