@@ -143,7 +143,11 @@ function UserFileCard({
   return (
     <div
       data-markdown-copy={copyMarkdown}
-      className="flex w-64 max-w-full items-center gap-1 rounded-2xl bg-message py-2 ps-2 pe-1 text-message-foreground"
+      className={cn(
+        "flex w-64 max-w-full items-center gap-1 rounded-2xl border border-foreground/[0.06] bg-message py-2 ps-2 pe-1 text-message-foreground transition-[border-color,transform,box-shadow] duration-150 ease-out motion-reduce:transition-none dark:border-white/[0.08]",
+        file.downloadable !== false &&
+          "any-hover:border-foreground/[0.12] any-hover:shadow-xs motion-safe:any-hover:-translate-y-px dark:any-hover:border-white/[0.14]",
+      )}
     >
       {file.downloadable === false ? (
         <>
@@ -417,7 +421,7 @@ export function FoldedMessageHeader(props: {
       aria-expanded={props.expanded}
       data-scroll-anchor-ignore
       onClick={props.onToggle}
-      className="flex w-full min-w-0 items-center gap-1.5 rounded-2xl px-3 py-2 text-left text-sm focus-visible:outline-2 focus-visible:outline-ring"
+      className="group/fold flex w-full min-w-0 cursor-pointer items-center gap-1.5 rounded-2xl px-3 py-2 text-left text-sm transition-colors duration-150 ease-out any-hover:bg-foreground/[0.04] focus-visible:outline-2 focus-visible:outline-ring motion-reduce:transition-none"
     >
       <Icon className="size-4 shrink-0 stroke-2 text-muted-foreground" />
       <span
@@ -432,7 +436,7 @@ export function FoldedMessageHeader(props: {
       <span className="min-w-0 flex-1 truncate">{props.summary.normalize("NFC")}</span>
       <ChevronDownIcon
         className={cn(
-          "size-3.5 shrink-0 text-muted-foreground transition-transform",
+          "size-3.5 shrink-0 text-muted-foreground transition-[transform,color] duration-200 ease-(--ease-drawer) group-hover/fold:text-foreground motion-reduce:transition-none",
           props.expanded && "rotate-180",
         )}
       />
@@ -783,7 +787,7 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
             {image.previewUrl ? (
               <button
                 type="button"
-                className="block h-full w-full cursor-zoom-in"
+                className="group/thumb block h-full w-full cursor-zoom-in"
                 aria-label={gt("Preview {label}", { label: image.name })}
                 onClick={() => {
                   const preview = buildExpandedImagePreview(regularImages, image.id, copySnapshot);
@@ -800,7 +804,7 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
                   decoding="async"
                   loading="lazy"
                   className={cn(
-                    "block transform-gpu",
+                    "block transform-gpu transition-transform duration-200 ease-out motion-reduce:transition-none [@media(hover:hover)]:motion-safe:group-hover/thumb:scale-[1.03]",
                     standaloneMedia && image.source?.kind === "snap-shot"
                       ? "h-auto max-h-48 w-auto min-w-24 max-w-full object-contain"
                       : loneImage
