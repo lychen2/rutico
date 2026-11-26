@@ -1,0 +1,101 @@
+/* ==========================================================================
+   Stage 2A · Lane 2W-B: Workspace Hubs Motion & Craft Stylesheet
+   Isolated stylesheet imported directly by Pull Requests, Issues, Git,
+   Usage, and Settings components. Never modifies index.css or
+   workspace-motion.css.
+   ========================================================================== */
+
+/* --------------------------------------------------------------------------
+   D23 / C076: AI Review GuideTour directional step transitions, SVG checkmark
+   self-draw, vertical spine, and completion bloom
+   -------------------------------------------------------------------------- */
+
+@keyframes guide-stop-enter-forward {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 10px, 0);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+@keyframes guide-stop-enter-backward {
+  from {
+    opacity: 0;
+    transform: translate3d(0, -10px, 0);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+@keyframes guide-check-draw {
+  from {
+    stroke-dashoffset: 20;
+  }
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+@keyframes guide-completion-bloom {
+  0% {
+    opacity: 0.65;
+    transform: scale(0.86);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(1.65);
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  [data-slot="guide-stop-stage"][data-direction="forward"] {
+    animation: guide-stop-enter-forward var(--duration-fluid) var(--spring-fluid) both;
+  }
+
+  [data-slot="guide-stop-stage"][data-direction="backward"] {
+    animation: guide-stop-enter-backward var(--duration-fluid) var(--spring-fluid) both;
+  }
+
+  [data-slot="guide-rail-check-path"] {
+    stroke-dasharray: 20;
+    stroke-dashoffset: 0;
+    animation: guide-check-draw 260ms var(--spring-snappy) both;
+  }
+
+  [data-slot="guide-progress-ring"][data-complete="true"]::after {
+    content: "";
+    position: absolute;
+    inset: -3px;
+    border-radius: 9999px;
+    border: 1.5px solid var(--success, #10b981);
+    pointer-events: none;
+    animation: guide-completion-bloom 560ms cubic-bezier(0.23, 1, 0.32, 1) forwards;
+  }
+}
+
+[data-slot="guide-rail-indicator"] {
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 0;
+  border-radius: var(--radius-md);
+  background-color: var(--accent);
+  box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--border) 70%, transparent);
+  pointer-events: none;
+  opacity: 0;
+  will-change: transform;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-slot="guide-stop-stage"],
+  [data-slot="guide-rail-check-path"],
+  [data-slot="guide-progress-ring"]::after {
+    animation: none;
+    transition: none;
+  }
+}
