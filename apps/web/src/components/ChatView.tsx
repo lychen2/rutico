@@ -2444,8 +2444,28 @@ export default function ChatView(props: ChatViewProps) {
         currentGitBranch: gitStatusQuery.data?.refName ?? null,
       })
     : null;
+  const hasFloatingTaskPlanCapsule = taskTrail !== null && !showTaskSummary;
   const publishComposerOverlayHeight = (height: number) => {
-    const nextHeight = Math.ceil(height);
+    // TaskPlanCapsule sits in a zero-height anchor protruding above the composer overlay; include
+    // its collapsed bar height (not the expanded drawer) so timeline content never slides under it.
+    const overlayRect = composerOverlayElement?.getBoundingClientRect();
+    const planAnchorSlot = !isDraftHeroState
+      ? composerOverlayElement?.querySelector<HTMLElement>('[data-plan-anchor-slot="true"]')
+      : null;
+    const visiblePlanBar = planAnchorSlot?.querySelector<HTMLElement>(
+      '[data-plan-capsule][data-visible="true"] [data-plan-bar="true"]',
+    );
+    const planBarHeight = visiblePlanBar?.offsetHeight ?? 0;
+    const planBarRect = visiblePlanBar?.getBoundingClientRect();
+    const planBarRestingTop =
+      planAnchorSlot && planBarHeight > 0
+        ? planAnchorSlot.getBoundingClientRect().bottom - planBarHeight
+        : null;
+    const capsuleProtrusion =
+      overlayRect && planBarRestingTop !== null
+        ? Math.max(0, overlayRect.top - planBarRestingTop)
+        : 0;
+    const nextHeight = Math.ceil(height + capsuleProtrusion);
     if (nextHeight <= 0) return;
     if (composerTimelineInsetRef.current !== nextHeight) {
       composerTimelineInsetRef.current = nextHeight;
@@ -2473,18 +2493,28 @@ export default function ChatView(props: ChatViewProps) {
     );
     const button =
       composerOverlayElement?.parentElement?.querySelector<HTMLElement>("[data-scroll-to-end]");
+    const bannerAttachments = composerOverlayElement
+      ? Array.from(
+          composerOverlayElement.querySelectorAll<HTMLElement>(
+            '[data-composer-banner-surface="attached"]',
+          ),
+          (element) => element.getBoundingClientRect(),
+        )
+      : [];
+    const attachments =
+      planBarRestingTop !== null && planBarRect && planBarRect.width > 0
+        ? [
+            ...bannerAttachments,
+            { top: planBarRestingTop, left: planBarRect.left, right: planBarRect.right },
+          ]
+        : bannerAttachments;
     const clearance =
       composerOverlayElement && mainSurface && button
         ? resolveScrollToEndClearance({
             overlayHeight: nextHeight,
             mainSurfaceTop: mainSurface.getBoundingClientRect().top,
             button: button.getBoundingClientRect(),
-            attachments: Array.from(
-              composerOverlayElement.querySelectorAll<HTMLElement>(
-                '[data-composer-banner-surface="attached"]',
-              ),
-              (element) => element.getBoundingClientRect(),
-            ),
+            attachments,
           })
         : nextHeight;
     setScrollToEndClearance(clearance);
@@ -2515,15 +2545,21 @@ export default function ChatView(props: ChatViewProps) {
 
     updateHeight();
     // The hero overlay fills the pane, so the composer's own growth only shows on its stack.
+    const observedElements: Array<HTMLElement> = [composerOverlayElement];
     const stack = isDraftHeroState
       ? composerOverlayElement.querySelector<HTMLElement>('[data-chat-composer-stack="true"]')
       : null;
-    return observeResize(
-      stack ? [composerOverlayElement, stack] : composerOverlayElement,
-      updateHeight,
-    );
+    if (stack) observedElements.push(stack);
+    const planBar = hasFloatingTaskPlanCapsule
+      ? composerOverlayElement.querySelector<HTMLElement>(
+          '[data-plan-anchor-slot="true"] [data-plan-bar="true"]',
+        )
+      : null;
+    if (planBar) observedElements.push(planBar);
+    return observeResize(observedElements, updateHeight);
   }, [
     composerOverlayElement,
+    hasFloatingTaskPlanCapsule,
     isDraftHeroState,
     publishComposerOverlayHeightStable,
     // oxlint-disable-next-line react/exhaustive-effect-dependencies -- The scroll-to-bottom button changes the overlay's height without resizing the observed node first.
@@ -3860,9 +3896,9 @@ export default function ChatView(props: ChatViewProps) {
                       progress={ompTodo}
                     />
                   ) : null}
-                  {taskTrail !== null && !showTaskSummary ? (
+                  {hasFloatingTaskPlanCapsule ? (
                     <div className={styles["plan-anchor"]}>
-                      <div className={styles["plan-anchor-slot"]}>
+                      <div className={styles["plan-anchor-slot"]} data-plan-anchor-slot="true">
                         <TaskPlanCapsule
                           key={taskTrailKey}
                           progress={taskTrail}

@@ -132,6 +132,41 @@ it("shows Antigravity tool activity, reported tasks, and whole-round statistics 
   await expect
     .element(page.getByText("Stale mirrored step", { exact: true }))
     .not.toBeInTheDocument();
+  // Timeline bottom clearance must include the floating capsule bar so the last message is never occluded.
+  const overlay = document.querySelector<HTMLElement>('[data-chat-composer-overlay="true"]');
+  const triggerBounds = trigger.element().getBoundingClientRect();
+  const overlayBounds = overlay?.getBoundingClientRect();
+  expect(overlayBounds).toBeDefined();
+  const expectedMinInset = Math.ceil(overlayBounds!.bottom - triggerBounds.top);
+  await expect
+    .poll(() => {
+      const replyBounds = page.getByText("答🙂 text").element().getBoundingClientRect();
+      const scroller =
+        page.getByText("答🙂 text").element().closest<HTMLElement>('[data-testid="legend-list"]') ??
+        document.querySelector<HTMLElement>('[data-assistant-citation-viewport="true"] > div');
+      if (scroller) scroller.scrollTop = scroller.scrollHeight;
+      const spacerHeight = Array.from(
+        document.querySelectorAll<HTMLElement>(
+          '[data-assistant-citation-viewport="true"] [aria-hidden]',
+        ),
+      ).reduce((max, el) => Math.max(max, el.getBoundingClientRect().height), 0);
+      return {
+        replyBottom: replyBounds.bottom,
+        triggerTop: trigger.element().getBoundingClientRect().top,
+        spacerHeight,
+      };
+    })
+    .toSatisfy(
+      ({
+        replyBottom,
+        triggerTop,
+        spacerHeight,
+      }: {
+        replyBottom: number;
+        triggerTop: number;
+        spacerHeight: number;
+      }) => replyBottom <= triggerTop && spacerHeight >= expectedMinInset,
+    );
   await trigger.click();
   const list = summary.getByRole("list", { name: "Reported task steps" });
   await expect.element(list.getByText("Package the result")).toBeVisible();

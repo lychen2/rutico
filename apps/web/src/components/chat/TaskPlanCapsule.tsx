@@ -263,6 +263,7 @@ export function TaskPlanCapsule({ progress, onOpenFile, onDismissed }: TaskPlanC
         <button
           ref={barRef}
           type="button"
+          data-plan-bar="true"
           className={styles["plan-bar"]}
           aria-expanded={open}
           aria-controls={panelId}
