@@ -554,20 +554,45 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
     ),
   );
 
-  it.effect("names the Electron window class in the Linux desktop entry", () =>
-    Effect.gen(function* () {
-      const linux = yield* createBuildConfig(
-        "linux",
-        "AppImage",
-        "0.0.33",
-        false,
-        false,
-        undefined,
-        undefined,
-      );
+  it.effect(
+    "names the Electron window class and Desktop Entry Spec 1.5 quicklists in the Linux desktop entry",
+    () =>
+      Effect.gen(function* () {
+        const linux = yield* createBuildConfig(
+          "linux",
+          "AppImage",
+          "0.0.33",
+          false,
+          false,
+          undefined,
+          undefined,
+        );
 
-      assert.nestedPropertyVal(linux, "linux.desktop.entry.StartupWMClass", "com.t3tools.T3Code");
-    }),
+        assert.nestedPropertyVal(linux, "linux.desktop.entry.StartupWMClass", "com.t3tools.T3Code");
+        assert.nestedPropertyVal(
+          linux,
+          "linux.desktop.entry.Actions",
+          "NewThread;CommandPalette;Settings;",
+        );
+        assert.deepEqual(
+          (linux.linux as { desktop: { desktopActions: Record<string, unknown> } }).desktop
+            .desktopActions,
+          {
+            NewThread: {
+              Name: "New Thread",
+              Exec: "t3code --quick-action=new-thread",
+            },
+            CommandPalette: {
+              Name: "Command Palette",
+              Exec: "t3code --quick-action=command-palette",
+            },
+            Settings: {
+              Name: "Settings",
+              Exec: "t3code --quick-action=settings",
+            },
+          },
+        );
+      }),
   );
 
   it.effect("names updatable AppImages without a version and apart per channel", () =>

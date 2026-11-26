@@ -232,12 +232,18 @@ export const make = DesktopLifecycle.of({
         yield* electronApp.exit(75);
         return;
       }
-      // Startup already acted on the app link that launched it; passing it on replays it.
+      // Startup already acted on launch links or quick actions; passing them on replays them.
       const appLinkPrefix = `${ElectronProtocol.getDesktopScheme(environment.isDevelopment)}:`;
       const args = yield* HostProcess.Arguments;
       yield* electronApp.relaunch({
         execPath: yield* HostProcess.ExecutablePath,
-        args: args.slice(1).filter((arg) => !arg.toLowerCase().startsWith(appLinkPrefix)),
+        args: args
+          .slice(1)
+          .filter(
+            (arg) =>
+              !arg.toLowerCase().startsWith(appLinkPrefix) &&
+              !arg.toLowerCase().startsWith("--quick-action="),
+          ),
       });
       yield* electronApp.exit(0);
     }).pipe(

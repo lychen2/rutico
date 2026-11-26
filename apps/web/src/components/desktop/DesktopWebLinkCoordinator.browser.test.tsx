@@ -347,3 +347,12 @@ it("holds a launch PR link with Local environment disabled until discovery settl
   expect(state.navigate).toHaveBeenCalledExactlyOnceWith(pullRequestView);
   expect(state.openScratchProject).not.toHaveBeenCalled();
 });
+
+it("routes desktop quicklist settings action directly to /settings", async () => {
+  setup();
+  await using _coordinator = await mount("t3code://action/settings");
+  await vi.waitFor(() =>
+    expect(state.navigate).toHaveBeenCalledExactlyOnceWith({ to: "/settings" }),
+  );
+  expect(state.openScratchProject).not.toHaveBeenCalled();
+});

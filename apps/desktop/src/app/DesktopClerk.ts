@@ -215,6 +215,16 @@ export const make = Effect.gen(function* () {
         );
         return true;
       };
+      const openQuickAction = (value: string | undefined) => {
+        const action = DesktopWebLinks.parseDesktopQuickActionArg(value);
+        if (action === null) return false;
+        void runPromise(
+          webLinks.receive(
+            DesktopWebLinks.desktopQuickActionUrl(action, environment.isDevelopment),
+          ),
+        );
+        return true;
+      };
       const openAppLink = (value: string | undefined) => {
         if (!value || (promptLinkAppPath(value) === null && readPairingAppLink(value) === null))
           return false;
@@ -222,7 +232,9 @@ export const make = Effect.gen(function* () {
         return true;
       };
       const args = yield* HostProcess.Arguments;
-      args.some((value) => startProviderAuthHandoff(value) || openAppLink(value));
+      args.some(
+        (value) => startProviderAuthHandoff(value) || openQuickAction(value) || openAppLink(value),
+      );
       const openWebLink = (url: string) => {
         if (!DesktopWebLinks.isWebLink(url)) return false;
         void runPromise(webLinks.receive(url));
@@ -231,6 +243,7 @@ export const make = Effect.gen(function* () {
       handleOpenUrl = (url) =>
         startProviderAuthHandoff(url) ||
         resumeProviderAuth(url) ||
+        openQuickAction(url) ||
         openWebLink(url) ||
         openAppLink(url);
       for (const url of pendingOpenUrls.splice(0)) handleOpenUrl(url);
@@ -243,7 +256,10 @@ export const make = Effect.gen(function* () {
         if (
           argv?.some(
             (value) =>
-              startProviderAuthHandoff(value) || resumeProviderAuth(value) || openAppLink(value),
+              startProviderAuthHandoff(value) ||
+              resumeProviderAuth(value) ||
+              openQuickAction(value) ||
+              openAppLink(value),
           )
         )
           return;

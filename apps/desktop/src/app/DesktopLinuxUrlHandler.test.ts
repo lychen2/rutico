@@ -200,6 +200,8 @@ describe("DesktopLinuxUrlHandler", () => {
     );
     assert.include(entry, "NoDisplay=true");
     assert.notInclude(entry, "StartupWMClass=");
+    assert.notInclude(entry, "Actions=");
+    assert.notInclude(entry, "[Desktop Action");
     assert.include(entry, "MimeType=x-scheme-handler/t3code;");
     assert.include(entry, "Icon=/home/al ice/icons/T3\\\\x.png");
   });
@@ -731,6 +733,69 @@ it.layer(NodeServices.layer)("DesktopLinuxUrlHandler theme icons", (it) => {
         missingTool.commands.map(({ command }) => command),
         ["gtk-update-icon-cache", "update-desktop-database", "xdg-mime"],
       );
+    }),
+  );
+
+  it.effect("installs multi-size hicolor icons when 48/128/256/512 assets are present", () =>
+    Effect.gen(function* () {
+      const fileSystem = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const root = yield* fileSystem.makeTempDirectoryScoped({ prefix: "t3-multisize-icons-" });
+      const sizes = ["48x48", "128x128", "256x256", "512x512"] as const;
+      yield* fileSystem.makeDirectory(path.join(root, "resources", "icons"), { recursive: true });
+      for (const size of sizes) {
+        yield* fileSystem.writeFile(
+          path.join(root, "resources", "icons", `${size}.png`),
+          new Uint8Array([137, 80, 78, 71, size.length]),
+        );
+      }
+
+      yield* Effect.gen(function* () {
+        const handler = yield* DesktopLinuxUrlHandler.DesktopLinuxUrlHandler;
+        yield* handler.register;
+      }).pipe(
+        Effect.provide(
+          DesktopLinuxUrlHandler.layer.pipe(
+            Layer.provide(
+              Layer.mergeAll(
+                Layer.succeed(
+                  DesktopEnvironment.DesktopEnvironment,
+                  makeEnvironment(path, {
+                    linuxApplicationsDir: path.join(root, "applications"),
+                  }),
+                ),
+                Layer.succeed(DesktopAssets.DesktopAssets, {
+                  iconPaths: Effect.succeed({
+                    png: Option.none(),
+                    ico: Option.none(),
+                    icns: Option.none(),
+                  }),
+                  resolveResourcePath: (fileName: string) =>
+                    Effect.succeed(
+                      fileName.startsWith("icons/")
+                        ? Option.some(path.join(root, "resources", fileName))
+                        : Option.none(),
+                    ),
+                }),
+                Layer.succeed(
+                  ChildProcessSpawner.ChildProcessSpawner,
+                  ChildProcessSpawner.make(() => Effect.succeed(mockProcess(0))),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+
+      for (const size of sizes) {
+        const installed = yield* fileSystem.readDirectory(
+          path.join(root, "icons", "hicolor", size, "apps"),
+        );
+        assert.deepEqual([...installed].sort(), [
+          "com.t3tools.T3Code.png",
+          "com.t3tools.t3code.png",
+        ]);
+      }
     }),
   );
 });

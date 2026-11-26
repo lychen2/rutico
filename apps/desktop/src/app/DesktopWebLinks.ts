@@ -4,8 +4,39 @@ import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 
 import * as DesktopWindow from "../window/DesktopWindow.ts";
+import * as ElectronProtocol from "../electron/ElectronProtocol.ts";
 import * as ElectronWindow from "../electron/ElectronWindow.ts";
 import { WEB_LINK_OPEN_CHANNEL } from "../ipc/channels.ts";
+
+const DESKTOP_QUICK_ACTIONS = new Set(["new-thread", "command-palette", "settings"] as const);
+type DesktopQuickAction = "new-thread" | "command-palette" | "settings";
+
+const QUICK_ACTION_FLAG_PREFIX = "--quick-action=";
+const QUICK_ACTION_URL_PATTERN =
+  /^(?:t3code|t3code-dev|rutico):\/\/action\/(new-thread|command-palette|settings)\/?$/i;
+
+export function parseDesktopQuickActionArg(value: string | undefined): DesktopQuickAction | null {
+  if (!value) return null;
+  const trimmed = value.trim();
+  if (trimmed.toLowerCase().startsWith(QUICK_ACTION_FLAG_PREFIX)) {
+    const candidate = trimmed.slice(QUICK_ACTION_FLAG_PREFIX.length).toLowerCase();
+    return DESKTOP_QUICK_ACTIONS.has(candidate as DesktopQuickAction)
+      ? (candidate as DesktopQuickAction)
+      : null;
+  }
+  const urlMatch = QUICK_ACTION_URL_PATTERN.exec(trimmed);
+  if (urlMatch?.[1]) {
+    const candidate = urlMatch[1].toLowerCase();
+    return DESKTOP_QUICK_ACTIONS.has(candidate as DesktopQuickAction)
+      ? (candidate as DesktopQuickAction)
+      : null;
+  }
+  return null;
+}
+
+export function desktopQuickActionUrl(action: DesktopQuickAction, isDevelopment: boolean): string {
+  return `${ElectronProtocol.getDesktopScheme(isDevelopment)}://action/${action}`;
+}
 
 export const isWebLink = (value: string) => {
   if (!URL.canParse(value)) return false;

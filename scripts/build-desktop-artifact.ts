@@ -2968,6 +2968,22 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
         entry: {
           // Match Electron's WM_CLASS from setDesktopName so docks use this launcher.
           StartupWMClass: "com.t3tools.T3Code",
+          // Desktop Entry Spec 1.5 Quicklist actions for GNOME, KDE, Unity, and COSMIC docks.
+          Actions: "NewThread;CommandPalette;Settings;",
+        },
+        desktopActions: {
+          NewThread: {
+            Name: "New Thread",
+            Exec: "t3code --quick-action=new-thread",
+          },
+          CommandPalette: {
+            Name: "Command Palette",
+            Exec: "t3code --quick-action=command-palette",
+          },
+          Settings: {
+            Name: "Settings",
+            Exec: "t3code --quick-action=settings",
+          },
         },
       },
     };

@@ -483,3 +483,56 @@ it.effect("hands web and app links to the renderer and leaves other links alone"
     );
   }),
 );
+
+it.effect(
+  "routes Linux .desktop quicklist --quick-action flags on both cold start and second-instance activation while ignoring unknown actions",
+  () =>
+    Effect.gen(function* () {
+      storageMock.mockReturnValue(storageAdapter);
+      createClerkBridgeMock.mockReturnValue({ cleanup: vi.fn(), isPrimaryInstance: true });
+      const listeners = new Map<string, (...args: unknown[]) => void>();
+      const electronApp = {
+        whenReady: Effect.void,
+        on: (name: string, listener: (...args: unknown[]) => void) =>
+          Effect.sync(() => {
+            listeners.set(name, listener);
+          }),
+      } as unknown as ElectronApp.ElectronApp["Service"];
+      const received: Array<string> = [];
+      const revealed = vi.fn();
+
+      yield* Effect.gen(function* () {
+        const clerk = yield* DesktopClerk.DesktopClerk;
+        yield* clerk.configure;
+
+        // Second-instance activation with allowlisted quick actions routes directly to webLinks.
+        listeners.get("second-instance")!({}, ["t3code", "--quick-action=new-thread"]);
+        listeners.get("second-instance")!({}, ["t3code", "--quick-action=command-palette"]);
+        // Unlisted quick action falls back to ordinary reveal without delivering an untrusted URL.
+        listeners.get("second-instance")!({}, ["t3code", "--quick-action=exec-shell"]);
+        yield* Effect.yieldNow;
+
+        assert.deepStrictEqual(received, [
+          "t3code://action/settings",
+          "t3code://action/new-thread",
+          "t3code://action/command-palette",
+        ]);
+        assert.equal(revealed.mock.calls.length, 1);
+      }).pipe(
+        Effect.provide(layerDesktopClerk(false, [], "linux", undefined, undefined, listeners)),
+        Effect.provideService(HostProcess.Arguments, ["t3code", "--quick-action=settings"]),
+        Effect.provideService(ElectronApp.ElectronApp, electronApp),
+        Effect.provideService(ElectronWindow.ElectronWindow, {
+          currentMainOrFirst: Effect.succeedSome({ id: 1 } as never),
+          reveal: () => Effect.sync(revealed),
+        } as unknown as ElectronWindow.ElectronWindow["Service"]),
+        Effect.provideService(
+          DesktopWebLinks.DesktopWebLinks,
+          DesktopWebLinks.DesktopWebLinks.of({
+            receive: (url) => Effect.sync(() => void received.push(url)),
+            setRendererReady: () => Effect.void,
+          }),
+        ),
+      );
+    }),
+);

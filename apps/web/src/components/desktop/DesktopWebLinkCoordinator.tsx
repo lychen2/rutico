@@ -18,6 +18,7 @@ import { useEffect, useEffectEvent, useRef, useState } from "react";
 
 import { openFileInPreview, openUrlInPreview } from "../../browser/openFileInPreview";
 import { isPreviewAvailableFor } from "../../browser/previewRuntime";
+import { openCommandPalette } from "../../commandPaletteBus";
 import { requestConfirmDialog } from "../../confirmDialog";
 import { connectPairing } from "../../connection/onboarding";
 import { isLocalEnvironmentDisabled } from "../../localEnvironment";
@@ -37,6 +38,18 @@ import { allReachableShellsLiveAtom } from "../../state/shell";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { useAtomQueryRunner } from "../../state/use-atom-query-runner";
 import { stackedThreadToast, toastManager } from "../ui/toast";
+
+const QUICK_ACTION_URL_PATTERN =
+  /^(?:t3code|t3code-dev|rutico):\/\/action\/(new-thread|command-palette|settings)\/?$/i;
+
+function parseQuickActionLink(url: string): "new-thread" | "command-palette" | "settings" | null {
+  const match = QUICK_ACTION_URL_PATTERN.exec(url.trim());
+  const action = match?.[1]?.toLowerCase();
+  if (action === "new-thread" || action === "command-palette" || action === "settings") {
+    return action;
+  }
+  return null;
+}
 
 /** A link handed over by the OS is a plain click: nothing about it asks for the browser. */
 const externalClick = {
@@ -206,6 +219,17 @@ export function DesktopWebLinkCoordinator() {
   });
 
   const openLink = useEffectEvent(async (url: string) => {
+    const quickAction = parseQuickActionLink(url);
+    if (quickAction !== null) {
+      if (quickAction === "settings") {
+        await router.navigate({ to: "/settings" });
+      } else if (quickAction === "command-palette") {
+        openCommandPalette({});
+      } else if (quickAction === "new-thread") {
+        openCommandPalette({ open: "new-thread-in" });
+      }
+      return;
+    }
     const pairingUrl = readPairingAppLink(url);
     if (pairingUrl !== null) {
       await pairFromLink(pairingUrl);
