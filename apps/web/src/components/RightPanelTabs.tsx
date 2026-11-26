@@ -108,6 +108,7 @@ import { useEnvironmentQuery } from "~/state/query";
 import { COLLAPSED_SIDEBAR_TITLEBAR_INSET_CLASS } from "~/workspaceTitlebar";
 
 import { PreviewPanelShell, type PreviewPanelMode } from "./preview/PreviewPanelShell";
+import { BrowserMockup } from "./preview/BrowserMockup";
 import { FaviconImage } from "./preview/PreviewFaviconIcon";
 import { previewBridge } from "./preview/previewBridge";
 import { dispatchPreviewAction } from "./preview/previewActionBus";
@@ -489,9 +490,16 @@ function RightPanelEmptyState(props: {
     highlightIndex !== -1 && availableActions[highlightIndex] === action;
 
   const actionIcon = (action: SurfaceAction, iconClassName = "size-4") => {
+    if (action.label === "Browser") {
+      return (
+        <span className="relative inline-flex shrink-0 items-center justify-center">
+          <BrowserMockup className="h-4.5 w-6" />
+        </span>
+      );
+    }
     const Icon = action.icon;
     return (
-      <span className="relative inline-flex shrink-0">
+      <span className="relative inline-flex size-6 shrink-0 items-center justify-center rounded-md border border-border/60 bg-muted/40 text-muted-foreground transition-colors duration-150 group-hover:border-border group-hover:text-foreground">
         <Icon className={iconClassName} />
       </span>
     );
@@ -505,15 +513,23 @@ function RightPanelEmptyState(props: {
       aria-label={gt("Open a surface")}
       data-surface-launcher-keys={availableActions.map((action) => action.shortcut).join("")}
       className={cn(
-        "scrollbar-gutter-both flex min-h-0 flex-1 items-center justify-center overflow-y-auto px-6 outline-none",
+        "@container scrollbar-gutter-both flex min-h-0 flex-1 items-center justify-center overflow-y-auto px-5 outline-none",
         "pb-(--workspace-topbar-height)",
       )}
     >
-      <div className="surface-glass w-full max-w-xs rounded-2xl border border-border/50 px-3.5 py-4 dark:border-white/8">
-        <h3 className="mb-2.5 text-center font-medium text-balance text-foreground text-sm tracking-tight">
-          <T>Open a surface</T>
-        </h3>
-        <div className="flex flex-col gap-0.5">
+      <div className="surface-optical-chrome surface-elevated-rim w-full max-w-md rounded-2xl px-3.5 py-4">
+        <div className="mb-3 flex items-center justify-between px-1">
+          <h3 className="font-medium text-balance text-foreground text-sm tracking-tight">
+            <T>Open a surface</T>
+          </h3>
+          <span className="text-2xs text-muted-foreground">
+            <T>Press key to open</T>
+          </span>
+        </div>
+        <div
+          data-slot="right-panel-bento-launcher"
+          className="grid grid-cols-1 gap-1.5 @min-[22rem]:grid-cols-2"
+        >
           {actions.map((action) =>
             action.available ? (
               <div
@@ -529,21 +545,22 @@ function RightPanelEmptyState(props: {
                 <button
                   type="button"
                   onClick={action.onClick}
+                  data-highlighted={isHighlighted(action) ? "true" : undefined}
                   className={cn(
-                    "flex h-8 w-full cursor-pointer items-center gap-2.5 rounded-(--control-radius) px-2.5 text-left text-sm outline-none transition-[background-color,color,scale] duration-150 ease-out focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring active:scale-[0.985] group-hover:bg-accent/60 motion-reduce:transition-none motion-reduce:active:scale-100",
-                    isHighlighted(action) && "bg-accent/60",
+                    "bento-launcher-card flex min-h-11 w-full cursor-pointer items-center gap-2.5 rounded-xl border border-border/55 bg-background/75 px-2.5 py-2 text-left text-sm outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring active:scale-[0.985] group-hover:border-border group-hover:bg-accent/55 motion-reduce:transition-none motion-reduce:active:scale-100",
+                    isHighlighted(action) && "border-primary/40 bg-accent/65",
                   )}
                 >
-                  {actionIcon(action, "size-4")}
+                  {actionIcon(action, "size-3.5")}
                   <span
                     className={cn(
-                      "min-w-0 flex-1 truncate",
+                      "min-w-0 flex-1 truncate font-medium text-xs text-foreground",
                       action.label === "Browser" && props.browserProfiles.length > 1 && "pr-7",
                     )}
                   >
                     {messages(action.label)}
                   </span>
-                  <Kbd>{action.shortcut}</Kbd>
+                  <Kbd reactiveKey={action.shortcut.toLowerCase()}>{action.shortcut}</Kbd>
                 </button>
                 {action.label === "Browser" && props.browserProfiles.length > 1 ? (
                   <Menu>
@@ -580,11 +597,11 @@ function RightPanelEmptyState(props: {
                   <div
                     tabIndex={0}
                     aria-disabled="true"
-                    className="flex h-8 w-full cursor-default items-center gap-2.5 rounded-(--control-radius) px-2.5 text-left text-sm opacity-50"
+                    className="flex min-h-11 w-full cursor-default items-center gap-2.5 rounded-xl border border-border/40 bg-muted/20 px-2.5 py-2 text-left text-xs opacity-50"
                   >
-                    {actionIcon(action, "size-4")}
+                    {actionIcon(action, "size-3.5")}
                     <span className="min-w-0 flex-1 truncate">{messages(action.label)}</span>
-                    <Kbd>{action.shortcut}</Kbd>
+                    <Kbd reactiveKey={false}>{action.shortcut}</Kbd>
                   </div>
                 }
               />

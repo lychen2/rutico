@@ -13,6 +13,8 @@ import {
   usePreviewPanelInlineSize,
 } from "~/hooks/usePreviewPanelInlineSize";
 import { RESIZABLE_WIDTH_PROPERTY } from "~/hooks/useResizableWidth";
+import { pulseBrowserSurfaceGeometrySync } from "~/browser/BrowserSurfaceSlot";
+import { prefersReducedMotion } from "~/lib/motion/springs";
 import { canReturnFocusTo, workspaceAreaProps } from "../../lib/workspaceFocus";
 import { cn } from "~/lib/utils";
 
@@ -76,6 +78,7 @@ function PreviewPanelShellFrame(
   const open = props.open ?? true;
   const maximized = props.maximized ?? false;
   const hostRef = useRef<HTMLDivElement | null>(null);
+  const previousMaximizedRef = useRef(maximized);
   const returnedFocus = useRef(false);
   const focusOrigin = useRef<HTMLElement | null>(null);
   const lastBlurred = useRef<EventTarget | null>(null);
@@ -150,6 +153,65 @@ function PreviewPanelShellFrame(
     if (collapsed) focusOrigin.current = null;
     host.toggleAttribute("inert", collapsed);
   }, [collapsible, open, hostRef]);
+
+  // Pixel-interpolate inline maximize/restore (px <-> row.clientWidth) instead of
+  // jumping un-interpolatable `var(--resizable-width)` <-> `100%`, while pumping
+  // `BrowserSurfaceSlot` bounds on every frame (`P1-1`) and never transforming `<webview>` ancestors.
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- drives imperative pixel-width interpolation on the host DOM node when maximized changes
+  useLayoutEffect(() => {
+    const wasMaximized = previousMaximizedRef.current;
+    previousMaximizedRef.current = maximized;
+    if (wasMaximized === maximized || !isInline || !open) return;
+
+    const host = hostRef.current;
+    const row = host?.parentElement;
+    if (!host || !row) return;
+
+    const animationsEnabled =
+      host.closest('[data-panel-animations="true"]') !== null && !prefersReducedMotion();
+    const rowWidth = Math.round(row.clientWidth);
+    if (!animationsEnabled || rowWidth <= 0 || Math.abs(rowWidth - width) < 4) {
+      pulseBrowserSurfaceGeometrySync(48);
+      return;
+    }
+
+    const fromPx = maximized ? width : rowWidth;
+    const toPx = maximized ? rowWidth : width;
+    const settledWidth = maximized ? "100%" : `var(${RESIZABLE_WIDTH_PROPERTY})`;
+
+    host.style.setProperty("transition", "none");
+    host.style.setProperty("width", `${fromPx}px`);
+    row.setAttribute("data-right-panel-expanding", "true");
+    // Commit start width before enabling the 240ms spring width transition.
+    void host.offsetWidth;
+    host.style.setProperty("transition", "width 240ms var(--spring-gentle)");
+    host.style.setProperty("width", `${toPx}px`);
+    pulseBrowserSurfaceGeometrySync(280);
+
+    let finished = false;
+    const finish = () => {
+      if (finished) return;
+      finished = true;
+      host.removeEventListener("transitionend", onTransitionEnd);
+      host.removeEventListener("transitioncancel", onTransitionEnd);
+      window.clearTimeout(fallbackTimer);
+      host.style.removeProperty("transition");
+      host.style.setProperty("width", settledWidth);
+      row.removeAttribute("data-right-panel-expanding");
+      pulseBrowserSurfaceGeometrySync(48);
+    };
+    const onTransitionEnd = (event: TransitionEvent) => {
+      if (event.target !== host || event.propertyName !== "width") return;
+      finish();
+    };
+    host.addEventListener("transitionend", onTransitionEnd);
+    host.addEventListener("transitioncancel", onTransitionEnd);
+    const fallbackTimer = window.setTimeout(finish, 300);
+
+    return () => {
+      finish();
+    };
+  }, [isInline, maximized, open, width]);
   return (
     <div
       ref={attachHost}

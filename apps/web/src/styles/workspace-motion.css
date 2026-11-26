@@ -283,3 +283,28 @@
     transform: scaleY(0.7);
   }
 }
+
+/* --------------------------------------------------------------------------
+   D19 / C063: RightPanel Maximize Spatial Recess & Bento Surface Launcher
+   -------------------------------------------------------------------------- */
+
+[data-right-panel-expanding="true"] > :not([data-preview-panel-mode="inline"]) {
+  transform: scale(0.992);
+  transform-origin: center left;
+  transition: transform 240ms var(--spring-gentle);
+}
+
+.bento-launcher-card {
+  transition:
+    background-color var(--duration-micro) ease-out,
+    border-color var(--duration-micro) ease-out,
+    transform var(--duration-snappy) var(--spring-snappy);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-right-panel-expanding="true"] > :not([data-preview-panel-mode="inline"]),
+  .bento-launcher-card {
+    transform: none;
+    transition: none;
+  }
+}
