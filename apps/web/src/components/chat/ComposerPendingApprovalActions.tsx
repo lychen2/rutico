@@ -4,8 +4,8 @@ import {
   type RuntimeRequestId,
 } from "@t3tools/contracts";
 import { msg, useGT, useMessages } from "gt-react";
-import { memo, useState } from "react";
-import { EllipsisIcon, MinusIcon, TriangleAlertIcon } from "lucide-react";
+import { memo, useRef, useState } from "react";
+import { EllipsisIcon, LoaderCircleIcon, MinusIcon, TriangleAlertIcon, XIcon } from "lucide-react";
 import { Button, InlineButton } from "../ui/button";
 import { Menu, MenuItem, MenuPopup, MenuTrigger } from "../ui/menu";
 import { composerFloatingLayerProps } from "./composerEventScope";
@@ -24,6 +24,13 @@ interface ComposerPendingApprovalActionsProps {
   ) => Promise<unknown>;
 }
 
+interface ApprovalSubmissionState {
+  readonly requestId: RuntimeRequestId;
+  readonly decision: ProviderApprovalDecision;
+  readonly phase: "in_flight" | "confirmed" | "failed";
+  readonly attempt: number;
+}
+
 const DEFAULT_APPROVAL_OPTIONS = [
   {
     decision: "cancel",
@@ -40,6 +47,18 @@ const DEFAULT_APPROVAL_OPTIONS = [
   },
 ] satisfies ReadonlyArray<ProviderApprovalOption>;
 
+function isApprovedDecision(decision: ProviderApprovalDecision): boolean {
+  return decision === "accept" || decision === "acceptForSession" || decision === "acceptAlways";
+}
+
+function approvalResultTag(result: unknown): "Success" | "Failure" | undefined {
+  if (typeof result !== "object" || result === null || !("_tag" in result)) {
+    return undefined;
+  }
+  const tag = (result as { readonly _tag?: unknown })._tag;
+  return tag === "Success" || tag === "Failure" ? tag : undefined;
+}
+
 export const ComposerPendingApprovalActions = memo(function ComposerPendingApprovalActions({
   presentation = "composer",
   requestId,
@@ -51,16 +70,10 @@ export const ComposerPendingApprovalActions = memo(function ComposerPendingAppro
 }: ComposerPendingApprovalActionsProps) {
   const gt = useGT();
   const m = useMessages();
-  const [submittedStamp, setSubmittedStamp] = useState<{
-    readonly requestId: RuntimeRequestId;
-    readonly decision: ProviderApprovalDecision;
-    readonly state: "in_flight" | "confirmed";
-  } | null>(null);
-  const activeStamp =
-    submittedStamp?.requestId === requestId &&
-    (submittedStamp.state === "confirmed" || submittedStamp.state === "in_flight" || isResponding)
-      ? submittedStamp.decision
-      : null;
+  const attemptRef = useRef(0);
+  const [submission, setSubmission] = useState<ApprovalSubmissionState | null>(null);
+  const activeSubmission = submission?.requestId === requestId ? submission : null;
+  const activePhase = activeSubmission?.phase ?? "pending";
   // Provider options carry server-authored labels; only the built-in defaults are translated.
   const optionLabel = (label: string) => (options === DEFAULT_APPROVAL_OPTIONS ? m(label) : label);
   const primaryOptions = options.filter(
@@ -71,47 +84,107 @@ export const ComposerPendingApprovalActions = memo(function ComposerPendingAppro
   );
 
   const submitDecision = (decision: ProviderApprovalDecision) => {
-    if (disabled || isResponding || !canRespond) return;
-    setSubmittedStamp({ requestId, decision, state: "in_flight" });
-    void Promise.resolve(onRespondToApproval(requestId, decision)).then(
+    if (disabled || isResponding || !canRespond || activePhase === "in_flight") return;
+    const attempt = ++attemptRef.current;
+    setSubmission({ requestId, decision, phase: "in_flight", attempt });
+
+    let responsePromise: Promise<unknown>;
+    try {
+      responsePromise = Promise.resolve(onRespondToApproval(requestId, decision));
+    } catch {
+      setSubmission({ requestId, decision, phase: "failed", attempt });
+      return;
+    }
+
+    void responsePromise.then(
       (result) => {
-        const confirmed =
-          typeof result === "object" &&
-          result !== null &&
-          "_tag" in result &&
-          (result as { readonly _tag?: unknown })._tag === "Success";
-        setSubmittedStamp((current) => {
-          if (current?.requestId !== requestId || current.decision !== decision) return current;
-          return confirmed ? { requestId, decision, state: "confirmed" } : null;
+        const tag = approvalResultTag(result);
+        setSubmission((current) => {
+          if (
+            current?.requestId !== requestId ||
+            current.decision !== decision ||
+            current.attempt !== attempt
+          ) {
+            return current;
+          }
+          if (tag === "Success") {
+            return { requestId, decision, phase: "confirmed", attempt };
+          }
+          if (tag === "Failure") {
+            return { requestId, decision, phase: "failed", attempt };
+          }
+          return null;
         });
       },
       () => {
-        setSubmittedStamp((current) => (current?.requestId === requestId ? null : current));
+        setSubmission((current) => {
+          if (
+            current?.requestId !== requestId ||
+            current.decision !== decision ||
+            current.attempt !== attempt
+          ) {
+            return current;
+          }
+          return { requestId, decision, phase: "failed", attempt };
+        });
       },
     );
   };
 
-  if (activeStamp !== null) {
-    const isApproved =
-      activeStamp === "accept" ||
-      activeStamp === "acceptForSession" ||
-      activeStamp === "acceptAlways";
-    const stampLabel = isApproved
-      ? gt("Approved")
-      : activeStamp === "cancel"
-        ? gt("Cancelled")
-        : gt("Declined");
-    return (
+  const confirmedStampKind =
+    activeSubmission?.phase === "confirmed"
+      ? isApprovedDecision(activeSubmission.decision)
+        ? "approved"
+        : activeSubmission.decision === "cancel"
+          ? "cancelled"
+          : "declined"
+      : undefined;
+
+  const statusLabel =
+    activeSubmission?.phase === "in_flight"
+      ? gt("Submitting…")
+      : activeSubmission?.phase === "failed"
+        ? gt("Failed. Try again.")
+        : confirmedStampKind === "approved"
+          ? gt("Approved")
+          : confirmedStampKind === "cancelled"
+            ? gt("Cancelled")
+            : confirmedStampKind === "declined"
+              ? gt("Declined")
+              : "";
+
+  const statusClassName =
+    activePhase === "pending"
+      ? "sr-only"
+      : activePhase === "in_flight"
+        ? "inline-flex items-center gap-1.5 rounded-full border border-border/80 bg-muted/60 px-2.5 py-0.5 text-xs font-medium text-muted-foreground"
+        : activePhase === "failed"
+          ? "inline-flex items-center gap-1.5 rounded-full border border-destructive/35 bg-destructive/10 px-2.5 py-0.5 text-xs font-medium text-destructive"
+          : confirmedStampKind === "approved"
+            ? "inline-flex items-center gap-1.5 rounded-full border border-success/35 bg-success/12 px-2.5 py-0.5 text-xs font-medium text-success-foreground"
+            : "inline-flex items-center gap-1.5 rounded-full border border-border/80 bg-muted/75 px-2.5 py-0.5 text-xs font-medium text-muted-foreground";
+
+  const showActionControls = activePhase === "pending" || activePhase === "failed";
+
+  return (
+    <>
       <span
         role="status"
-        data-approval-stamp={isApproved ? "approved" : "declined"}
-        className={
-          isApproved
-            ? "inline-flex items-center gap-1.5 rounded-full border border-success/35 bg-success/12 px-2.5 py-0.5 text-xs font-medium text-success-foreground"
-            : "inline-flex items-center gap-1.5 rounded-full border border-border/80 bg-muted/75 px-2.5 py-0.5 text-xs font-medium text-muted-foreground"
-        }
+        aria-live="polite"
+        aria-atomic="true"
+        aria-busy={activePhase === "in_flight" ? true : undefined}
+        data-approval-state={activePhase}
+        data-approval-stamp={confirmedStampKind}
+        className={statusClassName}
       >
-        {isApproved ? (
+        {activePhase === "in_flight" ? (
+          <LoaderCircleIcon
+            aria-hidden="true"
+            className="size-3 shrink-0 motion-safe:animate-spin"
+          />
+        ) : activePhase === "failed" ? (
+          <TriangleAlertIcon aria-hidden="true" className="size-3 shrink-0" />
+        ) : confirmedStampKind === "approved" ? (
           <svg aria-hidden="true" viewBox="0 0 14 14" fill="none" className="size-3 shrink-0">
             <path
               d="M2.8 7.3l2.8 2.8 5.6-6"
@@ -123,96 +196,109 @@ export const ComposerPendingApprovalActions = memo(function ComposerPendingAppro
               data-approval-stamp-check="true"
             />
           </svg>
-        ) : (
+        ) : confirmedStampKind === "cancelled" ? (
+          <XIcon aria-hidden="true" className="size-3 shrink-0" />
+        ) : confirmedStampKind === "declined" ? (
           <MinusIcon aria-hidden="true" className="size-3 shrink-0" />
-        )}
-        <span>{stampLabel}</span>
+        ) : null}
+        {statusLabel ? <span>{statusLabel}</span> : null}
       </span>
-    );
-  }
-
-  return (
-    <>
-      {primaryOptions.map((option) => {
-        const buttonProps = {
-          disabled: disabled || isResponding || !canRespond,
-          "aria-description": option.warning,
-          onClick: () => submitDecision(option.decision),
-        };
-        const content = (
-          <>
-            {option.warning ? <TriangleAlertIcon className="size-3 shrink-0" /> : null}
-            <span className={presentation === "inline" ? "whitespace-normal" : "max-w-40 truncate"}>
-              {optionLabel(option.label)}
-            </span>
-          </>
-        );
-        const button =
-          presentation === "inline" ? (
-            <InlineButton
-              key={option.decision}
-              {...buttonProps}
-              tone={option.decision === "accept" ? "default" : "muted"}
-            >
-              {content}
-            </InlineButton>
-          ) : (
-            <Button
-              key={option.decision}
-              {...buttonProps}
-              size="xs"
-              variant={option.decision === "accept" ? "default" : "outline"}
-            >
-              {content}
-            </Button>
-          );
-        return option.warning ? (
-          <SharedTooltipTrigger key={option.decision} render={button} label={option.warning} />
-        ) : (
-          button
-        );
-      })}
-      {moreOptions.length > 0 ? (
-        <Menu>
-          <MenuTrigger
-            disabled={disabled || isResponding || !canRespond}
-            render={
-              presentation === "inline" ? (
-                <InlineButton tone="muted" aria-label={gt("More approval options")} />
-              ) : (
-                <Button size="icon-xs" variant="outline" aria-label={gt("More approval options")} />
-              )
-            }
-          >
-            {presentation === "inline" ? (
-              gt("More", { $context: "button that opens more approval options" })
-            ) : (
-              <EllipsisIcon />
-            )}
-          </MenuTrigger>
-          <MenuPopup {...composerFloatingLayerProps} side="top" align="end" width="content">
-            {moreOptions.map((option) => {
-              const item = (
-                <MenuItem
-                  key={option.decision}
-                  disabled={disabled || isResponding || !canRespond}
-                  aria-description={option.warning}
-                  onClick={() => submitDecision(option.decision)}
+      {showActionControls ? (
+        <>
+          {primaryOptions.map((option) => {
+            const buttonProps = {
+              disabled: disabled || isResponding || !canRespond,
+              "aria-description": option.warning,
+              onClick: () => submitDecision(option.decision),
+            };
+            const content = (
+              <>
+                {option.warning ? <TriangleAlertIcon className="size-3 shrink-0" /> : null}
+                <span
+                  className={presentation === "inline" ? "whitespace-normal" : "max-w-40 truncate"}
                 >
-                  {option.warning ? <TriangleAlertIcon className="size-3 text-warning" /> : null}
-                  <span className="min-w-0 whitespace-normal wrap-break-word">
-                    {optionLabel(option.label)}
-                  </span>
-                </MenuItem>
-              );
-              return option.warning ? (
-                <SharedTooltipTrigger key={option.decision} render={item} label={option.warning} />
+                  {optionLabel(option.label)}
+                </span>
+              </>
+            );
+            const button =
+              presentation === "inline" ? (
+                <InlineButton
+                  key={option.decision}
+                  {...buttonProps}
+                  tone={option.decision === "accept" ? "default" : "muted"}
+                >
+                  {content}
+                </InlineButton>
               ) : (
-                item
+                <Button
+                  key={option.decision}
+                  {...buttonProps}
+                  size="xs"
+                  variant={option.decision === "accept" ? "default" : "outline"}
+                >
+                  {content}
+                </Button>
               );
-            })}
-          </MenuPopup>
-        </Menu>
+            return option.warning ? (
+              <SharedTooltipTrigger key={option.decision} render={button} label={option.warning} />
+            ) : (
+              button
+            );
+          })}
+          {moreOptions.length > 0 ? (
+            <Menu>
+              <MenuTrigger
+                disabled={disabled || isResponding || !canRespond}
+                render={
+                  presentation === "inline" ? (
+                    <InlineButton tone="muted" aria-label={gt("More approval options")} />
+                  ) : (
+                    <Button
+                      size="icon-xs"
+                      variant="outline"
+                      aria-label={gt("More approval options")}
+                    />
+                  )
+                }
+              >
+                {presentation === "inline" ? (
+                  gt("More", { $context: "button that opens more approval options" })
+                ) : (
+                  <EllipsisIcon />
+                )}
+              </MenuTrigger>
+              <MenuPopup {...composerFloatingLayerProps} side="top" align="end" width="content">
+                {moreOptions.map((option) => {
+                  const item = (
+                    <MenuItem
+                      key={option.decision}
+                      disabled={disabled || isResponding || !canRespond}
+                      aria-description={option.warning}
+                      onClick={() => submitDecision(option.decision)}
+                    >
+                      {option.warning ? (
+                        <TriangleAlertIcon className="size-3 text-warning" />
+                      ) : null}
+                      <span className="min-w-0 whitespace-normal wrap-break-word">
+                        {optionLabel(option.label)}
+                      </span>
+                    </MenuItem>
+                  );
+                  return option.warning ? (
+                    <SharedTooltipTrigger
+                      key={option.decision}
+                      render={item}
+                      label={option.warning}
+                    />
+                  ) : (
+                    item
+                  );
+                })}
+              </MenuPopup>
+            </Menu>
+          ) : null}
+        </>
       ) : null}
     </>
   );
