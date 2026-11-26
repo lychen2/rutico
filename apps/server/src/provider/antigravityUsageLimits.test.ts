@@ -9,51 +9,10 @@ import * as Path from "effect/Path";
 import * as ChildProcessSpawner from "effect/process/ChildProcessSpawner";
 
 import {
-  antigravityAccountFingerprint,
-  antigravitySummaryWindows,
   makeAntigravityUsageProbe,
   parseAntigravityCliUsageOutput,
 } from "./antigravityUsageLimits.ts";
 import { parseBusctlKeyringLockedOutput } from "./antigravityKeyringGuard.ts";
-
-const summary = {
-  groups: [
-    {
-      displayName: "Gemini Models",
-      buckets: [
-        {
-          bucketId: "gemini-weekly",
-          window: "weekly",
-          remainingFraction: 0.96,
-          resetTime: "2026-10-12T19:41:43Z",
-        },
-        {
-          bucketId: "gemini-5h",
-          window: "5h",
-          remainingFraction: 0.91,
-          resetTime: "2026-10-09T16:06:01Z",
-        },
-      ],
-    },
-    {
-      displayName: "Claude and GPT models",
-      buckets: [
-        {
-          bucketId: "3p-weekly",
-          window: "weekly",
-          remainingFraction: 0,
-          resetTime: "2026-10-10T15:28:22Z",
-        },
-        {
-          bucketId: "3p-5h",
-          window: "5h",
-          remainingFraction: 0.44,
-          resetTime: "2026-10-09T16:06:30Z",
-        },
-      ],
-    },
-  ],
-};
 
 const cliUsageJson = JSON.stringify({
   conversation_id: "",
@@ -170,7 +129,7 @@ describe("antigravityUsageLimits", () => {
       }),
     );
 
-    it.effect("parses CLI usage JSON, summary windows, and account fingerprints", () =>
+    it.effect("parses official CLI usage JSON into quota windows", () =>
       Effect.gen(function* () {
         const cliWindows = yield* parseAntigravityCliUsageOutput(
           cliUsageJson,
@@ -181,18 +140,6 @@ describe("antigravityUsageLimits", () => {
           "Gemini · 5-hour",
           "Claude & GPT (shared) · Weekly",
         ]);
-        const windows = yield* antigravitySummaryWindows(
-          summary,
-          Date.parse("2026-10-09T11:06:01Z"),
-        );
-        expect(windows.map((window) => window.id)).toEqual([
-          "gemini-weekly",
-          "gemini-5h",
-          "3p-weekly",
-          "3p-5h",
-        ]);
-        const fingerprint = yield* antigravityAccountFingerprint({ id: "google-user-1" });
-        expect(fingerprint).toMatch(/^[a-f0-9]{64}$/);
       }),
     );
 

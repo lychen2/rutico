@@ -1,7 +1,6 @@
 import type { AntigravitySettings, ServerProviderUsageWindow } from "@t3tools/contracts";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as Clock from "effect/Clock";
-import * as Digest from "effect/crypto/Digest";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
@@ -21,10 +20,6 @@ import {
   prepareAntigravityCliUsageKeyringState,
   type LinuxKeyringLockState,
 } from "./antigravityKeyringGuard.ts";
-
-export function antigravityUserAgent(platform: NodeJS.Platform, architecture: NodeJS.Architecture) {
-  return `antigravity/hub/2.24.0 (aidev_client; os_type=${platform}; arch=${architecture}; cl=963137146)`;
-}
 
 const SUMMARY_WINDOW_MINS = new Map([
   ["5h", 5 * 60],
@@ -49,7 +44,6 @@ const SANITIZED_CLI_ENV_KEYS = new Set([
   "CLOUDSDK_CORE_PROJECT",
 ]);
 
-const UserInfo = Schema.Struct({ id: Schema.NonEmptyString });
 const Quota = Schema.Struct({
   remainingFraction: Schema.optional(Schema.Number),
   resetTime: Schema.optional(Schema.String),
@@ -102,8 +96,6 @@ const CliUsageOutput = Schema.Struct({
   ),
 });
 
-const decodeUserInfo = Schema.decodeUnknownEffect(UserInfo);
-const decodeSummary = Schema.decodeUnknownEffect(Summary);
 const decodeCliUsageOutput = Schema.decodeEffect(Schema.fromJsonString(CliUsageOutput));
 
 function iso(value: string | undefined): string | undefined {
@@ -151,22 +143,6 @@ function summaryResetTime(
     Math.abs(resetMs - requestedAt - windowDurationMins * 60_000) <= 60_000;
   return untouched ? undefined : bucket.resetTime;
 }
-
-const sha256 = Effect.fnUntraced(function* (text: string) {
-  const digest = yield* (yield* Digest.Digest).digest(
-    Digest.sha256,
-    new TextEncoder().encode(text),
-  );
-  return Array.from(digest, (byte) => byte.toString(16).padStart(2, "0")).join("");
-});
-
-/** Keys an account by its Google ID, which matches across machines and hubs; refresh tokens do not. */
-export const antigravityAccountFingerprint = (userInfo: unknown) =>
-  decodeUserInfo(userInfo).pipe(Effect.flatMap((info) => sha256(`google-account\0${info.id}`)));
-
-/** Windows from a `retrieveUserQuotaSummary` answer requested at `requestedAt`. */
-export const antigravitySummaryWindows = (response: unknown, requestedAt: number) =>
-  decodeSummary(response).pipe(Effect.map((summary) => summaryWindows(summary, requestedAt)));
 
 function summaryWindows(summary: typeof Summary.Type, requestedAt: number) {
   const windows = new Map<string, ServerProviderUsageWindow>();
