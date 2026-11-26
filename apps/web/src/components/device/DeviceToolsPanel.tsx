@@ -99,7 +99,10 @@ export function DeviceToolsPanel(props: {
 
   return (
     <div
-      className={cn("flex min-h-0 flex-col border-border bg-background text-sm", props.className)}
+      className={cn(
+        "device-tools-drawer flex min-h-0 flex-col border-border bg-background text-sm",
+        props.className,
+      )}
     >
       <div className="flex h-9 shrink-0 items-center gap-2 border-b px-3">
         <span className="font-medium">
@@ -281,12 +284,22 @@ export function DeviceToolsPanel(props: {
               />
             </>
           ) : (
-            <SwitchRow
-              label={gt("Network")}
-              checked={settings?.networkEnabled}
-              disabled={disabled}
-              onChange={(value) => act({ type: "setToggle", setting: "networkEnabled", value })}
-            />
+            <>
+              <SwitchRow
+                label={gt("Network")}
+                checked={settings?.networkEnabled}
+                disabled={disabled}
+                onChange={(value) => act({ type: "setToggle", setting: "networkEnabled", value })}
+              />
+              {settings?.networkEnabled === false ? (
+                <div
+                  role="status"
+                  className="rounded-md border border-warning/40 bg-warning/10 px-2.5 py-1.5 text-2xs text-warning-foreground"
+                >
+                  <T>Emulator network is offline. Re-enable Network to restore connectivity.</T>
+                </div>
+              ) : null}
+            </>
           )}
         </Section>
 
@@ -504,6 +517,23 @@ function LocationSection(props: {
           onChange={(event) => setLongitude(event.target.value)}
         />
       </div>
+      <div className="flex flex-wrap gap-1">
+        {LOCATION_PRESETS.map((preset) => (
+          <button
+            key={preset.label}
+            type="button"
+            disabled={props.disabled}
+            onClick={() => {
+              setLatitude(String(preset.latitude));
+              setLongitude(String(preset.longitude));
+              void props.onSet(preset.latitude, preset.longitude);
+            }}
+            className="cursor-pointer rounded-md border border-border/60 bg-muted/35 px-1.5 py-0.5 text-2xs text-muted-foreground transition-colors duration-120 hover:border-border hover:bg-accent hover:text-foreground disabled:pointer-events-none disabled:opacity-50"
+          >
+            {m(preset.label)}
+          </button>
+        ))}
+      </div>
       <div className="flex flex-wrap items-center gap-1.5">
         <Select<string | null>
           value={null}
@@ -585,6 +615,23 @@ function PermissionsSection(props: {
         disabled={props.disabled}
         onChange={(event) => setAppId(event.target.value)}
       />
+      <div className="flex flex-wrap gap-1">
+        {LOCATION_PRESETS.map((preset) => (
+          <button
+            key={preset.label}
+            type="button"
+            disabled={props.disabled}
+            onClick={() => {
+              setLatitude(String(preset.latitude));
+              setLongitude(String(preset.longitude));
+              void props.onSet(preset.latitude, preset.longitude);
+            }}
+            className="cursor-pointer rounded-md border border-border/60 bg-muted/35 px-1.5 py-0.5 text-2xs text-muted-foreground transition-colors duration-120 hover:border-border hover:bg-accent hover:text-foreground disabled:pointer-events-none disabled:opacity-50"
+          >
+            {m(preset.label)}
+          </button>
+        ))}
+      </div>
       <div className="flex flex-wrap items-center gap-1.5">
         <ChoiceSelect
           ariaLabel={gt("Permission")}

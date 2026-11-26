@@ -810,6 +810,7 @@ function PlatformIcon(props: {
 }
 
 function DeviceSourceRow(props: { row: SourceRow }) {
+  const gt = useGT();
   const { row } = props;
   const several = row.environments.length > 1;
   const issues = row.environments.filter(
@@ -818,6 +819,13 @@ function DeviceSourceRow(props: { row: SourceRow }) {
   );
   const problems = issues.filter((environment) => environment.status.tone !== "pending");
   const pending = issues.find((environment) => environment.status.tone === "pending");
+  const androidReady = row.environments.some(
+    (environment) =>
+      environment.added &&
+      environment.platforms?.some(
+        (candidate) => candidate.platform === "android" && candidate.available,
+      ),
+  );
   return (
     <div className="flex items-center gap-3 border-t border-border/60 px-3 py-3 first:border-t-0 sm:px-4">
       <div className="min-w-0 flex-1">
@@ -826,6 +834,16 @@ function DeviceSourceRow(props: { row: SourceRow }) {
           {row.kind ? (
             <span className="shrink-0 rounded border border-border px-1 text-3xs uppercase tracking-wide text-muted-foreground">
               {row.kind}
+            </span>
+          ) : null}
+          {androidReady && problems.length === 0 && !pending ? (
+            <span
+              data-slot="device-source-android-ready"
+              aria-label={gt("Android emulator host ready")}
+              className="inline-flex shrink-0 items-center gap-1 rounded-full border border-success/30 bg-success/10 px-1.5 py-0.5 text-3xs font-medium text-success"
+            >
+              <span aria-hidden="true" className="size-1.5 rounded-full bg-success" />
+              <T>Android ready</T>
             </span>
           ) : null}
         </div>

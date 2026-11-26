@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vite-plus/test";
 
 import { resolveChatCanvasLayout } from "../chat/chatCanvasLayout";
+import { PREVIEW_MINI_PLAYER_EDGE_GAP } from "./previewMiniPlayerLayout";
 import {
   type PreviewMiniPlayerGesture,
+  resolveMiniPlayerCornerThrow,
   settlePreviewMiniPlayerResize,
   stepPreviewMiniPlayerGesture,
 } from "./previewMiniPlayerGesture";
@@ -73,5 +75,45 @@ describe("settlePreviewMiniPlayerResize", () => {
         container,
       }),
     ).toBeNull();
+  });
+});
+
+describe("resolveMiniPlayerCornerThrow", () => {
+  it("allows free placement on gentle drags and snaps fast throws to the projected safe corner", () => {
+    const midFrame = { x: 560, y: 360, width: 268, height: 179 };
+
+    // Gentle drag stays free-positioned.
+    expect(
+      resolveMiniPlayerCornerThrow({
+        frame: midFrame,
+        container,
+        velocityX: 120,
+        velocityY: -80,
+      }),
+    ).toBeNull();
+
+    // Fast throw toward top-left snaps to top-left corner.
+    const topLeft = resolveMiniPlayerCornerThrow({
+      frame: midFrame,
+      container,
+      velocityX: -1200,
+      velocityY: -900,
+    });
+    expect(topLeft).toEqual({
+      x: PREVIEW_MINI_PLAYER_EDGE_GAP,
+      y: PREVIEW_MINI_PLAYER_EDGE_GAP,
+    });
+
+    // Fast throw toward bottom-right snaps to bottom-right corner.
+    const bottomRight = resolveMiniPlayerCornerThrow({
+      frame: midFrame,
+      container,
+      velocityX: 1400,
+      velocityY: 1100,
+    });
+    expect(bottomRight).toEqual({
+      x: container.width - PREVIEW_MINI_PLAYER_EDGE_GAP - midFrame.width,
+      y: container.height - PREVIEW_MINI_PLAYER_EDGE_GAP - midFrame.height,
+    });
   });
 });

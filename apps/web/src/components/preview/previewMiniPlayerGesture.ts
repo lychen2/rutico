@@ -1,13 +1,60 @@
 import type { BrowserViewportResizeDirection } from "~/browser/browserViewportLayout";
+import { projectVelocity } from "~/lib/motion/rubberBand";
 import type { PreviewMiniPlayerPosition, PreviewMiniPlayerSize } from "~/previewMiniPlayerStore";
 
 import {
   clampPreviewMiniPlayerPosition,
+  PREVIEW_MINI_PLAYER_EDGE_GAP,
   type PreviewMiniPlayerFrame,
+  type PreviewMiniPlayerObstacles,
   resizePreviewMiniPlayer,
 } from "./previewMiniPlayerLayout";
 
 const HANDLE_TAP_SLOP_PX = 6;
+const PIP_CORNER_THROW_MIN_SPEED_PX_S = 320;
+
+/**
+ * Projects a PiP drag release velocity into the nearest of the 4 safe canvas corners
+ * when thrown above the flick speed threshold (`320 px/s`). Returns `null` for gentle
+ * drags so the user can dock freely anywhere in the canvas.
+ */
+export function resolveMiniPlayerCornerThrow(input: {
+  readonly frame: PreviewMiniPlayerFrame;
+  readonly container: PreviewMiniPlayerSize;
+  readonly velocityX: number;
+  readonly velocityY: number;
+  readonly obstacles?: PreviewMiniPlayerObstacles;
+}): PreviewMiniPlayerPosition | null {
+  const { frame, container, velocityX, velocityY, obstacles } = input;
+  const speed = Math.hypot(velocityX, velocityY);
+  if (!Number.isFinite(speed) || speed < PIP_CORNER_THROW_MIN_SPEED_PX_S) {
+    return null;
+  }
+
+  const projectedCenterX = frame.x + frame.width / 2 + projectVelocity(velocityX, 0.994);
+  const projectedCenterY = frame.y + frame.height / 2 + projectVelocity(velocityY, 0.994);
+
+  const gap = PREVIEW_MINI_PLAYER_EDGE_GAP;
+  const corners: ReadonlyArray<PreviewMiniPlayerPosition> = [
+    { x: gap, y: gap },
+    { x: container.width - gap - frame.width, y: gap },
+    { x: gap, y: container.height - gap - frame.height },
+    { x: container.width - gap - frame.width, y: container.height - gap - frame.height },
+  ].map((corner) => clampPreviewMiniPlayerPosition(corner, container, frame, obstacles));
+
+  let best = corners[0]!;
+  let bestDist = Number.POSITIVE_INFINITY;
+  for (const corner of corners) {
+    const cornerCenterX = corner.x + frame.width / 2;
+    const cornerCenterY = corner.y + frame.height / 2;
+    const dist = Math.hypot(cornerCenterX - projectedCenterX, cornerCenterY - projectedCenterY);
+    if (dist < bestDist) {
+      bestDist = dist;
+      best = corner;
+    }
+  }
+  return best;
+}
 
 export interface PreviewMiniPlayerGesture {
   readonly pointerId: number;

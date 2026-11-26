@@ -461,3 +461,33 @@
     opacity: 0;
   }
 }
+
+/* --------------------------------------------------------------------------
+   D20 / C067: Mini-Player 4-Corner Velocity Throw & Origin-Top-Right Pill
+   -------------------------------------------------------------------------- */
+
+.mini-player-corner-throw {
+  transition:
+    left 280ms var(--spring-gentle),
+    top 280ms var(--spring-gentle);
+}
+
+.mini-player-dock-handoff {
+  transition:
+    left 140ms var(--spring-snappy),
+    opacity 130ms ease-out;
+}
+
+.mini-player-control-pill {
+  transition:
+    opacity var(--duration-micro) ease-out,
+    transform var(--duration-snappy) var(--spring-snappy);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mini-player-corner-throw,
+  .mini-player-dock-handoff,
+  .mini-player-control-pill {
+    transition: none;
+  }
+}
