@@ -24,6 +24,7 @@ import {
   useState,
   type CSSProperties,
   type ReactNode,
+  type UIEvent,
 } from "react";
 import { LegendList, type LegendListRef } from "@legendapp/list/react";
 import { workEntryDisplayIndicatesToolFailure } from "../../session-logic";
@@ -73,6 +74,8 @@ import {
   SimpleWorkEntryRow,
 } from "./TimelineWorkEntryRow";
 import {
+  liveThoughtPreviewMarkdown,
+  sliceLiveThoughtTailSource,
   sliceThoughtPreviewSource,
   thoughtPreviewMarkdown,
   toolGroupSummaryIconName,
@@ -751,13 +754,43 @@ function LiveReasoningStreamWindow({
 }) {
   const scrollerRef = useRef<HTMLDivElement>(null);
   const atBottomRef = useRef(true);
+  const lastAutoScrollTopRef = useRef(0);
+  const [frozenStartOffset, setFrozenStartOffset] = useState<number | null>(null);
+
+  const sliced = sliceLiveThoughtTailSource(text, {
+    startOffset: frozenStartOffset,
+  });
+  const displayText = sliced.text.trim();
 
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- pins the 3-line living reasoning window to the latest streamed line unless the user scrolled up
   useLayoutEffect(() => {
     const scroller = scrollerRef.current;
     if (!scroller || !active || !atBottomRef.current) return;
+    const maxScrollTop = Math.max(0, scroller.scrollHeight - scroller.clientHeight);
+    const expectedBottom = Math.min(lastAutoScrollTopRef.current, maxScrollTop);
+    if (scroller.scrollTop < expectedBottom - LIVE_REASONING_BOTTOM_SLACK_PX) {
+      atBottomRef.current = false;
+      return;
+    }
     scroller.scrollTop = scroller.scrollHeight;
+    lastAutoScrollTopRef.current = scroller.scrollTop;
   });
+
+  const handleScroll = (event: UIEvent<HTMLDivElement>) => {
+    const element = event.currentTarget;
+    const isAtBottom =
+      element.scrollHeight - element.scrollTop - element.clientHeight <=
+      LIVE_REASONING_BOTTOM_SLACK_PX;
+    atBottomRef.current = isAtBottom;
+    if (isAtBottom) {
+      lastAutoScrollTopRef.current = element.scrollTop;
+      if (frozenStartOffset !== null) {
+        setFrozenStartOffset(null);
+      }
+    } else if (frozenStartOffset === null) {
+      setFrozenStartOffset(sliced.startOffset);
+    }
+  };
 
   return (
     <div
@@ -777,20 +810,15 @@ function LiveReasoningStreamWindow({
           <div
             ref={scrollerRef}
             data-live-reasoning-window="true"
-            onScroll={(event) => {
-              const element = event.currentTarget;
-              atBottomRef.current =
-                element.scrollHeight - element.scrollTop - element.clientHeight <=
-                LIVE_REASONING_BOTTOM_SLACK_PX;
-            }}
+            onScroll={handleScroll}
             className="min-w-0 flex-1 overflow-y-auto py-1 text-xs leading-snug text-muted-foreground [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
           >
             <ChatMarkdown
-              text={text}
+              text={displayText}
               cwd={cwd}
               parseRawHtml={false}
               lineBreaks
-              extensions={thoughtPreviewMarkdown(fallbackTitle)}
+              extensions={liveThoughtPreviewMarkdown(fallbackTitle)}
             />
           </div>
         </div>
@@ -819,9 +847,9 @@ export function LiveWorkEntryTimelineRow({
   const failed = workEntryDisplayIndicatesToolFailure(row.entry);
   const reasoningSource =
     row.thought && !row.expanded
-      ? sliceThoughtPreviewSource(row.thought.detail ?? "").trim()
+      ? (row.thought.detail ?? "").trim()
       : row.entry.itemType === "reasoning" && !row.expanded
-        ? sliceThoughtPreviewSource(row.entry.detail ?? "").trim()
+        ? (row.entry.detail ?? "").trim()
         : "";
   const thoughtLine =
     row.thought && !row.expanded
@@ -919,6 +947,7 @@ export function LiveWorkEntryTimelineRow({
       />
       {isLiveReasoningWindow ? (
         <LiveReasoningStreamWindow
+          key={reasoningEntry?.id}
           text={reasoningSource}
           cwd={ctx.markdownCwd}
           active={row.active}

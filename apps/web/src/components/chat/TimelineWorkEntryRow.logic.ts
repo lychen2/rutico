@@ -230,3 +230,44 @@ export function thoughtPreviewMarkdown(fallback: string): MarkdownExtensions {
   }
   return extensions;
 }
+
+// Live thinking windows follow the newest trailing prose instead of freezing at the
+// historical summary prefix limit. Keep enough trailing source to preserve recent context
+// without splitting surrogate pairs or overflowing render cost.
+export const LIVE_THOUGHT_TAIL_SOURCE_MAX_LENGTH = 16_384;
+export const LIVE_THOUGHT_TAIL_PREVIEW_MAX_LENGTH = LIVE_THOUGHT_TAIL_SOURCE_MAX_LENGTH * 2;
+
+export function sliceLiveThoughtTailSource(
+  text: string,
+  options?: {
+    readonly maxLength?: number;
+    readonly startOffset?: number | null;
+  },
+): { readonly text: string; readonly startOffset: number } {
+  const maxLength = options?.maxLength ?? LIVE_THOUGHT_TAIL_SOURCE_MAX_LENGTH;
+  if (options?.startOffset != null && options.startOffset >= 0) {
+    const clampedStart = Math.min(options.startOffset, text.length);
+    const safeStart = splitsSurrogatePair(text, clampedStart) ? clampedStart + 1 : clampedStart;
+    const maxEnd = Math.min(text.length, safeStart + LIVE_THOUGHT_TAIL_PREVIEW_MAX_LENGTH);
+    const safeEnd = splitsSurrogatePair(text, maxEnd) ? maxEnd - 1 : maxEnd;
+    return { text: text.slice(safeStart, safeEnd), startOffset: safeStart };
+  }
+  if (text.length <= maxLength) {
+    return { text, startOffset: 0 };
+  }
+  const rawStart = text.length - maxLength;
+  const safeStart = splitsSurrogatePair(text, rawStart) ? rawStart + 1 : rawStart;
+  return { text: text.slice(safeStart), startOffset: safeStart };
+}
+
+const liveThoughtPreviews = new Map<string, MarkdownExtensions>();
+
+/** Live reasoning stream window keeps trailing prose without stalling at the prefix summary cap. */
+export function liveThoughtPreviewMarkdown(fallback: string): MarkdownExtensions {
+  let extensions = liveThoughtPreviews.get(fallback);
+  if (!extensions) {
+    extensions = { preview: { fallback, maxLength: LIVE_THOUGHT_TAIL_PREVIEW_MAX_LENGTH } };
+    liveThoughtPreviews.set(fallback, extensions);
+  }
+  return extensions;
+}
