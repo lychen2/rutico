@@ -61,4 +61,16 @@ describe("shouldShowFallbackLinuxWindowControls", () => {
     expect(shouldShowFallbackLinuxWindowControls(stackingFallback, false)).toBe(true);
     expect(shouldShowFallbackLinuxWindowControls(stackingFallback, false, "hide")).toBe(false);
   });
+
+  it("reaches fallback controls when main IPC leaves hasNativeWco unconfirmed and DOM WCO is inactive", () => {
+    const unconfirmedStacking = {
+      maximized: false,
+      fullscreen: false,
+      linuxDesktop: "xfce",
+      isTilingWm: false,
+      overlayHeight: 40,
+    } as const;
+    expect(shouldShowFallbackLinuxWindowControls(unconfirmedStacking, false)).toBe(true);
+    expect(shouldShowFallbackLinuxWindowControls(unconfirmedStacking, true)).toBe(false);
+  });
 });

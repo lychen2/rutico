@@ -5,6 +5,7 @@ import {
   DEFAULT_CLIENT_SETTINGS,
   DesktopSnapShotId,
   type ClientSettings,
+  type LinuxPortalAppearance,
 } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
@@ -56,6 +57,7 @@ import * as ElectronShell from "../electron/ElectronShell.ts";
 import * as ElectronTheme from "../electron/ElectronTheme.ts";
 import * as ElectronWindow from "../electron/ElectronWindow.ts";
 import {
+  LINUX_PORTAL_APPEARANCE_CHANNEL,
   LINUX_WINDOW_STATE_CHANNEL,
   SNAP_SHOT_EVENT_CHANNEL,
   WINDOW_ZOOM_STATE_CHANNEL,
@@ -289,6 +291,7 @@ function layerTest(input: {
   }>;
   readonly primaryPasteEnabled?: boolean;
   readonly previewPasskeyBridgeEnabled?: boolean;
+  readonly linuxPortalAppearance?: Effect.Effect<LinuxPortalAppearance | null>;
 }) {
   let desktopSettings = input.desktopSettings ?? DesktopAppSettings.DEFAULT_DESKTOP_SETTINGS;
   const layerDesktopAppSettings = Layer.succeed(DesktopAppSettings.DesktopAppSettings, {
@@ -394,7 +397,15 @@ function layerTest(input: {
           openSystemSettings: () => Effect.succeed(true),
           copyText: input.onCopyText ?? (() => Effect.void),
         } satisfies ElectronShell.ElectronShell["Service"]),
-        layerElectronTheme,
+        input.linuxPortalAppearance === undefined
+          ? layerElectronTheme
+          : Layer.succeed(ElectronTheme.ElectronTheme, {
+              shouldUseDarkColors: Effect.succeed(false),
+              setSource: () => Effect.void,
+              onUpdated: () => Effect.void,
+              linuxPortalAppearance: input.linuxPortalAppearance,
+              onLinuxPortalAppearanceChange: () => Effect.void,
+            } satisfies ElectronTheme.ElectronTheme["Service"]),
         layerElectronWindow,
         Layer.succeed(DesktopPrimaryPaste.DesktopPrimaryPaste, {
           enabled: input.primaryPasteEnabled ?? true,
@@ -1516,13 +1527,17 @@ describe("DesktopWindow", () => {
   });
 
   it.effect(
-    "broadcasts real 40px titleBarOverlay Linux window state on maximize and fullscreen",
+    "propagates real Linux native WCO capability (true and false) on load, maximize, fullscreen, and overlay failure without hardcoding true",
     () =>
       Effect.gen(function* () {
-        const fakeWindow = makeFakeBrowserWindow();
+        // Path 1: window with active native WCO confirmed on did-finish-load.
+        const nativeWcoWindow = makeFakeBrowserWindow();
+        nativeWcoWindow.executeJavaScript.mockImplementation(async (script: string) =>
+          script === DesktopWindow.LINUX_NATIVE_WCO_PROBE_SCRIPT ? true : undefined,
+        );
         const createdOptions: Electron.BrowserWindowConstructorOptions[] = [];
-        const layer = layerTest({
-          window: fakeWindow.window,
+        const nativeLayer = layerTest({
+          window: nativeWcoWindow.window,
           createCount: yield* Ref.make(0),
           mainWindow: yield* Ref.make<Option.Option<Electron.BrowserWindow>>(Option.none()),
           createdWindowOptions: createdOptions,
@@ -1540,27 +1555,193 @@ describe("DesktopWindow", () => {
               : undefined,
             40,
           );
+          // Before renderer probe confirms WCO visibility, hasNativeWco is not hardcoded to true.
+          assert.isUndefined(
+            DesktopWindow.buildLinuxWindowState(nativeWcoWindow.window).hasNativeWco,
+          );
 
-          fakeWindow.isMaximized.mockReturnValue(true);
-          fakeWindow.windowListeners.get("maximize")?.();
-          const maximizeCall = fakeWindow.send.mock.calls.find(
+          nativeWcoWindow.webContentsListeners.get("did-finish-load")?.();
+          yield* Effect.promise(() => Promise.resolve());
+          yield* Effect.promise(() => Promise.resolve());
+
+          nativeWcoWindow.isMaximized.mockReturnValue(true);
+          nativeWcoWindow.windowListeners.get("maximize")?.();
+          const stateCalls = nativeWcoWindow.send.mock.calls.filter(
             ([channel]) => channel === LINUX_WINDOW_STATE_CHANNEL,
           );
-          assert.isDefined(maximizeCall);
-          assert.deepEqual(maximizeCall?.[1], {
-            ...DesktopWindow.buildLinuxWindowState(fakeWindow.window),
+          assert.deepEqual(stateCalls.at(-1)?.[1], {
+            ...DesktopWindow.buildLinuxWindowState(nativeWcoWindow.window),
             maximized: true,
             overlayHeight: 40,
             hasNativeWco: true,
           });
 
-          fakeWindow.isFullScreen.mockReturnValue(true);
-          fakeWindow.windowListeners.get("enter-full-screen")?.();
-          const fullscreenCalls = fakeWindow.send.mock.calls.filter(
+          nativeWcoWindow.isFullScreen.mockReturnValue(true);
+          nativeWcoWindow.windowListeners.get("enter-full-screen")?.();
+          const fullscreenCalls = nativeWcoWindow.send.mock.calls.filter(
             ([channel]) => channel === LINUX_WINDOW_STATE_CHANNEL,
           );
           assert.equal(fullscreenCalls.at(-1)?.[1]?.fullscreen, true);
-        }).pipe(Effect.provide(layer));
+          assert.equal(fullscreenCalls.at(-1)?.[1]?.hasNativeWco, true);
+        }).pipe(Effect.provide(nativeLayer));
+
+        // Path 2: window where native WCO probe returns false propagates hasNativeWco: false.
+        const fallbackWindow = makeFakeBrowserWindow();
+        fallbackWindow.executeJavaScript.mockImplementation(async (script: string) =>
+          script === DesktopWindow.LINUX_NATIVE_WCO_PROBE_SCRIPT ? false : undefined,
+        );
+        const fallbackLayer = layerTest({
+          window: fallbackWindow.window,
+          createCount: yield* Ref.make(0),
+          mainWindow: yield* Ref.make<Option.Option<Electron.BrowserWindow>>(Option.none()),
+          platform: "linux",
+        });
+
+        yield* Effect.gen(function* () {
+          const desktopWindow = yield* DesktopWindow.DesktopWindow;
+          yield* desktopWindow.ensureMain;
+
+          fallbackWindow.webContentsListeners.get("did-finish-load")?.();
+          yield* Effect.promise(() => Promise.resolve());
+          yield* Effect.promise(() => Promise.resolve());
+
+          const stateCalls = fallbackWindow.send.mock.calls.filter(
+            ([channel]) => channel === LINUX_WINDOW_STATE_CHANNEL,
+          );
+          assert.equal(stateCalls.at(-1)?.[1]?.hasNativeWco, false);
+          assert.equal(
+            DesktopWindow.buildLinuxWindowState(fallbackWindow.window).hasNativeWco,
+            false,
+          );
+        }).pipe(Effect.provide(fallbackLayer));
+
+        // Path 3: runtime setTitleBarOverlay failure flips capability to hasNativeWco: false.
+        const throwingWindow = makeFakeBrowserWindow();
+        vi.mocked(throwingWindow.window.setTitleBarOverlay).mockImplementation(() => {
+          throw new Error("titleBarOverlay unsupported");
+        });
+        const throwingLayer = layerTest({
+          window: throwingWindow.window,
+          createCount: yield* Ref.make(0),
+          mainWindow: yield* Ref.make<Option.Option<Electron.BrowserWindow>>(Option.none()),
+          platform: "linux",
+        });
+
+        yield* Effect.gen(function* () {
+          const desktopWindow = yield* DesktopWindow.DesktopWindow;
+          yield* desktopWindow.ensureMain;
+          throwingWindow.windowListeners.get("blur")?.();
+          yield* Effect.promise(() => Promise.resolve());
+          const stateCalls = throwingWindow.send.mock.calls.filter(
+            ([channel]) => channel === LINUX_WINDOW_STATE_CHANNEL,
+          );
+          assert.equal(stateCalls.at(-1)?.[1]?.hasNativeWco, false);
+        }).pipe(Effect.provide(throwingLayer));
+      }),
+  );
+
+  it.effect(
+    "completes both synchronous and asynchronous tracked fibers cleanly with an empty tracking set",
+    () =>
+      Effect.gen(function* () {
+        const tracker = yield* DesktopWindow.makeScopedFiberTracker<never>();
+
+        // Synchronous Effect finishes inside runFork before assignment returns: no TDZ ReferenceError and no leak.
+        let syncRan = false;
+        const syncFiber = tracker.track(
+          Effect.sync(() => {
+            syncRan = true;
+          }),
+        );
+        assert.isTrue(syncRan);
+        assert.equal(tracker.fibers.size, 0);
+        const syncExit = yield* Fiber.await(syncFiber);
+        assert.isTrue(Exit.isSuccess(syncExit));
+
+        // Asynchronous Effect stays tracked while running and removes itself on completion.
+        const gate = yield* Deferred.make<void>();
+        const asyncFiber = tracker.track(Deferred.await(gate));
+        assert.equal(tracker.fibers.size, 1);
+        yield* Deferred.succeed(gate, undefined);
+        const asyncExit = yield* Fiber.await(asyncFiber);
+        assert.isTrue(Exit.isSuccess(asyncExit));
+        assert.equal(tracker.fibers.size, 0);
+
+        // Scope teardown interrupts any still-pending tracked fiber and empties the set.
+        const pendingGate = yield* Deferred.make<void>();
+        const pendingFiber = tracker.track(Deferred.await(pendingGate));
+        assert.equal(tracker.fibers.size, 1);
+        yield* tracker.interruptAll;
+        assert.equal(tracker.fibers.size, 0);
+        const interruptedExit = yield* Fiber.await(pendingFiber);
+        assert.isTrue(Exit.isFailure(interruptedExit));
+      }),
+  );
+
+  it.effect(
+    "handles synchronous and asynchronous Linux did-finish-load portal appearance Effects via trackFork without sync cleanup exceptions",
+    () =>
+      Effect.gen(function* () {
+        const syncAppearance: LinuxPortalAppearance = {
+          colorScheme: "dark",
+          accentColor: { r: 0.4, g: 0.3, b: 0.9 },
+          contrast: "no-preference",
+        };
+        const syncWindow = makeFakeBrowserWindow();
+        const syncLayer = layerTest({
+          window: syncWindow.window,
+          createCount: yield* Ref.make(0),
+          mainWindow: yield* Ref.make<Option.Option<Electron.BrowserWindow>>(Option.none()),
+          platform: "linux",
+          linuxPortalAppearance: Effect.succeed(syncAppearance),
+        });
+
+        yield* Effect.scoped(
+          Effect.gen(function* () {
+            const desktopWindow = yield* DesktopWindow.DesktopWindow;
+            yield* desktopWindow.ensureMain;
+            syncWindow.webContentsListeners.get("did-finish-load")?.();
+            yield* Effect.promise(() => Promise.resolve());
+            assert.deepEqual(
+              syncWindow.send.mock.calls.filter(
+                ([channel]) => channel === LINUX_PORTAL_APPEARANCE_CHANNEL,
+              ),
+              [[LINUX_PORTAL_APPEARANCE_CHANNEL, syncAppearance]],
+            );
+          }).pipe(Effect.provide(syncLayer)),
+        );
+
+        const asyncAppearance: LinuxPortalAppearance = {
+          colorScheme: "light",
+          accentColor: null,
+          contrast: "high",
+        };
+        const gate = yield* Deferred.make<LinuxPortalAppearance | null>();
+        const asyncWindow = makeFakeBrowserWindow();
+        const asyncLayer = layerTest({
+          window: asyncWindow.window,
+          createCount: yield* Ref.make(0),
+          mainWindow: yield* Ref.make<Option.Option<Electron.BrowserWindow>>(Option.none()),
+          platform: "linux",
+          linuxPortalAppearance: Deferred.await(gate),
+        });
+
+        yield* Effect.scoped(
+          Effect.gen(function* () {
+            const desktopWindow = yield* DesktopWindow.DesktopWindow;
+            yield* desktopWindow.ensureMain;
+            asyncWindow.webContentsListeners.get("did-finish-load")?.();
+            yield* Deferred.succeed(gate, asyncAppearance);
+            yield* Effect.promise(() => Promise.resolve());
+            yield* Effect.promise(() => Promise.resolve());
+            assert.deepEqual(
+              asyncWindow.send.mock.calls.filter(
+                ([channel]) => channel === LINUX_PORTAL_APPEARANCE_CHANNEL,
+              ),
+              [[LINUX_PORTAL_APPEARANCE_CHANNEL, asyncAppearance]],
+            );
+          }).pipe(Effect.provide(asyncLayer)),
+        );
       }),
   );
 

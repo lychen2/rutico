@@ -62,21 +62,96 @@ import { installMainWindowRemoteRequestHeaderPolicy } from "./RemoteRequestHeade
 
 const TITLEBAR_HEIGHT = 40;
 
-export function buildLinuxWindowState(
+const linuxWindowNativeWco = new WeakMap<object, boolean>();
+
+export const LINUX_NATIVE_WCO_PROBE_SCRIPT =
+  'typeof navigator !== "undefined" && Boolean(navigator.windowControlsOverlay?.visible)';
+
+export function recordLinuxWindowNativeWco(
   window: Pick<Electron.BrowserWindow, "isMaximized" | "isFullScreen">,
+  hasNativeWco: boolean,
+): void {
+  linuxWindowNativeWco.set(window, hasNativeWco);
+}
+
+export function resolveLinuxWindowNativeWco(
+  window: Pick<Electron.BrowserWindow, "isMaximized" | "isFullScreen"> & {
+    readonly setTitleBarOverlay?: Electron.BrowserWindow["setTitleBarOverlay"];
+  },
+): boolean | undefined {
+  const recorded = linuxWindowNativeWco.get(window);
+  if (recorded !== undefined) {
+    return recorded;
+  }
+  if (typeof window.setTitleBarOverlay !== "function") {
+    return false;
+  }
+  return undefined;
+}
+
+export function buildLinuxWindowState(
+  window: Pick<Electron.BrowserWindow, "isMaximized" | "isFullScreen"> & {
+    readonly setTitleBarOverlay?: Electron.BrowserWindow["setTitleBarOverlay"];
+  },
   env: NodeJS.ProcessEnv = process.env,
-  hasNativeWco = true,
+  hasNativeWco?: boolean,
 ): LinuxWindowState {
   const session = resolveLinuxDesktopSessionInfo(env);
+  const resolvedNativeWco = hasNativeWco ?? resolveLinuxWindowNativeWco(window);
   return {
     maximized: window.isMaximized(),
     fullscreen: window.isFullScreen(),
     linuxDesktop: session.linuxDesktop,
     isTilingWm: session.isTilingWm,
-    hasNativeWco,
+    ...(resolvedNativeWco !== undefined ? { hasNativeWco: resolvedNativeWco } : {}),
     overlayHeight: TITLEBAR_HEIGHT,
   };
 }
+
+/**
+ * Tracks forked background fibers for scope-exit interruption without referencing
+ * an uninitialized `fiber` binding when an Effect finishes synchronously inside `runFork`.
+ */
+export const makeScopedFiberTracker = Effect.fn("desktop.window.makeScopedFiberTracker")(function* <
+  R,
+>() {
+  const context = yield* Effect.context<R>();
+  const runFork = Effect.runForkWith(context);
+  const fibers = new Set<Fiber.Fiber<void, never>>();
+  const track = (effect: Effect.Effect<void, never, R>): Fiber.Fiber<void, never> => {
+    let completed = false;
+    let fiber: Fiber.Fiber<void, never> | undefined;
+    fiber = runFork(
+      effect.pipe(
+        Effect.ensuring(
+          Effect.sync(() => {
+            completed = true;
+            if (fiber !== undefined) {
+              fibers.delete(fiber);
+            }
+          }),
+        ),
+      ),
+    );
+    if (!completed) {
+      fibers.add(fiber);
+    }
+    return fiber;
+  };
+  const interruptAll = Effect.suspend(() =>
+    Effect.forEach([...fibers], (fiber) => Fiber.interrupt(fiber), {
+      concurrency: "unbounded",
+      discard: true,
+    }),
+  ).pipe(
+    Effect.ensuring(
+      Effect.sync(() => {
+        fibers.clear();
+      }),
+    ),
+  );
+  return { fibers, track, interruptAll };
+});
 
 export function buildDesktopWindowZoomState(
   window: Pick<Electron.BrowserWindow, "getBounds" | "webContents">,
@@ -664,32 +739,9 @@ export const make = Effect.gen(function* () {
   );
   let flushMainWindowBounds: Effect.Effect<void> = Effect.void;
   let remoteRequestHeaderOwner: Electron.BrowserWindow | null = null;
-  const scopedFibers = new Set<Fiber.Fiber<void, never>>();
-  const trackFork = (effect: Effect.Effect<void, never, DesktopWindowRuntimeServices>) => {
-    const fiber = runFork(
-      effect.pipe(
-        Effect.ensuring(
-          Effect.sync(() => {
-            scopedFibers.delete(fiber);
-          }),
-        ),
-      ),
-    );
-    scopedFibers.add(fiber);
-    return fiber;
-  };
-  yield* Effect.addFinalizer(() =>
-    Effect.forEach([...scopedFibers], (fiber) => Fiber.interrupt(fiber), {
-      concurrency: "unbounded",
-      discard: true,
-    }).pipe(
-      Effect.ensuring(
-        Effect.sync(() => {
-          scopedFibers.clear();
-        }),
-      ),
-    ),
-  );
+  const scopedFibers = yield* makeScopedFiberTracker<DesktopWindowRuntimeServices>();
+  const trackFork = scopedFibers.track;
+  yield* Effect.addFinalizer(() => scopedFibers.interruptAll);
 
   const dismissConnectingSplash = Effect.gen(function* () {
     const splash = yield* Ref.getAndSet(splashWindowRef, Option.none());
@@ -826,6 +878,7 @@ export const make = Effect.gen(function* () {
       yield* logWindowWarning("saved main window bounds could not be restored; using defaults");
     }
     if (yield* Ref.get(desktopState.quitting)) return Option.none();
+    const titleBarOptions = getWindowTitleBarOptions(shouldUseDarkColors, environment.platform);
     const window = yield* electronWindow.create({
       ...initialBounds,
       minWidth: DesktopAppSettings.MIN_MAIN_WINDOW_SIZE.width,
@@ -837,7 +890,7 @@ export const make = Effect.gen(function* () {
       ...vibrancyOptions,
       ...iconOption,
       title: environment.displayName,
-      ...getWindowTitleBarOptions(shouldUseDarkColors, environment.platform),
+      ...titleBarOptions,
       webPreferences: {
         preload: environment.preloadPath,
         // Hidden-renderer throttling stalls first paint; re-enable it after the first reveal.
@@ -851,6 +904,16 @@ export const make = Effect.gen(function* () {
         disableHtmlFullscreenWindowResize: true,
       },
     });
+    if (
+      environment.platform === "linux" &&
+      (!(
+        typeof titleBarOptions.titleBarOverlay === "object" ||
+        titleBarOptions.titleBarOverlay === true
+      ) ||
+        typeof window.setTitleBarOverlay !== "function")
+    ) {
+      recordLinuxWindowNativeWco(window, false);
+    }
     if (yield* Ref.get(desktopState.quitting)) {
       yield* electronWindow.destroyAll;
       return Option.none();
@@ -1241,10 +1304,21 @@ export const make = Effect.gen(function* () {
                 environment.platform,
                 focused,
               );
-              if (typeof titleBarOverlay === "object") {
+              if (
+                typeof titleBarOverlay === "object" &&
+                typeof window.setTitleBarOverlay === "function"
+              ) {
                 try {
                   window.setTitleBarOverlay(titleBarOverlay);
-                } catch {}
+                } catch {
+                  if (
+                    environment.platform === "linux" &&
+                    resolveLinuxWindowNativeWco(window) !== false
+                  ) {
+                    recordLinuxWindowNativeWco(window, false);
+                    emitLinuxWindowState();
+                  }
+                }
               }
             }),
           ),
@@ -1384,6 +1458,24 @@ export const make = Effect.gen(function* () {
       );
       emitLinuxWindowState();
       if (environment.platform === "linux") {
+        if (typeof window.webContents.executeJavaScript === "function") {
+          trackFork(
+            Effect.tryPromise({
+              try: () => window.webContents.executeJavaScript(LINUX_NATIVE_WCO_PROBE_SCRIPT),
+              catch: () => undefined,
+            }).pipe(
+              Effect.tap((detected) =>
+                Effect.sync(() => {
+                  if (typeof detected !== "boolean") return;
+                  if (resolveLinuxWindowNativeWco(window) === detected) return;
+                  recordLinuxWindowNativeWco(window, detected);
+                  emitLinuxWindowState();
+                }),
+              ),
+              Effect.ignore,
+            ),
+          );
+        }
         trackFork(
           electronTheme.linuxPortalAppearance.pipe(
             Effect.tap((appearance) =>

@@ -51,7 +51,11 @@ import * as ElectronTheme from "../../electron/ElectronTheme.ts";
 import * as ElectronWindow from "../../electron/ElectronWindow.ts";
 import * as DesktopTray from "../../window/DesktopTray.ts";
 import * as DesktopWindow from "../../window/DesktopWindow.ts";
-import { buildDesktopWindowZoomState, buildLinuxWindowState } from "../../window/DesktopWindow.ts";
+import {
+  buildDesktopWindowZoomState,
+  buildLinuxWindowState,
+  resolveLinuxWindowNativeWco,
+} from "../../window/DesktopWindow.ts";
 import * as Electron from "electron";
 import { msg } from "gt-i18n";
 import * as MacPermissions from "../../permissions/MacPermissions.ts";
@@ -152,7 +156,7 @@ export const getLinuxWindowState = DesktopIpc.makeSyncIpcMethod({
     if (Option.isNone(window) || window.value.isDestroyed()) {
       return null;
     }
-    return buildLinuxWindowState(window.value, hostEnv);
+    return buildLinuxWindowState(window.value, hostEnv, resolveLinuxWindowNativeWco(window.value));
   }),
 });
 

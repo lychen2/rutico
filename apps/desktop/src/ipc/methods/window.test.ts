@@ -25,12 +25,16 @@ vi.mock("electron", () => ({
 import * as DesktopBackendConfiguration from "../../backend/DesktopBackendConfiguration.ts";
 import * as DesktopBackendManager from "../../backend/DesktopBackendManager.ts";
 import * as DesktopBackendPool from "../../backend/DesktopBackendPool.ts";
+import * as DesktopEnvironment from "../../app/DesktopEnvironment.ts";
 import * as DesktopAppSettings from "../../settings/DesktopAppSettings.ts";
 import * as DesktopWslEnvironment from "../../wsl/DesktopWslEnvironment.ts";
 import * as ElectronDialog from "../../electron/ElectronDialog.ts";
 import * as ElectronWindow from "../../electron/ElectronWindow.ts";
+import { recordLinuxWindowNativeWco } from "../../window/DesktopWindow.ts";
 import {
+  getLinuxWindowState,
   getLocalEnvironmentBootstraps,
+  performLinuxWindowControlAction,
   pickProjectFavicon,
   probeRemoteEditors,
   readMedia,
@@ -591,5 +595,134 @@ describe("probeRemoteEditors PATH scan", () => {
         .map((entry) => reads.get(entry) ?? 0);
       assert.strictEqual(Math.max(...pathReads), platform === "win32" ? 1 : 0);
     }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+  );
+});
+
+describe("Linux window state and fallback control IPC", () => {
+  it.effect(
+    "propagates real native WCO capability over getLinuxWindowState without hardcoding true",
+    () =>
+      Effect.gen(function* () {
+        const makeWin = (options: { readonly withSetTitleBarOverlay: boolean }) =>
+          ({
+            isDestroyed: () => false,
+            isMaximized: () => false,
+            isFullScreen: () => false,
+            ...(options.withSetTitleBarOverlay ? { setTitleBarOverlay: vi.fn() } : {}),
+          }) as unknown as Electron.BrowserWindow;
+
+        const query = (
+          window: Electron.BrowserWindow,
+          platform: NodeJS.Platform = "linux",
+          env: NodeJS.ProcessEnv = { XDG_CURRENT_DESKTOP: "XFCE" },
+        ) =>
+          getLinuxWindowState.handler().pipe(
+            Effect.provide(
+              Layer.mergeAll(
+                Layer.succeed(DesktopEnvironment.DesktopEnvironment, {
+                  platform,
+                } as unknown as DesktopEnvironment.DesktopEnvironment["Service"]),
+                Layer.mock(ElectronWindow.ElectronWindow)({
+                  currentMainOrFirst: Effect.succeedSome(window),
+                }),
+              ),
+            ),
+            Effect.provideService(HostProcess.Environment, env),
+          );
+
+        // Non-Linux returns null.
+        assert.strictEqual(yield* query(makeWin({ withSetTitleBarOverlay: true }), "darwin"), null);
+
+        // Window without setTitleBarOverlay reports hasNativeWco: false.
+        const withoutOverlay = makeWin({ withSetTitleBarOverlay: false });
+        assert.deepEqual(yield* query(withoutOverlay), {
+          maximized: false,
+          fullscreen: false,
+          linuxDesktop: "xfce",
+          isTilingWm: false,
+          hasNativeWco: false,
+          overlayHeight: 40,
+        });
+
+        // Unprobed window with setTitleBarOverlay does not hardcode hasNativeWco: true.
+        const unprobed = makeWin({ withSetTitleBarOverlay: true });
+        assert.deepEqual(yield* query(unprobed), {
+          maximized: false,
+          fullscreen: false,
+          linuxDesktop: "xfce",
+          isTilingWm: false,
+          overlayHeight: 40,
+        });
+
+        // Recorded true and false capabilities are propagated faithfully over IPC.
+        recordLinuxWindowNativeWco(unprobed, true);
+        assert.deepEqual(yield* query(unprobed), {
+          maximized: false,
+          fullscreen: false,
+          linuxDesktop: "xfce",
+          isTilingWm: false,
+          hasNativeWco: true,
+          overlayHeight: 40,
+        });
+        recordLinuxWindowNativeWco(unprobed, false);
+        assert.deepEqual(yield* query(unprobed), {
+          maximized: false,
+          fullscreen: false,
+          linuxDesktop: "xfce",
+          isTilingWm: false,
+          hasNativeWco: false,
+          overlayHeight: 40,
+        });
+      }),
+  );
+
+  it.effect(
+    "executes minimize, maximize-toggle, and close via performLinuxWindowControlAction",
+    () =>
+      Effect.gen(function* () {
+        let maximized = false;
+        const minimize = vi.fn();
+        const maximize = vi.fn(() => {
+          maximized = true;
+        });
+        const unmaximize = vi.fn(() => {
+          maximized = false;
+        });
+        const close = vi.fn();
+        const main = {
+          webContents: { id: 7 },
+          isDestroyed: () => false,
+          isMaximized: () => maximized,
+          minimize,
+          maximize,
+          unmaximize,
+          close,
+        } as unknown as Electron.BrowserWindow;
+        const layer = Layer.mergeAll(
+          Layer.succeed(DesktopEnvironment.DesktopEnvironment, {
+            platform: "linux",
+          } as unknown as DesktopEnvironment.DesktopEnvironment["Service"]),
+          Layer.mock(ElectronWindow.ElectronWindow)({ main: Effect.succeedSome(main) }),
+        );
+        const fromMain = { sender: { id: 7 } };
+
+        yield* performLinuxWindowControlAction
+          .handler("minimize", fromMain)
+          .pipe(Effect.provide(layer));
+        yield* performLinuxWindowControlAction
+          .handler("maximize-toggle", fromMain)
+          .pipe(Effect.provide(layer));
+        yield* performLinuxWindowControlAction
+          .handler("maximize-toggle", fromMain)
+          .pipe(Effect.provide(layer));
+        yield* performLinuxWindowControlAction
+          .handler("close", fromMain)
+          .pipe(Effect.provide(layer));
+
+        assert.strictEqual(minimize.mock.calls.length, 1);
+        assert.strictEqual(maximize.mock.calls.length, 1);
+        assert.strictEqual(unmaximize.mock.calls.length, 1);
+        assert.strictEqual(close.mock.calls.length, 1);
+      }),
   );
 });

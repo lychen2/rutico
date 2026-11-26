@@ -108,6 +108,8 @@ function getElectronPlatformClassNames(
 let cachedLinuxWindowState: LinuxWindowState | null = null;
 const linuxWindowStateListeners = new Set<() => void>();
 let stopLinuxWindowStateBridge: (() => void) | null = null;
+let stopLinuxWindowWcoListener: (() => void) | null = null;
+let documentLinuxWindowSyncActive = false;
 
 function applyLinuxWindowStateAttributes(root: HTMLElement, state: LinuxWindowState | null): void {
   if (state === null) {
@@ -120,7 +122,8 @@ function applyLinuxWindowStateAttributes(root: HTMLElement, state: LinuxWindowSt
     return;
   }
   const overlay = getWindowControlsOverlay();
-  const hasNativeWco = state.hasNativeWco ?? (overlay !== null && overlay.visible);
+  const hasDomWco = overlay !== null && overlay.visible;
+  const hasNativeWco = hasDomWco || state.hasNativeWco === true;
   const overlayHeight =
     typeof state.overlayHeight === "number" &&
     Number.isFinite(state.overlayHeight) &&
@@ -164,6 +167,7 @@ function syncDocumentLinuxWindowState(): () => void {
   if (typeof document === "undefined" || typeof window === "undefined") {
     return () => {};
   }
+  documentLinuxWindowSyncActive = true;
   const bridge = window.desktopBridge;
   notifyLinuxWindowState(readInitialLinuxWindowState());
   const unsubscribe =
@@ -172,8 +176,13 @@ function syncDocumentLinuxWindowState(): () => void {
           notifyLinuxWindowState(state);
         })
       : undefined;
+  const unsubscribeWco = onWindowControlsOverlayGeometryChange(() => {
+    notifyLinuxWindowState(cachedLinuxWindowState);
+  });
   return () => {
+    documentLinuxWindowSyncActive = false;
     unsubscribe?.();
+    unsubscribeWco();
     applyLinuxWindowStateAttributes(document.documentElement, null);
     cachedLinuxWindowState = null;
   };
@@ -191,12 +200,20 @@ function subscribeLinuxWindowState(listener: () => void): () => void {
         notifyLinuxWindowState(state);
       });
     }
+    stopLinuxWindowWcoListener = onWindowControlsOverlayGeometryChange(() => {
+      notifyLinuxWindowState(cachedLinuxWindowState);
+    });
   }
   return () => {
     linuxWindowStateListeners.delete(listener);
     if (linuxWindowStateListeners.size === 0) {
       stopLinuxWindowStateBridge?.();
       stopLinuxWindowStateBridge = null;
+      stopLinuxWindowWcoListener?.();
+      stopLinuxWindowWcoListener = null;
+      if (!documentLinuxWindowSyncActive) {
+        cachedLinuxWindowState = null;
+      }
     }
   };
 }
@@ -219,7 +236,7 @@ export function shouldShowFallbackLinuxWindowControls(
   override?: "force" | "hide" | null,
 ): boolean {
   if (state === null || hasDomWco || state.fullscreen) return false;
-  if (state.hasNativeWco !== false) return false;
+  if (state.hasNativeWco === true) return false;
   if (override === "hide") return false;
   if (override === "force") return true;
   return state.isTilingWm !== true;
