@@ -162,72 +162,74 @@ export function PreviewChromeRow({
 
         {leadingActions}
 
-        <InputGroup variant="ghost" className="group/address h-7 flex-1">
-          <Tooltip>
-            <TooltipTrigger
-              render={
-                <InputGroupInput
-                  ref={inputRef}
-                  value={inputFocused ? draft : url}
-                  onChange={(event) => setDraft(event.target.value)}
-                  onFocus={() => {
-                    setDraft(url);
-                    setInputFocused(true);
-                    queueMicrotask(() => inputRef.current?.select());
-                  }}
-                  onBlur={() => {
-                    setInputFocused(false);
-                  }}
-                  onKeyDown={(event) => {
-                    if (event.nativeEvent.isComposing || event.keyCode === 229) {
-                      // A trusted Enter would still submit the form implicitly.
-                      if (event.key === "Enter") event.preventDefault();
-                      return;
-                    }
-                    if (event.key === "Enter") submit(event);
-                    if (event.key === "Escape") {
-                      event.preventDefault();
+        <div className="group/address flex h-7 min-w-0 flex-1 items-center overflow-hidden rounded-lg border border-border/50 bg-muted/35 transition-[border-color,background-color] duration-150 ease-out hover:border-border/80 has-[input:focus-visible]:border-transparent has-[input:focus-visible]:bg-background motion-reduce:transition-none">
+          <InputGroup variant="ghost" className="h-full flex-1">
+            <Tooltip disabled={inputFocused || url.trim().length === 0}>
+              <TooltipTrigger
+                render={
+                  <InputGroupInput
+                    ref={inputRef}
+                    value={inputFocused ? draft : url}
+                    onChange={(event) => setDraft(event.target.value)}
+                    onFocus={() => {
                       setDraft(url);
-                      inputRef.current?.blur();
-                    }
-                  }}
-                  placeholder={gt("Search or enter URL")}
-                  aria-label={gt("Search or enter URL")}
-                  data-workspace-focus-default
-                  spellCheck={false}
-                  disabled={inputDisabled}
-                  data-preview-url-input
-                  size="sm"
-                />
-              }
-            />
-          </Tooltip>
-          {onOpenInBrowser && !inputFocused ? (
-            <InputGroupAddon align="inline-end">
-              {}
-              <span className="pointer-events-none flex opacity-0 transition-opacity focus-within:pointer-events-auto focus-within:opacity-100 group-hover/address:pointer-events-auto group-hover/address:opacity-100">
-                <Tooltip>
-                  <TooltipTrigger
-                    render={
-                      <Button
-                        variant="ghost"
-                        size="icon-xs"
-                        onClick={onOpenInBrowser}
-                        aria-label={gt("Open in system browser")}
-                        type="button"
-                      />
-                    }
-                  >
-                    <ExternalLink />
-                  </TooltipTrigger>
-                  <TooltipPopup>
-                    <T>Open in system browser</T>
-                  </TooltipPopup>
-                </Tooltip>
-              </span>
-            </InputGroupAddon>
-          ) : null}
-        </InputGroup>
+                      setInputFocused(true);
+                      queueMicrotask(() => inputRef.current?.select());
+                    }}
+                    onBlur={() => {
+                      setInputFocused(false);
+                    }}
+                    onKeyDown={(event) => {
+                      if (event.nativeEvent.isComposing || event.keyCode === 229) {
+                        // A trusted Enter would still submit the form implicitly.
+                        if (event.key === "Enter") event.preventDefault();
+                        return;
+                      }
+                      if (event.key === "Enter") submit(event);
+                      if (event.key === "Escape") {
+                        event.preventDefault();
+                        setDraft(url);
+                        inputRef.current?.blur();
+                      }
+                    }}
+                    placeholder={gt("Search or enter URL")}
+                    aria-label={gt("Search or enter URL")}
+                    data-workspace-focus-default
+                    spellCheck={false}
+                    disabled={inputDisabled}
+                    data-preview-url-input
+                    size="sm"
+                  />
+                }
+              />
+              <TooltipPopup side="bottom">{url}</TooltipPopup>
+            </Tooltip>
+            {onOpenInBrowser && !inputFocused ? (
+              <InputGroupAddon align="inline-end">
+                <span className="pointer-events-none flex opacity-0 transition-opacity duration-150 ease-out focus-within:pointer-events-auto focus-within:opacity-100 group-hover/address:pointer-events-auto group-hover/address:opacity-100 pointer-coarse:pointer-events-auto pointer-coarse:opacity-100 [@media(hover:none)]:pointer-events-auto [@media(hover:none)]:opacity-100 motion-reduce:transition-none">
+                  <Tooltip>
+                    <TooltipTrigger
+                      render={
+                        <Button
+                          variant="ghost"
+                          size="icon-xs"
+                          onClick={onOpenInBrowser}
+                          aria-label={gt("Open in system browser")}
+                          type="button"
+                        />
+                      }
+                    >
+                      <ExternalLink />
+                    </TooltipTrigger>
+                    <TooltipPopup>
+                      <T>Open in system browser</T>
+                    </TooltipPopup>
+                  </Tooltip>
+                </span>
+              </InputGroupAddon>
+            ) : null}
+          </InputGroup>
+        </div>
 
         {onPickElement ? (
           <Tooltip>
@@ -309,8 +311,7 @@ export function PreviewChromeRow({
       <div
         aria-hidden
         data-loading={loading}
-        className="preview-loading-progress pointer-events-none absolute bottom-0 left-0 z-10 h-0.5 w-full origin-left rounded-r-full bg-primary"
-        style={{ boxShadow: "0 0 6px 1px var(--color-ring)" }}
+        className="preview-loading-progress pointer-events-none absolute bottom-0 left-0 z-10 h-0.5 w-full origin-left rounded-r-full bg-primary shadow-sm shadow-ring/60"
       />
     </div>
   );
