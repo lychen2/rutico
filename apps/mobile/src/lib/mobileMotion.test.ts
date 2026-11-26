@@ -1,3 +1,6 @@
+// @effect-diagnostics nodeBuiltinImport:off - Node unit test asserting Wave 2 Reanimated/ReduceMotion source invariants.
+import * as NodeFS from "node:fs";
+import * as NodePath from "node:path";
 import { describe, expect, it, vi } from "vite-plus/test";
 
 const rnAnimatedHarness = vi.hoisted(() => ({
@@ -34,6 +37,8 @@ import {
   SPRING_EFFECTS_FAST,
   SPRING_SPATIAL_GENTLE,
   SPRING_SPATIAL_SNAPPY,
+  TIMING_QUICK_FADE,
+  TIMING_STANDARD_ENTER,
   concentricRadius,
   projectOffset,
   rubberBandClamp,
@@ -43,7 +48,7 @@ import {
 } from "./mobileMotion";
 
 describe("mobileMotion presets", () => {
-  it("binds ReduceMotion.System inside every Material 3 spring preset", () => {
+  it("binds ReduceMotion.System inside every Material 3 spring and timing preset", () => {
     for (const preset of [
       SPRING_SPATIAL_SNAPPY,
       SPRING_SPATIAL_GENTLE,
@@ -54,6 +59,11 @@ describe("mobileMotion presets", () => {
       expect(preset.damping).toBeGreaterThan(0);
       expect(preset.stiffness).toBeGreaterThan(0);
       expect(preset.mass).toBeGreaterThan(0);
+    }
+
+    for (const timing of [TIMING_QUICK_FADE, TIMING_STANDARD_ENTER]) {
+      expect(timing.reduceMotion).toBe(ReduceMotion.System);
+      expect(timing.duration).toBeGreaterThan(0);
     }
   });
 
@@ -125,5 +135,119 @@ describe("startNativePulseLoop", () => {
     expect(rnAnimatedHarness.start).toHaveBeenCalledTimes(1);
     stopActive();
     expect(rnAnimatedHarness.stop).toHaveBeenCalledTimes(1);
+  });
+});
+
+const MOBILE_ROOT = NodePath.resolve(import.meta.dirname, "../..");
+
+const WAVE2_TOUCHED_MOBILE_MOTION_FILES = [
+  "src/components/ComposerSurface.tsx",
+  "src/components/ScrollComposeButton.android.tsx",
+  "src/components/ui/AndroidAnchoredMenu.android.tsx",
+  "src/components/ui/Dialog.android.tsx",
+  "src/components/ui/FloatingActionButton.android.tsx",
+  "src/components/ui/FrostedCutout.android.tsx",
+  "src/components/ui/GlassSurface.tsx",
+  "src/components/ui/MenuPopup.android.tsx",
+  "src/components/ui/PaneSheet.android.tsx",
+  "src/components/ui/RowPressable.tsx",
+  "src/components/ui/Sheet.android.tsx",
+  "src/components/ui/SheetHeader.android.tsx",
+  "src/components/ui/SliderRow.android.tsx",
+  "src/components/ui/Toast.tsx",
+  "src/features/browser/ThreadBrowserFloat.tsx",
+  "src/features/cloud/ConnectOnboardingRouteScreen.tsx",
+  "src/features/connection/ConnectDeviceApprovalCoordinator.tsx",
+  "src/features/connection/ConnectionsNewRouteScreen.tsx",
+  "src/features/connection/ConnectionsRouteScreen.tsx",
+  "src/features/home/AndroidHomeFab.android.tsx",
+  "src/features/home/HomeRouteScreen.tsx",
+  "src/features/home/HomeScreen.tsx",
+  "src/features/home/thread-swipe-actions.tsx",
+  "src/features/home/ThreadUndoNotice.tsx",
+  "src/features/layout/AdaptiveWorkspaceLayout.tsx",
+  "src/features/layout/AndroidPaseoPanels.android.tsx",
+  "src/features/layout/workspace/AndroidWorkspaceNavigation.android.tsx",
+  "src/features/layout/workspace/AndroidWorkspaceSidebar.android.tsx",
+  "src/features/layout/workspace/ListSearchToolbar.android.tsx",
+  "src/features/pull-requests/PullRequestMergeControls.tsx",
+  "src/features/pull-requests/PullRequestRouteScreen.tsx",
+  "src/features/review/ReviewCommentComposerSheet.tsx",
+  "src/features/review/ReviewSheet.tsx",
+  "src/features/threads/ComposerCommandPopover.tsx",
+  "src/features/threads/CustomSnoozeSheet.android.tsx",
+  "src/features/threads/floating-working-control.tsx",
+  "src/features/threads/NewTaskDraftScreen.tsx",
+  "src/features/threads/PendingApprovalCard.tsx",
+  "src/features/threads/PendingUserInputCard.tsx",
+  "src/features/threads/ProposedPlanCard.tsx",
+  "src/features/threads/ThreadComposer.tsx",
+  "src/features/threads/ThreadDetailScreen.tsx",
+  "src/features/threads/ThreadFeed.tsx",
+  "src/features/threads/ThreadGuestShareBar.tsx",
+  "src/features/threads/ThreadGuestShareSheet.tsx",
+  "src/features/threads/threadListAnimations.ts",
+  "src/features/threads/thread-list-v2-items.tsx",
+  "src/features/threads/ThreadQueueControl.tsx",
+  "src/features/threads/thread-work-log.tsx",
+  "src/features/usage/UsageDailyChart.tsx",
+  "src/features/usage/UsageRouteScreen.tsx",
+  "src/features/voice-input/ComposerDictationControl.tsx",
+  "src/features/voice-input/GlobalVoiceInputControl.tsx",
+  "src/lib/mobileMotion.ts",
+  "src/native/androidPredictiveBack.ts",
+] as const;
+
+const WAVE2_REDUCE_MOTION_REQUIRED_FILES = [
+  "src/components/ui/Toast.tsx",
+  "src/components/ui/FrostedCutout.android.tsx",
+  "src/features/browser/ThreadBrowserFloat.tsx",
+  "src/features/connection/ConnectDeviceApprovalCoordinator.tsx",
+  "src/features/home/thread-swipe-actions.tsx",
+  "src/features/layout/AndroidPaseoPanels.android.tsx",
+  "src/features/layout/workspace/ListSearchToolbar.android.tsx",
+  "src/features/pull-requests/PullRequestMergeControls.tsx",
+  "src/features/threads/ThreadFeed.tsx",
+  "src/features/threads/floating-working-control.tsx",
+  "src/features/usage/UsageDailyChart.tsx",
+  "src/lib/mobileMotion.ts",
+] as const;
+
+describe("Wave 5 Android motion regression gate (C137)", () => {
+  it("preserves DISABLE_COMMIT_PAUSING_MECHANISM and forbids Reanimated withRepeat in all Wave 2 mobile files", () => {
+    const pkg = JSON.parse(
+      NodeFS.readFileSync(NodePath.join(MOBILE_ROOT, "package.json"), "utf8"),
+    ) as { reanimated?: { staticFeatureFlags?: Record<string, unknown> } };
+    expect(pkg.reanimated?.staticFeatureFlags?.DISABLE_COMMIT_PAUSING_MECHANISM).toBe(true);
+
+    for (const relPath of WAVE2_TOUCHED_MOBILE_MOTION_FILES) {
+      const fullPath = NodePath.join(MOBILE_ROOT, relPath);
+      expect(NodeFS.existsSync(fullPath), `Missing Wave 2 mobile file ${relPath}`).toBe(true);
+      const source = NodeFS.readFileSync(fullPath, "utf8")
+        .replace(/\/\*[\s\S]*?\*\//g, "")
+        .replace(/^\s*\/\/.*$/gm, "");
+      expect(source, `Disallowed Reanimated withRepeat in ${relPath}`).not.toMatch(
+        /\bwithRepeat\s*\(/,
+      );
+      // Astra P1-10: never pass ReduceMotion as a 3rd callback argument to withSpring/withTiming.
+      expect(
+        source,
+        `ReduceMotion must be inside the config object, not the 3rd callback argument (${relPath})`,
+      ).not.toMatch(/\bwith(?:Spring|Timing)\s*\([^,]+,\s*\{[^}]*\}\s*,\s*ReduceMotion/);
+    }
+  });
+
+  it("ensures ReduceMotion.System or mobileMotion presets are wired across Wave 2 Reanimated surfaces", () => {
+    for (const relPath of WAVE2_REDUCE_MOTION_REQUIRED_FILES) {
+      const source = NodeFS.readFileSync(NodePath.join(MOBILE_ROOT, relPath), "utf8");
+      const usesReduceMotion =
+        source.includes("ReduceMotion.System") ||
+        source.includes("SPRING_SPATIAL_") ||
+        source.includes("SPRING_EFFECTS_") ||
+        source.includes("SPRING_DETENT_") ||
+        source.includes("TIMING_QUICK_FADE") ||
+        source.includes("TIMING_STANDARD_ENTER");
+      expect(usesReduceMotion, `Expected ReduceMotion.System coverage in ${relPath}`).toBe(true);
+    }
   });
 });
