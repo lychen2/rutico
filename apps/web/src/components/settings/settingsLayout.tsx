@@ -246,7 +246,7 @@ export function SettingsSection({
           className="flex min-h-7 flex-wrap items-start justify-between gap-x-4 gap-y-1 px-3 sm:px-4"
         >
           <div className="flex min-w-0 items-center gap-1">
-            <h2 className="flex min-h-7 items-center gap-2 text-base font-semibold text-foreground">
+            <h2 className="flex min-h-7 items-center gap-2 text-base font-semibold tracking-tight text-foreground">
               {icon}
               {title}
             </h2>
@@ -530,7 +530,7 @@ export function SettingsRow({
       tabIndex={rowProps.tabIndex ?? -1}
       data-slot="settings-row"
       className={cn(
-        "group/settings-row @container/settings-row rounded-xl px-3 sm:px-4 aria-disabled:opacity-64 aria-disabled:[&_*]:text-muted-foreground",
+        "group/settings-row @container/settings-row rounded-xl px-3 transition-colors duration-120 ease-out any-hover:bg-accent/25 motion-reduce:transition-none sm:px-4 aria-disabled:opacity-64 aria-disabled:[&_*]:text-muted-foreground",
         children ? "pt-3 pb-1" : "py-3",
         className,
       )}
@@ -542,7 +542,7 @@ export function SettingsRow({
             {renderedInheritance ? (
               <span
                 className={cn(
-                  "inline-flex h-5 w-5 shrink-0 items-center justify-center",
+                  "inline-flex h-5 w-5 shrink-0 items-center justify-center transition-opacity duration-150 ease-out motion-reduce:transition-none",
                   // Values set right here explain nothing new, so their marker waits for hover or focus.
                   (inheritance.state === "default" || inheritance.state === "environment") &&
                     overridingProjects.length === 0 &&
