@@ -8,7 +8,7 @@ import {
   type EnvironmentId,
 } from "@t3tools/contracts";
 import * as DateTime from "effect/DateTime";
-import { Fragment, useEffect, useEffectEvent, useState, useSyncExternalStore } from "react";
+import { Fragment, useEffect, useEffectEvent, useRef, useState, useSyncExternalStore } from "react";
 import { Animated as RNAnimated, Platform, StyleSheet, useAnimatedValue, View } from "react-native";
 import Reanimated, {
   useAnimatedStyle,
@@ -148,6 +148,10 @@ interface ActiveApprovalSheetEntry {
   readonly presentationId: number;
   readonly prompt: QueuedApprovalPrompt;
   readonly answer: (outcome: "done" | "retry" | "later") => void;
+  /** Locks out remote-drop auto-dismiss while a user decision or confirmation stamp is in flight. */
+  readonly lockDecision: () => void;
+  /** Unlocks after a retryable failure; returns true if the link was withdrawn while in flight. */
+  readonly unlockDecision: () => boolean;
 }
 
 const APPROVAL_QUEUE_KEY_PREFIX = "approval:";
@@ -244,6 +248,8 @@ const connectDeviceDialogQueue = createApprovalPromptQueue<QueuedConnectDialog>(
   }
 
   const presentationId = ++nextPresentationId;
+  let decisionInFlight = false;
+  let dropped = false;
   const finish = (outcome: "done" | "retry" | "later") => {
     if (activeApprovalSheet?.presentationId === presentationId) {
       setActiveApprovalSheet(null);
@@ -254,7 +260,20 @@ const connectDeviceDialogQueue = createApprovalPromptQueue<QueuedConnectDialog>(
     presentationId,
     prompt: item.prompt,
     answer: finish,
+    lockDecision: () => {
+      decisionInFlight = true;
+    },
+    unlockDecision: () => {
+      decisionInFlight = false;
+      return dropped;
+    },
   });
+  return () => {
+    dropped = true;
+    if (!decisionInFlight) {
+      finish("done");
+    }
+  };
 });
 
 /** Exposed solely for deterministic unit tests of the approval handshake presentation bridge. */
@@ -348,7 +367,9 @@ function EnvironmentApprovalWatcher(props: {
     access.data?.type === "snapshot" ? access.data.payload.pairingLinks : undefined;
 
   const offerPrompts = useEffectEvent((links: ReadonlyArray<AuthPairingLink>) => {
-    const activeIds = new Set(links.map((link) => link.id));
+    const activeIds = new Set(
+      links.flatMap((link) => (link.connectDeviceRequest !== undefined ? [link.id] : [])),
+    );
     connectDeviceDialogQueue.drop(
       (item) =>
         item.kind === "approval" &&
@@ -496,9 +517,21 @@ function ApprovalHandshakeCard({ entry }: { readonly entry: ActiveApprovalSheetE
   const [phase, setPhase] = useState<HandshakeCardPhase>({ kind: "waiting" });
   const [armed, setArmed] = useState(false);
   const [nowMs, setNowMs] = useState(() => Date.now());
+  const stampTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const sheetProgress = useSharedValue(0);
   const armSweep = useSharedValue(0);
+
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- clears any pending confirmation stamp timer if the card unmounts early
+  useEffect(
+    () => () => {
+      if (stampTimerRef.current !== null) {
+        clearTimeout(stampTimerRef.current);
+        stampTimerRef.current = null;
+      }
+    },
+    [],
+  );
 
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- springs the Material 3 Verification Handshake sheet into view and runs the 700ms anti-accidental-tap arming sweep
   useEffect(() => {
@@ -521,6 +554,24 @@ function ApprovalHandshakeCard({ entry }: { readonly entry: ActiveApprovalSheetE
     }, 1000);
     return () => clearInterval(interval);
   }, []);
+
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- auto-dismisses an expired waiting prompt so queued approvals and notices are never stalled
+  useEffect(() => {
+    if (phase.kind !== "waiting" && phase.kind !== "failed") return;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const schedule = () => {
+      const remaining = prompt.expiresAtMs - Date.now();
+      if (remaining <= 0) {
+        answer("done");
+        return;
+      }
+      timer = setTimeout(schedule, Math.min(remaining, 2_147_483_647));
+    };
+    schedule();
+    return () => {
+      if (timer !== null) clearTimeout(timer);
+    };
+  }, [answer, phase.kind, prompt.expiresAtMs]);
 
   const backdropStyle = useAnimatedStyle(() => ({
     opacity: sheetProgress.get() * 0.52,
@@ -547,15 +598,29 @@ function ApprovalHandshakeCard({ entry }: { readonly entry: ActiveApprovalSheetE
   const runDecision = async (action: "approve" | "deny") => {
     if (phase.kind !== "waiting") return;
     if (action === "approve" && !armed) return;
+    if (Date.now() >= prompt.expiresAtMs) {
+      answer("done");
+      return;
+    }
+    entry.lockDecision();
     setPhase({ kind: "submitting", action });
     const outcome = await (action === "approve" ? prompt.approve() : prompt.deny());
     if (outcome === "done" || !watchedEnvironments.has(prompt.environmentId)) {
       triggerSemanticHaptic(action === "approve" ? "confirm" : "reject");
       setPhase({ kind: "stamped", action });
-      setTimeout(() => answer("done"), APPROVAL_STAMP_HOLD_MS);
+      stampTimerRef.current = setTimeout(() => {
+        stampTimerRef.current = null;
+        answer("done");
+      }, APPROVAL_STAMP_HOLD_MS);
       return;
     }
     if (outcome === "gone") {
+      triggerSemanticHaptic("reject");
+      setPhase({ kind: "gone" });
+      return;
+    }
+    const wasDropped = entry.unlockDecision();
+    if (wasDropped || Date.now() >= prompt.expiresAtMs) {
       triggerSemanticHaptic("reject");
       setPhase({ kind: "gone" });
       return;
@@ -734,9 +799,13 @@ function ApprovalHandshakeCard({ entry }: { readonly entry: ActiveApprovalSheetE
               label={gt("Try again")}
               tone="primary"
               fullWidth
-              onPress={() =>
-                answer(watchedEnvironments.has(prompt.environmentId) ? "retry" : "done")
-              }
+              onPress={() => {
+                if (Date.now() >= prompt.expiresAtMs) {
+                  answer("done");
+                  return;
+                }
+                answer(watchedEnvironments.has(prompt.environmentId) ? "retry" : "done");
+              }}
             />
           </View>
         ) : (
@@ -750,7 +819,7 @@ function ApprovalHandshakeCard({ entry }: { readonly entry: ActiveApprovalSheetE
                 }
                 tone="danger"
                 fullWidth
-                disabled={phase.kind === "submitting"}
+                disabled={phase.kind === "submitting" || isExpired}
                 onPress={() => void runDecision("deny")}
               />
             </View>
@@ -764,7 +833,7 @@ function ApprovalHandshakeCard({ entry }: { readonly entry: ActiveApprovalSheetE
                 tone="primary"
                 fullWidth
                 loading={phase.kind === "submitting" && phase.action === "approve"}
-                disabled={!armed || phase.kind === "submitting"}
+                disabled={!armed || phase.kind === "submitting" || isExpired}
                 onPress={() => void runDecision("approve")}
               />
               {!armed ? (

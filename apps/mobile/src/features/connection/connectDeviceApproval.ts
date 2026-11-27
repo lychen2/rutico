@@ -55,40 +55,69 @@ export function connectDeviceApprovalPrompts(input: {
  * "later" puts it back without showing anything until the next offer.
  */
 export function createApprovalPromptQueue<P extends { readonly pairingLinkId: string }>(
-  present: (prompt: P, answer: (outcome: "done" | "retry" | "later") => void) => void,
+  present: (
+    prompt: P,
+    answer: (outcome: "done" | "retry" | "later") => void,
+  ) => void | (() => void),
 ) {
   const known = new Set<string>();
   const waiting: P[] = [];
-  let showing: { readonly prompt: P; dropped: boolean } | null = null;
+  let showing: {
+    readonly prompt: P;
+    dropped: boolean;
+    onDrop: (() => void) | null;
+  } | null = null;
   const next = () => {
     if (showing) return;
     const prompt = waiting.shift();
     if (prompt === undefined) return;
-    const current = { prompt, dropped: false };
+    const current: {
+      readonly prompt: P;
+      dropped: boolean;
+      onDrop: (() => void) | null;
+    } = { prompt, dropped: false, onDrop: null };
     showing = current;
     let answered = false;
-    present(prompt, (outcome) => {
+    const onDrop = present(prompt, (outcome) => {
       if (answered) return;
       answered = true;
-      showing = null;
+      current.onDrop = null;
+      if (showing === current) {
+        showing = null;
+      }
       // A dropped prompt is forgotten, so its host can offer it again when it comes back.
       if (outcome !== "done" && !current.dropped) waiting.unshift(prompt);
       if (outcome !== "later") next();
     });
+    if (!answered && showing === current && typeof onDrop === "function") {
+      current.onDrop = onDrop;
+    }
   };
   return {
     known: known as ReadonlySet<string>,
     /** Forgets waiting prompts that match, such as a host that went away. */
     drop(matches: (prompt: P) => boolean) {
+      let droppedShowing: {
+        readonly prompt: P;
+        dropped: boolean;
+        onDrop: (() => void) | null;
+      } | null = null;
       if (showing && matches(showing.prompt)) {
         showing.dropped = true;
         known.delete(showing.prompt.pairingLinkId);
+        droppedShowing = showing;
       }
       for (let index = waiting.length - 1; index >= 0; index--) {
         const prompt = waiting[index]!;
         if (!matches(prompt)) continue;
         waiting.splice(index, 1);
         known.delete(prompt.pairingLinkId);
+      }
+      // Notify after pruning `waiting` so an immediate answer("done") advances past dropped items.
+      if (droppedShowing?.onDrop) {
+        const notify = droppedShowing.onDrop;
+        droppedShowing.onDrop = null;
+        notify();
       }
     },
     offer(prompts: ReadonlyArray<P>) {

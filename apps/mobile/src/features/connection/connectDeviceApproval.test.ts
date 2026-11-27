@@ -129,4 +129,55 @@ describe("createApprovalPromptQueue", () => {
     answers.at(-1)!("done");
     expect(shown).toEqual(["approval:approval:req-a", "notice:notice:host-b:100"]);
   });
+
+  it("notifies the active presenter on drop so a waiting prompt dismisses and advances past dropped items", () => {
+    const shown: string[] = [];
+    const queue = createApprovalPromptQueue<{ pairingLinkId: string; host: string }>(
+      (prompt, answer) => {
+        shown.push(prompt.pairingLinkId);
+        return () => answer("done");
+      },
+    );
+
+    queue.offer([
+      { pairingLinkId: "a", host: "mini" },
+      { pairingLinkId: "b", host: "mini" },
+      { pairingLinkId: "c", host: "laptop" },
+    ]);
+    expect(shown).toEqual(["a"]);
+
+    queue.drop((prompt) => prompt.host === "mini");
+    expect(shown).toEqual(["a", "c"]);
+    expect(queue.known.has("a")).toBe(false);
+    expect(queue.known.has("b")).toBe(false);
+    expect(queue.known.has("c")).toBe(true);
+  });
+
+  it("allows an in-flight presentation to defer dismissal until its decision completes", () => {
+    const shown: string[] = [];
+    const answers: Array<(outcome: "done" | "retry" | "later") => void> = [];
+    let inFlight = false;
+    const queue = createApprovalPromptQueue<{ pairingLinkId: string; host: string }>(
+      (prompt, answer) => {
+        shown.push(prompt.pairingLinkId);
+        answers.push(answer);
+        return () => {
+          if (!inFlight) answer("done");
+        };
+      },
+    );
+
+    queue.offer([
+      { pairingLinkId: "a", host: "mini" },
+      { pairingLinkId: "b", host: "mini" },
+    ]);
+    expect(shown).toEqual(["a"]);
+
+    inFlight = true;
+    queue.drop((prompt) => prompt.pairingLinkId === "a");
+    expect(shown).toEqual(["a"]);
+
+    answers[0]!("done");
+    expect(shown).toEqual(["a", "b"]);
+  });
 });
