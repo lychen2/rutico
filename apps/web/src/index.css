@@ -544,6 +544,34 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
   }
 }
 
+[data-slot="composer-shell"] {
+  --chat-composer-glass-fill: color-mix(
+    in srgb,
+    var(--chat-composer-glass-surface) 74%,
+    transparent
+  );
+}
+
+.dark [data-slot="composer-shell"] {
+  --chat-composer-glass-fill: color-mix(
+    in srgb,
+    var(--chat-composer-glass-surface) 64%,
+    transparent
+  );
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  [data-slot="composer-shell"] {
+    --chat-composer-glass-fill: var(--chat-composer-glass-surface);
+  }
+  [data-slot="composer-shell"]::before,
+  [data-slot="composer-host"]::before,
+  [data-chat-composer-main-surface="true"] {
+    -webkit-backdrop-filter: none !important;
+    backdrop-filter: none !important;
+  }
+}
+
 @utility surface-glass {
   background: color-mix(in srgb, var(--background) var(--glass-opacity), transparent);
   -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturation));

@@ -95,14 +95,20 @@
   overflow: hidden;
   border-radius: 20px;
   transform-origin: 0 0;
-  background: color-mix(in srgb, var(--card) 92%, transparent);
-  -webkit-backdrop-filter: blur(min(var(--glass-blur, 10px), 10px))
-    saturate(var(--glass-saturation, 1.08));
-  backdrop-filter: blur(min(var(--glass-blur, 10px), 10px)) saturate(var(--glass-saturation, 1.08));
+  background: color-mix(in srgb, var(--card) 74%, transparent);
+  -webkit-backdrop-filter: blur(14px) saturate(1.25);
+  backdrop-filter: blur(14px) saturate(1.25);
   box-shadow:
-    0 0 0 1px var(--border),
-    inset 0 1px 0 color-mix(in srgb, var(--background) 40%, transparent),
-    0 6px 18px -10px rgb(0 0 0 / 0.16);
+    0 0 0 1px color-mix(in srgb, var(--border) 78%, transparent),
+    inset 0 1px 0 rgb(255 255 255 / 45%),
+    0 8px 24px -10px rgb(0 0 0 / 0.16);
+}
+:global(.dark) .plan-card {
+  background: color-mix(in srgb, var(--card) 62%, transparent);
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, rgb(255 255 255 / 11%), var(--border)),
+    inset 0 1px 0 rgb(255 255 255 / 12%),
+    0 10px 28px -10px rgb(0 0 0 / 0.42);
 }
 /* Mode-tinted top specular rim along the top curvature (0 extra blur). */
 .plan-card::before {

@@ -1,6 +1,8 @@
 /* Compact Stardust-inspired model capsule trigger for the composer footer */
 [data-chat-provider-model-picker][data-model-chip] {
-  --chip-rail: color-mix(in oklch, var(--primary) 88%, #5b4be0);
+  --chip-rail: #5b4be0;
+  --chip-rail-empty: rgb(29 29 31 / 16%);
+  --chip-rail-glow: none;
   --chip-ink: #1d1d1f;
   --chip-ink-text: #ffffff;
   --chip-bg: color-mix(in oklch, var(--foreground) 5%, var(--muted));
@@ -16,7 +18,9 @@
 }
 
 .dark [data-chat-provider-model-picker][data-model-chip] {
-  --chip-rail: color-mix(in oklch, var(--primary) 86%, #b7a6ff);
+  --chip-rail: #b7a6ff;
+  --chip-rail-empty: rgb(255 255 255 / 16%);
+  --chip-rail-glow: 0 0 6px rgb(183 166 255 / 45%);
   --chip-ink: #f2f1f7;
   --chip-ink-text: #131219;
   --chip-bg: color-mix(in oklch, var(--foreground) 7%, var(--muted));
@@ -83,25 +87,26 @@
 }
 
 [data-model-chip-copy]:has([data-model-effort-track]) {
-  padding-bottom: 5px;
+  padding-bottom: 6px;
 }
 
 [data-model-effort-track] {
   position: absolute;
   inset: auto auto 0 0;
   display: flex;
-  gap: 1.5px;
-  height: 2px;
+  gap: 2px;
+  height: 2.5px;
 }
 
 [data-model-effort-track] i {
-  width: 5px;
-  border-radius: 1px;
-  background: color-mix(in srgb, var(--muted-foreground) 34%, transparent);
+  width: 6px;
+  border-radius: 1.5px;
+  background: var(--chip-rail-empty);
 }
 
 [data-model-effort-track] i[data-filled] {
   background: var(--chip-rail);
+  box-shadow: var(--chip-rail-glow);
 }
 
 [data-model-chip-middot] {

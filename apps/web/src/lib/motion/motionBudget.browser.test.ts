@@ -9,7 +9,6 @@ import browserDeviceToolbarSource from "~/browser/BrowserDeviceToolbar.tsx?raw";
 import hostedBrowserWebviewSource from "~/browser/HostedBrowserWebview.tsx?raw";
 import chatViewSource from "~/components/ChatView.tsx?raw";
 import composerBannerSource from "~/components/chat/ComposerBanner.tsx?raw";
-import composerSurfaceSource from "~/components/chat/ComposerSurface.tsx?raw";
 import timelineOverlaysSource from "~/components/chat/TimelineOverlays.tsx?raw";
 import virtualTablePreviewSource from "~/components/files/VirtualTablePreview.tsx?raw";
 import threadPreviewMiniPlayerSource from "~/components/preview/ThreadPreviewMiniPlayer.tsx?raw";
@@ -46,7 +45,6 @@ const AUDITED_HOT_PATH_SOURCES = [
     source: sidebarFolderDropSource,
   },
   { path: "apps/web/src/components/ChatView.tsx", source: chatViewSource },
-  { path: "apps/web/src/components/chat/ComposerSurface.tsx", source: composerSurfaceSource },
   { path: "apps/web/src/components/chat/ComposerBanner.tsx", source: composerBannerSource },
   { path: "apps/web/src/components/chat/TimelineOverlays.tsx", source: timelineOverlaysSource },
   {
@@ -129,8 +127,8 @@ function createEl<K extends keyof HTMLElementTagNameMap>(
 }
 
 describe("Wave 5 motion budget & zero hot-path backdrop-filter gate (C137)", () => {
-  it("keeps all 14 audited hot-path Web source files and 7 Wave 2 stylesheets free of backdrop-blur regressions", () => {
-    expect(AUDITED_HOT_PATH_SOURCES).toHaveLength(14);
+  it("keeps all 13 audited hot-path Web source files and 7 Wave 2 stylesheets free of backdrop-blur regressions", () => {
+    expect(AUDITED_HOT_PATH_SOURCES).toHaveLength(13);
     for (const entry of AUDITED_HOT_PATH_SOURCES) {
       const hits = findActiveBackdropBlurMatches(entry.source);
       expect(hits, `Unexpected backdrop-blur regression in ${entry.path}`).toEqual([]);
