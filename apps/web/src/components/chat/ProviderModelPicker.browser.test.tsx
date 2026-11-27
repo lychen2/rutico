@@ -542,3 +542,65 @@ it("keeps a docked list fixed while scrolling and shows only the row's levels an
   await expect.element(workRow.getByText(/2 levels.*13% left/)).toBeVisible();
   expect(list.clientHeight).toBe(146);
 });
+
+it("renders the compact composer model chip with effort track, account badge, and tail-preserving truncation", async () => {
+  const workId = ProviderInstanceId.make("codex-work-chip");
+  const personalId = ProviderInstanceId.make("codex-personal-chip");
+  const baseProvider = {
+    driver: ProviderDriverKind.make("codex"),
+    enabled: true,
+    installed: true,
+    version: "1.0.0",
+    status: "ready" as const,
+    auth: { status: "authenticated" as const },
+    checkedAt: "2026-01-01T00:00:00.000Z",
+    slashCommands: [],
+    skills: [],
+  };
+  const entries = deriveProviderInstanceEntries([
+    {
+      ...baseProvider,
+      instanceId: workId,
+      displayName: "Work Codex",
+      models: [
+        {
+          slug: "claude-sonnet-4-6-extended-preview",
+          name: "Claude Sonnet 4.6 Extended Thinking Preview",
+          isCustom: false,
+          capabilities: {},
+        },
+      ],
+    },
+    {
+      ...baseProvider,
+      instanceId: personalId,
+      displayName: "Personal Codex",
+      models: [{ slug: "personal", name: "Personal model", isCustom: false, capabilities: {} }],
+    },
+  ]);
+
+  await using screen = await render(
+    <ProviderModelPicker
+      environmentId={null}
+      isComposerOwned
+      activeInstanceId={workId}
+      model="claude-sonnet-4-6-extended-preview"
+      lockedProvider={null}
+      instanceEntries={entries}
+      modelOptionsByInstance={new Map(entries.map((entry) => [entry.instanceId, entry.models]))}
+      triggerEffortLevel={3}
+      onInstanceModelChange={vi.fn()}
+    />,
+  );
+
+  const trigger = screen.container.querySelector<HTMLElement>(
+    "[data-chat-provider-model-picker][data-model-chip]",
+  );
+  expect(trigger).not.toBeNull();
+  expect(trigger?.querySelector("[data-model-chip-icon]")).not.toBeNull();
+  expect(trigger?.querySelector("[data-model-account-number]")?.textContent).toBe("1");
+  expect(trigger?.querySelector("[data-model-chip-tail]")?.textContent).toHaveLength(7);
+  const trackSegments = trigger?.querySelectorAll("[data-model-effort-track] i");
+  expect(trackSegments?.length).toBe(5);
+  expect(trigger?.querySelectorAll("[data-model-effort-track] i[data-filled]").length).toBe(4);
+});

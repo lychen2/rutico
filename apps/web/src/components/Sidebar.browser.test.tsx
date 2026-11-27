@@ -239,6 +239,12 @@ describe("sidebar numbered jumps", () => {
     );
     const draftRow = screen.getByTestId("sidebar-draft-row");
     await expect.element(draftRow).toBeInTheDocument();
+    const categoriesHeading = screen.getByRole("heading", { name: "Categories" });
+    await expect.element(categoriesHeading).toBeInTheDocument();
+    expect(
+      draftRow.element().compareDocumentPosition(categoriesHeading.element()) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).not.toBe(0);
     await expect.element(screen.getByText("Thread 0").first()).toBeInTheDocument();
     await userEvent.keyboard("{Control>}");
     await expect.element(screen.getByText("Ctrl+1")).toBeVisible();

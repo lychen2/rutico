@@ -281,4 +281,33 @@ describe("DesktopTray", () => {
         ).pipe(Effect.provide(harness.depsLayer));
       }),
   );
+
+  it.effect(
+    "composes clean squircle tray PNGs for idle and adds a distinct bottom-right status badge for non-idle states",
+    () =>
+      Effect.sync(() => {
+        const size = 44;
+        const base = new Uint8Array(size * size * 4);
+        for (let i = 0; i < size * size * 4; i += 4) {
+          base[i] = 180;
+          base[i + 1] = 160;
+          base[i + 2] = 240;
+          base[i + 3] = 255;
+        }
+
+        const idlePng = DesktopTray.composeTrayIconPng(base, "idle", size);
+        const errorPng = DesktopTray.composeTrayIconPng(base, "error", size);
+        const fallbackRunningPng = DesktopTray.composeTrayIconPng(null, "running", 22);
+
+        const pngSignature = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]);
+        assert.isTrue(idlePng.subarray(0, 8).equals(pngSignature));
+        assert.isTrue(errorPng.subarray(0, 8).equals(pngSignature));
+        assert.isTrue(fallbackRunningPng.subarray(0, 8).equals(pngSignature));
+        assert.equal(idlePng.readUInt32BE(16), size);
+        assert.equal(idlePng.readUInt32BE(20), size);
+        assert.equal(fallbackRunningPng.readUInt32BE(16), 22);
+        assert.equal(fallbackRunningPng.readUInt32BE(20), 22);
+        assert.isFalse(idlePng.equals(errorPng));
+      }),
+  );
 });

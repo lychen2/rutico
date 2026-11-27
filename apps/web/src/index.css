@@ -447,22 +447,22 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
       ),
       radial-gradient(
         circle,
-        color-mix(in srgb, var(--background) 45%, transparent) 0%,
-        color-mix(in srgb, var(--background) 15%, transparent) 55%,
+        color-mix(in srgb, var(--background) 28%, transparent) 0%,
+        color-mix(in srgb, var(--background) 8%, transparent) 55%,
         transparent 100%
       ),
       linear-gradient(
         to top,
-        color-mix(in srgb, var(--background) 88%, transparent) 0%,
-        transparent 48%,
-        color-mix(in srgb, var(--background) 45%, transparent) 100%
+        color-mix(in srgb, var(--background) 68%, transparent) 0%,
+        transparent 46%,
+        color-mix(in srgb, var(--background) 24%, transparent) 100%
       ),
       linear-gradient(
         to right,
-        color-mix(in srgb, var(--background) 97%, transparent) 0%,
-        color-mix(in srgb, var(--background) 91%, transparent) 50%,
-        color-mix(in srgb, var(--background) 64%, transparent) 76%,
-        color-mix(in srgb, var(--background) 42%, transparent) 100%
+        color-mix(in srgb, var(--background) 90%, transparent) 0%,
+        color-mix(in srgb, var(--background) 76%, transparent) 42%,
+        color-mix(in srgb, var(--background) 34%, transparent) 70%,
+        color-mix(in srgb, var(--background) 12%, transparent) 100%
       );
   }
 
@@ -520,22 +520,22 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
       ),
       radial-gradient(
         circle,
-        color-mix(in srgb, var(--background) 50%, transparent) 0%,
-        color-mix(in srgb, var(--background) 20%, transparent) 55%,
+        color-mix(in srgb, var(--background) 30%, transparent) 0%,
+        color-mix(in srgb, var(--background) 10%, transparent) 55%,
         transparent 100%
       ),
       linear-gradient(
         to top,
-        color-mix(in srgb, var(--background) 86%, transparent) 0%,
-        transparent 50%,
-        color-mix(in srgb, var(--background) 42%, transparent) 100%
+        color-mix(in srgb, var(--background) 62%, transparent) 0%,
+        transparent 48%,
+        color-mix(in srgb, var(--background) 20%, transparent) 100%
       ),
       linear-gradient(
         to right,
-        color-mix(in srgb, var(--background) 97%, transparent) 0%,
-        color-mix(in srgb, var(--background) 88%, transparent) 48%,
-        color-mix(in srgb, var(--background) 52%, transparent) 76%,
-        color-mix(in srgb, var(--background) 30%, transparent) 100%
+        color-mix(in srgb, var(--background) 88%, transparent) 0%,
+        color-mix(in srgb, var(--background) 68%, transparent) 42%,
+        color-mix(in srgb, var(--background) 24%, transparent) 70%,
+        color-mix(in srgb, var(--background) 6%, transparent) 100%
       );
   }
 

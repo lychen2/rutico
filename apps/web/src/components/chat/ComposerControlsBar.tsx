@@ -219,7 +219,14 @@ export function ComposerControlsBar(props: {
         MODEL_TRIGGER_STATES,
         composerControlsCollapsed ? "min-w-13 shrink text-xs!" : "min-w-13",
       )}
-      triggerSuffix={effort.suffix}
+      triggerSuffix={
+        multipleModelsEnabled && multipleModelSelections !== null
+          ? effort.suffix
+          : effort.level !== undefined
+            ? effort.chipSuffix
+            : effort.suffix
+      }
+      {...(effort.level !== undefined ? { triggerEffortLevel: effort.level } : {})}
       triggerDetail={effort.detail}
       triggerShortcuts={
         pickerOwnsModeShortcut ? "composer.effort composer.mode" : "composer.effort"

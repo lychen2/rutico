@@ -91,10 +91,16 @@ export function describeComposerEffort(
   effortDisplay: EffortDisplay,
   size: ComposerControlSize,
   resolve: MessageResolver = m,
-): { suffix: ReactNode; detail: string | null } {
-  if (!traits) return { suffix: null, detail: null };
+): {
+  suffix: ReactNode;
+  chipSuffix: ReactNode;
+  detail: string | null;
+  level: number | undefined;
+} {
+  if (!traits) return { suffix: null, chipSuffix: null, detail: null, level: undefined };
   const visibility = getTraitsSectionVisibility({ ...traits, resolve });
-  if (!visibility.hasAnyControls) return { suffix: null, detail: null };
+  if (!visibility.hasAnyControls)
+    return { suffix: null, chipSuffix: null, detail: null, level: undefined };
   const modelSelection =
     traits.instanceId && traits.model
       ? { instanceId: traits.instanceId, model: traits.model, options: traits.modelOptions ?? [] }
@@ -124,6 +130,21 @@ export function describeComposerEffort(
             : getDescriptorStringValue(reasoning, modelSelection, traits.reportedModelSelection),
         )
       : null;
+  const level = glyph
+    ? glyph.special
+      ? 4
+      : glyph.filled <= 0
+        ? -1
+        : glyph.count <= 1
+          ? 4
+          : Math.round(((glyph.filled - 1) / (glyph.count - 1)) * 4)
+    : reasoning?.type === "boolean"
+      ? reasoning.currentValue === true
+        ? 4
+        : -1
+      : ultrathink
+        ? 4
+        : undefined;
   // Workflow levels such as Ultracode always show their name; the setting names every level.
   const word = glyph
     ? (glyph.special ?? (effortDisplay === "label" ? glyph.label : null))
@@ -149,10 +170,36 @@ export function describeComposerEffort(
       modelSelection,
       traits.reportedModelSelection,
     );
+  const chipWord = level === undefined ? word : (glyph?.special ?? null);
+  const hasChipExtras = Boolean(chipWord || fast || display.ultracode || contextWindow);
+  const chipSuffix = hasChipExtras ? (
+    <span className="flex shrink-0 items-center gap-1 text-muted-foreground group-hover/model-trigger:text-foreground group-data-pressed/model-trigger:text-foreground group-data-popup-open/model-trigger:text-foreground">
+      {chipWord ? (
+        <span data-composer-control-label className="max-w-20 truncate text-2xs">
+          {chipWord}
+        </span>
+      ) : null}
+      {fast ? <FastBolt ultra={display.speedLabel === "Ultrafast"} /> : null}
+      {display.ultracode ? (
+        <WorkflowIcon aria-hidden="true" data-composer-control-icon className="size-3" />
+      ) : null}
+      {contextWindow ? (
+        <span
+          data-composer-control-label
+          data-composer-secondary-trait
+          className="max-w-20 truncate text-2xs"
+        >
+          {contextWindow}
+        </span>
+      ) : null}
+    </span>
+  ) : null;
   if (!word && !glyph && !fast && !display.ultracode && !contextWindow)
-    return { suffix: null, detail: display.label };
+    return { suffix: null, chipSuffix: null, detail: display.label, level };
   return {
     detail: display.label,
+    level,
+    chipSuffix,
     suffix: (
       <span
         className={cn(

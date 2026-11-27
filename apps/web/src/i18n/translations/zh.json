@@ -3667,7 +3667,7 @@
   "7342bfc328008926": "运行中",
   "7a9df0a1eb190444": "已回滚",
   "c1a05c0c38ea611c": "{rate} 字符/秒",
-  "2ad9c766b3724207": "{rate} token/秒",
+  "2ad9c766b3724207": "{rate} tokens/s",
   "83bbceecef0f6872": "上下文",
   "a891d04595671afb": "第 {round} 轮",
   "f6a9d5782c89dc25": "{steps, plural, other {# 步}}",

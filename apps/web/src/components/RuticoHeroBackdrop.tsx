@@ -63,8 +63,8 @@ export function RuticoHeroBackdrop({
           !loaded
             ? "scale-[1.03] opacity-0"
             : isWorkspace
-              ? "scale-100 opacity-58 contrast-more:opacity-18 dark:opacity-28 dark:brightness-70 dark:contrast-105 dark:saturate-90 dark:contrast-more:opacity-10"
-              : "scale-100 opacity-78 contrast-more:opacity-20 dark:opacity-38 dark:brightness-75 dark:contrast-105 dark:saturate-90 dark:contrast-more:opacity-10",
+              ? "scale-100 opacity-58 contrast-more:opacity-18 dark:opacity-52 dark:brightness-92 dark:contrast-106 dark:saturate-98 dark:contrast-more:opacity-14"
+              : "scale-100 opacity-78 contrast-more:opacity-20 dark:opacity-62 dark:brightness-95 dark:contrast-106 dark:saturate-98 dark:contrast-more:opacity-14",
         )}
       />
       <div

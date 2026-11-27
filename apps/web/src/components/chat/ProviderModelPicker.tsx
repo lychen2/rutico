@@ -120,6 +120,8 @@ export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
   onInstanceModelChange: (instanceId: ProviderInstanceId, model: string) => void;
   /** Shown after the model name inside the same trigger, such as the effort level. */
   triggerSuffix?: ReactNode;
+  /** Normalized 0..4 effort track index (-1 for off) rendered under the compact model chip name. */
+  triggerEffortLevel?: number;
   /** Names the suffix for the tooltip and screen readers. */
   triggerDetail?: string | null;
   /** Composer shortcuts this trigger answers besides the picker's own. */
@@ -186,6 +188,18 @@ export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
     : triggerTitle;
   const showInstanceBadge =
     activeEntry !== null && shouldShowInstanceBadge(activeEntry, props.instanceEntries);
+  const useChip = Boolean(props.isComposerOwned && !props.selectedModels && !props.triggerLabel);
+  const accountNumber =
+    useChip && showInstanceBadge
+      ? props.instanceEntries
+          .filter((entry) => entry.driverKind === activeEntry.driverKind)
+          .findIndex((entry) => entry.instanceId === activeEntry.instanceId) + 1
+      : 0;
+  const shortTitle = useChip
+    ? triggerTitle.replace(/^Claude[ -]+/i, "").replace(/\s+(?:Preview|Latest)$/i, "")
+    : triggerTitle;
+  const shortCharacters = Array.from(shortTitle);
+  const splitLongName = useChip && shortCharacters.length > 18;
 
   const setIsMenuOpen = (open: boolean) => {
     props.onOpenChange?.(open);
@@ -352,6 +366,8 @@ export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
         render={
           <ComposerControl
             ref={triggerRef}
+            title={useChip ? triggerTooltipContent : undefined}
+            aria-description={useChip ? triggerTooltipContent : undefined}
             aria-label={[
               props.triggerAriaLabel ?? props.triggerLabel ?? allModelNames ?? triggerLabel,
               props.triggerDetail,
@@ -360,6 +376,7 @@ export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
               .join(", ")}
             size={size}
             data-chat-provider-model-picker="true"
+            data-model-chip={useChip ? "" : undefined}
             data-composer-shortcut={props.triggerShortcuts}
             onClick={(event) => {
               if (!isMenuOpen || !docked) return;
@@ -415,25 +432,63 @@ export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
             </span>
           ) : activeEntry && props.triggerLabel === undefined ? (
             // Narrow compacted composers hide the provider icon before truncating the name.
-            <span data-chat-provider-model-picker-icon className="contents">
+            <span
+              data-chat-provider-model-picker-icon
+              data-model-chip-icon={useChip ? "" : undefined}
+              className={useChip ? undefined : "contents"}
+            >
               <ProviderInstanceIcon
                 driverKind={activeEntry.driverKind}
                 displayName={activeEntry.displayName}
                 accentColor={activeEntry.accentColor}
                 acpRegistryAgentId={activeEntry.acpRegistryAgentId}
                 acpRegistryIconUrl={activeEntry.acpRegistryIconUrl}
-                showBadge={showInstanceBadge}
-                className="size-4"
-                iconClassName={cn("size-4", props.activeProviderIconClassName)}
-                indicatorBackground={props.instanceIndicatorBackground ?? "var(--contrast-input)"}
+                showBadge={showInstanceBadge && !useChip}
+                className={useChip ? "size-[15px]" : "size-4"}
+                iconClassName={cn(
+                  useChip ? "size-[15px]" : "size-4",
+                  props.activeProviderIconClassName,
+                )}
+                indicatorBackground={
+                  useChip
+                    ? "var(--card)"
+                    : (props.instanceIndicatorBackground ?? "var(--contrast-input)")
+                }
                 badgeClassName={cn(
                   "right-[-0.125rem] bottom-[-0.125rem] h-3 min-w-3 px-0.5 text-5xs",
                   size === "xs" && "shadow-none",
                 )}
               />
+              {accountNumber > 0 ? (
+                <span aria-hidden data-model-account-number="">
+                  {accountNumber}
+                </span>
+              ) : null}
             </span>
           ) : null}
-          {props.isComposerOwned ? (
+          {useChip ? (
+            <span data-model-chip-copy="" data-chat-provider-model-picker-label="true">
+              <span className="sr-only">{shortTitle}</span>
+              <span aria-hidden data-model-chip-middot="">
+                {splitLongName ? shortCharacters.slice(0, -7).join("") : shortTitle}
+              </span>
+              {splitLongName ? (
+                <span aria-hidden data-model-chip-tail="">
+                  {shortCharacters.slice(-7).join("")}
+                </span>
+              ) : null}
+              {props.triggerEffortLevel !== undefined ? (
+                <span data-model-effort-track="" aria-hidden>
+                  {[0, 1, 2, 3, 4].map((segment) => (
+                    <i
+                      key={segment}
+                      data-filled={segment <= props.triggerEffortLevel! ? "" : undefined}
+                    />
+                  ))}
+                </span>
+              ) : null}
+            </span>
+          ) : props.isComposerOwned ? (
             <span {...triggerTextProps}>{triggerText}</span>
           ) : (
             <SharedTooltipTrigger

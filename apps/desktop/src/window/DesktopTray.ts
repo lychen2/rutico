@@ -10,6 +10,7 @@ import type { DesktopTrayAgentStatus, DesktopTrayState } from "@t3tools/contract
 import * as Electron from "electron";
 import { msg } from "gt-i18n";
 
+import * as DesktopAssets from "../app/DesktopAssets.ts";
 import * as DesktopEnvironment from "../app/DesktopEnvironment.ts";
 import { makeComponentLogger } from "../app/DesktopObservability.ts";
 import * as ElectronApp from "../electron/ElectronApp.ts";
@@ -32,20 +33,19 @@ const TRAY_STATUSES: readonly DesktopTrayAgentStatus[] = [
   "error",
 ];
 
-const STATUS_ORB_COLORS: Readonly<
+const STATUS_BADGE_COLORS: Readonly<
   Record<
-    DesktopTrayAgentStatus,
+    Exclude<DesktopTrayAgentStatus, "idle">,
     {
       readonly core: readonly [number, number, number];
-      readonly rim: readonly [number, number, number];
+      readonly highlight: readonly [number, number, number];
     }
   >
 > = {
-  idle: { core: [128, 125, 146], rim: [192, 189, 212] },
-  running: { core: [124, 92, 255], rim: [188, 170, 255] },
-  approval: { core: [245, 158, 11], rim: [253, 224, 71] },
-  completed: { core: [16, 185, 129], rim: [110, 231, 183] },
-  error: { core: [239, 68, 68], rim: [252, 165, 165] },
+  running: { core: [139, 92, 246], highlight: [196, 181, 253] },
+  approval: { core: [245, 158, 11], highlight: [253, 224, 71] },
+  completed: { core: [16, 185, 129], highlight: [110, 231, 183] },
+  error: { core: [239, 68, 68], highlight: [252, 165, 165] },
 };
 
 const CRC32_TABLE = (() => {
@@ -78,41 +78,13 @@ function pngChunk(type: string, data: Uint8Array): Buffer {
   return Buffer.concat([length, typeBytes, data, crcBuf]);
 }
 
-function renderStatusOrbPng(status: DesktopTrayAgentStatus, size: number): Buffer {
-  const { core, rim } = STATUS_ORB_COLORS[status];
+function encodeRgbaPng(rgba: Uint8Array, size: number): Buffer {
   const raw = Buffer.alloc(size * (1 + size * 4));
-  const cx = (size - 1) / 2;
-  const cy = (size - 1) / 2;
-  const outerRadius = size * 0.42;
-  const innerRadius = size * 0.28;
-
   for (let y = 0; y < size; y += 1) {
     const rowStart = y * (1 + size * 4);
     raw[rowStart] = 0;
-    for (let x = 0; x < size; x += 1) {
-      const dx = x - cx;
-      const dy = y - cy;
-      const dist = Math.hypot(dx, dy);
-      const offset = rowStart + 1 + x * 4;
-      if (dist > outerRadius + 0.75) {
-        raw[offset] = 0;
-        raw[offset + 1] = 0;
-        raw[offset + 2] = 0;
-        raw[offset + 3] = 0;
-        continue;
-      }
-      const alpha = Math.min(1, Math.max(0, outerRadius + 0.75 - dist));
-      const highlight = Math.max(
-        0,
-        1 - Math.hypot(dx + outerRadius * 0.28, dy + outerRadius * 0.28) / (outerRadius * 0.95),
-      );
-      const inRim = dist > innerRadius;
-      const mix = inRim ? 0.55 : highlight * 0.42;
-      raw[offset] = Math.round(core[0] + (rim[0] - core[0]) * mix);
-      raw[offset + 1] = Math.round(core[1] + (rim[1] - core[1]) * mix);
-      raw[offset + 2] = Math.round(core[2] + (rim[2] - core[2]) * mix);
-      raw[offset + 3] = Math.round(alpha * (inRim ? 235 : 255));
-    }
+    const srcStart = y * size * 4;
+    raw.set(rgba.subarray(srcStart, srcStart + size * 4), rowStart + 1);
   }
 
   const ihdr = Buffer.alloc(13);
@@ -133,11 +105,263 @@ function renderStatusOrbPng(status: DesktopTrayAgentStatus, size: number): Buffe
   ]);
 }
 
-function buildCachedStatusImages(): Record<DesktopTrayAgentStatus, Electron.NativeImage> {
+function roundedSquareSdf(
+  x: number,
+  y: number,
+  cx: number,
+  cy: number,
+  half: number,
+  corner: number,
+): number {
+  const qx = Math.abs(x - cx) - (half - corner);
+  const qy = Math.abs(y - cy) - (half - corner);
+  return Math.hypot(Math.max(qx, 0), Math.max(qy, 0)) + Math.min(Math.max(qx, qy), 0) - corner;
+}
+
+function segmentDistance(
+  px: number,
+  py: number,
+  ax: number,
+  ay: number,
+  bx: number,
+  by: number,
+): number {
+  const abx = bx - ax;
+  const aby = by - ay;
+  const lenSq = abx * abx + aby * aby;
+  const t = lenSq > 0 ? Math.min(1, Math.max(0, ((px - ax) * abx + (py - ay) * aby) / lenSq)) : 0;
+  return Math.hypot(px - (ax + abx * t), py - (ay + aby * t));
+}
+
+function renderFallbackMonogramRgba(size: number): Uint8Array {
+  const rgba = new Uint8Array(size * size * 4);
+  const cx = (size - 1) / 2;
+  const cy = (size - 1) / 2;
+  const pad = size * 0.04;
+  const half = size / 2 - pad;
+  const corner = half * 0.54;
+  const stroke = Math.max(1.2, size * 0.09);
+
+  // Normalized "R" glyph coordinates inside the squircle badge.
+  const left = size * 0.34;
+  const right = size * 0.61;
+  const top = size * 0.25;
+  const mid = size * 0.52;
+  const bottom = size * 0.76;
+  const bowlCx = size * 0.51;
+  const bowlCy = (top + mid) / 2;
+  const bowlR = (mid - top) / 2;
+
+  for (let y = 0; y < size; y += 1) {
+    for (let x = 0; x < size; x += 1) {
+      const sdf = roundedSquareSdf(x, y, cx, cy, half, corner);
+      const shapeAlpha = Math.min(1, Math.max(0, 0.5 - sdf));
+      if (shapeAlpha <= 0) continue;
+
+      const t = Math.min(1, Math.max(0, y / Math.max(1, size - 1)));
+      let r = Math.round(92 + (40 - 92) * t);
+      let g = Math.round(64 + (29 - 64) * t);
+      let b = Math.round(148 + (62 - 148) * t);
+
+      // Subtle inner sheen along the squircle edge so the badge stays legible on dark trays.
+      if (sdf > -1.2) {
+        const edge = Math.min(1, Math.max(0, 1 + sdf / 1.2));
+        const sheen = edge * 0.24;
+        r = Math.round(r + (232 - r) * sheen);
+        g = Math.round(g + (222 - g) * sheen);
+        b = Math.round(b + (252 - b) * sheen);
+      }
+
+      const stemDist = segmentDistance(x, y, left, top, left, bottom);
+      const topBarDist = segmentDistance(x, y, left, top, bowlCx, top);
+      const midBarDist = segmentDistance(x, y, left, mid, bowlCx, mid);
+      const legDist = segmentDistance(x, y, bowlCx - size * 0.02, mid, right + size * 0.05, bottom);
+      const bowlDist =
+        x >= bowlCx
+          ? Math.abs(Math.hypot(x - bowlCx, y - bowlCy) - bowlR)
+          : Math.min(Math.hypot(x - bowlCx, y - top), Math.hypot(x - bowlCx, y - mid));
+      const glyphDist =
+        Math.min(stemDist, topBarDist, midBarDist, legDist, bowlDist) - stroke * 0.5;
+      const glyphAlpha = Math.min(1, Math.max(0, 0.5 - glyphDist));
+
+      if (glyphAlpha > 0) {
+        r = Math.round(r + (248 - r) * glyphAlpha);
+        g = Math.round(g + (244 - g) * glyphAlpha);
+        b = Math.round(b + (255 - b) * glyphAlpha);
+      }
+
+      const idx = (y * size + x) * 4;
+      rgba[idx] = r;
+      rgba[idx + 1] = g;
+      rgba[idx + 2] = b;
+      rgba[idx + 3] = Math.round(shapeAlpha * 255);
+    }
+  }
+  return rgba;
+}
+
+function applySquircleMask(source: Uint8Array, size: number): Uint8Array {
+  const rgba = new Uint8Array(size * size * 4);
+  const cx = (size - 1) / 2;
+  const cy = (size - 1) / 2;
+  const pad = size * 0.04;
+  const half = size / 2 - pad;
+  const corner = half * 0.54;
+
+  for (let y = 0; y < size; y += 1) {
+    for (let x = 0; x < size; x += 1) {
+      const sdf = roundedSquareSdf(x, y, cx, cy, half, corner);
+      const shapeAlpha = Math.min(1, Math.max(0, 0.5 - sdf));
+      if (shapeAlpha <= 0) continue;
+
+      const idx = (y * size + x) * 4;
+      const srcAlpha = (source[idx + 3] ?? 0) / 255;
+      const outAlpha = shapeAlpha * srcAlpha;
+      if (outAlpha <= 0) continue;
+
+      let r = source[idx] ?? 0;
+      let g = source[idx + 1] ?? 0;
+      let b = source[idx + 2] ?? 0;
+
+      if (sdf > -1.1) {
+        const edge = Math.min(1, Math.max(0, 1 + sdf / 1.1));
+        const sheen = edge * 0.18;
+        r = Math.round(r + (235 - r) * sheen);
+        g = Math.round(g + (226 - g) * sheen);
+        b = Math.round(b + (252 - b) * sheen);
+      }
+
+      rgba[idx] = r;
+      rgba[idx + 1] = g;
+      rgba[idx + 2] = b;
+      rgba[idx + 3] = Math.round(outAlpha * 255);
+    }
+  }
+  return rgba;
+}
+
+/**
+ * Composites a rounded-squircle Rutico tray icon with a crisp bottom-right cutout status badge
+ * (idle keeps the clean icon with no badge dot).
+ */
+export function composeTrayIconPng(
+  baseRgba: Uint8Array | null,
+  status: DesktopTrayAgentStatus,
+  size: number,
+): Buffer {
+  const pixels =
+    baseRgba !== null && baseRgba.length >= size * size * 4
+      ? applySquircleMask(baseRgba, size)
+      : renderFallbackMonogramRgba(size);
+
+  if (status !== "idle") {
+    const { core, highlight } = STATUS_BADGE_COLORS[status];
+    const bx = size * 0.77;
+    const by = size * 0.77;
+    const badgeRadius = size * 0.21;
+    const cutoutRadius = badgeRadius + Math.max(1.25, size * 0.065);
+
+    for (let y = 0; y < size; y += 1) {
+      for (let x = 0; x < size; x += 1) {
+        const dx = x - bx;
+        const dy = y - by;
+        const dist = Math.hypot(dx, dy);
+        if (dist > cutoutRadius + 0.75) continue;
+
+        const idx = (y * size + x) * 4;
+        // Part the underlying icon smoothly around the status dot for crisp legibility on any bar.
+        const cutoutKeep = Math.min(1, Math.max(0, dist - (cutoutRadius - 0.5)));
+        const dstA = ((pixels[idx + 3] ?? 0) / 255) * cutoutKeep;
+        const dstR = pixels[idx] ?? 0;
+        const dstG = pixels[idx + 1] ?? 0;
+        const dstB = pixels[idx + 2] ?? 0;
+
+        const srcA = Math.min(1, Math.max(0, badgeRadius + 0.5 - dist));
+        if (srcA <= 0) {
+          pixels[idx + 3] = Math.round(dstA * 255);
+          continue;
+        }
+
+        const spec = Math.max(
+          0,
+          1 - Math.hypot(dx + badgeRadius * 0.28, dy + badgeRadius * 0.28) / (badgeRadius * 1.15),
+        );
+        const mix = spec * 0.42;
+        const srcR = core[0] + (highlight[0] - core[0]) * mix;
+        const srcG = core[1] + (highlight[1] - core[1]) * mix;
+        const srcB = core[2] + (highlight[2] - core[2]) * mix;
+
+        const outA = srcA + dstA * (1 - srcA);
+        if (outA <= 0) {
+          pixels[idx + 3] = 0;
+          continue;
+        }
+        pixels[idx] = Math.round((srcR * srcA + dstR * dstA * (1 - srcA)) / outA);
+        pixels[idx + 1] = Math.round((srcG * srcA + dstG * dstA * (1 - srcA)) / outA);
+        pixels[idx + 2] = Math.round((srcB * srcA + dstB * dstA * (1 - srcA)) / outA);
+        pixels[idx + 3] = Math.round(outA * 255);
+      }
+    }
+  }
+
+  return encodeRgbaPng(pixels, size);
+}
+
+function loadBaseIconRgba(iconPath: string | null, size: number): Uint8Array | null {
+  if (!iconPath) return null;
+  try {
+    const loaded = Electron.nativeImage.createFromPath(iconPath);
+    if (loaded.isEmpty()) return null;
+    const { width, height } = loaded.getSize();
+    if (width <= 0 || height <= 0) return null;
+    // Trim outer transparent margin and frame stroke on high-res app icons so the portrait
+    // fills the 22px/44px tray icon cleanly without a bulky border box.
+    const insetRatio = width >= 128 && height >= 128 ? 0.088 : 0;
+    const cropX = Math.round(width * insetRatio);
+    const cropY = Math.round(height * insetRatio);
+    const cropW = Math.max(1, width - cropX * 2);
+    const cropH = Math.max(1, height - cropY * 2);
+    const cropped =
+      insetRatio > 0 ? loaded.crop({ x: cropX, y: cropY, width: cropW, height: cropH }) : loaded;
+    const resized = cropped.resize({ width: size, height: size, quality: "best" });
+    const resizedSize = resized.getSize();
+    if (resizedSize.width !== size || resizedSize.height !== size) return null;
+    const bgra = resized.toBitmap();
+    if (bgra.length < size * size * 4) return null;
+    const rgba = new Uint8Array(size * size * 4);
+    for (let i = 0; i < size * size * 4; i += 4) {
+      const b = bgra[i]!;
+      const g = bgra[i + 1]!;
+      const r = bgra[i + 2]!;
+      const a = bgra[i + 3]!;
+      if (a === 0) continue;
+      if (a === 255) {
+        rgba[i] = r;
+        rgba[i + 1] = g;
+        rgba[i + 2] = b;
+        rgba[i + 3] = 255;
+      } else {
+        rgba[i] = Math.min(255, Math.round((r * 255) / a));
+        rgba[i + 1] = Math.min(255, Math.round((g * 255) / a));
+        rgba[i + 2] = Math.min(255, Math.round((b * 255) / a));
+        rgba[i + 3] = a;
+      }
+    }
+    return rgba;
+  } catch {
+    return null;
+  }
+}
+
+function buildCachedStatusImages(
+  iconPath: string | null,
+): Record<DesktopTrayAgentStatus, Electron.NativeImage> {
+  const base1x = loadBaseIconRgba(iconPath, 22);
+  const base2x = loadBaseIconRgba(iconPath, 44);
   const cache = {} as Record<DesktopTrayAgentStatus, Electron.NativeImage>;
   for (const status of TRAY_STATUSES) {
-    const img1x = renderStatusOrbPng(status, 22);
-    const img2x = renderStatusOrbPng(status, 44);
+    const img1x = composeTrayIconPng(base1x, status, 22);
+    const img2x = composeTrayIconPng(base2x, status, 44);
     const nativeImg = Electron.nativeImage.createFromBuffer(img1x, {
       width: 22,
       height: 22,
@@ -167,7 +391,9 @@ export interface DesktopTrayHandle {
 export interface DesktopTrayDependencies {
   readonly createTray: (image: Electron.NativeImage) => DesktopTrayHandle;
   readonly buildMenu: (template: Electron.MenuItemConstructorOptions[]) => Electron.Menu;
-  readonly buildImages?: () => Record<DesktopTrayAgentStatus, Electron.NativeImage>;
+  readonly buildImages?: (
+    iconPath: string | null,
+  ) => Record<DesktopTrayAgentStatus, Electron.NativeImage>;
 }
 
 const DEFAULT_TRAY_STATE: DesktopTrayState = {
@@ -259,6 +485,7 @@ export const makeWith = Effect.fn("desktop.tray.make")(function* (deps: DesktopT
   const desktopWindow = yield* DesktopWindow.DesktopWindow;
   const electronApp = yield* ElectronApp.ElectronApp;
   const electronWindow = yield* ElectronWindow.ElectronWindow;
+  const desktopAssets = yield* Effect.serviceOption(DesktopAssets.DesktopAssets);
   const context = yield* Effect.context<DesktopTrayRuntimeServices>();
   const runPromise = Effect.runPromiseWith(context);
 
@@ -380,9 +607,15 @@ export const makeWith = Effect.fn("desktop.tray.make")(function* (deps: DesktopT
   const initialize = Effect.gen(function* () {
     if (initialized || environment.platform !== "linux") return;
     initialized = true;
+    const iconPath = Option.isSome(desktopAssets)
+      ? yield* desktopAssets.value.iconPaths.pipe(
+          Effect.map((paths) => Option.getOrNull(paths.png)),
+          Effect.catchCause(() => Effect.succeed(null)),
+        )
+      : null;
     yield* Effect.try({
       try: () => {
-        cachedImages = (deps.buildImages ?? buildCachedStatusImages)();
+        cachedImages = (deps.buildImages ?? buildCachedStatusImages)(iconPath);
         tray = deps.createTray(cachedImages[currentState.status]);
         lastStatus = currentState.status;
         applyStateToTray(currentState);

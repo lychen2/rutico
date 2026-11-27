@@ -6,7 +6,7 @@ import { page, userEvent } from "vite-plus/test/browser";
 
 import { render } from "../../../test/render";
 import appCss from "../../index.css?inline";
-import { ComposerThreadContext } from "./ComposerThreadContext";
+import { ComposerThreadContext, estimateTokensFromText } from "./ComposerThreadContext";
 import { currentRoundActivity } from "./currentRoundActivity";
 
 it("opens context details by keyboard and returns focus when dismissed", async () => {
@@ -319,4 +319,10 @@ it("keeps horizontal layout without collapsing inside a flex-end container in co
   expect(footerRect.width).toBeGreaterThan(200);
   expect(footerRect.height).toBeLessThanOrEqual(36);
   expect(Math.abs(roundRect.top - tokensRect.top)).toBeLessThan(8);
+});
+
+it("estimates tokens cleanly for CJK and Latin output text", () => {
+  expect(estimateTokensFromText("")).toBe(0);
+  expect(Math.round(estimateTokensFromText("a".repeat(400)))).toBe(100);
+  expect(Math.round(estimateTokensFromText("你好世界".repeat(25)))).toBe(67);
 });

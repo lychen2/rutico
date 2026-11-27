@@ -30,6 +30,28 @@ const runStatusLabels = {
 import type { currentRoundActivity } from "./currentRoundActivity";
 import "./composerSessionOverview.css";
 
+/**
+ * Lightweight token estimate when a provider has not reported `outputTokens` yet:
+ * CJK ideographs/kana/hangul average ~0.67 tokens/char, while Latin/ASCII/code averages ~0.25 tokens/char.
+ */
+export function estimateTokensFromText(text: string): number {
+  let tokens = 0;
+  for (let i = 0; i < text.length; i += 1) {
+    const code = text.charCodeAt(i);
+    if (
+      (code >= 0x3000 && code <= 0x9fff) ||
+      (code >= 0xac00 && code <= 0xd7af) ||
+      (code >= 0xf900 && code <= 0xfaff) ||
+      (code >= 0xff00 && code <= 0xffef)
+    ) {
+      tokens += 0.67;
+    } else {
+      tokens += 0.25;
+    }
+  }
+  return tokens;
+}
+
 export function ComposerThreadContext({
   usage,
   run,
@@ -84,7 +106,7 @@ export function ComposerThreadContext({
   const items = useThreadVisibleTurnItems(
     output === undefined && run !== null ? fallbackTextThread : null,
   );
-  let outputCharacters = 0;
+  let estimatedRawTokens = 0;
   for (const { item } of items) {
     if (
       item.type !== "assistant_message" ||
@@ -93,12 +115,11 @@ export function ComposerThreadContext({
       item.phase === "commentary"
     )
       continue;
-    for (const character of item.text) {
-      // Count Unicode code points, including whitespace, without allocating an array.
-      if (character.length > 0) outputCharacters++;
-    }
+    estimatedRawTokens += estimateTokensFromText(item.text);
   }
-  const amount = output ?? (outputCharacters > 0 ? outputCharacters : undefined);
+  const estimatedOutputTokens =
+    estimatedRawTokens > 0 ? Math.max(1, Math.round(estimatedRawTokens)) : undefined;
+  const amount = output ?? estimatedOutputTokens;
   const total = input !== undefined && output !== undefined ? input + output : null;
   const firstOutputMs =
     startMs === null || modelOutputTiming === undefined
@@ -111,10 +132,11 @@ export function ComposerThreadContext({
     (nowMs) => {
       const elapsed = startMs === null ? 0 : (endMs ?? nowMs) - startMs;
       if (amount === undefined || elapsed <= 0 || (endMs === null && !running)) return "–";
-      const rate = ((amount * 1000) / elapsed).toLocaleString(locale, { maximumFractionDigits: 1 });
-      return output === undefined
-        ? gt("{rate} chars/s", { rate })
-        : gt("{rate} tokens/s", { rate });
+      const formatted = ((amount * 1000) / elapsed).toLocaleString(locale, {
+        maximumFractionDigits: 1,
+      });
+      const rate = output === undefined ? `≈${formatted}` : formatted;
+      return gt("{rate} tokens/s", { rate });
     },
     running && amount !== undefined && startMs !== null && endMs === null,
   );
