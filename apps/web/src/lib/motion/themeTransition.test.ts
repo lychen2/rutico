@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from "vite-plus/test";
 import {
   getRecentThemeTransitionOrigin,
   recordThemeTransitionOrigin,
+  runSpatialRouteTransition,
   runThemeViewTransition,
 } from "./themeTransition";
 
@@ -142,5 +143,81 @@ describe("themeTransition View Transition iris ripple", () => {
     await mock.flushFinished();
     expect(mock.dataset.themeTransition).toBeUndefined();
     expect(mock.classes.has("no-transitions")).toBe(false);
+  });
+});
+
+describe("runSpatialRouteTransition", () => {
+  it("propagates commitRoute rejections when motion is enabled and when reduced motion is active", async () => {
+    const routeFailure = new Error("route navigation failed");
+
+    // Motion enabled: View Transition callback rejects and transition.finished also rejects.
+    const animatedMock = createMockDocument({ supportsViewTransition: true, reducedMotion: false });
+    (
+      animatedMock.doc as unknown as {
+        startViewTransition: (cb: () => void | Promise<void>) => {
+          ready: Promise<void>;
+          finished: Promise<void>;
+          skipTransition: () => void;
+        };
+      }
+    ).startViewTransition = vi.fn((cb) => {
+      const updateResult = Promise.resolve(cb());
+      return {
+        ready: updateResult.catch(() => {}),
+        finished: updateResult,
+        skipTransition: animatedMock.skipTransition,
+      };
+    });
+
+    await expect(
+      runSpatialRouteTransition(
+        async () => {
+          throw routeFailure;
+        },
+        { doc: animatedMock.doc, win: animatedMock.win },
+      ),
+    ).rejects.toBe(routeFailure);
+    expect(animatedMock.dataset.spatialRouteTransition).toBeUndefined();
+
+    // Motion disabled: reduced motion takes the direct commitRoute path and rejects identically.
+    const reducedMock = createMockDocument({ supportsViewTransition: true, reducedMotion: true });
+    await expect(
+      runSpatialRouteTransition(
+        async () => {
+          throw routeFailure;
+        },
+        { doc: reducedMock.doc, win: reducedMock.win },
+      ),
+    ).rejects.toBe(routeFailure);
+    expect(reducedMock.dataset.spatialRouteTransition).toBeUndefined();
+  });
+
+  it("still resolves when only the visual View Transition is skipped after commitRoute succeeds", async () => {
+    const mock = createMockDocument({ supportsViewTransition: true, reducedMotion: false });
+    const commitRoute = vi.fn(async () => {});
+    (
+      mock.doc as unknown as {
+        startViewTransition: (cb: () => void | Promise<void>) => {
+          ready: Promise<void>;
+          finished: Promise<void>;
+          skipTransition: () => void;
+        };
+      }
+    ).startViewTransition = vi.fn((cb) => {
+      const updateResult = Promise.resolve(cb());
+      return {
+        ready: Promise.reject(new DOMException("Transition skipped", "AbortError")).catch(() => {}),
+        finished: updateResult.then(() =>
+          Promise.reject(new DOMException("Transition skipped", "AbortError")),
+        ),
+        skipTransition: mock.skipTransition,
+      };
+    });
+
+    await expect(
+      runSpatialRouteTransition(commitRoute, { doc: mock.doc, win: mock.win }),
+    ).resolves.toBe(true);
+    expect(commitRoute).toHaveBeenCalledOnce();
+    expect(mock.dataset.spatialRouteTransition).toBeUndefined();
   });
 });

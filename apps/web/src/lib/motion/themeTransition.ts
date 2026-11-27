@@ -257,14 +257,27 @@ export async function runSpatialRouteTransition(
   const transitionName = options?.transitionName ?? "welcome-to-workspace";
   root.dataset.spatialRouteTransition = transitionName;
 
+  let commitSettled: Promise<void> | null = null;
+  let commitError: { readonly value: unknown } | null = null;
   let transition: ViewTransitionLike;
   try {
-    transition = doc.startViewTransition!(async () => {
-      await commitRoute();
+    transition = doc.startViewTransition!(() => {
+      const callbackPromise = Promise.resolve().then(() => commitRoute());
+      commitSettled = callbackPromise.catch((error) => {
+        commitError = { value: error };
+      });
+      return callbackPromise;
     });
   } catch {
     delete root.dataset.spatialRouteTransition;
-    await commitRoute();
+    if (commitSettled === null) {
+      await commitRoute();
+    } else {
+      await commitSettled;
+      if (commitError !== null) {
+        throw (commitError as { readonly value: unknown }).value;
+      }
+    }
     return false;
   }
 
@@ -272,12 +285,18 @@ export async function runSpatialRouteTransition(
   try {
     await transition.finished;
   } catch {
-    // Skipped or aborted transitions are expected if the user navigates again immediately.
+    // Skipped or aborted visual transitions are expected if the user navigates again immediately.
   } finally {
     if (activeTransition === transition) {
       activeTransition = null;
       delete root.dataset.spatialRouteTransition;
     }
+  }
+  if (commitSettled !== null) {
+    await commitSettled;
+  }
+  if (commitError !== null) {
+    throw (commitError as { readonly value: unknown }).value;
   }
   return true;
 }
