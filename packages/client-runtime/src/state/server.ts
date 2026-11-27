@@ -857,12 +857,7 @@ function serverCapabilitiesEqual(
   left: ServerConfig["environment"]["capabilities"] | undefined,
   right: ServerConfig["environment"]["capabilities"] | undefined,
 ): boolean {
-  if (left === right) return true;
-  if (left === undefined || right === undefined) return false;
-  const leftKeys = Object.keys(left) as Array<keyof ServerConfig["environment"]["capabilities"]>;
-  const rightKeys = Object.keys(right) as Array<keyof ServerConfig["environment"]["capabilities"]>;
-  if (leftKeys.length !== rightKeys.length) return false;
-  return leftKeys.every((key) => left[key] === right[key]);
+  return Equal.equals(left, right);
 }
 
 export type AnswerFeedbackRequestInput = EnvironmentRpcInput<

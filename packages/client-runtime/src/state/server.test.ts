@@ -1287,6 +1287,83 @@ describe("server state projection", () => {
         remoteInitial,
       ),
     ).toBe(remoteInitial);
+
+    // Nested capability objects (e.g. fileAttachments) reused from IndexedDB cache across
+    // distinct instances must compare structurally, otherwise live projection updates such as
+    // environmentThemesUpdated are permanently ignored in favor of initialConfig.
+    const cachedWithNestedCaps = {
+      ...CONFIG,
+      environment: {
+        serverVersion: "2.3.0",
+        capabilities: {
+          environmentThemes: true,
+          fileAttachments: { maxUploadBytes: 52_428_800 },
+        },
+      },
+    } as unknown as ServerConfig;
+    const initialWithNestedCaps = {
+      ...CONFIG,
+      environment: {
+        serverVersion: "2.3.0",
+        capabilities: {
+          environmentThemes: true,
+          fileAttachments: { maxUploadBytes: 52_428_800 },
+        },
+      },
+    } as unknown as ServerConfig;
+    const snapshotFromCache = applyServerConfigProjection(
+      Option.some({
+        config: cachedWithNestedCaps,
+        latestEvent: snapshotEvent(cachedWithNestedCaps),
+        source: "cache",
+      }),
+      snapshotEvent(initialWithNestedCaps),
+    );
+    const updatedTheme = {
+      id: EnvironmentThemeId.make("pastel-ribbon"),
+      name: "Pastel Ribbon",
+      appearance: "dark" as const,
+      css: ".dark [data-slot='composer-shell'] { --chat-composer-glass-fill: rgba(28, 22, 39, 0.28); }",
+    };
+    const withLiveThemes = applyServerConfigProjection(snapshotFromCache, {
+      version: 1,
+      type: "environmentThemesUpdated",
+      payload: {
+        themes: [updatedTheme],
+      },
+    });
+    expect(Option.isSome(withLiveThemes)).toBe(true);
+    if (Option.isSome(withLiveThemes)) {
+      // reuseUnchanged keeps the cached fileAttachments reference, distinct from initialConfig's.
+      expect(withLiveThemes.value.config.environment.capabilities.fileAttachments).toBe(
+        cachedWithNestedCaps.environment.capabilities.fileAttachments,
+      );
+      expect(withLiveThemes.value.config.environment.capabilities.fileAttachments).not.toBe(
+        initialWithNestedCaps.environment.capabilities.fileAttachments,
+      );
+      expect(resolveServerConfigValue(withLiveThemes.value, initialWithNestedCaps)).toBe(
+        withLiveThemes.value.config,
+      );
+      expect(
+        resolveServerConfigValue(withLiveThemes.value, initialWithNestedCaps)?.environmentThemes,
+      ).toEqual([updatedTheme]);
+    }
+
+    const changedNestedInitial = {
+      ...CONFIG,
+      environment: {
+        serverVersion: "2.3.0",
+        capabilities: {
+          environmentThemes: true,
+          fileAttachments: { maxUploadBytes: 10_485_760 },
+        },
+      },
+    } as unknown as ServerConfig;
+    if (Option.isSome(withLiveThemes)) {
+      expect(resolveServerConfigValue(withLiveThemes.value, changedNestedInitial)).toBe(
+        changedNestedInitial,
+      );
+    }
   });
 
   it("merges fetched workspace snapshots only from servers that omit them", () => {
