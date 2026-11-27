@@ -186,9 +186,11 @@ const finalOutput = JSON.stringify({
  */
 function fakeEventSource(
   events: ReadonlyArray<GuestStreamEvent>,
-  sources: Array<EventTarget> = [],
+  sources: Array<EventTarget & { readyState: number }> = [],
 ) {
   return class extends EventTarget {
+    static readonly CONNECTING = 0;
+    static readonly OPEN = 1;
     static readonly CLOSED = 2;
     readyState = 1;
     constructor(readonly url: string) {
@@ -287,7 +289,7 @@ describe("GuestPage", () => {
     using _session = vi
       .spyOn(window, "fetch")
       .mockImplementation(async () => new Response(null, { status: 204 }));
-    const sources: Array<EventTarget> = [];
+    const sources: Array<EventTarget & { readyState: number }> = [];
     // Enough turns that the thread overflows the page.
     const longItems = Array.from({ length: 12 }, (_, index) =>
       reply(
@@ -412,5 +414,54 @@ describe("GuestPage", () => {
       await expectAtEnd();
       await expect.element(screen.getByText("Logout reply")).toBeInTheDocument();
     }
+  });
+
+  it("shows Reconnecting while keeping the snapshot on transient disconnect, returns to Live on open, and separates permanent CLOSED", async () => {
+    using _page = visit(`/guest?share=${SHARE_ID}`);
+    using _session = vi
+      .spyOn(window, "fetch")
+      .mockImplementation(async () => new Response(null, { status: 204 }));
+    const sources: Array<EventTarget & { readyState: number }> = [];
+    using _stream = vi
+      .spyOn(window, "EventSource")
+      .mockImplementation(
+        fakeEventSource(opening([run("run-1", 1, "completed")], items), sources) as never,
+      );
+    await using screen = await render(<GuestPage />);
+
+    await expect.element(screen.getByText("All checks pass.")).toBeVisible();
+    const pill = () =>
+      screen.container.querySelector<HTMLElement>('[data-slot="guest-presence-pill"]');
+    expect(pill()?.dataset.state).toBe("live");
+    await expect.element(screen.getByText("Live")).toBeVisible();
+
+    // Transient disconnect: EventSource enters CONNECTING and dispatches error.
+    const source = sources.at(-1)!;
+    source.readyState = EventSource.CONNECTING;
+    source.dispatchEvent(new Event("error"));
+
+    await vi.waitFor(() => {
+      expect(pill()?.dataset.state).toBe("reconnecting");
+    });
+    await expect.element(screen.getByText("Reconnecting")).toBeVisible();
+    // Last snapshot remains visible during reconnection.
+    await expect.element(screen.getByText("All checks pass.")).toBeVisible();
+
+    // Stream recovers: EventSource opens again and pill returns to Live.
+    source.readyState = EventSource.OPEN;
+    source.dispatchEvent(new Event("open"));
+
+    await vi.waitFor(() => {
+      expect(pill()?.dataset.state).toBe("live");
+    });
+    await expect.element(screen.getByText("Live")).toBeVisible();
+    await expect.element(screen.getByText("All checks pass.")).toBeVisible();
+
+    // Permanent rejection / CLOSED transitions to ended notice instead of Reconnecting.
+    source.readyState = EventSource.CLOSED;
+    source.dispatchEvent(new Event("error"));
+
+    await expect.element(screen.getByText("This link has ended")).toBeVisible();
+    expect(pill()).toBeNull();
   });
 });

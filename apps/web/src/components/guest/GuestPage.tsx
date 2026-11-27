@@ -273,6 +273,7 @@ function GuestSession({ shareId }: { readonly shareId: string }) {
   // EventSource closes for good only on a non-200 response, which the guest routes send for a
   // missing, invalid, or ended session. Network drops reconnect on their own.
   const [rejected, setRejected] = useState(false);
+  const [reconnecting, setReconnecting] = useState(false);
 
   const [historyLoad, setHistoryLoad] = useState<{
     readonly cursor: string;
@@ -310,14 +311,23 @@ function GuestSession({ shareId }: { readonly shareId: string }) {
     const source = new EventSource(
       `${GUEST_ROUTE_PREFIX}/stream?${GUEST_SHARE_PARAM}=${encodeURIComponent(shareId)}`,
     );
+    source.addEventListener("open", () => {
+      setReconnecting(false);
+    });
     source.addEventListener("message", (message) => {
       const event = parseGuestStreamEvent(message.data);
       if (event === null) return;
+      setReconnecting(false);
       dispatch(event);
       if (event.type === "ended") source.close();
     });
     source.addEventListener("error", () => {
-      if (source.readyState === EventSource.CLOSED) setRejected(true);
+      if (source.readyState === EventSource.CLOSED) {
+        setReconnecting(false);
+        setRejected(true);
+        return;
+      }
+      setReconnecting(true);
     });
     return () => source.close();
   }, [shareId]);
@@ -338,6 +348,7 @@ function GuestSession({ shareId }: { readonly shareId: string }) {
         projection={stream.projection}
         awaitingRowIds={stream.awaitingRowIds}
         historyControls={historyControls}
+        reconnecting={reconnecting}
       />
     );
   }
@@ -458,11 +469,13 @@ function GuestThread({
   projection,
   awaitingRowIds,
   historyControls,
+  reconnecting,
 }: {
   readonly view: GuestShareView;
   readonly projection: OrchestrationV2ThreadProjection;
   readonly awaitingRowIds: GuestStreamState["awaitingRowIds"];
   readonly historyControls: MessagesTimelineHistoryControls | undefined;
+  readonly reconnecting: boolean;
 }) {
   const gt = useGT();
   // Files load through the guest route.
@@ -479,17 +492,23 @@ function GuestThread({
     ),
   );
   const hasPendingApproval = messages.some((message) => message.status === "pending");
+  const presenceState: "reconnecting" | "pending" | "live" = reconnecting
+    ? "reconnecting"
+    : hasPendingApproval
+      ? "pending"
+      : "live";
+  const isLive = presenceState === "live";
   return (
     <>
       <header className="flex shrink-0 items-center gap-3 border-b border-border bg-background px-4 py-2.5">
         <div
           data-slot="guest-presence-pill"
-          data-state={hasPendingApproval ? "pending" : "live"}
+          data-state={presenceState}
           className={cn(
             "inline-flex shrink-0 items-center gap-1.5 rounded-full border px-2 py-0.5 text-2xs font-medium transition-colors duration-200",
-            hasPendingApproval
-              ? "border-warning/40 bg-warning/10 text-warning"
-              : "border-success/35 bg-success/10 text-success",
+            isLive
+              ? "border-success/35 bg-success/10 text-success"
+              : "border-warning/40 bg-warning/10 text-warning",
           )}
         >
           <span className="relative flex size-2 items-center justify-center" aria-hidden="true">
@@ -498,17 +517,20 @@ function GuestThread({
               data-slot="guest-presence-halo"
               className={cn(
                 "absolute inset-0 rounded-full",
-                hasPendingApproval ? "bg-warning/70" : "bg-success/70",
+                isLive ? "bg-success/70" : "bg-warning/70",
               )}
             />
             <span
-              className={cn(
-                "relative size-1.5 rounded-full",
-                hasPendingApproval ? "bg-warning" : "bg-success",
-              )}
+              className={cn("relative size-1.5 rounded-full", isLive ? "bg-success" : "bg-warning")}
             />
           </span>
-          <span>{hasPendingApproval ? gt("Pending approval") : gt("Live")}</span>
+          <span>
+            {presenceState === "reconnecting"
+              ? gt("Reconnecting")
+              : presenceState === "pending"
+                ? gt("Pending approval")
+                : gt("Live")}
+          </span>
         </div>
         <h1 className="min-w-0 flex-1 truncate text-sm font-medium">{title}</h1>
         <ExpiryLabel expiresAt={expiresAt} />
