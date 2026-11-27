@@ -4,7 +4,6 @@
   position: relative;
   height: 0;
   z-index: 20;
-  container-type: inline-size;
 }
 .plan-anchor-slot {
   position: absolute;
@@ -41,13 +40,16 @@
 }
 .plan-capsule {
   position: relative;
-  width: min(var(--plan-width), 100%);
+  width: 440px;
+  max-width: 100%;
   min-width: 0;
   pointer-events: auto;
   /* No end fill: a filling opacity animation makes this element a backdrop root, and the card's
-     backdrop-filter would then blur nothing behind it. Width snaps instantly; GPU FLIP animates it. */
+     backdrop-filter would then blur nothing behind it. Width and grid rows transition smoothly
+     together so corners, right-aligned controls, and shadow stay crisp without scaleX distortion. */
   animation: plan-appear var(--plan-fade-in) var(--plan-ease-swap) backwards;
   transition:
+    width var(--plan-close) var(--plan-ease-close),
     opacity var(--plan-fade-in) var(--plan-ease-swap),
     transform var(--plan-fade-in) var(--plan-ease-swap),
     visibility 0s;
@@ -61,7 +63,12 @@
   box-sizing: border-box;
 }
 .plan-capsule[data-open="true"] {
-  --plan-width: 600px;
+  width: 600px;
+  transition:
+    width var(--plan-open) var(--plan-ease-open),
+    opacity var(--plan-fade-in) var(--plan-ease-swap),
+    transform var(--plan-fade-in) var(--plan-ease-swap),
+    visibility 0s;
 }
 .plan-capsule[data-visible="false"] {
   opacity: 0;
@@ -95,19 +102,19 @@
   overflow: hidden;
   border-radius: 20px;
   transform-origin: 0 0;
-  background: color-mix(in srgb, var(--card) 74%, transparent);
-  -webkit-backdrop-filter: blur(14px) saturate(1.25);
-  backdrop-filter: blur(14px) saturate(1.25);
+  background: color-mix(in srgb, var(--card) 56%, transparent);
+  -webkit-backdrop-filter: blur(18px) saturate(1.4);
+  backdrop-filter: blur(18px) saturate(1.4);
   box-shadow:
     0 0 0 1px color-mix(in srgb, var(--border) 78%, transparent),
-    inset 0 1px 0 rgb(255 255 255 / 45%),
+    inset 0 1px 0 rgb(255 255 255 / 48%),
     0 8px 24px -10px rgb(0 0 0 / 0.16);
 }
 :global(.dark) .plan-card {
-  background: color-mix(in srgb, var(--card) 62%, transparent);
+  background: color-mix(in srgb, var(--card) 42%, transparent);
   box-shadow:
-    0 0 0 1px color-mix(in srgb, rgb(255 255 255 / 11%), var(--border)),
-    inset 0 1px 0 rgb(255 255 255 / 12%),
+    0 0 0 1px color-mix(in srgb, rgb(255 255 255 / 14%), var(--border)),
+    inset 0 1px 0 rgb(255 255 255 / 14%),
     0 10px 28px -10px rgb(0 0 0 / 0.42);
 }
 /* Mode-tinted top specular rim along the top curvature (0 extra blur). */
@@ -197,18 +204,21 @@
   display: flex;
   flex-direction: column;
   max-height: clamp(150px, calc(100dvh - 300px), 480px);
-  transform-origin: 0 0;
   opacity: 0;
+  transform: translateY(6px);
   visibility: hidden;
   transition:
-    opacity var(--plan-fade-out) var(--plan-ease-close),
-    visibility 0s var(--plan-fade-out);
+    opacity 120ms ease-out,
+    transform 160ms var(--plan-ease-close),
+    visibility 0s 120ms;
 }
 .plan-capsule[data-open="true"] .plan-panel-body {
   opacity: 1;
+  transform: translateY(0);
   visibility: visible;
   transition:
-    opacity var(--plan-fade-in) var(--plan-ease-swap) 60ms,
+    opacity 200ms var(--plan-ease-swap) 55ms,
+    transform 260ms var(--plan-ease-open) 35ms,
     visibility 0s;
 }
 .plan-panel-head {
@@ -702,6 +712,9 @@ html[data-theme-id="porcelain"] .plan-shadow {
     --plan-detail-close: 160ms;
     --plan-shift: 0px;
   }
+  .plan-capsule,
+  .plan-panel,
+  .plan-panel-body,
   .plan-ring-arc,
   .plan-segments i,
   .plan-hint[data-hint="true"],
@@ -726,9 +739,26 @@ html[data-theme-id="porcelain"] .plan-shadow {
   --plan-fade-in: 200ms;
   --plan-fade-out: 140ms;
   border-radius: 20px;
-  background: var(--card);
-  box-shadow: 0 0 0 1px var(--border);
+  background: color-mix(in srgb, var(--card) 56%, transparent);
+  -webkit-backdrop-filter: blur(18px) saturate(1.4);
+  backdrop-filter: blur(18px) saturate(1.4);
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--border) 78%, transparent),
+    inset 0 1px 0 rgb(255 255 255 / 45%);
   overflow: hidden;
+}
+:global(.dark) .plan-summary {
+  background: color-mix(in srgb, var(--card) 42%, transparent);
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, rgb(255 255 255 / 14%), var(--border)),
+    inset 0 1px 0 rgb(255 255 255 / 14%);
+}
+@media (prefers-reduced-transparency: reduce) {
+  .plan-summary {
+    background: var(--card);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
 }
 .plan-summary-bar {
   display: flex;

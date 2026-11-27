@@ -33,7 +33,7 @@ export function TaskPlanSummary({
     const element = summaryRef.current;
     const first = consumeHandoffRect?.();
     if (!element || !first) return;
-    playFlip(element, first, { scale: true, preset: "spatial" });
+    playFlip(element, first, { scale: false, preset: "spatial" });
     return () => cancelFlip(element);
   }, [consumeHandoffRect]);
 

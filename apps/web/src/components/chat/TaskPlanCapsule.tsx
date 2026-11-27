@@ -2,9 +2,7 @@ import { useEffect, useId, useLayoutEffect, useRef, useState, type CSSProperties
 import { ChevronUpIcon } from "lucide-react";
 
 import { useGT } from "gt-react";
-import { useStableCallback } from "~/hooks/useStableCallback";
-import { cancelFlip, captureFlipSnapshot, playFlipBatch, type FlipRect } from "~/lib/motion/flip";
-import type { SpringConfig } from "~/lib/motion/springs";
+import { captureFlipSnapshot, type FlipRect } from "~/lib/motion/flip";
 import { AnimatedNumber } from "../ui/animated-number";
 import type { AntigravityTaskTrail } from "./antigravityTaskTrail";
 import styles from "./taskPlanCapsule.module.css";
@@ -21,9 +19,6 @@ import {
 const DONE_LINGER_MS = 5000;
 const FADE_OUT_MS = 200;
 const TITLE_SWAP_MS = 300;
-// Asymmetric spring physics: fluid expansion (~320/35) and crisper snap-shut (~520/38).
-const CAPSULE_OPEN_SPRING: SpringConfig = { duration: 0.35, bounce: 0.02 };
-const CAPSULE_CLOSE_SPRING: SpringConfig = { duration: 0.26, bounce: 0.04 };
 
 export interface TaskPlanCapsuleProps {
   readonly progress: AntigravityTaskTrail;
@@ -75,26 +70,9 @@ export function TaskPlanCapsule({ progress, onOpenFile, onDismissed }: TaskPlanC
   const panelId = useId();
   const rootRef = useRef<HTMLElement>(null);
   const cardRef = useRef<HTMLDivElement>(null);
-  const shadowRef = useRef<HTMLDivElement>(null);
-  const panelBodyRef = useRef<HTMLDivElement>(null);
   const barRef = useRef<HTMLButtonElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
-  const pendingFlipRef = useRef<{
-    readonly card: FlipRect;
-    readonly shadow: FlipRect | null;
-  } | null>(null);
   const [open, setOpen] = useState(false);
-  const setOpenWithFlip = useStableCallback((nextOpen: boolean) => {
-    const card = cardRef.current;
-    if (card) {
-      const shadow = shadowRef.current;
-      pendingFlipRef.current = {
-        card: captureFlipSnapshot(card),
-        shadow: shadow ? captureFlipSnapshot(shadow) : null,
-      };
-    }
-    setOpen(nextOpen);
-  });
   const [openStage, setOpenStage] = useState<string | null>(null);
   const [holding, setHolding] = useState(false);
   const [fading, setFading] = useState(false);
@@ -170,7 +148,7 @@ export function TaskPlanCapsule({ progress, onOpenFile, onDismissed }: TaskPlanC
     if (mode !== "need") return;
     const typing = document.activeElement?.closest("[data-chat-composer-form]") != null;
     if (typing) return;
-    setOpenWithFlip(true);
+    setOpen(true);
     const waitingMilestone = milestones.find((milestone) => milestone.status === "need");
     if (waitingMilestone) setOpenStage(waitingMilestone.id);
     // oxlint-disable-next-line react/exhaustive-effect-dependencies -- Milestones change on every progress tick; only a change of mode counts.
@@ -184,12 +162,12 @@ export function TaskPlanCapsule({ progress, onOpenFile, onDismissed }: TaskPlanC
     const onKey = (event: KeyboardEvent) => {
       if (event.key !== "Escape" || event.defaultPrevented) return;
       const inside = root?.contains(document.activeElement) ?? false;
-      setOpenWithFlip(false);
+      setOpen(false);
       if (inside) barRef.current?.focus();
     };
     const onPointer = (event: PointerEvent) => {
       if (event.target instanceof Node && root && !root.contains(event.target)) {
-        setOpenWithFlip(false);
+        setOpen(false);
       }
     };
     document.addEventListener("keydown", onKey);
@@ -197,44 +175,6 @@ export function TaskPlanCapsule({ progress, onOpenFile, onDismissed }: TaskPlanC
     return () => {
       document.removeEventListener("keydown", onKey);
       document.removeEventListener("pointerdown", onPointer);
-    };
-  }, [open, setOpenWithFlip]);
-
-  // Interruptible single-shell GPU FLIP morph between collapsed and expanded widths (zero width reflow transition).
-  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- plays batched WAAPI FLIP from the pre-toggle snapshot before paint
-  useLayoutEffect(() => {
-    const pending = pendingFlipRef.current;
-    pendingFlipRef.current = null;
-    const card = cardRef.current;
-    if (!pending || !card) return;
-    const inverseChildren = [barRef.current, panelBodyRef.current].filter(
-      (element): element is HTMLButtonElement | HTMLDivElement => element !== null,
-    );
-    const preset = open ? CAPSULE_OPEN_SPRING : CAPSULE_CLOSE_SPRING;
-    const entries = [
-      {
-        element: card,
-        first: pending.card,
-        options: {
-          scale: true,
-          preset,
-          inverseScaleChildren: inverseChildren,
-        },
-      },
-      ...(shadowRef.current && pending.shadow
-        ? [
-            {
-              element: shadowRef.current,
-              first: pending.shadow,
-              options: { scale: true, preset },
-            },
-          ]
-        : []),
-    ];
-    playFlipBatch(entries);
-    return () => {
-      cancelFlip(card);
-      if (shadowRef.current) cancelFlip(shadowRef.current);
     };
   }, [open]);
 
@@ -300,13 +240,12 @@ export function TaskPlanCapsule({ progress, onOpenFile, onDismissed }: TaskPlanC
         if (!event.currentTarget.contains(event.relatedTarget)) setHolding(false);
       }}
     >
-      <div ref={shadowRef} className={styles["plan-shadow"]} aria-hidden />
+      <div className={styles["plan-shadow"]} aria-hidden />
       <div ref={cardRef} className={styles["plan-card"]} data-plan-card-mode={mode}>
         <span key={hintKey} className={styles["plan-hint"]} data-hint={hintKey > 0} aria-hidden />
         <div className={styles["plan-panel"]}>
           <div className={styles["plan-panel-clip"]}>
             <div
-              ref={panelBodyRef}
               id={panelId}
               className={styles["plan-panel-body"]}
               role="region"
@@ -339,7 +278,7 @@ export function TaskPlanCapsule({ progress, onOpenFile, onDismissed }: TaskPlanC
                 <button
                   type="button"
                   className={styles["plan-collapse-btn"]}
-                  onClick={() => setOpenWithFlip(false)}
+                  onClick={() => setOpen(false)}
                 >
                   {gt("Collapse")}
                 </button>
@@ -367,7 +306,7 @@ export function TaskPlanCapsule({ progress, onOpenFile, onDismissed }: TaskPlanC
           aria-expanded={open}
           aria-controls={panelId}
           aria-label={barLabel}
-          onClick={() => setOpenWithFlip(!open)}
+          onClick={() => setOpen(!open)}
         >
           <Ring mode={mode} percent={complete ? 100 : percent} justCompleted={justCompleted} />
           <span className={styles["plan-bar-ico"]} data-mode={mode} aria-hidden>

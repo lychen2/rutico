@@ -547,7 +547,7 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
 [data-slot="composer-shell"] {
   --chat-composer-glass-fill: color-mix(
     in srgb,
-    var(--chat-composer-glass-surface) 74%,
+    var(--chat-composer-glass-surface) 56%,
     transparent
   );
 }
@@ -555,7 +555,7 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
 .dark [data-slot="composer-shell"] {
   --chat-composer-glass-fill: color-mix(
     in srgb,
-    var(--chat-composer-glass-surface) 64%,
+    var(--chat-composer-glass-surface) 42%,
     transparent
   );
 }
