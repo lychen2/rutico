@@ -3837,7 +3837,7 @@ export default function ChatView(props: ChatViewProps) {
               {...conversationArea}
               className={cn(
                 "relative flex min-h-0 flex-1 flex-col",
-                isDraftHeroState ? "bg-transparent" : "bg-background/24 dark:bg-background/46",
+                isDraftHeroState ? "bg-transparent" : "bg-background/18 dark:bg-background/32",
               )}
             >
               <div className="relative z-10 flex min-h-0 flex-1 flex-col">

@@ -101,17 +101,16 @@
   position: relative;
   overflow: hidden;
   border-radius: 20px;
-  transform-origin: 0 0;
-  background: color-mix(in srgb, var(--card) 56%, transparent);
-  -webkit-backdrop-filter: blur(18px) saturate(1.4);
-  backdrop-filter: blur(18px) saturate(1.4);
+  background: color-mix(in srgb, var(--card) 50%, transparent);
+  -webkit-backdrop-filter: blur(14px) saturate(1.45);
+  backdrop-filter: blur(14px) saturate(1.45);
   box-shadow:
     0 0 0 1px color-mix(in srgb, var(--border) 78%, transparent),
     inset 0 1px 0 rgb(255 255 255 / 48%),
     0 8px 24px -10px rgb(0 0 0 / 0.16);
 }
 :global(.dark) .plan-card {
-  background: color-mix(in srgb, var(--card) 42%, transparent);
+  background: color-mix(in srgb, var(--card) 34%, transparent);
   box-shadow:
     0 0 0 1px color-mix(in srgb, rgb(255 255 255 / 14%), var(--border)),
     inset 0 1px 0 rgb(255 255 255 / 14%),
@@ -155,7 +154,6 @@
   position: absolute;
   inset: 0;
   border-radius: 20px;
-  transform-origin: 0 0;
   box-shadow:
     0 2px 6px rgb(0 0 0 / 0.06),
     0 22px 48px -14px rgb(0 0 0 / 0.26);
@@ -268,28 +266,20 @@
   height: 40px;
   padding: 0 14px 0 12px;
   border-radius: 20px;
-  transform-origin: 0 0;
   text-align: left;
   cursor: pointer;
-  transition:
-    background-color 140ms ease-out,
-    transform 180ms var(--ease-spring-snappy, cubic-bezier(0.22, 1.24, 0.36, 1));
+  transition: background-color 140ms ease-out;
 }
 .plan-bar:hover {
   background: color-mix(in srgb, var(--foreground) 5%, transparent);
 }
 .plan-bar:active {
   background: color-mix(in srgb, var(--foreground) 9%, transparent);
-  transform: scale(0.985);
   transition-duration: 65ms;
-  transition-timing-function: ease-out;
 }
 @media (prefers-reduced-motion: reduce) {
   .plan-bar {
     transition: none;
-  }
-  .plan-bar:active {
-    transform: none;
   }
 }
 .plan-capsule :focus-visible {
@@ -739,16 +729,16 @@ html[data-theme-id="porcelain"] .plan-shadow {
   --plan-fade-in: 200ms;
   --plan-fade-out: 140ms;
   border-radius: 20px;
-  background: color-mix(in srgb, var(--card) 56%, transparent);
-  -webkit-backdrop-filter: blur(18px) saturate(1.4);
-  backdrop-filter: blur(18px) saturate(1.4);
+  background: color-mix(in srgb, var(--card) 50%, transparent);
+  -webkit-backdrop-filter: blur(14px) saturate(1.45);
+  backdrop-filter: blur(14px) saturate(1.45);
   box-shadow:
     0 0 0 1px color-mix(in srgb, var(--border) 78%, transparent),
     inset 0 1px 0 rgb(255 255 255 / 45%);
   overflow: hidden;
 }
 :global(.dark) .plan-summary {
-  background: color-mix(in srgb, var(--card) 42%, transparent);
+  background: color-mix(in srgb, var(--card) 34%, transparent);
   box-shadow:
     0 0 0 1px color-mix(in srgb, rgb(255 255 255 / 14%), var(--border)),
     inset 0 1px 0 rgb(255 255 255 / 14%);
