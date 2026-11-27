@@ -17,6 +17,7 @@ import * as DesktopEnvironment from "./DesktopEnvironment.ts";
 import * as DesktopLifecycle from "./DesktopLifecycle.ts";
 import * as DesktopShutdown from "./DesktopShutdown.ts";
 import * as DesktopState from "./DesktopState.ts";
+import * as DesktopWebLinks from "./DesktopWebLinks.ts";
 import * as DesktopWindow from "../window/DesktopWindow.ts";
 
 function layerElectronApp(
@@ -273,6 +274,59 @@ describe("DesktopLifecycle", () => {
 
       assert.deepEqual(options, { execPath: "/opt/T3 Code/t3code", args: ["--no-sandbox"] });
     }),
+  );
+
+  it.effect(
+    "relaunches without consumed quick actions regardless of dev scheme or leading whitespace",
+    () =>
+      Effect.gen(function* () {
+        const devQuickActionArg = "t3code-dev://action/new-thread";
+        const paddedFlagArg = "  --quick-action=command-palette";
+        assert.equal(DesktopWebLinks.parseDesktopQuickActionArg(devQuickActionArg), "new-thread");
+        assert.equal(DesktopWebLinks.parseDesktopQuickActionArg(paddedFlagArg), "command-palette");
+
+        const relaunched = yield* Deferred.make<Electron.RelaunchOptions>();
+        const layerEnvironment = Layer.succeed(DesktopEnvironment.DesktopEnvironment, {
+          platform: "linux",
+          isDevelopment: false,
+        } as DesktopEnvironment.DesktopEnvironment["Service"]);
+        const layer = DesktopLifecycle.layer.pipe(
+          Layer.provideMerge(
+            layerElectronApp(
+              new Map(),
+              Effect.void,
+              () => Effect.void,
+              (options) => Deferred.succeed(relaunched, options).pipe(Effect.asVoid),
+            ),
+          ),
+          Layer.provideMerge(layerElectronTheme),
+          Layer.provideMerge(layerElectronWindow()),
+          Layer.provideMerge(layerDesktopWindow()),
+          Layer.provideMerge(layerEnvironment),
+          Layer.provideMerge(DesktopShutdown.layer),
+          Layer.provideMerge(DesktopState.layer),
+        );
+
+        const options = yield* Effect.gen(function* () {
+          const lifecycle = yield* DesktopLifecycle.DesktopLifecycle;
+          yield* (yield* DesktopShutdown.DesktopShutdown).markComplete;
+          yield* lifecycle.relaunch("settings changed");
+          return yield* Deferred.await(relaunched);
+        }).pipe(
+          Effect.provide(layer),
+          Effect.provideService(HostProcess.ExecutablePath, "/opt/T3 Code/t3code"),
+          Effect.provideService(HostProcess.Arguments, [
+            "/opt/T3 Code/t3code",
+            "--no-sandbox",
+            devQuickActionArg,
+            paddedFlagArg,
+            "  rutico://action/settings",
+            "t3code://action/new-thread",
+          ]),
+        );
+
+        assert.deepEqual(options, { execPath: "/opt/T3 Code/t3code", args: ["--no-sandbox"] });
+      }),
   );
 
   it.effect("exits on a repeated quit only once shutdown has stalled", () =>

@@ -16,6 +16,7 @@ import * as DesktopEnvironment from "./DesktopEnvironment.ts";
 import { stopChildProcessesBeforeExit, stopZygotesBeforeExit } from "./DesktopExitChildren.ts";
 import { makeComponentLogger } from "./DesktopObservability.ts";
 import * as DesktopShutdown from "./DesktopShutdown.ts";
+import * as DesktopWebLinks from "./DesktopWebLinks.ts";
 import * as ElectronApp from "../electron/ElectronApp.ts";
 import * as ElectronProtocol from "../electron/ElectronProtocol.ts";
 import * as ElectronTheme from "../electron/ElectronTheme.ts";
@@ -240,13 +241,14 @@ export const make = DesktopLifecycle.of({
       const args = yield* HostProcess.Arguments;
       yield* electronApp.relaunch({
         execPath: yield* HostProcess.ExecutablePath,
-        args: args
-          .slice(1)
-          .filter(
-            (arg) =>
-              !appLinkPrefixes.some((prefix) => arg.toLowerCase().startsWith(prefix)) &&
-              !arg.toLowerCase().startsWith("--quick-action="),
-          ),
+        args: args.slice(1).filter((arg) => {
+          if (DesktopWebLinks.parseDesktopQuickActionArg(arg) !== null) return false;
+          const normalized = arg.trim().toLowerCase();
+          return (
+            !appLinkPrefixes.some((prefix) => normalized.startsWith(prefix)) &&
+            !normalized.startsWith("--quick-action=")
+          );
+        }),
       });
       yield* electronApp.exit(0);
     }).pipe(
