@@ -16,7 +16,7 @@ import { UsageTypeRows } from "./UsageTypeRows";
 import { cacheInputRate, displayCostRows, reportedCostRows } from "./usagePresentation";
 
 import { ChatGptUsageButton } from "../settings/ChatGptUsageButton";
-import { usesChatGptSharing } from "@t3tools/shared/usageLimits";
+import { needsAutomaticUsageLimitsRefresh, usesChatGptSharing } from "@t3tools/shared/usageLimits";
 import { useAtomValue } from "@effect/atom-react";
 import type { Dialog as DialogPrimitive } from "@base-ui/react/dialog";
 import { Atom } from "effect/reactivity";
@@ -188,6 +188,7 @@ export function UsagePage() {
   const metric = preferences.metric;
   const showingLimits = metric === "limits";
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [settledAutoRefreshKey, setSettledAutoRefreshKey] = useState<string | null>(null);
   const [limitsNow, setLimitsNow] = useState(() => Date.now());
   const refreshingRef = useRef(false);
   const modalActionsRef = useRef<DialogPrimitive.Root.Actions | null>(null);
@@ -212,7 +213,6 @@ export function UsagePage() {
   const shownHourly = shownWindow.resolution === "hour";
   const refreshingUsage = isRefreshing && !showingLimits;
   const showingKept = shown !== null && shown.window !== window;
-  const presentations = useAtomValue(environmentPresentations.presentationsAtom);
   const presentationsWithProviders = useAtomValue(
     environmentPresentations.presentationsWithProvidersAtom,
   );
@@ -236,28 +236,53 @@ export function UsagePage() {
     });
   };
   const selectMetric = (nextMetric: UsageMetric) => {
-    if (nextMetric === "limits") setLimitsNow(Date.now());
+    if (nextMetric === "limits") {
+      setLimitsNow(Date.now());
+      setSettledAutoRefreshKey(null);
+    }
     updatePreferences({ metric: nextMetric });
   };
-  const refreshLimits = (automatic = false) =>
+  const refreshLimits = (automatic = false) => {
+    const now = Date.now();
+    const targets = Array.from(presentationsWithProviders).flatMap(
+      ([environmentId, presentation]) => {
+        if (selectedEnvironmentIds !== null && !selectedEnvironmentIds.has(environmentId)) {
+          return [];
+        }
+        if (presentation.connection.phase !== "connected" || presentation.serverConfig === null) {
+          return [];
+        }
+        if (automatic && !needsAutomaticUsageLimitsRefresh(presentation.serverConfig, now)) {
+          return [];
+        }
+        return [environmentId] as const;
+      },
+    );
+    if (targets.length === 0) {
+      return Promise.resolve();
+    }
     // Settled so the timestamp still advances when a refresh throws.
-    settlePromise(() =>
+    return settlePromise(() =>
       Promise.all(
-        Array.from(presentations, ([environmentId, presentation]) => {
-          if (selectedEnvironmentIds !== null && !selectedEnvironmentIds.has(environmentId)) return;
-          if (presentation.connection.phase === "connected" && presentation.serverConfig !== null) {
-            return refreshUsageLimits(
-              environmentId,
-              () => refreshProviders({ environmentId, input: { refreshUsageLimits: true } }),
-              automatic,
-            );
-          }
-        }),
+        targets.map((environmentId) =>
+          refreshUsageLimits(
+            environmentId,
+            () =>
+              refreshProviders({
+                environmentId,
+                input: automatic
+                  ? { refreshUsageLimits: true }
+                  : { refreshUsageLimits: true, fresh: true },
+              }),
+            automatic,
+          ),
+        ),
       ),
     ).then((result) => {
       setLimitsNow(Date.now());
       if (!AsyncResult.isSuccess(result)) throw Cause.squash(result.cause);
     });
+  };
   const onUsageKeyDown = useEffectEvent((event: KeyboardEvent) => {
     if (
       event.defaultPrevented ||
@@ -315,7 +340,7 @@ export function UsagePage() {
       setIsRefreshing(false);
     });
   };
-  const connectedLimitsEnvironments = [...presentations]
+  const connectedLimitsEnvironments = [...presentationsWithProviders]
     .filter(
       ([environmentId, presentation]) =>
         presentation.connection.phase === "connected" &&
@@ -325,13 +350,27 @@ export function UsagePage() {
     .map(([environmentId]) => environmentId)
     .sort()
     .join(",");
-  const autoRefreshLimits = useEffectEvent(() => {
-    void refreshLimits(true);
+  const needsInitialLimitsRefresh =
+    showingLimits &&
+    connectedLimitsEnvironments !== "" &&
+    settledAutoRefreshKey !== connectedLimitsEnvironments &&
+    Array.from(presentationsWithProviders).some(
+      ([environmentId, presentation]) =>
+        (selectedEnvironmentIds === null || selectedEnvironmentIds.has(environmentId)) &&
+        presentation.connection.phase === "connected" &&
+        presentation.serverConfig !== null &&
+        needsAutomaticUsageLimitsRefresh(presentation.serverConfig, limitsNow),
+    );
+  const limitsRefreshing = isRefreshing || needsInitialLimitsRefresh;
+  const autoRefreshLimits = useEffectEvent((environmentKey: string) => {
+    void refreshLimits(true).finally(() => {
+      setSettledAutoRefreshKey(environmentKey);
+    });
   });
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- refreshes provider limits from the server when the connected environment set changes
   useEffect(() => {
-    if (showingLimits && connectedLimitsEnvironments) autoRefreshLimits();
-  }, [showingLimits, connectedLimitsEnvironments]);
+    if (needsInitialLimitsRefresh) autoRefreshLimits(connectedLimitsEnvironments);
+  }, [needsInitialLimitsRefresh, connectedLimitsEnvironments]);
   const hiddenLimitDrivers = new Set(
     [...hiddenProviders].map((provider) => PROVIDER_PRESENTATION[provider].driverKind),
   );
@@ -477,8 +516,11 @@ export function UsagePage() {
               render={
                 <UsageRefreshButton
                   iconOnly
-                  busy={isRefreshing}
-                  disabled={isRefreshing || (!showingLimits && !canReadDiagnostics)}
+                  busy={showingLimits ? limitsRefreshing : isRefreshing}
+                  disabled={
+                    (showingLimits ? limitsRefreshing : isRefreshing) ||
+                    (!showingLimits && !canReadDiagnostics)
+                  }
                   onClick={refreshWindow}
                   label={showingLimits ? uiText("Refresh limits") : uiText("Refresh usage")}
                 />
@@ -545,8 +587,11 @@ export function UsagePage() {
           </SelectPopup>
         </Select>
         <UsageRefreshButton
-          busy={isRefreshing}
-          disabled={isRefreshing || (!showingLimits && !canReadDiagnostics)}
+          busy={showingLimits ? limitsRefreshing : isRefreshing}
+          disabled={
+            (showingLimits ? limitsRefreshing : isRefreshing) ||
+            (!showingLimits && !canReadDiagnostics)
+          }
           onClick={refreshWindow}
           label={showingLimits ? uiText("Refresh limits") : uiText("Refresh usage")}
         />
@@ -561,7 +606,11 @@ export function UsagePage() {
       >
         <header className="@container/usage-header flex min-h-12 shrink-0 items-center gap-1 border-b ps-5 pe-2">
           {topbarContent}
-          {isRefreshing || showingKept || (shown !== null && isPartial) ? (
+          {(
+            showingLimits
+              ? limitsRefreshing
+              : isRefreshing || showingKept || (shown !== null && isPartial)
+          ) ? (
             <span className="usage-updating" role="status">
               {uiText("Updating")}
             </span>
@@ -589,6 +638,7 @@ export function UsagePage() {
                   selectedEnvironmentIds={selectedEnvironmentIds}
                   hiddenProviders={hiddenProviders}
                   now={limitsNow}
+                  refreshing={limitsRefreshing}
                 />
               ) : shown === null ? (
                 <UsageSkeleton />

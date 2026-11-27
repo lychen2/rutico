@@ -1,4 +1,9 @@
 import type { EnvironmentId, UsageModelFilter, UsageSummaryInput } from "@t3tools/contracts";
+import {
+  USAGE_LIMITS_AUTO_REFRESH_COOLDOWN_MS,
+  USAGE_LIMITS_FAILURE_COOLDOWN_MS,
+} from "@t3tools/shared/usageLimits";
+import * as Predicate from "effect/Predicate";
 import * as Schema from "effect/Schema";
 import type { AtomRegistry } from "effect/reactivity";
 
@@ -20,6 +25,10 @@ export function usageSummaryInput(
 const limitsRefreshAfter = new Map<EnvironmentId, number>();
 const limitsRefreshes = new Map<EnvironmentId, Promise<unknown>>();
 
+function isFailedRefreshResult(value: unknown): boolean {
+  return Predicate.isObject(value) && "_tag" in value && value._tag === "Failure";
+}
+
 export async function refreshUsageLimits<A>(
   environmentId: EnvironmentId,
   refresh: () => Promise<A>,
@@ -32,12 +41,20 @@ export async function refreshUsageLimits<A>(
   const refreshAfter = limitsRefreshAfter.get(environmentId) ?? 0;
   // @effect-diagnostics-next-line globalDate:off
   if (automatic && Date.now() < refreshAfter) return;
+  let succeeded = false;
   const current = Promise.resolve()
     .then(refresh)
+    .then((value) => {
+      succeeded = !isFailedRefreshResult(value);
+      return value;
+    })
     .finally(() => {
       limitsRefreshes.delete(environmentId);
+      const cooldownMs = succeeded
+        ? USAGE_LIMITS_AUTO_REFRESH_COOLDOWN_MS
+        : USAGE_LIMITS_FAILURE_COOLDOWN_MS;
       // @effect-diagnostics-next-line globalDate:off
-      limitsRefreshAfter.set(environmentId, Date.now() + 5 * 60_000);
+      limitsRefreshAfter.set(environmentId, Date.now() + cooldownMs);
     });
   limitsRefreshes.set(environmentId, current);
   return await current;

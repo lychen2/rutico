@@ -557,8 +557,10 @@ export function UsageLimitsSection({
   hiddenProviders,
   now,
   refreshControl,
+  refreshing = false,
 }: {
   readonly refreshControl?: ReactNode;
+  readonly refreshing?: boolean;
   readonly selectedEnvironmentIds: ReadonlySet<EnvironmentId> | null;
   readonly hiddenProviders: ReadonlySet<UsageProviderKind>;
   readonly now: number;
@@ -593,5 +595,12 @@ export function UsageLimitsSection({
       ];
     }),
   );
-  return <UsageLimitsPooled presentations={selected} now={now} refreshControl={refreshControl} />;
+  return (
+    <UsageLimitsPooled
+      presentations={selected}
+      now={now}
+      refreshControl={refreshControl}
+      refreshing={refreshing}
+    />
+  );
 }

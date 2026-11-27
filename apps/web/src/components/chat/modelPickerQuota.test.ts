@@ -6,6 +6,7 @@ import {
   type ServerProviderUsageLimits,
   type UsageLimitSourceSnapshot,
 } from "@t3tools/contracts";
+import { USAGE_LIMITS_STALE_AFTER_MS } from "@t3tools/shared/usageLimits";
 import { expect, it } from "vite-plus/test";
 import { modelPickerQuotaRemaining } from "./modelPickerQuota";
 
@@ -98,7 +99,10 @@ it("omits ambiguous and failed proxy reads instead of picking the first availabl
 
 it("omits expired, stale, and unavailable readings while retaining a real zero", () => {
   const input = { provider: NATIVE, sources: [], model: "model-a", now: NOW };
-  expect(modelPickerQuotaRemaining({ ...input, now: NOW + 600_001 })).toBeNull();
+  expect(modelPickerQuotaRemaining({ ...input, now: NOW + 30 * 60_000 })).toBe(30);
+  expect(
+    modelPickerQuotaRemaining({ ...input, now: NOW + USAGE_LIMITS_STALE_AFTER_MS + 1 }),
+  ).toBeNull();
   for (const usageLimits of [
     { ...LIMITS, windows: [{ ...WEEKLY, resetsAt: CHECKED_AT }] },
     { ...LIMITS, unavailable: { reason: "probeFailed" as const } },

@@ -174,7 +174,10 @@ import * as ServerSecretStore from "./auth/ServerSecretStore.ts";
 import * as SecretCheck from "./secrets/SecretCheck.ts";
 import * as ServerConfigModule from "./config.ts";
 import * as Keybindings from "./keybindings.ts";
-import { USAGE_LIMITS_COMMAND } from "@t3tools/shared/usageLimits";
+import {
+  USAGE_LIMITS_AUTO_REFRESH_COOLDOWN_MS,
+  USAGE_LIMITS_COMMAND,
+} from "@t3tools/shared/usageLimits";
 import * as FeatureFlags from "@t3tools/shared/FeatureFlags";
 import * as ServerSettings from "./serverSettings.ts";
 import * as ManagedPolicy from "./policy/ManagedPolicy.ts";
@@ -3184,4 +3187,204 @@ it.effect("a session that can only read sees a workflow run but cannot steer it"
     );
     assert.deepEqual(calls, []);
   }).pipe(Effect.provide(layerWorkflowRpcTest), Effect.scoped),
+);
+
+it.effect(
+  "server.refreshProviders refreshUsageLimits fast-path awaits probes and respects the 30-minute cooldown",
+  () =>
+    Effect.gen(function* () {
+      const instanceId = "antigravity" as ServerProvider["instanceId"];
+      let fullRefreshCalls = 0;
+      let syncCalls = 0;
+      let sourceRefreshCalls = 0;
+      let sourceCheckedAt = DateTime.formatIso(
+        DateTime.makeUnsafe(-USAGE_LIMITS_AUTO_REFRESH_COOLDOWN_MS - 1_000),
+      );
+      let probeCalls = 0;
+      let currentProvider: ServerProvider = {
+        instanceId,
+        driver: ProviderDriverKind.make("antigravity"),
+        enabled: true,
+        installed: true,
+        version: "1.0.0",
+        status: "ready",
+        auth: { status: "authenticated" },
+        checkedAt: "2026-11-07T00:00:00.000Z",
+        models: [],
+        slashCommands: [],
+        skills: [],
+      };
+      const responses = yield* Queue.unbounded<unknown>();
+      const services = Layer.mergeAll(
+        layerUnusedConfigRpcServices,
+        Layer.mock(ProviderRegistry.ProviderRegistry)({
+          getProviders: Effect.sync(() => [currentProvider]),
+          refresh: () =>
+            Effect.sync(() => {
+              fullRefreshCalls += 1;
+              return [currentProvider];
+            }),
+          syncInstance: () =>
+            Effect.sync(() => {
+              syncCalls += 1;
+              return [currentProvider];
+            }),
+        }),
+        Layer.mock(ProviderInstanceRegistry.ProviderInstanceRegistry)({
+          listInstances: Effect.succeed([
+            {
+              instanceId,
+              snapshot: {
+                getSnapshot: Effect.sync(() => currentProvider),
+                refreshUsage: DateTime.now.pipe(
+                  Effect.tap((now) =>
+                    Effect.sync(() => {
+                      probeCalls += 1;
+                      const checkedAt = DateTime.formatIso(
+                        DateTime.makeUnsafe(
+                          DateTime.toEpochMillis(now) - (probeCalls === 1 ? 60_000 : 1_000),
+                        ),
+                      );
+                      currentProvider = {
+                        ...currentProvider,
+                        usageLimits: {
+                          checkedAt,
+                          windows: [
+                            {
+                              id: "gemini-5h",
+                              kind: "session",
+                              label: "Gemini · 5-hour",
+                              usedPercent: 10,
+                            },
+                          ],
+                        },
+                      };
+                    }),
+                  ),
+                  Effect.asVoid,
+                ),
+              },
+            } as never,
+          ]),
+        }),
+        Layer.mock(ProjectService.ProjectService)({}),
+        Layer.mock(UsageLimitSources.UsageLimitSources)({
+          current: Effect.sync(() => [
+            {
+              id: "source:cliproxy" as never,
+              kind: "cliproxy" as const,
+              label: "CLIProxy",
+              checkedAt: sourceCheckedAt as never,
+              accounts: [],
+            },
+          ]),
+          refresh: DateTime.now.pipe(
+            Effect.tap((now) =>
+              Effect.sync(() => {
+                sourceRefreshCalls += 1;
+                sourceCheckedAt = DateTime.formatIso(now);
+              }),
+            ),
+            Effect.asVoid,
+          ),
+        }),
+        Layer.mock(ExternalLauncher.ExternalLauncher)({}),
+        Layer.mock(RemoteOpenTargets.RemoteOpenTargets)({}),
+        Layer.mock(DirectEndpoints.DirectEndpoints)({}),
+        Layer.mock(ManagedProjectFolders.ManagedProjectFolders)({
+          scratchRoot: Effect.succeedNone,
+          namedProjectsRoot: process.cwd(),
+        }),
+        Layer.mock(ScratchThreadPromotion.ScratchThreadPromotion)({}),
+        Layer.mock(ServerEnvironment.ServerEnvironment)({}),
+        Layer.mock(EnvironmentAuth.EnvironmentAuth)({}),
+      );
+      const server = yield* RpcServer.makeNoSerialization(
+        RpcGroup.make(WsServerRefreshProvidersRpc),
+        {
+          ...WS_RPC_SERVER_OPTIONS,
+          onFromServer: (response) =>
+            response._tag === "Exit" && response.exit._tag === "Success"
+              ? Queue.offer(responses, response.exit.value)
+              : response._tag === "Exit"
+                ? Queue.offer(responses, response.exit)
+                : Effect.void,
+        },
+      ).pipe(
+        Effect.provide(
+          layerWsRpc(
+            {
+              sessionId: AuthSessionId.make("usage-limits-fast-path-test"),
+              subject: "usage-limits-fast-path-test",
+              method: "browser-session-cookie",
+              scopes: [],
+            },
+            {},
+            yield* ServerBrowser.ServerBrowser,
+            () => Effect.void,
+            { secretReferences: true },
+          ).pipe(Layer.provide(services)),
+        ),
+      );
+
+      yield* server.write(0, {
+        _tag: "Request",
+        id: RpcMessage.RequestId("limits-1"),
+        tag: WS_METHODS.serverRefreshProviders,
+        payload: { refreshUsageLimits: true },
+        headers: Headers.empty,
+      });
+      const first = (yield* Queue.take(responses)) as {
+        readonly providers: ReadonlyArray<ServerProvider>;
+      };
+      assert.equal(fullRefreshCalls, 0);
+      assert.equal(probeCalls, 1);
+      assert.equal(sourceRefreshCalls, 1);
+      assert.equal(syncCalls, 1);
+      const firstCheckedAt = first.providers[0]?.usageLimits?.checkedAt;
+      assert.ok(firstCheckedAt, "initial usage-limits probe should be awaited and returned");
+
+      yield* server.write(0, {
+        _tag: "Request",
+        id: RpcMessage.RequestId("limits-2"),
+        tag: WS_METHODS.serverRefreshProviders,
+        payload: { refreshUsageLimits: true },
+        headers: Headers.empty,
+      });
+      const cached = (yield* Queue.take(responses)) as {
+        readonly providers: ReadonlyArray<ServerProvider>;
+      };
+      assert.equal(fullRefreshCalls, 0);
+      assert.equal(
+        probeCalls,
+        1,
+        `expected probe to be skipped within ${USAGE_LIMITS_AUTO_REFRESH_COOLDOWN_MS}ms cooldown`,
+      );
+      assert.equal(sourceRefreshCalls, 1);
+      assert.equal(cached.providers[0]?.usageLimits?.checkedAt, firstCheckedAt);
+
+      yield* server.write(0, {
+        _tag: "Request",
+        id: RpcMessage.RequestId("limits-3"),
+        tag: WS_METHODS.serverRefreshProviders,
+        payload: { refreshUsageLimits: true, fresh: true },
+        headers: Headers.empty,
+      });
+      const forced = (yield* Queue.take(responses)) as {
+        readonly providers: ReadonlyArray<ServerProvider>;
+      };
+      assert.equal(fullRefreshCalls, 0);
+      assert.equal(probeCalls, 2);
+      assert.equal(sourceRefreshCalls, 2);
+      assert.equal(syncCalls, 2);
+      assert.notEqual(forced.providers[0]?.usageLimits?.checkedAt, firstCheckedAt);
+    }).pipe(
+      Effect.provide(
+        Layer.mergeAll(
+          Layer.fresh(layerConfigSources),
+          Layer.mock(PreviewAutomationBroker.PreviewAutomationBroker)({}),
+          Layer.mock(ServerBrowser.ServerBrowser)({}),
+        ),
+      ),
+    ),
 );

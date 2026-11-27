@@ -14,6 +14,7 @@ import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
+import * as Option from "effect/Option";
 import * as Ref from "effect/Ref";
 import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
@@ -186,10 +187,13 @@ const makeHarness = Effect.fn("makeAntigravityProviderHarness")(function* (
     Effect.andThen(initialUpdate),
     Effect.asVoid,
   );
-  // Subscribe before the trigger; yield the returned pull to await the publish.
+  // Subscribe eagerly before the trigger so synchronous publishes are not missed; yield the returned pull to await the publish.
   const nextPublish = (predicate: (snapshot: ServerProvider) => boolean) =>
-    Stream.toPull(provider.snapshot.streamChanges.pipe(Stream.filter(predicate))).pipe(
-      Effect.map((pull) => pull.pipe(Effect.map((snapshots) => snapshots[0]))),
+    provider.snapshot.streamChanges.pipe(
+      Stream.filter(predicate),
+      Stream.runHead,
+      Effect.forkChild({ startImmediately: true }),
+      Effect.map((fiber) => Fiber.join(fiber).pipe(Effect.map(Option.getOrUndefined))),
     );
   return {
     provider,
@@ -1214,23 +1218,27 @@ it.layer(layerTest)("Antigravity provider snapshots", (it) => {
     }),
   );
 
-  it.effect("retains remembered cached usageLimits across startup checks and clears on sign-out", () =>
-    Effect.gen(function* () {
-      const cachedLimits = {
-        checkedAt: "2026-10-09T12:00:00.000Z",
-        windows: [{ id: "gemini-5h", kind: "session", label: "Gemini · 5-hour", usedPercent: 14 }],
-      } satisfies ServerProviderUsageLimits;
-      const harness = yield* makeHarness({ rememberedUsageLimits: cachedLimits });
-      yield* harness.initialize;
-      expect((yield* harness.provider.snapshot.getSnapshot).usageLimits).toEqual(cachedLimits);
+  it.effect(
+    "retains remembered cached usageLimits across startup checks and clears on sign-out",
+    () =>
+      Effect.gen(function* () {
+        const cachedLimits = {
+          checkedAt: "2026-10-09T12:00:00.000Z",
+          windows: [
+            { id: "gemini-5h", kind: "session", label: "Gemini · 5-hour", usedPercent: 14 },
+          ],
+        } satisfies ServerProviderUsageLimits;
+        const harness = yield* makeHarness({ rememberedUsageLimits: cachedLimits });
+        yield* harness.initialize;
+        expect((yield* harness.provider.snapshot.getSnapshot).usageLimits).toEqual(cachedLimits);
 
-      yield* Ref.set(harness.probe, Effect.succeed(initializeResult));
-      yield* harness.provider.onSessionStarted(started, "/workspace");
-      expect((yield* harness.provider.snapshot.getSnapshot).usageLimits).toEqual(cachedLimits);
+        yield* Ref.set(harness.probe, Effect.succeed(initializeResult));
+        yield* harness.provider.onSessionStarted(started, "/workspace");
+        expect((yield* harness.provider.snapshot.getSnapshot).usageLimits).toEqual(cachedLimits);
 
-      yield* harness.provider.onSignedOut;
-      expect((yield* harness.provider.snapshot.getSnapshot).usageLimits).toBeUndefined();
-    }),
+        yield* harness.provider.onSignedOut;
+        expect((yield* harness.provider.snapshot.getSnapshot).usageLimits).toBeUndefined();
+      }),
   );
 });
 

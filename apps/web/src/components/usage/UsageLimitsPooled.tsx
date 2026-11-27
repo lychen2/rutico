@@ -1359,8 +1359,10 @@ export function UsageLimitsPooled({
   presentations,
   now,
   refreshControl,
+  refreshing = false,
 }: {
   readonly refreshControl?: React.ReactNode;
+  readonly refreshing?: boolean;
   readonly presentations: Parameters<typeof collectLimitAccounts>[0];
   readonly now: number;
 }) {
@@ -1519,8 +1521,17 @@ export function UsageLimitsPooled({
         (p.serverConfig?.providers ?? [])
           .filter(
             (provider) =>
-              ["codex", "claudeAgent", "grok", "antigravity", "cursor"].includes(provider.driver) ||
-              provider.status === "ready",
+              provider.enabled &&
+              provider.installed &&
+              provider.auth.status !== "unauthenticated" &&
+              (provider.status === "ready" ||
+                ["codex", "claudeAgent", "grok", "antigravity", "cursor"].includes(
+                  provider.driver,
+                )) &&
+              !(
+                refreshing &&
+                ["codex", "claudeAgent", "grok", "antigravity", "cursor"].includes(provider.driver)
+              ),
           )
           .map((provider) => provider.driver),
       ),
@@ -1579,6 +1590,8 @@ export function UsageLimitsPooled({
                   {headline.lead}
                   {headline.figure ? <em>{headline.figure}</em> : null}
                 </>
+              ) : refreshing && pools.length === 0 ? (
+                uiText("Reading quota limits…")
               ) : pools.length === 0 ? (
                 uiText("Quota is not available yet")
               ) : (
@@ -1624,11 +1637,18 @@ export function UsageLimitsPooled({
         {pools.length === 0 && externalLinks.length === 0 && quotaSources.length === 0 ? (
           <div
             data-usage-limits-empty
+            aria-busy={refreshing ? "true" : undefined}
             className="flex min-h-56 flex-col items-center justify-center gap-2 text-center"
           >
-            <h2 className="text-sm font-medium">{uiText("No quota data yet")}</h2>
+            <h2 className="text-sm font-medium">
+              {uiText(refreshing ? "Reading quota limits…" : "No quota data yet")}
+            </h2>
             <p className="text-xs text-muted-foreground">
-              {uiText("Enable a provider and sign in to view its quota here.")}
+              {uiText(
+                refreshing
+                  ? "Checking signed-in providers for current quota windows."
+                  : "Enable a provider and sign in to view its quota here.",
+              )}
             </p>
           </div>
         ) : null}
@@ -1861,6 +1881,8 @@ export function UsageLimitsPooled({
                 ) === "early",
             ) ? (
             uiText("Some quota may run out before it resets")
+          ) : refreshing && pools.length === 0 ? (
+            uiText("Reading quota limits…")
           ) : pools.length === 0 ? (
             uiText("Quota is not available yet")
           ) : (
@@ -1879,11 +1901,18 @@ export function UsageLimitsPooled({
       {pools.length === 0 && externalLinks.length === 0 && quotaSources.length === 0 ? (
         <div
           data-usage-limits-empty
+          aria-busy={refreshing ? "true" : undefined}
           className="flex min-h-56 flex-col items-center justify-center gap-2 text-center"
         >
-          <h2 className="text-sm font-medium">{uiText("No quota data yet")}</h2>
+          <h2 className="text-sm font-medium">
+            {uiText(refreshing ? "Reading quota limits…" : "No quota data yet")}
+          </h2>
           <p className="text-xs text-muted-foreground">
-            {uiText("Enable a provider and sign in to view its quota here.")}
+            {uiText(
+              refreshing
+                ? "Checking signed-in providers for current quota windows."
+                : "Enable a provider and sign in to view its quota here.",
+            )}
           </p>
         </div>
       ) : null}

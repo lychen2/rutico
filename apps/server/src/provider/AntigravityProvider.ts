@@ -316,9 +316,8 @@ export const makeAntigravityProvider = Effect.fn("makeAntigravityProvider")(func
 
   // The quota read can take 30 seconds, so it never blocks readiness or a session start.
   // One read runs at a time; sign-in and sign-out interrupt it so a stale account never lands.
-  const usageRead = yield* FiberHandle.make();
+  const usageRead = yield* FiberHandle.make<void, never>();
   const republish = yield* Deferred.make<Effect.Effect<ServerProvider>>();
-  const scope = yield* Effect.scope;
   const refreshUsage = Effect.fn("AntigravityProvider.refreshUsage")(function* () {
     if (!options.probeUsage || (yield* PublishingUsage)) return;
     yield* FiberHandle.run(
@@ -348,7 +347,7 @@ export const makeAntigravityProvider = Effect.fn("makeAntigravityProvider")(func
       // Store the fiber before it runs, so a sign-out during the read can interrupt it.
       { onlyIfMissing: true, startImmediately: false },
     );
-    yield* FiberHandle.awaitEmpty(usageRead).pipe(Effect.asVoid);
+    yield* FiberHandle.awaitEmpty(usageRead);
   });
   const resetUsage = Effect.gen(function* () {
     yield* FiberHandle.clear(usageRead);

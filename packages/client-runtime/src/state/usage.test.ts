@@ -6,6 +6,7 @@ import {
   type UsageSummary,
   type UsageSummaryInput,
 } from "@t3tools/contracts";
+import * as Cause from "effect/Cause";
 import * as Effect from "effect/Effect";
 import { AsyncResult, Atom, AtomRegistry } from "effect/reactivity";
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
@@ -210,5 +211,51 @@ describe("limits refresh cooldown", () => {
     expect(await first).toBe("old limits");
     expect(await manual).toBe("old limits");
     expect(newCheck).not.toHaveBeenCalled();
+  });
+
+  it("throttles automatic refreshes for 30 minutes after success and 1 minute after failure", async () => {
+    let now = 1_000_000;
+    const nowSpy = vi.spyOn(Date, "now").mockImplementation(() => now);
+    try {
+      const okId = EnvironmentId.make("limits-cooldown-ok");
+      const okCheck = vi.fn(async () => AsyncResult.success("ok"));
+      await expect(refreshUsageLimits(okId, okCheck, true)).resolves.toEqual(
+        AsyncResult.success("ok"),
+      );
+      expect(okCheck).toHaveBeenCalledTimes(1);
+
+      now += 29 * 60_000;
+      expect(await refreshUsageLimits(okId, okCheck, true)).toBeUndefined();
+      expect(okCheck).toHaveBeenCalledTimes(1);
+
+      // Manual refresh bypasses the 30-minute automatic cooldown.
+      await expect(refreshUsageLimits(okId, okCheck, false)).resolves.toEqual(
+        AsyncResult.success("ok"),
+      );
+      expect(okCheck).toHaveBeenCalledTimes(2);
+
+      now += 30 * 60_000 + 1;
+      await expect(refreshUsageLimits(okId, okCheck, true)).resolves.toEqual(
+        AsyncResult.success("ok"),
+      );
+      expect(okCheck).toHaveBeenCalledTimes(3);
+
+      const failId = EnvironmentId.make("limits-cooldown-fail");
+      const failResult = AsyncResult.failure<string, string>(Cause.fail("offline"));
+      const failCheck = vi.fn(async () => failResult);
+      await expect(refreshUsageLimits(failId, failCheck, true)).resolves.toEqual(failResult);
+      expect(failCheck).toHaveBeenCalledTimes(1);
+
+      now += 30_000;
+      expect(await refreshUsageLimits(failId, failCheck, true)).toBeUndefined();
+      expect(failCheck).toHaveBeenCalledTimes(1);
+
+      // Retries after the 1-minute failure backoff without waiting 30 minutes.
+      now += 30_001;
+      await expect(refreshUsageLimits(failId, failCheck, true)).resolves.toEqual(failResult);
+      expect(failCheck).toHaveBeenCalledTimes(2);
+    } finally {
+      nowSpy.mockRestore();
+    }
   });
 });

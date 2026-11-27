@@ -98,7 +98,10 @@ it("suppresses stale and failed quota predictions while keeping last readings vi
       ],
     ]);
     await using screen = await render(
-      <UsageLimitsPooled presentations={presentations} now={Date.parse(checkedAt) + 600001} />,
+      <UsageLimitsPooled
+        presentations={presentations}
+        now={Date.parse(checkedAt) + 35 * 60_000 + 1}
+      />,
     );
     const text = screen.container.textContent;
     expect(text).toContain("暂不预测");

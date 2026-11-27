@@ -115,6 +115,7 @@ export const usageZhCN: Readonly<Record<string, string>> = {
   "ChatGPT Pro $1 Subscription": "ChatGPT Pro $1 订阅",
   "ChatGPT shared usage": "ChatGPT 共享用量",
   "Checking permissions…": "正在检查权限…",
+  "Checking signed-in providers for current quota windows.": "正在向已登录提供方查询当前额度窗口。",
   "Choose a reset credit": "选择要用的重置卡",
   "Claude Code": "Claude Code",
   "Claude Code for writing and coding, with 5-hour and weekly limits.":
@@ -398,6 +399,7 @@ export const usageZhCN: Readonly<Record<string, string>> = {
   "Read-only access": "只读权限",
   Reading: "正在读取",
   "Reading is stale. Forecast unavailable.": "读数已过期，暂不预测。",
+  "Reading quota limits…": "正在读取额度…",
   Ready: "就绪",
   "Recommended now: quota may run out before natural reset. Spending one credit bridges the gap.":
     "建议现在使用：按当前消耗速度会在自然重置前出现空档，优先核销临期重置卡可直接补齐。",

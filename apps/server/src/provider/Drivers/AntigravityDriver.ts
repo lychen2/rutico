@@ -68,6 +68,7 @@ import {
 import { makeAcpNativeLoggerFactory } from "@t3tools/provider-acp/server/nativeLogging";
 import { ProviderDriverError } from "../Errors.ts";
 import { makeAntigravityProvider } from "../AntigravityProvider.ts";
+import { readProviderStatusCache, resolveProviderStatusCachePath } from "../providerStatusCache.ts";
 import * as ProviderEventLoggers from "@t3tools/provider-core/server/ProviderEventLoggers";
 import * as ModelCatalog from "@t3tools/provider-core/server/ModelCatalog";
 import {
@@ -563,12 +564,29 @@ export const AntigravityDriver: ProviderDriver<
       Effect.provideService(FileSystem.FileSystem, fileSystem),
       Effect.provideService(Path.Path, path),
     );
+    const cachedSnapshot = yield* resolveProviderStatusCachePath({
+      cacheDir: host.paths.providerStatusCacheDir,
+      instanceId,
+    }).pipe(
+      Effect.provideService(Path.Path, path),
+      Effect.flatMap(readProviderStatusCache),
+      Effect.provideService(FileSystem.FileSystem, fileSystem),
+      Effect.orElseSucceed(() => undefined),
+    );
+    const rememberedUsageLimits =
+      cachedSnapshot?.driver === DRIVER &&
+      cachedSnapshot.enabled &&
+      cachedSnapshot.auth.status === "authenticated" &&
+      (cachedSnapshot.auth.type === undefined || cachedSnapshot.auth.type === auth.authMethod)
+        ? cachedSnapshot.usageLimits
+        : undefined;
     const provider = yield* makeAntigravityProvider(settings, {
       environment: processEnvironment,
       stampIdentity: classifyModels,
       probe,
       probeUsage: usage.probe,
       clearUsage: usage.clear,
+      ...(rememberedUsageLimits ? { rememberedUsageLimits } : {}),
       auth: { type: auth.authMethod, label: antigravityAuthLabel(auth.authMethod) },
       ...(rememberedRuntimeModes ? { rememberedRuntimeModes } : {}),
       rememberRuntimeModes: (modes) =>

@@ -208,4 +208,36 @@ it.layer(NodeServices.layer)("providerStatusCache", (it) => {
       fallbackCodex,
     );
   });
+
+  it("preserves cached usageLimits only while the cached provider is not unauthenticated", () => {
+    const usageLimits = {
+      checkedAt: "2026-04-10T12:00:00.000Z",
+      windows: [{ id: "gemini-5h", kind: "session" as const, label: "Gemini", usedPercent: 15 }],
+    };
+    const fallbackCodex = makeProvider(CODEX_DRIVER, {
+      auth: { status: "unknown" },
+      status: "warning",
+    });
+
+    assert.deepStrictEqual(
+      hydrateCachedProvider({
+        cachedProvider: makeProvider(CODEX_DRIVER, {
+          auth: { status: "authenticated" },
+          usageLimits,
+        }),
+        fallbackProvider: fallbackCodex,
+      }).usageLimits,
+      usageLimits,
+    );
+
+    assert.isUndefined(
+      hydrateCachedProvider({
+        cachedProvider: makeProvider(CODEX_DRIVER, {
+          auth: { status: "unauthenticated" },
+          usageLimits,
+        }),
+        fallbackProvider: fallbackCodex,
+      }).usageLimits,
+    );
+  });
 });

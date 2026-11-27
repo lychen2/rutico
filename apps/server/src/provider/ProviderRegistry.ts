@@ -72,6 +72,11 @@ export class ProviderRegistry extends Context.Service<
       instanceId: ProviderInstanceId,
     ) => Effect.Effect<ReadonlyArray<ServerProvider>>;
 
+    /** Synchronize one instance's current snapshot without spawning a full provider probe. */
+    readonly syncInstance?: (
+      instanceId: ProviderInstanceId,
+    ) => Effect.Effect<ReadonlyArray<ServerProvider>>;
+
     /** Re-reads secret-backed environments first, so a fixed secret applies without a restart. */
     readonly reloadSecretsAndRefresh: (
       instanceId?: ProviderInstanceId,
@@ -881,6 +886,19 @@ export const layer = Layer.effect(
       return yield* refreshOneSource(instance);
     });
 
+    const syncInstance = Effect.fn("syncInstance")(function* (instanceId: ProviderInstanceId) {
+      yield* syncLiveSourcesAndContinue;
+      const instance = (yield* Ref.get(liveSubsRef)).get(instanceId);
+      if (!instance || !(yield* isCurrentInstance(instance))) {
+        return yield* Ref.get(providersRef);
+      }
+      const providerSource = buildSnapshotSource(instance);
+      const nextProvider = yield* providerSource.getSnapshot;
+      return yield* correlateSnapshotWithSource(providerSource, nextProvider).pipe(
+        Effect.flatMap(syncProvider),
+      );
+    });
+
     const reloadSecretsAndRefresh = Effect.fn("reloadSecretsAndRefresh")(function* (
       instanceId?: ProviderInstanceId,
     ) {
@@ -1437,6 +1455,8 @@ export const layer = Layer.effect(
         refresh(provider).pipe(Effect.catchCause(recoverRefreshFailure)),
       refreshInstance: (instanceId: ProviderInstanceId) =>
         refreshInstance(instanceId).pipe(Effect.catchCause(recoverRefreshFailure)),
+      syncInstance: (instanceId: ProviderInstanceId) =>
+        syncInstance(instanceId).pipe(Effect.catchCause(recoverRefreshFailure)),
       reloadSecretsAndRefresh: (instanceId?: ProviderInstanceId) =>
         reloadSecretsAndRefresh(instanceId).pipe(Effect.catchCause(recoverRefreshFailure)),
       rebuildMissingAndRefresh: rebuildMissingAndRefresh().pipe(

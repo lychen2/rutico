@@ -1183,6 +1183,78 @@ export function collectProviderUsageLimits(
   return { createdAt: DateTime.formatIso(DateTime.makeUnsafe(now)), accounts, notices };
 }
 
+/** Default cooldown before automatic Limits tab mounts re-probe provider usage quotas. */
+export const USAGE_LIMITS_AUTO_REFRESH_COOLDOWN_MS = 30 * 60_000;
+
+/** Short backoff after a failed automatic limits refresh before retrying on re-mount. */
+export const USAGE_LIMITS_FAILURE_COOLDOWN_MS = 60_000;
+
+/** Maximum age before cached quota readings are treated as stale in UI and picker views. */
+export const USAGE_LIMITS_STALE_AFTER_MS = 35 * 60_000;
+
+const QUOTA_PROBED_DRIVERS: ReadonlySet<string> = new Set([
+  "antigravity",
+  "claudeAgent",
+  "codex",
+  "cursor",
+  "grok",
+  "kiro",
+  "opencode",
+]);
+
+/** Whether a cached provider quota snapshot is usable and younger than `maxAgeMs`. */
+export function isProviderUsageLimitsFresh(
+  limits: ServerProviderUsageLimits | undefined,
+  now: number,
+  maxAgeMs = USAGE_LIMITS_AUTO_REFRESH_COOLDOWN_MS,
+): boolean {
+  if (limits === undefined) return false;
+  const reason = limits.unavailable?.reason;
+  if (reason === "probeFailed") return false;
+  if (
+    reason !== "unsupported" &&
+    limits.windows.length === 0 &&
+    limits.externalUsage === undefined
+  ) {
+    return false;
+  }
+  const checkedAt = Date.parse(limits.checkedAt);
+  return Number.isFinite(checkedAt) && now - checkedAt < maxAgeMs;
+}
+
+/** Whether an environment needs an automatic Limits refresh at `now`. */
+export function needsAutomaticUsageLimitsRefresh(
+  config:
+    | {
+        readonly providers: readonly ServerProvider[];
+        readonly usageLimitSources?: UsageLimitSourceSnapshots | undefined;
+      }
+    | null
+    | undefined,
+  now: number,
+): boolean {
+  if (!config) return false;
+  const quotaProviders = config.providers.filter(
+    (provider) =>
+      provider.enabled &&
+      provider.installed &&
+      provider.auth.status !== "unauthenticated" &&
+      QUOTA_PROBED_DRIVERS.has(provider.driver),
+  );
+  const sources = config.usageLimitSources ?? [];
+  if (quotaProviders.length === 0 && sources.length === 0) {
+    return false;
+  }
+  if (quotaProviders.some((provider) => !isProviderUsageLimitsFresh(provider.usageLimits, now))) {
+    return true;
+  }
+  return sources.some((source) => {
+    if (source.error !== undefined) return true;
+    const checkedAt = Date.parse(source.checkedAt);
+    return !Number.isFinite(checkedAt) || now - checkedAt >= USAGE_LIMITS_AUTO_REFRESH_COOLDOWN_MS;
+  });
+}
+
 export function quotaReadingStale(
   limits: ServerProviderUsageLimits | undefined,
   now: number,
@@ -1195,6 +1267,6 @@ export function quotaReadingStale(
     failed ||
     limits?.unavailable?.reason === "probeFailed" ||
     !Number.isFinite(checked) ||
-    now - checked > 10 * 60_000
+    now - checked > USAGE_LIMITS_STALE_AFTER_MS
   );
 }

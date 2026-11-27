@@ -1,12 +1,12 @@
 import type { ServerProvider, UsageLimitSourceSnapshots } from "@t3tools/contracts";
 import {
+  USAGE_LIMITS_STALE_AFTER_MS,
   antigravityWindowLimitsModel,
   hubRoutes,
   instanceHubs,
   remainingPercent,
 } from "@t3tools/shared/usageLimits";
 
-const MAX_READING_AGE_MS = 10 * 60_000;
 const CLAUDE_SCOPED_WEEKLY_PREFIX = "seven_day_";
 
 /** A single account's applicable weekly window, or its first applicable window. */
@@ -45,7 +45,7 @@ export function modelPickerQuotaRemaining({
   }
   if (!limits || limits.unavailable) return null;
   const checkedAt = Date.parse(limits.checkedAt);
-  if (!Number.isFinite(checkedAt) || now - checkedAt > MAX_READING_AGE_MS) return null;
+  if (!Number.isFinite(checkedAt) || now - checkedAt > USAGE_LIMITS_STALE_AFTER_MS) return null;
 
   const providerId = slug.split("/", 1)[0] ?? "";
   const windows = limits.windows.filter((window) => {
