@@ -153,9 +153,13 @@ export function HoldToConfirmButton({
       return;
     }
     if (event.key !== " " && event.key !== "Enter") return;
+    if (event.repeat) {
+      event.preventDefault();
+      return;
+    }
     if (prefersReducedMotion()) return;
     event.preventDefault();
-    if (event.repeat || activeKeyRef.current !== null) return;
+    if (activeKeyRef.current !== null) return;
     activeKeyRef.current = event.key;
     beginHold();
   };
