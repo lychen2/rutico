@@ -6,6 +6,8 @@ import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 
 const harness = vi.hoisted(() => {
   const queryListeners = new Set<() => void>();
+  const hardwareBackListeners: Array<() => boolean> = [];
+  const predictiveBackCompatListeners = new Set<(payload: unknown) => void>();
   return {
     environments: [] as Array<{
       readonly environmentId: EnvironmentId;
@@ -17,6 +19,21 @@ const harness = vi.hoisted(() => {
     }>,
     managedIds: new Set<EnvironmentId>(),
     pairingLinksByEnv: new Map<EnvironmentId, ReadonlyArray<AuthPairingLink>>(),
+    modalBackOwnerCounts: [] as number[],
+    hardwareBackListeners,
+    predictiveBackCompatListeners,
+    dispatchHardwareBackPress: () => {
+      // React Native BackHandler invokes listeners in LIFO order and stops on the first `true`.
+      for (let index = hardwareBackListeners.length - 1; index >= 0; index--) {
+        if (hardwareBackListeners[index]!()) return true;
+      }
+      return false;
+    },
+    emitPredictiveBackCompat: (payload: unknown) => {
+      for (const listener of predictiveBackCompatListeners) {
+        listener(payload);
+      }
+    },
     subscribeQuery: (listener: () => void) => {
       queryListeners.add(listener);
       return () => {
@@ -32,6 +49,19 @@ const harness = vi.hoisted(() => {
   };
 });
 
+vi.mock("expo", () => ({
+  requireOptionalNativeModule: (name: string) =>
+    name === "T3WorkspaceNavigation"
+      ? {
+          setModalBackOwnerCount: (count: number) => {
+            harness.modalBackOwnerCounts.push(count);
+          },
+          setPanelBackOwnerCount: vi.fn(),
+          addListener: () => ({ remove: () => {} }),
+        }
+      : null,
+}));
+
 vi.mock("react-native", async () => {
   const { createElement: h } = await import("react");
   const Box = ({ children }: { children?: ReactNode }) => h("div", null, children);
@@ -41,6 +71,31 @@ vi.mock("react-native", async () => {
       loop: () => ({ start: () => {}, stop: () => {} }),
       sequence: () => ({}),
       timing: () => ({}),
+    },
+    BackHandler: {
+      addEventListener: (_eventName: string, listener: () => boolean) => {
+        harness.hardwareBackListeners.push(listener);
+        return {
+          remove: () => {
+            const index = harness.hardwareBackListeners.lastIndexOf(listener);
+            if (index >= 0) harness.hardwareBackListeners.splice(index, 1);
+          },
+        };
+      },
+    },
+    DeviceEventEmitter: {
+      addListener: (eventName: string, listener: (payload: unknown) => void) => {
+        if (eventName === "t3PredictiveBack") {
+          harness.predictiveBackCompatListeners.add(listener);
+        }
+        return {
+          remove: () => {
+            if (eventName === "t3PredictiveBack") {
+              harness.predictiveBackCompatListeners.delete(listener);
+            }
+          },
+        };
+      },
     },
     Easing: { inOut: () => () => 0, out: () => () => 0, quad: () => 0, sin: () => 0 },
     Platform: { OS: "android" },
@@ -60,6 +115,7 @@ vi.mock("react-native-reanimated", async () => {
   return {
     default: { View: ({ children }: { children?: ReactNode }) => h("div", null, children) },
     ReduceMotion: { System: "system" },
+    cancelAnimation: () => {},
     useAnimatedStyle: () => ({}),
     useReducedMotion: () => false,
     useSharedValue: (initial: number) => ({
@@ -160,6 +216,9 @@ vi.mock("../../state/use-atom-command", () => ({
     cmd._tag === "approveConnectDevice" ? harness.approveCommand : harness.denyCommand,
 }));
 
+import { BackHandler } from "react-native";
+
+import { registerPredictiveBackOwner } from "../../native/androidPredictiveBack";
 import {
   ConnectDeviceApprovalCoordinator,
   formatVerificationCodeGroups,
@@ -201,6 +260,9 @@ afterEach(() => {
   harness.environments = [];
   harness.managedIds = new Set();
   harness.pairingLinksByEnv = new Map();
+  harness.modalBackOwnerCounts.length = 0;
+  harness.hardwareBackListeners.length = 0;
+  harness.predictiveBackCompatListeners.clear();
   harness.approveCommand.mockReset();
   harness.denyCommand.mockReset();
 });
@@ -506,6 +568,98 @@ describe("ConnectDeviceApprovalCoordinator handshake card bridge", () => {
       expect(getActiveApprovalHandshakeForTesting()?.prompt.pairingLinkId).toBe("race-b");
     } finally {
       act(() => root.unmount());
+    }
+  });
+
+  it("claims Android modal Back ownership while active, consumes Back without popping or deciding, and releases ownership on close", () => {
+    (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+    vi.useFakeTimers();
+    const startMs = 1_700_000_000_000;
+    vi.setSystemTime(startMs);
+
+    const underlyingRoutePop = vi.fn(() => true);
+    const underlyingBackSub = BackHandler.addEventListener("hardwareBackPress", underlyingRoutePop);
+    const screenStackCommit = vi.fn();
+    const unregisterScreenStack = registerPredictiveBackOwner({
+      layer: "screen-stack",
+      onCommit: screenStackCommit,
+    });
+
+    const envId = EnvironmentId.make("host-android-back");
+    harness.environments = [
+      {
+        environmentId: envId,
+        label: "Studio Mac",
+        connection: { phase: "connected" },
+        serverConfig: { settings: { requireConnectDeviceApproval: true } },
+      },
+    ];
+    harness.managedIds = new Set([envId]);
+    harness.pairingLinksByEnv = new Map([[envId, []]]);
+
+    const container = document.createElement("div");
+    const root = createRoot(container);
+    try {
+      act(() => root.render(createElement(ConnectDeviceApprovalCoordinator)));
+      expect(getActiveApprovalHandshakeForTesting()).toBeNull();
+      expect(harness.modalBackOwnerCounts.at(-1) ?? 0).toBe(0);
+
+      // Baseline: with no approval card shown, hardware Back reaches the underlying route.
+      expect(harness.dispatchHardwareBackPress()).toBe(true);
+      expect(underlyingRoutePop).toHaveBeenCalledTimes(1);
+      underlyingRoutePop.mockClear();
+
+      // Show an approval card -> modal Back ownership activates immediately.
+      act(() => {
+        harness.setPairingLinks(envId, [
+          makePairingLink({
+            id: "back-a",
+            createdAtMs: startMs,
+            expiresAtMs: startMs + 60_000,
+            verificationCode: "555666",
+            deviceLabel: "Pixel Tablet",
+          }),
+        ]);
+      });
+      expect(getActiveApprovalHandshakeForTesting()?.prompt.pairingLinkId).toBe("back-a");
+      expect(harness.modalBackOwnerCounts.at(-1)).toBe(1);
+
+      // Pressing Android hardware Back is consumed without popping underlying route or approving/denying.
+      expect(harness.dispatchHardwareBackPress()).toBe(true);
+      expect(underlyingRoutePop).not.toHaveBeenCalled();
+      expect(harness.approveCommand).not.toHaveBeenCalled();
+      expect(harness.denyCommand).not.toHaveBeenCalled();
+      expect(getActiveApprovalHandshakeForTesting()?.prompt.pairingLinkId).toBe("back-a");
+
+      // Predictive back events are captured by the modal layer and never reach screen-stack.
+      act(() => {
+        harness.emitPredictiveBackCompat({ phase: "start", progress: 0.1, swipeEdge: 0 });
+        harness.emitPredictiveBackCompat({ phase: "progress", progress: 0.5, swipeEdge: 0 });
+        harness.emitPredictiveBackCompat({ phase: "commit", swipeEdge: 0 });
+      });
+      expect(screenStackCommit).not.toHaveBeenCalled();
+      expect(harness.approveCommand).not.toHaveBeenCalled();
+      expect(harness.denyCommand).not.toHaveBeenCalled();
+      expect(getActiveApprovalHandshakeForTesting()?.prompt.pairingLinkId).toBe("back-a");
+
+      // Closing the approval card immediately releases both modal and hardware Back ownership.
+      act(() => {
+        harness.setPairingLinks(envId, []);
+      });
+      expect(getActiveApprovalHandshakeForTesting()).toBeNull();
+      expect(harness.modalBackOwnerCounts.at(-1)).toBe(0);
+
+      expect(harness.dispatchHardwareBackPress()).toBe(true);
+      expect(underlyingRoutePop).toHaveBeenCalledTimes(1);
+
+      act(() => {
+        harness.emitPredictiveBackCompat({ phase: "commit", swipeEdge: 0 });
+      });
+      expect(screenStackCommit).toHaveBeenCalledTimes(1);
+    } finally {
+      act(() => root.unmount());
+      underlyingBackSub.remove();
+      unregisterScreenStack();
     }
   });
 });

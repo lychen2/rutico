@@ -9,7 +9,14 @@ import {
 } from "@t3tools/contracts";
 import * as DateTime from "effect/DateTime";
 import { Fragment, useEffect, useEffectEvent, useRef, useState, useSyncExternalStore } from "react";
-import { Animated as RNAnimated, Platform, StyleSheet, useAnimatedValue, View } from "react-native";
+import {
+  Animated as RNAnimated,
+  BackHandler,
+  Platform,
+  StyleSheet,
+  useAnimatedValue,
+  View,
+} from "react-native";
 import Reanimated, {
   useAnimatedStyle,
   useReducedMotion,
@@ -33,6 +40,7 @@ import {
   startNativePulseLoop,
   TIMING_QUICK_FADE,
 } from "../../lib/mobileMotion";
+import { useAndroidPredictiveBackOwner } from "../../native/androidPredictiveBack";
 import { loadPreferences, updatePreferences } from "../../persistence/imperative";
 import { authEnvironment } from "../../state/auth";
 import { useEnvironments } from "../../state/environments";
@@ -460,6 +468,22 @@ function ApprovalHandshakeSheetHost() {
     getActiveApprovalSheet,
     getActiveApprovalSheet,
   );
+  const isOpen = active !== null;
+
+  // Claim Android modal predictive-back ownership so native rail/panel callbacks and the
+  // underlying workspace screen-stack preview yield while the out-of-tree approval card is shown.
+  useAndroidPredictiveBackOwner({
+    layer: "modal",
+    enabled: isOpen,
+  });
+
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- consumes Android hardware Back while the approval handshake card is presented so the underlying workspace stack cannot pop
+  useEffect(() => {
+    if (Platform.OS !== "android" || !isOpen) return;
+    const subscription = BackHandler.addEventListener("hardwareBackPress", () => true);
+    return () => subscription.remove();
+  }, [isOpen]);
+
   if (active === null) return null;
 
   return (
