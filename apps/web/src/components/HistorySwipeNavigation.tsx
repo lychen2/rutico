@@ -25,8 +25,7 @@ const DISCRETE_NUDGE_PX = 6;
 const BLOCKED_NAVIGATION_TARGET_SELECTOR =
   '[role="dialog"], [role="alertdialog"], [data-preview-panel-mode], [data-preview-viewport], [data-server-browser-surface], webview';
 
-const GUEST_PREVIEW_TARGET_SELECTOR =
-  "[data-preview-panel-mode], [data-preview-viewport], [data-server-browser-surface], webview";
+const OPEN_MODAL_DIALOG_SELECTOR = '[role="dialog"], [role="alertdialog"], dialog[open]';
 
 const EDITABLE_KEY_TARGET_SELECTOR =
   'input, textarea, select, [contenteditable=""], [contenteditable="true"], [role="textbox"], [data-keybinding-capture], .xterm';
@@ -123,10 +122,26 @@ function isBlockedNavigationPath(path: readonly EventTarget[]): boolean {
   );
 }
 
-function isGuestPreviewPath(path: readonly EventTarget[]): boolean {
-  return path.some(
-    (node) => node instanceof Element && node.matches(GUEST_PREVIEW_TARGET_SELECTOR),
-  );
+function isHiddenOrClosedModal(element: Element): boolean {
+  if (
+    element.hasAttribute("hidden") ||
+    element.getAttribute("aria-hidden") === "true" ||
+    element.hasAttribute("inert") ||
+    (element.hasAttribute("data-closed") && !element.hasAttribute("data-ending-style"))
+  ) {
+    return true;
+  }
+  const style = getComputedStyle(element);
+  return style.display === "none" || style.visibility === "hidden";
+}
+
+function hasOpenModalDialog(): boolean {
+  for (const dialog of document.querySelectorAll(OPEN_MODAL_DIALOG_SELECTOR)) {
+    if (!isHiddenOrClosedModal(dialog)) {
+      return true;
+    }
+  }
+  return false;
 }
 
 function isEditableKeyboardTarget(target: EventTarget | null): boolean {
@@ -313,7 +328,7 @@ export function HistorySwipeNavigation({
       readonly source: DiscreteNavigationSource;
       readonly timestampMs: number;
     } | null = null;
-    let lastGuestThumbButtonAtMs = -Infinity;
+    let lastBlockedThumbButtonAtMs = -Infinity;
 
     const triggerDiscreteNavigation = (
       direction: HistoryDirection,
@@ -332,10 +347,12 @@ export function HistorySwipeNavigation({
 
       if (
         source === "app-command" &&
-        now - lastGuestThumbButtonAtMs <= DISCRETE_NAV_DEDUPE_WINDOW_MS
+        now - lastBlockedThumbButtonAtMs <= DISCRETE_NAV_DEDUPE_WINDOW_MS
       ) {
         return;
       }
+
+      if (hasOpenModalDialog()) return;
 
       if (!canNavigateHistory(direction)) return;
       lastDiscreteNav = { direction, source, timestampMs: now };
@@ -363,12 +380,12 @@ export function HistorySwipeNavigation({
       triggerDiscreteNavigation(direction, "alt-arrow");
     };
 
-    // Capture-phase observer records thumb clicks targeting guest browser previews so a companion
-    // Electron app-command never leaks through to host app history.
+    // Capture-phase observer records thumb clicks targeting blocked surfaces (modals, guest
+    // previews) so a companion Electron app-command never leaks through to host app history.
     const onMouseUpCapture = (event: MouseEvent) => {
       if (event.button !== 3 && event.button !== 4) return;
-      if (isGuestPreviewPath(event.composedPath())) {
-        lastGuestThumbButtonAtMs = performance.now();
+      if (isBlockedNavigationPath(event.composedPath())) {
+        lastBlockedThumbButtonAtMs = performance.now();
       }
     };
 

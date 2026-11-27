@@ -284,4 +284,71 @@ describe("HistorySwipeNavigation", () => {
     expect(navigateHistory).toHaveBeenCalledTimes(1);
     expect(navigateHistory).toHaveBeenLastCalledWith("back");
   });
+
+  it("blocks standalone and paired Electron app-command navigation while a dialog is open or just handled a thumb click", async () => {
+    navigateHistory.mockReset();
+    using _platform = vi.spyOn(navigator, "platform", "get").mockReturnValue("Linux x86_64");
+    const menuListeners = new Set<(action: string) => void>();
+    const originalBridge = window.desktopBridge;
+    window.desktopBridge = {
+      ...(originalBridge ?? ({} as NonNullable<typeof window.desktopBridge>)),
+      onMenuAction: (listener: (action: string) => void) => {
+        menuListeners.add(listener);
+        return () => {
+          menuListeners.delete(listener);
+        };
+      },
+    } as NonNullable<typeof window.desktopBridge>;
+
+    try {
+      await using screen = await render(
+        <div data-slot="sidebar-inset">
+          <div role="dialog" data-testid="open-dialog">
+            <button type="button" data-testid="dialog-body">
+              Dialog content
+            </button>
+          </div>
+          <HistorySwipeNavigation />
+        </div>,
+      );
+
+      const dialog = screen.container.querySelector<HTMLElement>('[data-testid="open-dialog"]')!;
+      const dialogBody = screen.container.querySelector<HTMLElement>(
+        '[data-testid="dialog-body"]',
+      )!;
+      const nowSpy = vi.spyOn(performance, "now");
+
+      // 1. Standalone Electron app-command Back/Forward with a dialog open must NOT navigate.
+      nowSpy.mockReturnValue(1_000);
+      for (const listener of menuListeners) listener("history.app-command:back");
+      nowSpy.mockReturnValue(1_200);
+      for (const listener of menuListeners) listener("history.app-command:forward");
+      expect(navigateHistory).not.toHaveBeenCalled();
+
+      // 2. Hardware thumb mouseup inside dialog followed by companion Electron app-command
+      // must NOT navigate, even if the dialog closes between the DOM event and the IPC event.
+      nowSpy.mockReturnValue(2_000);
+      dialogBody.dispatchEvent(
+        new MouseEvent("mouseup", { button: 3, bubbles: true, cancelable: true }),
+      );
+      dialog.remove();
+      nowSpy.mockReturnValue(2_015);
+      for (const listener of menuListeners) listener("history.app-command:back");
+      expect(navigateHistory).not.toHaveBeenCalled();
+
+      // 3. Once the dialog is gone and the dedupe window has elapsed, app-command navigates normally.
+      nowSpy.mockReturnValue(2_500);
+      for (const listener of menuListeners) listener("history.app-command:back");
+      expect(navigateHistory).toHaveBeenCalledTimes(1);
+      expect(navigateHistory).toHaveBeenLastCalledWith("back");
+
+      nowSpy.mockRestore();
+    } finally {
+      if (originalBridge === undefined) {
+        delete window.desktopBridge;
+      } else {
+        window.desktopBridge = originalBridge;
+      }
+    }
+  });
 });
