@@ -22,6 +22,11 @@ export interface UseSharedIndicatorOptions {
   readonly activeSelector: string;
   /** Changing this key triggers an animated move to the newly active item. */
   readonly activeKey: string | number | null | undefined;
+  /**
+   * Optional layout signature (e.g. item membership/order). Changing this snaps the
+   * indicator to the active item's updated bounds without treating it as a selection change.
+   */
+  readonly layoutKey?: string | number | null | undefined;
   readonly preset?: SpringPresetName;
   /** Maximum cross-axis squash fraction at peak travel speed (default 0.15 = 15%). */
   readonly maxSquash?: number;
@@ -49,6 +54,7 @@ interface ActiveIndicatorMotion {
 interface SharedIndicatorState {
   lastGeometry: IndicatorGeometry | null;
   lastActiveKey: string | number | null | undefined;
+  lastLayoutKey: string | number | null | undefined;
   activeMotion: ActiveIndicatorMotion | null;
 }
 
@@ -254,6 +260,7 @@ export function useSharedIndicator({
   indicatorRef,
   activeSelector,
   activeKey,
+  layoutKey,
   preset = "fluid",
   maxSquash = 0.15,
   axis = "both",
@@ -261,26 +268,29 @@ export function useSharedIndicator({
   const stateRef = useRef<SharedIndicatorState>({
     lastGeometry: null,
     lastActiveKey: undefined,
+    lastLayoutKey: undefined,
     activeMotion: null,
   });
 
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- measures active item DOM bounds before paint to move indicator via WAAPI
   useLayoutEffect(() => {
+    const state = stateRef.current;
+    state.lastLayoutKey = layoutKey;
     syncSharedIndicatorElement(
       containerRef.current,
       indicatorRef.current,
-      stateRef.current,
+      state,
       { activeKey, activeSelector, preset, maxSquash, axis },
-      stateRef.current.lastGeometry !== null && stateRef.current.lastActiveKey !== activeKey,
+      state.lastGeometry !== null && state.lastActiveKey !== activeKey,
     );
-  }, [activeKey, activeSelector, axis, containerRef, indicatorRef, maxSquash, preset]);
+  }, [activeKey, activeSelector, axis, containerRef, indicatorRef, layoutKey, maxSquash, preset]);
 
-  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- resyncs shared indicator geometry on container resize without animating
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- resyncs shared indicator geometry on container resize or child membership changes without animating
   useEffect(() => {
     const container = containerRef.current;
     if (!container) return;
     const state = stateRef.current;
-    const stop = observeResize(container, () => {
+    const resyncWithoutAnimation = () => {
       syncSharedIndicatorElement(
         container,
         indicatorRef.current,
@@ -288,9 +298,14 @@ export function useSharedIndicator({
         { activeKey: state.lastActiveKey, activeSelector, preset, maxSquash, axis },
         false,
       );
-    });
+    };
+    const stop = observeResize(container, resyncWithoutAnimation);
+    const mutationObserver =
+      typeof MutationObserver === "function" ? new MutationObserver(resyncWithoutAnimation) : null;
+    mutationObserver?.observe(container, { childList: true });
     return () => {
       stop();
+      mutationObserver?.disconnect();
       state.activeMotion?.animation.cancel();
       state.activeMotion = null;
     };

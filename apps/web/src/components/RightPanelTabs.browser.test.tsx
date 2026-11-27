@@ -224,6 +224,94 @@ describe("RightPanelTabs", () => {
       expect(getComputedStyle(maskHost).maskImage).not.toBe("none");
     });
   });
+
+  it("snaps the shared active-tab indicator to the active tab after closing an earlier inactive tab in a non-overflowing strip", async () => {
+    const panelEl = document.createElement("div");
+    panelEl.style.cssText = "width: 720px; height: 200px; display: flex";
+    const tabA: RightPanelSurface = {
+      id: "terminal:a",
+      kind: "terminal",
+      resourceId: "a",
+      terminalIds: ["a"],
+      activeTerminalId: "a",
+    };
+    const tabB: RightPanelSurface = {
+      id: "terminal:b",
+      kind: "terminal",
+      resourceId: "b",
+      terminalIds: ["b"],
+      activeTerminalId: "b",
+    };
+    const tabC: RightPanelSurface = {
+      id: "terminal:c",
+      kind: "terminal",
+      resourceId: "c",
+      terminalIds: ["c"],
+      activeTerminalId: "c",
+    };
+    const baseProps = panel(tabB).props as RightPanelTabsProps;
+    const renderStrip = (currentSurfaces: readonly RightPanelSurface[]) => (
+      <RightPanelTabs
+        {...baseProps}
+        mode="embedded"
+        surfaces={currentSurfaces}
+        activeSurfaceId={tabB.id}
+        terminalLabelsById={
+          new Map([
+            [tabA.id, "Alpha Terminal"],
+            [tabB.id, "Beta Terminal"],
+            [tabC.id, "Gamma Terminal"],
+          ])
+        }
+      >
+        {null}
+      </RightPanelTabs>
+    );
+
+    await using screen = await render(renderStrip([tabA, tabB, tabC]), { container: panelEl });
+
+    const viewport = screen.container.querySelector<HTMLElement>(
+      '[data-right-panel-tab-list] [data-slot="scroll-area-viewport"]',
+    )!;
+    expect(viewport.scrollWidth).toBeLessThanOrEqual(viewport.clientWidth);
+
+    const indicator = screen.container.querySelector<HTMLElement>(
+      '[data-slot="right-panel-active-tab-indicator"]',
+    )!;
+    const activeTabBefore = screen.container.querySelector<HTMLElement>(
+      "[data-active-tab='true']",
+    )!;
+    const activeRectBefore = activeTabBefore.getBoundingClientRect();
+    const indicatorRectBefore = indicator.getBoundingClientRect();
+    expect(Math.abs(indicatorRectBefore.left - activeRectBefore.left)).toBeLessThanOrEqual(1);
+    expect(Math.abs(indicatorRectBefore.width - activeRectBefore.width)).toBeLessThanOrEqual(1);
+
+    // Close inactive tab A to the left of active tab B while B remains active.
+    await screen.rerender(renderStrip([tabB, tabC]));
+
+    const activeTabAfter = screen.container.querySelector<HTMLElement>("[data-active-tab='true']")!;
+    const activeRectAfter = activeTabAfter.getBoundingClientRect();
+    const indicatorRectAfter = indicator.getBoundingClientRect();
+    expect(activeRectAfter.left).toBeLessThan(activeRectBefore.left - 10);
+    expect(Math.abs(indicatorRectAfter.left - activeRectAfter.left)).toBeLessThanOrEqual(1);
+    expect(Math.abs(indicatorRectAfter.top - activeRectAfter.top)).toBeLessThanOrEqual(1);
+    expect(Math.abs(indicatorRectAfter.width - activeRectAfter.width)).toBeLessThanOrEqual(1);
+    expect(Math.abs(indicatorRectAfter.height - activeRectAfter.height)).toBeLessThanOrEqual(1);
+    expect(indicator.getAnimations()).toHaveLength(0);
+
+    // Reorder tabs while B remains active: indicator snaps to B's new offset without selection animation.
+    await screen.rerender(renderStrip([tabC, tabB]));
+    const activeRectReordered = screen.container
+      .querySelector<HTMLElement>("[data-active-tab='true']")!
+      .getBoundingClientRect();
+    const indicatorRectReordered = indicator.getBoundingClientRect();
+    expect(activeRectReordered.left).toBeGreaterThan(activeRectAfter.left + 10);
+    expect(Math.abs(indicatorRectReordered.left - activeRectReordered.left)).toBeLessThanOrEqual(1);
+    expect(Math.abs(indicatorRectReordered.width - activeRectReordered.width)).toBeLessThanOrEqual(
+      1,
+    );
+    expect(indicator.getAnimations()).toHaveLength(0);
+  });
 });
 
 const BROWSER_SURFACE: RightPanelSurface = {

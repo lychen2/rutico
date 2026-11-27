@@ -1258,11 +1258,13 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
   });
 
   const sharedIndicatorActive = dragRippleState === null && props.activeSurfaceId !== null;
+  const tabLayoutKey = props.surfaces.map((surface) => surface.id).join("\0");
   useSharedIndicator({
     containerRef: tabStripContainerRef,
     indicatorRef: activeTabIndicatorRef,
     activeSelector: "[data-active-tab='true']",
     activeKey: sharedIndicatorActive ? props.activeSurfaceId : null,
+    layoutKey: tabLayoutKey,
     preset: "fluid",
     maxSquash: 0.15,
     axis: "x",
