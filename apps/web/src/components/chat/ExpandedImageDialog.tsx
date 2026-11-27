@@ -308,6 +308,7 @@ export const ExpandedImageDialog = memo(function ExpandedImageDialog({
                 name={item.name}
                 mimeType={itemMimeType(item)}
                 onError={() => setFailedImageSrc(item.src)}
+                onSwipeNavigate={preview.images.length > 1 ? navigateImage : undefined}
               />
             )}
             <div className="mt-2 flex max-w-[var(--media-width)] items-center justify-center gap-1.5 text-xs text-white/80 max-sm:px-10">

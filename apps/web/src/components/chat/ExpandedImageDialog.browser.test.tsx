@@ -1,7 +1,7 @@
 import { useState } from "react";
 import type { SnapShotSource } from "@t3tools/contracts";
 import { describe, expect, it, vi } from "vite-plus/test";
-import { page, userEvent } from "vite-plus/test/browser";
+import { cdp, page, userEvent } from "vite-plus/test/browser";
 
 import "~/index.css";
 import { render } from "../../../test/render";
@@ -213,5 +213,104 @@ describe("ExpandedImageDialog", () => {
 
     await userEvent.click(page.getByRole("button", { name: "Next media" }));
     await expect.element(page.getByText("second.png (2/2)")).toBeVisible();
+  });
+
+  it("navigates gallery items on horizontal touch swipe at fit zoom while ignoring cancel, vertical, and zoomed gestures", async () => {
+    const canvas = document.createElement("canvas");
+    canvas.width = 1200;
+    canvas.height = 900;
+    const largeImage = canvas.toDataURL();
+
+    await using _screen = await render(
+      <ExpandedImageDialog
+        preview={{
+          images: [
+            { src: largeImage, name: "first.png" },
+            { src: largeImage, name: "second.png" },
+            { src: largeImage, name: "third.png" },
+          ],
+          index: 0,
+        }}
+        onClose={() => {}}
+      />,
+      { router: false },
+    );
+
+    const session = cdp();
+    await session.send("Emulation.setTouchEmulationEnabled", { enabled: true });
+    try {
+      const touchSwipe = async (
+        element: HTMLElement,
+        deltaX: number,
+        deltaY: number,
+        cancel = false,
+      ) => {
+        const rect = element.getBoundingClientRect();
+        const frame = window.frameElement?.getBoundingClientRect();
+        const startX = Math.round(rect.left + rect.width / 2 + (frame?.left ?? 0));
+        const startY = Math.round(rect.top + rect.height / 2 + (frame?.top ?? 0));
+        const midX = Math.round(startX + deltaX * 0.5);
+        const midY = Math.round(startY + deltaY * 0.5);
+        const endX = Math.round(startX + deltaX);
+        const endY = Math.round(startY + deltaY);
+        await session.send("Input.dispatchTouchEvent", {
+          type: "touchStart",
+          touchPoints: [{ x: startX, y: startY, id: 1 }],
+        });
+        await session.send("Input.dispatchTouchEvent", {
+          type: "touchMove",
+          touchPoints: [{ x: midX, y: midY, id: 1 }],
+        });
+        await session.send("Input.dispatchTouchEvent", {
+          type: "touchMove",
+          touchPoints: [{ x: endX, y: endY, id: 1 }],
+        });
+        await session.send("Input.dispatchTouchEvent", {
+          type: cancel ? "touchCancel" : "touchEnd",
+          touchPoints: [],
+        });
+      };
+
+      const firstViewer = page
+        .getByRole("region", { name: "first.png, zoomable image" })
+        .element() as HTMLElement;
+      await vi.waitFor(() =>
+        expect(firstViewer.getBoundingClientRect().width).toBeGreaterThan(200),
+      );
+
+      // Horizontal swipe left advances to second image.
+      await touchSwipe(firstViewer, -120, 4);
+      await expect.element(page.getByText("second.png (2/3)")).toBeVisible();
+
+      const secondViewer = page
+        .getByRole("region", { name: "second.png, zoomable image" })
+        .element() as HTMLElement;
+      await vi.waitFor(() =>
+        expect(secondViewer.getBoundingClientRect().width).toBeGreaterThan(200),
+      );
+
+      // Vertical touch gesture does not navigate.
+      await touchSwipe(secondViewer, 8, -120);
+      await expect.element(page.getByText("second.png (2/3)")).toBeVisible();
+
+      // Cancelled horizontal touch swipe does not navigate.
+      await touchSwipe(secondViewer, -120, 0, true);
+      await expect.element(page.getByText("second.png (2/3)")).toBeVisible();
+
+      // Horizontal swipe right returns to first image.
+      await touchSwipe(secondViewer, 120, 4);
+      await expect.element(page.getByText("first.png (1/3)")).toBeVisible();
+
+      // When zoomed in, horizontal touch drag does not advance the gallery.
+      const zoomedViewerLocator = page.getByRole("region", { name: "first.png, zoomable image" });
+      await userEvent.click(zoomedViewerLocator);
+      const hud = document.querySelector<HTMLElement>('[data-zoom-hud="true"]')!;
+      await vi.waitFor(() => expect(hud.textContent).toBe("200%"));
+
+      await touchSwipe(zoomedViewerLocator.element() as HTMLElement, -120, 0);
+      await expect.element(page.getByText("first.png (1/3)")).toBeVisible();
+    } finally {
+      await session.send("Emulation.setTouchEmulationEnabled", { enabled: false });
+    }
   });
 });

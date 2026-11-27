@@ -19,6 +19,11 @@ import { AttachmentImage } from "../media/AttachmentImage";
 
 const MAX_ZOOM = 8;
 const ZOOM_HUD_HIDE_MS = 1100;
+const SWIPE_LOCK_SLOP_PX = 10;
+const SWIPE_COMMIT_DISTANCE_PX = 48;
+const SWIPE_FLICK_DISTANCE_PX = 28;
+const SWIPE_FLICK_VELOCITY_PX_PER_MS = 0.35;
+const SWIPE_HORIZONTAL_RATIO = 1.2;
 
 // Subtract the caption strip, matching dialog CSS's --native-titlebar-height.
 function readViewerSize() {
@@ -53,12 +58,14 @@ export function ZoomableImage({
   name,
   mimeType,
   onError,
+  onSwipeNavigate,
   ref,
 }: {
   src: string;
   name: string;
   mimeType?: string | undefined;
   onError: () => void;
+  onSwipeNavigate?: ((direction: -1 | 1) => void) | undefined;
   ref?: Ref<ZoomableImageHandle>;
 }) {
   const gt = useGT();
@@ -95,6 +102,14 @@ export function ZoomableImage({
     y: number;
     left: number;
     top: number;
+  } | null>(null);
+  const activeTouchPointersRef = useRef<Set<number>>(new Set());
+  const touchSwipeRef = useRef<{
+    pointerId: number;
+    startX: number;
+    startY: number;
+    startTime: number;
+    axis: "horizontal" | "vertical" | null;
   } | null>(null);
   const suppressClickRef = useRef(false);
   const [dragging, setDragging] = useState(false);
@@ -229,6 +244,7 @@ export function ZoomableImage({
           height: height || undefined,
           maxHeight,
           cursor: zoom > 1 ? (dragging ? "grabbing" : "grab") : "zoom-in",
+          touchAction: zoom <= 1 && onSwipeNavigate ? "pan-y pinch-zoom" : undefined,
         }}
         onClick={(event) => {
           // Pointer capture emits a click after dragging; preserve zoom.
@@ -252,6 +268,23 @@ export function ZoomableImage({
           }
         }}
         onPointerDown={(event) => {
+          if (event.pointerType === "touch") {
+            activeTouchPointersRef.current.add(event.pointerId);
+            if (activeTouchPointersRef.current.size > 1) {
+              touchSwipeRef.current = null;
+              return;
+            }
+            suppressClickRef.current = false;
+            if (zoom > 1 || !onSwipeNavigate) return;
+            touchSwipeRef.current = {
+              pointerId: event.pointerId,
+              startX: event.clientX,
+              startY: event.clientY,
+              startTime: event.timeStamp || performance.now(),
+              axis: null,
+            };
+            return;
+          }
           if (dragRef.current) return;
           suppressClickRef.current = false;
           if (event.pointerType !== "mouse" || event.button !== 0 || zoom <= 1) return;
@@ -273,6 +306,27 @@ export function ZoomableImage({
           setDragging(true);
         }}
         onPointerMove={(event) => {
+          const swipe = touchSwipeRef.current;
+          if (swipe && swipe.pointerId === event.pointerId) {
+            const dx = event.clientX - swipe.startX;
+            const dy = event.clientY - swipe.startY;
+            const absX = Math.abs(dx);
+            const absY = Math.abs(dy);
+            if (swipe.axis === null && Math.hypot(dx, dy) >= SWIPE_LOCK_SLOP_PX) {
+              if (absX > absY * SWIPE_HORIZONTAL_RATIO) {
+                swipe.axis = "horizontal";
+                suppressClickRef.current = true;
+                try {
+                  event.currentTarget.setPointerCapture(event.pointerId);
+                } catch {
+                  // Synthetic pointer events in tests may not provide a capturable pointerId.
+                }
+              } else {
+                swipe.axis = "vertical";
+              }
+            }
+            return;
+          }
           const drag = dragRef.current;
           if (!drag || drag.pointerId !== event.pointerId) return;
           if (Math.hypot(event.clientX - drag.x, event.clientY - drag.y) > 4) {
@@ -282,6 +336,34 @@ export function ZoomableImage({
           event.currentTarget.scrollTop = drag.top - (event.clientY - drag.y);
         }}
         onPointerUp={(event) => {
+          if (event.pointerType === "touch") {
+            activeTouchPointersRef.current.delete(event.pointerId);
+            const swipe = touchSwipeRef.current;
+            if (!swipe || swipe.pointerId !== event.pointerId) return;
+            touchSwipeRef.current = null;
+            try {
+              if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+                event.currentTarget.releasePointerCapture(event.pointerId);
+              }
+            } catch {
+              // Ignore synthetic capture release errors.
+            }
+            if (zoom > 1 || !onSwipeNavigate || swipe.axis === "vertical") return;
+            const dx = event.clientX - swipe.startX;
+            const dy = event.clientY - swipe.startY;
+            const absX = Math.abs(dx);
+            const absY = Math.abs(dy);
+            const dt = Math.max(1, (event.timeStamp || performance.now()) - swipe.startTime);
+            const isHorizontal = absX > absY * SWIPE_HORIZONTAL_RATIO;
+            const isCommitted =
+              absX >= SWIPE_COMMIT_DISTANCE_PX ||
+              (absX >= SWIPE_FLICK_DISTANCE_PX && absX / dt >= SWIPE_FLICK_VELOCITY_PX_PER_MS);
+            if (isHorizontal && isCommitted) {
+              suppressClickRef.current = true;
+              onSwipeNavigate(dx < 0 ? 1 : -1);
+            }
+            return;
+          }
           if (dragRef.current?.pointerId !== event.pointerId) return;
           if (event.currentTarget.hasPointerCapture(event.pointerId)) {
             event.currentTarget.releasePointerCapture(event.pointerId);
@@ -289,7 +371,27 @@ export function ZoomableImage({
           dragRef.current = null;
           setDragging(false);
         }}
+        onPointerCancel={(event) => {
+          if (event.pointerType === "touch") {
+            activeTouchPointersRef.current.delete(event.pointerId);
+            if (touchSwipeRef.current?.pointerId === event.pointerId) {
+              touchSwipeRef.current = null;
+              suppressClickRef.current = false;
+            }
+            return;
+          }
+          if (dragRef.current?.pointerId !== event.pointerId) return;
+          dragRef.current = null;
+          suppressClickRef.current = false;
+          setDragging(false);
+        }}
         onLostPointerCapture={(event) => {
+          if (event.target !== event.currentTarget) return;
+          if (touchSwipeRef.current?.pointerId === event.pointerId) {
+            activeTouchPointersRef.current.delete(event.pointerId);
+            touchSwipeRef.current = null;
+            suppressClickRef.current = false;
+          }
           if (dragRef.current?.pointerId !== event.pointerId) return;
           dragRef.current = null;
           setDragging(false);
