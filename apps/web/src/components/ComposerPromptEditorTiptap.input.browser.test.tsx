@@ -12,7 +12,9 @@ import {
   type ComposerContextRecord,
   EnvironmentId,
   type ServerProviderSkill,
+  ThreadId,
 } from "@t3tools/contracts";
+import { compileResolvedKeybindingsConfig, DEFAULT_KEYBINDINGS } from "@t3tools/shared/keybindings";
 import {
   COMPOSER_CONTEXT_CLIPBOARD_MIME,
   encodeComposerContextFragment,
@@ -36,6 +38,7 @@ import {
   type ComposerPromptEditorHandle,
   type ComposerPromptEditorProps,
 } from "./ComposerPromptEditorTiptap";
+import { composerCommandKeyHandler } from "./chat/composerCommandKey";
 
 vi.mock(import("../state/server"), async (original) => {
   const { Atom } = await import("effect/reactivity");
@@ -1470,5 +1473,109 @@ describe("ComposerCodeBlockNodeView studio chrome (Astra P1-3)", () => {
       editor.commands.redo();
     });
     expect(serializeEditorDoc(editor.state.doc).value).toContain("const greeting = 'hi'; // 你好");
+  });
+
+  it("displays a verified non-submitting exit hint that exits the code block under the real composer dispatcher", async () => {
+    const submitComposer = vi.fn();
+    const initialValue = "```ts\nconst greeting = 'hi';\n```";
+    const promptRef = { current: initialValue };
+    const editorRef = createRef<ComposerPromptEditorHandle>();
+
+    const onCommandKeyDown = composerCommandKeyHandler({
+      keybindings: compileResolvedKeybindingsConfig(DEFAULT_KEYBINDINGS),
+      getShortcutContext: () => ({
+        terminalFocus: false,
+        terminalOpen: false,
+        previewFocus: false,
+        previewOpen: false,
+        isWeb: true,
+        isDesktop: false,
+        editableFocus: true,
+      }),
+      sendShortcut: "enter",
+      routeKind: "draft",
+      phase: "ready",
+      canSteer: false,
+      followUpBehavior: "queue",
+      isSoftwareKeyboardOpen: false,
+      isLiteralPendingAnswer: false,
+      pendingUserInputs: [],
+      promptHistoryEntries: [],
+      promptHistoryPositionRef: { current: null },
+      composerDraftTarget: {
+        environmentId: EnvironmentId.make("env-1"),
+        threadId: ThreadId.make("thread-1"),
+      },
+      promptRef,
+      composerImagesRef: { current: [] },
+      composerFilesRef: { current: [] },
+      composerTerminalContextsRef: { current: [] },
+      composerPreviewAnnotations: [],
+      composerReviewComments: [],
+      composerEditorRef: editorRef,
+      composerMenuItemsRef: { current: [] },
+      activeComposerMenuItemRef: { current: null },
+      setComposerDraftPrompt: () => {},
+      setComposerDraftThreadContexts: () => {},
+      setComposerDraftEnvironmentContexts: () => {},
+      setComposerCursor: () => {},
+      setComposerTrigger: () => {},
+      setComposerHighlightedItemId: () => {},
+      dismissComposerTrigger: () => {},
+      nudgeComposerMenuHighlight: () => {},
+      onSelectComposerItem: () => {},
+      resolveActiveComposerTrigger: () => ({ trigger: null }),
+      readComposerSnapshot: () => ({ value: promptRef.current }),
+      applyPromptReplacement: () => false,
+      submitComposer,
+      promptSuggestion: null,
+      dismissPromptSuggestion: () => {},
+    });
+
+    await using screen = await mountEditor(
+      initialValue,
+      true,
+      [],
+      (nextValue) => {
+        promptRef.current = nextValue;
+      },
+      onCommandKeyDown,
+    );
+    const { editor } = screen;
+
+    const hint = screen.container.querySelector<HTMLElement>(
+      '[data-composer-code-studio-hint="true"]',
+    );
+    expect(hint?.textContent).toBe("↓");
+    expect(hint?.textContent).not.toContain("⌘↵");
+    expect(hint?.textContent).not.toContain("Ctrl↵");
+
+    await act(async () => {
+      editor.commands.focus("end");
+    });
+    await vi.waitFor(() => expect(document.activeElement).toBe(editor.view.dom));
+    expect(editor.state.selection.$from.parent.type.name).toBe("codeBlock");
+
+    // Following the displayed ↓ hint exits the code block without submitting the draft.
+    await userEvent.keyboard("{ArrowDown}");
+    expect(submitComposer).not.toHaveBeenCalled();
+    await vi.waitFor(() => expect(editor.state.selection.$from.parent.type.name).toBe("paragraph"));
+
+    await userEvent.keyboard("after");
+    await vi.waitFor(() =>
+      expect(serializeEditorDoc(editor.state.doc).value).toBe(
+        "```ts\nconst greeting = 'hi';\n```\nafter",
+      ),
+    );
+
+    // Confirm the real dispatcher would submit on Mod+Enter inside a draft code block.
+    await act(async () => {
+      editor.commands.focus(1 + "const greeting = 'hi';".length);
+    });
+    await vi.waitFor(() => expect(document.activeElement).toBe(editor.view.dom));
+    expect(editor.state.selection.$from.parent.type.name).toBe("codeBlock");
+    const modKey = isMacPlatform(navigator.platform) ? "Meta" : "Control";
+    await userEvent.keyboard(`{${modKey}>}{Enter}{/${modKey}}`);
+    expect(submitComposer).toHaveBeenCalledTimes(1);
   });
 });

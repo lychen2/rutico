@@ -4,7 +4,6 @@ import { CheckIcon, CopyIcon } from "lucide-react";
 
 import { languageOfInfoString, withInfoStringLanguage } from "~/composer-code-languages";
 import { useCopyToClipboard } from "~/hooks/useCopyToClipboard";
-import { isMacPlatform } from "~/lib/utils";
 
 import { useRenderedAppearance } from "../../hooks/useTheme";
 import { Button } from "../ui/button";
@@ -24,7 +23,7 @@ export function ComposerCodeBlockNodeView({
   const { copyToClipboard, isCopied } = useCopyToClipboard({ timeout: 1400 });
   const info = typeof node.attrs.language === "string" ? node.attrs.language : "";
   const language = languageOfInfoString(info);
-  const exitShortcut = isMacPlatform(navigator.platform) ? "⌘↵" : "Ctrl↵";
+  const exitShortcut = "↓";
 
   const changeLanguage = (next: string) => {
     updateAttributes({ language: withInfoStringLanguage(info, next) });
