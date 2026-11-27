@@ -9,6 +9,7 @@ const { Children, harness } = vi.hoisted(() => ({
     // The app-wide error slot other features (composer sends, branch refreshes) write to.
     pendingConnectionError: null as string | null,
     connectPress: vi.fn(),
+    requestCameraPermission: vi.fn(async () => ({ granted: true, canAskAgain: true })),
     cameraPermissionGranted: false,
     lastOnBarcodeScanned: null as ((result: unknown) => void) | null,
     lastFrostedCutoutProps: null as Record<string, unknown> | null,
@@ -31,7 +32,31 @@ vi.mock("react-native", () => ({
     interpolate: () => 0,
   }),
   View: Children,
-  Pressable: Children,
+  Pressable: ({
+    children,
+    disabled,
+    onPress,
+    accessibilityRole,
+    accessibilityLabel,
+  }: {
+    children?: ReactNode;
+    disabled?: boolean;
+    onPress?: () => void;
+    accessibilityRole?: string;
+    accessibilityLabel?: string;
+  }) => (
+    <div
+      role={accessibilityRole}
+      aria-label={accessibilityLabel}
+      aria-disabled={disabled ? "true" : undefined}
+      data-testid="pairing-scan-pressable"
+      onClick={() => {
+        if (!disabled) onPress?.();
+      }}
+    >
+      {children}
+    </div>
+  ),
   Linking: { openSettings: vi.fn() },
   StyleSheet: { absoluteFill: {} },
 }));
@@ -83,11 +108,11 @@ vi.mock("@clerk/expo", () => ({ useAuth: () => ({ isLoaded: false, isSignedIn: f
 vi.mock("expo-camera", () => ({
   CameraView: ({ onBarcodeScanned }: { onBarcodeScanned?: (result: unknown) => void }) => {
     harness.lastOnBarcodeScanned = onBarcodeScanned ?? null;
-    return null;
+    return <div data-testid="camera-view" />;
   },
   useCameraPermissions: () => [
     harness.cameraPermissionGranted ? { granted: true, canAskAgain: true } : null,
-    vi.fn(async () => ({ granted: true, canAskAgain: true })),
+    harness.requestCameraPermission,
   ],
 }));
 vi.mock("expo-haptics", () => ({
@@ -119,15 +144,18 @@ vi.mock("../../components/ui/AppText", () => ({
   AppText: ({ children }: { children?: ReactNode }) => <span>{children}</span>,
   AppTextInput: ({
     accessibilityLabel,
+    editable,
     value,
     onChangeText,
   }: {
     accessibilityLabel: string;
+    editable?: boolean;
     value: string;
     onChangeText: (value: string) => void;
   }) => (
     <input
       aria-label={accessibilityLabel}
+      disabled={editable === false}
       value={value}
       onChange={(event) => onChangeText(event.currentTarget.value)}
     />
@@ -356,4 +384,154 @@ it("returns null lockRect when Android CameraX omits or zeros barcode bounds", (
       ],
     }),
   ).toEqual({ x: 40, y: 30, width: 120, height: 120 });
+});
+
+it("keeps PairingScanCard, Scan again, scan callbacks, and form inputs locked while a handshake is in flight", async () => {
+  (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+  vi.stubGlobal("__DEV__", false);
+  harness.cameraPermissionGranted = true;
+  harness.pendingConnectionError = null;
+  harness.lastOnBarcodeScanned = null;
+  harness.lastFrostedCutoutProps = null;
+  harness.requestCameraPermission.mockClear();
+  harness.connectPress.mockReset();
+
+  let resolveHostA!: (value: { ok: boolean; error: string | null }) => void;
+  harness.connectPress.mockImplementationOnce(
+    () =>
+      new Promise<{ ok: boolean; error: string | null }>((resolve) => {
+        resolveHostA = resolve;
+      }),
+  );
+
+  const container = document.createElement("div");
+  const root = createRoot(container);
+
+  try {
+    act(() => root.render(<ConnectionsNewRouteScreen route={{ params: undefined }} />));
+    expect(container.querySelector('[data-testid="camera-view"]')).not.toBeNull();
+    const initialScanCallback = harness.lastOnBarcodeScanned as ((result: unknown) => void) | null;
+    expect(initialScanCallback).not.toBeNull();
+
+    // Scan Host A -> camera parks and handshake card appears.
+    act(() => {
+      initialScanCallback?.({
+        data: "http://host-a.local:3773/pair#token=token-a",
+        bounds: { origin: { x: 40, y: 40 }, size: { width: 120, height: 120 } },
+      });
+    });
+    expect(container.querySelector('[data-testid="camera-view"]')).toBeNull();
+    expect(container.textContent).toContain("http://host-a.local:3773");
+
+    // Start connecting to Host A (promise stays pending).
+    const confirmButton = [...container.querySelectorAll("button")].find(
+      (button) => button.textContent === "Confirm & connect",
+    );
+    expect(confirmButton).toBeDefined();
+    act(() => {
+      confirmButton?.click();
+    });
+    expect(harness.connectPress).toHaveBeenCalledTimes(1);
+
+    // Tapping PairingScanCard while Host A is connecting MUST NOT reopen the camera or clear lock.
+    const scanCard = container.querySelector<HTMLElement>('[data-testid="pairing-scan-pressable"]');
+    expect(scanCard?.getAttribute("aria-disabled")).toBe("true");
+    await act(async () => {
+      scanCard?.click();
+    });
+    expect(harness.requestCameraPermission).not.toHaveBeenCalled();
+    expect(container.querySelector('[data-testid="camera-view"]')).toBeNull();
+    expect((harness.lastFrostedCutoutProps as Record<string, unknown> | null)?.locked).toBe(true);
+
+    // Both "Scan again" button and manual form inputs stay disabled while connecting.
+    const scanAgainButton = [...container.querySelectorAll("button")].find(
+      (button) => button.textContent === "Scan again",
+    );
+    expect(scanAgainButton?.disabled).toBe(true);
+    const address = container.querySelector<HTMLInputElement>('input[aria-label="Address"]')!;
+    const code = container.querySelector<HTMLInputElement>('input[aria-label="Code"]')!;
+    expect(address.disabled).toBe(true);
+    expect(code.disabled).toBe(true);
+
+    // Even a stray QR scan callback for Host B must not overwrite Host A while in flight.
+    act(() => {
+      initialScanCallback?.({
+        data: "http://host-b.local:3773/pair#token=token-b",
+        bounds: { origin: { x: 10, y: 10 }, size: { width: 100, height: 100 } },
+      });
+    });
+    expect(address.value).toBe("http://host-a.local:3773");
+    expect(code.value).toBe("token-a");
+    expect(container.textContent).toContain("http://host-a.local:3773");
+    expect(container.textContent).not.toContain("host-b.local");
+
+    // Once Host A fails, controls unlock so the user can rescan cleanly.
+    await act(async () => {
+      resolveHostA({ ok: false, error: "Host A timed out" });
+    });
+    expect(container.textContent).toContain("Host A timed out");
+    expect(scanCard?.getAttribute("aria-disabled")).toBeNull();
+    expect(scanAgainButton?.disabled).toBe(false);
+
+    await act(async () => {
+      scanCard?.click();
+    });
+    expect(harness.requestCameraPermission).toHaveBeenCalledTimes(1);
+    expect(container.querySelector('[data-testid="camera-view"]')).not.toBeNull();
+  } finally {
+    act(() => root.unmount());
+    harness.cameraPermissionGranted = false;
+  }
+});
+
+it("ignores stale submission resolution after unmount so no late navigation or haptic fires", async () => {
+  (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+  vi.stubGlobal("__DEV__", false);
+  harness.cameraPermissionGranted = false;
+  harness.pendingConnectionError = null;
+  harness.connectPress.mockReset();
+
+  let resolveSubmit!: (value: { ok: boolean; error: string | null }) => void;
+  harness.connectPress.mockImplementationOnce(
+    () =>
+      new Promise<{ ok: boolean; error: string | null }>((resolve) => {
+        resolveSubmit = resolve;
+      }),
+  );
+
+  const hapticSpy = vi.spyOn(hapticChoreography, "triggerSemanticHaptic");
+  const container = document.createElement("div");
+  const root = createRoot(container);
+
+  try {
+    act(() =>
+      root.render(
+        <ConnectionsNewRouteScreen
+          route={{
+            params: {
+              pairingUrl: "https://host-stale.tailnet.ts.net/pair#token=stale-token",
+            },
+          }}
+        />,
+      ),
+    );
+    const connectButton = [...container.querySelectorAll("button")].find(
+      (button) => button.textContent === "Connect",
+    );
+    act(() => {
+      connectButton?.click();
+    });
+    expect(harness.connectPress).toHaveBeenCalledTimes(1);
+
+    // Unmount before the in-flight promise resolves.
+    act(() => root.unmount());
+    hapticSpy.mockClear();
+
+    await act(async () => {
+      resolveSubmit({ ok: true, error: null });
+    });
+    expect(hapticSpy).not.toHaveBeenCalled();
+  } finally {
+    hapticSpy.mockRestore();
+  }
 });

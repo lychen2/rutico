@@ -177,6 +177,19 @@ function PairingForm({
   const [lockedRect, setLockedRect] = useState<FrostedCutoutLockRect | null>(null);
   const [scannedHost, setScannedHost] = useState<string | null>(null);
   const codeInputRef = useRef<ComponentRef<typeof AppTextInput>>(null);
+  const inFlightSubmitRef = useRef(false);
+  const submitTokenRef = useRef(0);
+  const mountedRef = useRef(true);
+
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- tracks mount lifetime so a superseded or unmounted pairing submission never updates state or navigates
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      submitTokenRef.current += 1;
+      inFlightSubmitRef.current = false;
+    };
+  }, []);
 
   const headerIconColor = useUniwindTheme()["--color-icon"];
 
@@ -188,6 +201,7 @@ function PairingForm({
   };
 
   const handleHostChange = (value: string) => {
+    if (connecting || inFlightSubmitRef.current) return;
     const pairing = parsePairingUrl(value);
     if (pairing.code) {
       setHostInput(pairing.host);
@@ -199,12 +213,18 @@ function PairingForm({
   };
 
   const handleCodeChange = (value: string) => {
+    if (connecting || inFlightSubmitRef.current) return;
     setCodeInput(value);
     clearError();
   };
 
   const handleScanPress = async () => {
+    if (connecting || inFlightSubmitRef.current) return;
+    const startToken = submitTokenRef.current;
     const permission = await requestCameraPermission();
+    if (!mountedRef.current || inFlightSubmitRef.current || submitTokenRef.current !== startToken) {
+      return;
+    }
     if (permission.granted) {
       setScanComplete(false);
       setLockedRect(null);
@@ -224,7 +244,7 @@ function PairingForm({
   };
 
   const handleQrScan = (result: QrBarcodeScanPayload) => {
-    if (scannerLocked) {
+    if (scannerLocked || connecting || inFlightSubmitRef.current) {
       return;
     }
 
@@ -253,19 +273,38 @@ function PairingForm({
           : gt("Scanned QR code was not recognized."),
       );
       setTimeout(() => {
-        setScannerLocked(false);
+        if (mountedRef.current) {
+          setScannerLocked(false);
+        }
       }, 600);
     }
   };
 
   const handleSubmit = async () => {
+    if (connecting || inFlightSubmitRef.current || hostInput.trim().length === 0) {
+      return;
+    }
     const pairingUrl = buildPairingUrl(hostInput, codeInput);
+    const token = ++submitTokenRef.current;
+    inFlightSubmitRef.current = true;
     setOwnAttempt(true);
     setSubmitError(null);
     setIsSubmitting(true);
     onChangeConnectionPairingUrl(pairingUrl);
-    const outcome = await onConnectPress(pairingUrl, routeFor);
-    setIsSubmitting(false);
+    let outcome: Awaited<ReturnType<typeof onConnectPress>>;
+    try {
+      outcome = await onConnectPress(pairingUrl, routeFor);
+    } finally {
+      if (submitTokenRef.current === token) {
+        inFlightSubmitRef.current = false;
+        if (mountedRef.current) {
+          setIsSubmitting(false);
+        }
+      }
+    }
+    if (!mountedRef.current || submitTokenRef.current !== token) {
+      return;
+    }
     setSubmitError(outcome.error);
     triggerSemanticHaptic(outcome.ok ? "confirm" : "reject");
     if (outcome.ok) {
@@ -315,8 +354,11 @@ function PairingForm({
       >
         <View collapsable={false} className="gap-6.5">
           <PairingScanCard
-            cameraActive={cameraPermission?.granted === true && screenFocused && !scanComplete}
+            cameraActive={
+              cameraPermission?.granted === true && screenFocused && !scanComplete && !connecting
+            }
             scanComplete={scanComplete}
+            connecting={connecting}
             lockedRect={lockedRect}
             screenFocused={screenFocused}
             onScan={handleQrScan}
@@ -354,6 +396,7 @@ function PairingForm({
             >
               <PairingInputRow
                 label={gt("Address")}
+                editable={!connecting}
                 keyboardType="url"
                 placeholder="192.168.1.100:3773"
                 returnKeyType="next"
@@ -366,6 +409,7 @@ function PairingForm({
               <PairingInputRow
                 inputRef={codeInputRef}
                 label={gt("Code", { $context: "pairing code field" })}
+                editable={!connecting}
                 placeholder={gt("Pairing code")}
                 returnKeyType="go"
                 value={codeInput}
@@ -664,6 +708,7 @@ function HandshakeStepPill(props: {
 function PairingScanCard(props: {
   readonly cameraActive: boolean;
   readonly scanComplete: boolean;
+  readonly connecting: boolean;
   readonly lockedRect: FrostedCutoutLockRect | null;
   readonly screenFocused: boolean;
   readonly onScan: (result: QrBarcodeScanPayload) => void;
@@ -671,13 +716,14 @@ function PairingScanCard(props: {
 }) {
   const gt = useGT();
   const light = useAppearancePreferences().themeAppearance === "light";
+  const pressDisabled = props.cameraActive || props.connecting;
   const showAndroidReticleOverlay =
     Platform.OS === "android" && (props.cameraActive || props.scanComplete);
   return (
     <Pressable
-      accessibilityRole={props.cameraActive ? undefined : "button"}
-      accessibilityLabel={props.cameraActive ? undefined : gt("Scan QR code")}
-      disabled={props.cameraActive}
+      accessibilityRole={pressDisabled ? undefined : "button"}
+      accessibilityLabel={pressDisabled ? undefined : gt("Scan QR code")}
+      disabled={pressDisabled}
       onPress={props.onScanPress}
       className={cn(
         "overflow-hidden rounded-[26px] border-continuous",
