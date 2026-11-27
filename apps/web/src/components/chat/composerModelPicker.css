@@ -1,5 +1,9 @@
 [data-composer-model-picker-popup] {
   width: min(380px, calc(100vw - 24px), var(--available-width));
+  /* Avoid real-time backdrop-filter resampling behind an animating canvas and streaming timeline. */
+  background: var(--popover);
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
   transition-duration: 180ms;
   transition-timing-function: var(--ease-spring-snappy);
 }

@@ -212,6 +212,8 @@ interface AntigravityProviderOptions {
   /** Modes the last session advertised, saved because initialize alone does not report them. */
   readonly rememberedRuntimeModes?: ReadonlyArray<RuntimeMode>;
   readonly rememberRuntimeModes?: (modes: ReadonlyArray<RuntimeMode>) => Effect.Effect<void>;
+  /** Last authenticated usage limits loaded from cache so restarts keep showing quota while valid. */
+  readonly rememberedUsageLimits?: ServerProviderUsageLimits | undefined;
 }
 
 const RUNTIME_MODES_WITHOUT_AUTO = [
@@ -268,6 +270,9 @@ export const makeAntigravityProvider = Effect.fn("makeAntigravityProvider")(func
     supportsConversationRollback: false,
     supportsTextGeneration: false,
     workspaceSnapshots: [],
+    ...(settings.enabled && options.rememberedUsageLimits
+      ? { usageLimits: options.rememberedUsageLimits }
+      : {}),
   } satisfies ServerProviderDraft;
   const metadata = yield* SubscriptionRef.make<AntigravityProviderState>({
     draft: initialDraft,
@@ -337,13 +342,13 @@ export const makeAntigravityProvider = Effect.fn("makeAntigravityProvider")(func
             Effect.flatten,
             Effect.provideService(PublishingUsage, true),
             Effect.ignoreCause({ log: true }),
-            Effect.forkIn(scope),
           ),
         ),
       ),
       // Store the fiber before it runs, so a sign-out during the read can interrupt it.
       { onlyIfMissing: true, startImmediately: false },
     );
+    yield* FiberHandle.awaitEmpty(usageRead).pipe(Effect.asVoid);
   });
   const resetUsage = Effect.gen(function* () {
     yield* FiberHandle.clear(usageRead);

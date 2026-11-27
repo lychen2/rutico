@@ -97,8 +97,8 @@ const BLOOM_SPRITE_SIZE = 128;
 let bloomSprites: HTMLCanvasElement[] | null = null;
 
 interface SceneGradientCache {
-  bgKey: string;
-  bgGradient: CanvasGradient | null;
+  backdropCanvas: HTMLCanvasElement | null;
+  backdropKey: string;
   jetWidth: number;
   jetGradient: CanvasGradient | null;
 }
@@ -108,10 +108,63 @@ const gradientCacheByCtx = new WeakMap<CanvasRenderingContext2D, SceneGradientCa
 function getGradientCache(ctx: CanvasRenderingContext2D): SceneGradientCache {
   let cache = gradientCacheByCtx.get(ctx);
   if (!cache) {
-    cache = { bgKey: "", bgGradient: null, jetWidth: -1, jetGradient: null };
+    cache = { backdropCanvas: null, backdropKey: "", jetWidth: -1, jetGradient: null };
     gradientCacheByCtx.set(ctx, cache);
   }
   return cache;
+}
+
+function drawStaticBackdrop(
+  bctx: CanvasRenderingContext2D,
+  w: number,
+  h: number,
+  dpr: number,
+  r: number,
+  tierFloat: number,
+  accent: Rgb,
+  accentCss: string,
+  activeCoils: number,
+): void {
+  const cy = h / 2;
+  const c0 = rgbCss(sampleRgb(BG_LEFT, r));
+  const c1 = rgbCss(sampleRgb(BG_CENTER, r));
+
+  bctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  bctx.clearRect(0, 0, w, h);
+
+  // Background containment chamber gradient
+  const bg = bctx.createLinearGradient(0, 0, w, 0);
+  bg.addColorStop(0, c0);
+  bg.addColorStop(0.5, c1);
+  bg.addColorStop(1, c0);
+  bctx.fillStyle = bg;
+  bctx.fillRect(0, 0, w, h);
+
+  // Subtle magnetic flux grid lines on chamber floor
+  bctx.save();
+  bctx.strokeStyle = rgbCss(accent, 0.08 + r * 0.1);
+  bctx.lineWidth = 1;
+  bctx.beginPath();
+  bctx.moveTo(0, cy - 12);
+  bctx.lineTo(w, cy - 12);
+  bctx.moveTo(0, cy + 12);
+  bctx.lineTo(w, cy + 12);
+  bctx.stroke();
+  bctx.restore();
+
+  // Magnetic containment coils along the track
+  const coils = 8;
+  for (let i = 0; i < coils; i++) {
+    const cx = 24 + (i / (coils - 1)) * (w - 48);
+    const active = i < activeCoils;
+    bctx.strokeStyle = active ? accentCss : "rgba(255,255,255,0.1)";
+    bctx.globalAlpha = active ? 0.35 + tierFloat * 0.14 : 0.25;
+    bctx.lineWidth = active ? 2 : 1.2;
+    bctx.beginPath();
+    bctx.ellipse(cx, cy, 5, 21, 0, 0, Math.PI * 2);
+    bctx.stroke();
+  }
+  bctx.globalAlpha = 1;
 }
 
 function getBloomSprites(): readonly HTMLCanvasElement[] {
@@ -150,48 +203,36 @@ export function drawReactorScene(
   const cy = h / 2;
   const accent = sampleRgb(ACCENTS, r);
   const accentCss = rgbCss(accent);
-  const c0 = rgbCss(sampleRgb(BG_LEFT, r));
-  const c1 = rgbCss(sampleRgb(BG_CENTER, r));
-
-  // Background containment chamber gradient (cached across settled frames)
-  const gradCache = getGradientCache(ctx);
-  const bgKey = `${w}:${c0}:${c1}`;
-  if (gradCache.bgKey !== bgKey || !gradCache.bgGradient) {
-    const bg = ctx.createLinearGradient(0, 0, w, 0);
-    bg.addColorStop(0, c0);
-    bg.addColorStop(0.5, c1);
-    bg.addColorStop(1, c0);
-    gradCache.bgKey = bgKey;
-    gradCache.bgGradient = bg;
-  }
-  ctx.fillStyle = gradCache.bgGradient;
-  ctx.fillRect(0, 0, w, h);
-
-  // Subtle magnetic flux grid lines on chamber floor
-  ctx.save();
-  ctx.strokeStyle = rgbCss(accent, 0.08 + r * 0.1);
-  ctx.lineWidth = 1;
-  ctx.beginPath();
-  ctx.moveTo(0, cy - 12);
-  ctx.lineTo(w, cy - 12);
-  ctx.moveTo(0, cy + 12);
-  ctx.lineTo(w, cy + 12);
-  ctx.stroke();
-  ctx.restore();
-
-  // Magnetic containment coils along the track
+  const dpr = ctx.getTransform().a || 1;
+  const cw = Math.round(w * dpr);
+  const ch = Math.round(h * dpr);
   const coils = 8;
+  let activeCoils = 0;
   for (let i = 0; i < coils; i++) {
     const cx = 24 + (i / (coils - 1)) * (w - 48);
-    const active = cx <= kx + 14;
-    ctx.strokeStyle = active ? accentCss : "rgba(255,255,255,0.1)";
-    ctx.globalAlpha = active ? 0.35 + tierFloat * 0.14 : 0.25;
-    ctx.lineWidth = active ? 2 : 1.2;
-    ctx.beginPath();
-    ctx.ellipse(cx, cy, 5, 21, 0, 0, Math.PI * 2);
-    ctx.stroke();
+    if (cx <= kx + 14) activeCoils = i + 1;
   }
-  ctx.globalAlpha = 1;
+
+  // Static backdrop (chamber gradient, flux grid, 8 coils) cached by quantized ratio and active coil count.
+  const gradCache = getGradientCache(ctx);
+  const rBucket = Math.round(r * 24);
+  const backdropKey = `${cw}x${ch}:${rBucket}:${activeCoils}`;
+  if (!gradCache.backdropCanvas) {
+    gradCache.backdropCanvas = document.createElement("canvas");
+  }
+  const backdrop = gradCache.backdropCanvas;
+  if (gradCache.backdropKey !== backdropKey) {
+    if (backdrop.width !== cw || backdrop.height !== ch) {
+      backdrop.width = cw;
+      backdrop.height = ch;
+    }
+    const bctx = backdrop.getContext("2d");
+    if (bctx) {
+      drawStaticBackdrop(bctx, w, h, dpr, rBucket / 24, tierFloat, accent, accentCss, activeCoils);
+      gradCache.backdropKey = backdropKey;
+    }
+  }
+  ctx.drawImage(backdrop, 0, 0, w, h);
 
   // Core radial energy bloom via pre-baked sprite
   const sprites = getBloomSprites();

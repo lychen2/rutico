@@ -42,6 +42,7 @@ function PopoverPopup({
   collisionAvoidance,
   tooltipStyle = false,
   keepMounted = false,
+  staticViewport = false,
   anchor,
   touchBackdrop = false,
   ...props
@@ -55,13 +56,15 @@ function PopoverPopup({
   collisionAvoidance?: PopoverPrimitive.Positioner.Props["collisionAvoidance"];
   tooltipStyle?: boolean;
   keepMounted?: PopoverPrimitive.Portal.Props["keepMounted"];
+  /** Renders a plain div instead of PopoverPrimitive.Viewport to skip viewport content measurements on open. */
+  staticViewport?: boolean;
   anchor?: PopoverPrimitive.Positioner.Props["anchor"];
   width?: keyof typeof popoverPopupWidthClassName;
   touchBackdrop?: boolean;
 }) {
-  // Viewport rekeys on close; persistent single-trigger forms need stable containers for drafts and submit
-  // guards.
-  const Viewport = keepMounted ? "div" : PopoverPrimitive.Viewport;
+  // Viewport rekeys on close; persistent single-trigger forms and docked pickers with fixed sizing
+  // avoid PopoverPrimitive.Viewport's synchronous open-time measurement pass.
+  const Viewport = keepMounted || staticViewport ? "div" : PopoverPrimitive.Viewport;
   return (
     <PopoverPrimitive.Portal keepMounted={keepMounted}>
       {touchBackdrop ? (
@@ -93,7 +96,10 @@ function PopoverPopup({
       >
         <PopoverPrimitive.Popup
           className={cn(
-            "relative flex h-(--popup-height,auto) w-(--popup-width,auto) origin-(--transform-origin) rounded-(--radius-concentric-popover) text-popover-foreground outline-none transition-[width,height,scale,opacity,translate] duration-150 ease-(--spring-snappy) before:pointer-events-none before:absolute before:inset-0 before:rounded-[calc(var(--radius-concentric-popover)-1px)] before:shadow-[0_1px_--theme(--color-black/4%)] has-data-[slot=calendar]:rounded-xl has-data-[slot=calendar]:before:rounded-[calc(var(--radius-xl)-1px)] data-starting-style:scale-[0.95] data-starting-style:opacity-0 data-[side=bottom]:data-starting-style:-translate-y-1 data-[side=top]:data-starting-style:translate-y-1 data-[side=left]:data-starting-style:translate-x-1 data-[side=right]:data-starting-style:-translate-x-1 data-ending-style:duration-100 data-ending-style:ease-(--ease-exit) data-ending-style:scale-[0.97] data-ending-style:opacity-0 data-[side=bottom]:data-ending-style:-translate-y-0.5 data-[side=top]:data-ending-style:translate-y-0.5 data-[side=left]:data-ending-style:translate-x-0.5 data-[side=right]:data-ending-style:-translate-x-0.5 data-instant:duration-0 motion-reduce:transition-none dark:before:shadow-[0_-1px_--theme(--color-white/6%)]",
+            "relative flex h-(--popup-height,auto) w-(--popup-width,auto) origin-(--transform-origin) rounded-(--radius-concentric-popover) text-popover-foreground outline-none duration-150 ease-(--spring-snappy) before:pointer-events-none before:absolute before:inset-0 before:rounded-[calc(var(--radius-concentric-popover)-1px)] before:shadow-[0_1px_--theme(--color-black/4%)] has-data-[slot=calendar]:rounded-xl has-data-[slot=calendar]:before:rounded-[calc(var(--radius-xl)-1px)] data-starting-style:scale-[0.95] data-starting-style:opacity-0 data-[side=bottom]:data-starting-style:-translate-y-1 data-[side=top]:data-starting-style:translate-y-1 data-[side=left]:data-starting-style:translate-x-1 data-[side=right]:data-starting-style:-translate-x-1 data-ending-style:duration-100 data-ending-style:ease-(--ease-exit) data-ending-style:scale-[0.97] data-ending-style:opacity-0 data-[side=bottom]:data-ending-style:-translate-y-0.5 data-[side=top]:data-ending-style:translate-y-0.5 data-[side=left]:data-ending-style:translate-x-0.5 data-[side=right]:data-ending-style:-translate-x-0.5 data-instant:duration-0 motion-reduce:transition-none dark:before:shadow-[0_-1px_--theme(--color-white/6%)]",
+            staticViewport
+              ? "transition-[scale,opacity,translate]"
+              : "transition-[width,height,scale,opacity,translate]",
             variant !== "panel" && "dropdown-glass surface-elevated-rim",
             // Electron drag hit-testing ignores z-index; popups over a drag region would swallow hover.
             "[-webkit-app-region:no-drag]",

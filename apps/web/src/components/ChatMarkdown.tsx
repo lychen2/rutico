@@ -2076,6 +2076,9 @@ const MarkdownSource = memo(function MarkdownSource({
   );
 });
 
+const WHOLE_DOC_STREAM_THROTTLE_CHARS = 2_000;
+const WHOLE_DOC_STREAM_THROTTLE_MS = 120;
+
 function ChatMarkdown({
   text,
   className,
@@ -2097,12 +2100,40 @@ function ChatMarkdown({
   }, [isStreaming, streamingId]);
   // Streaming re-renders only the last block; offsets for task edits, and extensions that read
   // the whole message, need the whole text.
-  const streamingBlocks =
-    props.isStreaming === true && !inline && extensions === NO_EXTENSIONS && !props.onTaskListChange
-      ? (splitMarkdownBlocks(text) ?? [text])
-      : null;
+  const isStreamSplitEligible =
+    props.isStreaming === true &&
+    !inline &&
+    extensions === NO_EXTENSIONS &&
+    !props.onTaskListChange;
+  const splitBlocks = isStreamSplitEligible ? splitMarkdownBlocks(text) : null;
+  const needsWholeDocThrottle =
+    isStreamSplitEligible && splitBlocks === null && text.length > WHOLE_DOC_STREAM_THROTTLE_CHARS;
+  const [throttledWholeDocText, setThrottledWholeDocText] = useState(text);
+  const lastWholeDocCommitRef = useRef(0);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- coalesces whole-document streaming reparses when document-wide Markdown syntax prevents incremental block splitting
+  useEffect(() => {
+    if (!needsWholeDocThrottle) return;
+    if (throttledWholeDocText === text) return;
+    const elapsed = performance.now() - lastWholeDocCommitRef.current;
+    const delay = Math.max(0, WHOLE_DOC_STREAM_THROTTLE_MS - elapsed);
+    const timer = window.setTimeout(() => {
+      lastWholeDocCommitRef.current = performance.now();
+      setThrottledWholeDocText(text);
+    }, delay);
+    return () => {
+      window.clearTimeout(timer);
+    };
+  }, [needsWholeDocThrottle, throttledWholeDocText, text]);
+
+  const renderedText =
+    needsWholeDocThrottle &&
+    throttledWholeDocText.length >= WHOLE_DOC_STREAM_THROTTLE_CHARS &&
+    text.startsWith(throttledWholeDocText)
+      ? throttledWholeDocText
+      : text;
+  const streamingBlocks = isStreamSplitEligible ? (splitBlocks ?? [renderedText]) : null;
   const { componentState, handleCopy, markdownRef, localMediaPreview, closeLocalMediaPreview } =
-    useChatMarkdownState({ text, inline, ...props }, streamingBlocks);
+    useChatMarkdownState({ text: renderedText, inline, ...props }, streamingBlocks);
   const Root = inline ? "span" : "div";
   const bindMarkdownRef = (node: HTMLElement | null) => {
     markdownRef.current = node;
@@ -2111,9 +2142,9 @@ function ChatMarkdown({
     math: componentState.mathEnabled,
     breaks: lineBreaks,
     escapeHtml: !parseRawHtml,
-    insights: renderInsights && text.includes("★ Insight"),
+    insights: renderInsights && renderedText.includes("★ Insight"),
   });
-  const blocks = streamingBlocks ?? [text];
+  const blocks = streamingBlocks ?? [renderedText];
   const activeTailRef = useRef<HTMLElement | null>(null);
   const settleTimerRef = useRef<number | null>(null);
   const wasStreamingRef = useRef(false);

@@ -213,6 +213,8 @@ export function CosmicEffortSlider(props: {
 
     let raf = 0;
     let lastTs = performance.now();
+    let rimGradKey = "";
+    let rimGrad: CanvasGradient | null = null;
     layoutWidthRef.current = wrap.clientWidth;
 
     const drawFrame = (now: number) => {
@@ -386,11 +388,16 @@ export function CosmicEffortSlider(props: {
       ctx.drawImage(lensSprites.gloss, lensX, lensY, kw, kh);
       ctx.restore();
 
-      const rg = ctx.createLinearGradient(kx, lensY, kx, lensY + kh);
-      rg.addColorStop(0, "rgba(255,255,255,0.92)");
-      rg.addColorStop(0.5, "rgba(255,255,255,0.28)");
-      rg.addColorStop(1, sampleReactorAccent(st.val));
-      ctx.strokeStyle = rg;
+      const rimAccent = sampleReactorAccent(st.val);
+      const nextRimKey = `${lensY.toFixed(1)}:${kh.toFixed(1)}:${rimAccent}`;
+      if (rimGradKey !== nextRimKey || !rimGrad) {
+        rimGrad = ctx.createLinearGradient(0, lensY, 0, lensY + kh);
+        rimGrad.addColorStop(0, "rgba(255,255,255,0.92)");
+        rimGrad.addColorStop(0.5, "rgba(255,255,255,0.28)");
+        rimGrad.addColorStop(1, rimAccent);
+        rimGradKey = nextRimKey;
+      }
+      ctx.strokeStyle = rimGrad;
       ctx.lineWidth = st.dragging || st.chroma > 0.2 ? 1.8 : 1.3;
       ctx.beginPath();
       ctx.roundRect(lensX + 0.65, lensY + 0.65, kw - 1.3, kh - 1.3, kr);

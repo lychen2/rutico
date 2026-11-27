@@ -214,7 +214,7 @@ function ColumnRow(props: {
     // Up and Down move between rows.
     tabIndex: props.tabStop ? 0 : -1,
     className:
-      "relative z-10 min-w-0 flex-1 rounded-md px-1 py-1 text-center text-xs text-muted-foreground outline-none transition-colors duration-120 hover:text-foreground focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring aria-checked:bg-foreground/8 aria-checked:font-semibold aria-checked:text-foreground disabled:cursor-not-allowed disabled:opacity-64",
+      "relative z-10 min-w-0 flex-1 rounded-md px-1 py-1 text-center text-xs font-medium text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring aria-checked:text-foreground disabled:cursor-not-allowed disabled:opacity-64",
     onClick: props.onPick,
   } as const;
   const content = (

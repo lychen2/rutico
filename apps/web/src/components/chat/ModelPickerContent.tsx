@@ -326,7 +326,7 @@ function ModelPickerList({
           keyExtractor={(modelKey) => modelKey}
           renderItem={renderItem}
           estimatedItemSize={MODEL_LIST_ESTIMATED_ITEM_SIZE}
-          drawDistance={480}
+          drawDistance={docked ? 96 : 240}
           recycleItems
           contentContainerClassName="pl-2 pr-px"
           ItemSeparatorComponent={ModelListSeparator}

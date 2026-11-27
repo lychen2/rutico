@@ -140,6 +140,7 @@ const makeHarness = Effect.fn("makeAntigravityProviderHarness")(function* (
     readonly enabled?: boolean;
     readonly safe?: boolean;
     readonly rememberedRuntimeModes?: ReadonlyArray<RuntimeMode>;
+    readonly rememberedUsageLimits?: ServerProviderUsageLimits;
     readonly probeUsage?: Effect.Effect<ServerProviderUsageLimits>;
     readonly clearUsage?: Effect.Effect<void>;
   } = {},
@@ -159,6 +160,9 @@ const makeHarness = Effect.fn("makeAntigravityProviderHarness")(function* (
       ...(options.auth ? { auth: options.auth } : {}),
       ...(options.rememberedRuntimeModes
         ? { rememberedRuntimeModes: options.rememberedRuntimeModes }
+        : {}),
+      ...(options.rememberedUsageLimits
+        ? { rememberedUsageLimits: options.rememberedUsageLimits }
         : {}),
       ...(options.probeUsage ? { probeUsage: options.probeUsage } : {}),
       ...(options.clearUsage ? { clearUsage: options.clearUsage } : {}),
@@ -1148,10 +1152,11 @@ it.layer(layerTest)("Antigravity provider snapshots", (it) => {
       yield* Ref.set(harness.probe, Effect.succeed(initializeResult));
       yield* harness.provider.onSessionStarted(started, "/workspace");
       const published = yield* harness.nextPublish((snapshot) => !!snapshot.usageLimits);
-      yield* harness.provider.snapshot.refreshUsage!;
+      const firstRefresh = yield* harness.provider.snapshot.refreshUsage!.pipe(Effect.forkChild);
       yield* Deferred.await(readStarted);
       yield* harness.provider.onSessionStarted(started, "/other");
-      yield* harness.provider.snapshot.refreshUsage!;
+      const secondRefresh = yield* harness.provider.snapshot.refreshUsage!.pipe(Effect.forkChild);
+      yield* Effect.yieldNow;
       const ready = yield* harness.provider.snapshot.getSnapshot;
       expect(ready).toMatchObject({ status: "ready", auth: { status: "authenticated" } });
       expect(ready.usageLimits).toBeUndefined();
@@ -1161,6 +1166,9 @@ it.layer(layerTest)("Antigravity provider snapshots", (it) => {
         windows: [{ id: "gemini-5h", kind: "session", label: "Gemini · 5-hour", usedPercent: 10 }],
       } satisfies ServerProviderUsageLimits;
       yield* Deferred.succeed(readResult, limits);
+      yield* Fiber.join(firstRefresh);
+      yield* Fiber.join(secondRefresh);
+      expect((yield* harness.provider.snapshot.getSnapshot).usageLimits).toEqual(limits);
       expect((yield* published)?.usageLimits).toEqual(limits);
     }),
   );
@@ -1179,11 +1187,12 @@ it.layer(layerTest)("Antigravity provider snapshots", (it) => {
       yield* harness.initialize;
       yield* Ref.set(harness.probe, Effect.succeed(initializeResult));
       yield* harness.provider.onSessionStarted(started);
-      yield* harness.provider.snapshot.refreshUsage!;
+      const oldRefresh = yield* harness.provider.snapshot.refreshUsage!.pipe(Effect.forkChild);
       yield* Deferred.await(oldReadStarted);
       const published = yield* harness.nextPublish((snapshot) => !!snapshot.usageLimits);
       yield* Ref.set(usage, Effect.succeed(newLimits));
       yield* harness.provider.onSignedIn;
+      yield* Fiber.join(oldRefresh);
       yield* harness.provider.onSessionStarted(started);
       yield* harness.provider.snapshot.refreshUsage!;
       expect((yield* published)?.usageLimits).toEqual(newLimits);
@@ -1202,6 +1211,25 @@ it.layer(layerTest)("Antigravity provider snapshots", (it) => {
       yield* harness.provider.onSessionStarted(started);
       yield* harness.provider.snapshot.refreshUsage!;
       expect((yield* republished)?.usageLimits).toEqual(failed);
+    }),
+  );
+
+  it.effect("retains remembered cached usageLimits across startup checks and clears on sign-out", () =>
+    Effect.gen(function* () {
+      const cachedLimits = {
+        checkedAt: "2026-10-09T12:00:00.000Z",
+        windows: [{ id: "gemini-5h", kind: "session", label: "Gemini · 5-hour", usedPercent: 14 }],
+      } satisfies ServerProviderUsageLimits;
+      const harness = yield* makeHarness({ rememberedUsageLimits: cachedLimits });
+      yield* harness.initialize;
+      expect((yield* harness.provider.snapshot.getSnapshot).usageLimits).toEqual(cachedLimits);
+
+      yield* Ref.set(harness.probe, Effect.succeed(initializeResult));
+      yield* harness.provider.onSessionStarted(started, "/workspace");
+      expect((yield* harness.provider.snapshot.getSnapshot).usageLimits).toEqual(cachedLimits);
+
+      yield* harness.provider.onSignedOut;
+      expect((yield* harness.provider.snapshot.getSnapshot).usageLimits).toBeUndefined();
     }),
   );
 });

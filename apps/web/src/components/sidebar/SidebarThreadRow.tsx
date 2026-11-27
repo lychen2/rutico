@@ -1128,6 +1128,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
     isActive: props.isActive,
   });
 
+  const animateRegeneratingTitle = isRegeneratingTitle && props.isActive;
   const title = isRenaming ? (
     <ThreadRenameInput
       title={renamingTitle}
@@ -1137,7 +1138,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
     />
   ) : (
     <span
-      ref={isRegeneratingTitle ? observeVisibleAnimation : undefined}
+      ref={animateRegeneratingTitle ? observeVisibleAnimation : undefined}
       className={cn(
         "min-w-0 flex-1 text-start text-sm transition-opacity motion-reduce:transition-none",
         shouldRecede ? "font-normal" : "font-medium",
@@ -1166,7 +1167,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
       dir={textDirection(thread.title)}
     >
       {thread.title}
-      {isRegeneratingTitle ? (
+      {animateRegeneratingTitle ? (
         <ActivityShimmerOverlay className="truncate">{thread.title}</ActivityShimmerOverlay>
       ) : null}
     </span>
@@ -1977,7 +1978,11 @@ export const SidebarSearchResultRow = memo(function SidebarSearchResultRow(props
         <span className="flex min-w-0 flex-1 flex-col">
           <span className="flex min-w-0 items-center gap-2.5">
             <span
-              ref={isRegeneratingTitle ? observeVisibleAnimation : undefined}
+              ref={
+                isRegeneratingTitle && (props.isRouteActive || props.isHighlighted)
+                  ? observeVisibleAnimation
+                  : undefined
+              }
               className={cn(
                 "min-w-0 flex-1 truncate",
                 props.isSettled ? "font-normal" : "font-medium",
@@ -1989,7 +1994,7 @@ export const SidebarSearchResultRow = memo(function SidebarSearchResultRow(props
               )}
             >
               {thread.title}
-              {isRegeneratingTitle ? (
+              {isRegeneratingTitle && (props.isRouteActive || props.isHighlighted) ? (
                 <ActivityShimmerOverlay className="truncate">{thread.title}</ActivityShimmerOverlay>
               ) : null}
             </span>

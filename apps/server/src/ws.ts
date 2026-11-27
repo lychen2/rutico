@@ -293,6 +293,8 @@ import {
   splitLargeSocketFrames,
 } from "@t3tools/shared/socketFrameParts";
 import {
+  USAGE_LIMITS_AUTO_REFRESH_COOLDOWN_MS,
+  isProviderUsageLimitsFresh,
   sameUsageLimitCommandCoverage,
   withUsageLimitsCommands,
 } from "@t3tools/shared/usageLimits";
@@ -2490,42 +2492,81 @@ export const layerWsRpc = (
             if (input.reloadSecrets === true && input.instanceId === undefined) {
               yield* invalidateSettingsSecrets(secretResolver, serverSettings.getSettings);
             }
+            const usageLimitsOnly =
+              input.refreshUsageLimits === true &&
+              !input.refreshModels &&
+              input.reloadSecrets !== true &&
+              input.cwd === undefined;
+            const nowMs = DateTime.toEpochMillis(yield* DateTime.now);
             // Await refresh; RPC scope closure would interrupt a fork before the hub answered.
             if (input.instanceId === undefined) {
-              yield* usageLimitSources.refresh;
+              const shouldRefreshSources =
+                !usageLimitsOnly ||
+                input.fresh === true ||
+                (yield* usageLimitSources.current).some((source) => {
+                  if (source.error !== undefined) return true;
+                  const checkedAt = Date.parse(source.checkedAt);
+                  return (
+                    !Number.isFinite(checkedAt) ||
+                    nowMs - checkedAt >= USAGE_LIMITS_AUTO_REFRESH_COOLDOWN_MS
+                  );
+                });
+              if (shouldRefreshSources) {
+                yield* usageLimitSources.refresh;
+              }
             }
-            let providers = yield* input.cwd !== undefined && input.instanceId !== undefined
-              ? providerRegistry.refreshWorkspaceSnapshot({
-                  instanceId: input.instanceId,
-                  cwd: input.cwd,
-                  scanCwd: yield* projectService.workspaceScanDirectory(input.cwd),
-                  fresh: input.fresh === true,
-                })
-              : input.reloadSecrets === true
-                ? providerRegistry.reloadSecretsAndRefresh(input.instanceId)
-                : input.instanceId !== undefined
-                  ? providerRegistry.refreshInstance(input.instanceId)
-                  : providerRegistry.refresh();
+            let providers = yield* usageLimitsOnly
+              ? providerRegistry.getProviders
+              : input.cwd !== undefined && input.instanceId !== undefined
+                ? providerRegistry.refreshWorkspaceSnapshot({
+                    instanceId: input.instanceId,
+                    cwd: input.cwd,
+                    scanCwd: yield* projectService.workspaceScanDirectory(input.cwd),
+                    fresh: input.fresh === true,
+                  })
+                : input.reloadSecrets === true
+                  ? providerRegistry.reloadSecretsAndRefresh(input.instanceId)
+                  : input.instanceId !== undefined
+                    ? providerRegistry.refreshInstance(input.instanceId)
+                    : providerRegistry.refresh();
             if (input.refreshUsageLimits === true) {
               const instances = yield* providerInstances.listInstances;
               let refreshedAnyUsage = false;
               for (const instance of instances) {
                 if (
-                  instance.driverKind !== "antigravity" ||
+                  (!usageLimitsOnly && instance.driverKind !== "antigravity") ||
                   !instance.snapshot.refreshUsage ||
-                  (input.instanceId !== undefined && input.instanceId !== instance.instanceId) ||
-                  !providers.some(
-                    (provider) =>
-                      provider.instanceId === instance.instanceId &&
-                      provider.enabled &&
-                      provider.installed &&
-                      provider.auth.status !== "unauthenticated",
+                  (input.instanceId !== undefined && input.instanceId !== instance.instanceId)
+                ) {
+                  continue;
+                }
+                const provider = providers.find(
+                  (candidate) => candidate.instanceId === instance.instanceId,
+                );
+                if (
+                  !provider ||
+                  !provider.enabled ||
+                  !provider.installed ||
+                  provider.auth.status === "unauthenticated"
+                ) {
+                  continue;
+                }
+                if (
+                  input.fresh !== true &&
+                  isProviderUsageLimitsFresh(
+                    provider.usageLimits,
+                    nowMs,
+                    USAGE_LIMITS_AUTO_REFRESH_COOLDOWN_MS,
                   )
                 ) {
                   continue;
                 }
                 yield* instance.snapshot.refreshUsage.pipe(Effect.ignoreCause({ log: true }));
-                refreshedAnyUsage = true;
+                if (providerRegistry.syncInstance) {
+                  providers = yield* providerRegistry.syncInstance(instance.instanceId);
+                } else {
+                  refreshedAnyUsage = true;
+                }
               }
               if (refreshedAnyUsage) {
                 providers = yield* providerRegistry.getProviders;

@@ -476,6 +476,7 @@ export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
         className="before:hidden"
         data-composer-model-picker-popup={docked ? "" : undefined}
         padding="none"
+        staticViewport={docked}
         touchBackdrop
       >
         {props.effortColumn !== undefined ? (
