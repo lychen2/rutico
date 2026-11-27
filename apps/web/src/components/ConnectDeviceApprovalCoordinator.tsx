@@ -199,6 +199,24 @@ async function reportFailure(
   return true;
 }
 
+export const CONNECT_DEVICE_APPROVAL_ARM_DELAY_MS = 700;
+
+interface TrackedDeviceRequestToast {
+  readonly toastId: string;
+  readonly renderedKey: string;
+  readonly presentedAt: number;
+  armed: boolean;
+  decided: boolean;
+  armTimer: number | null;
+}
+
+function clearTrackedArmTimer(tracked: TrackedDeviceRequestToast) {
+  if (tracked.armTimer !== null) {
+    window.clearTimeout(tracked.armTimer);
+    tracked.armTimer = null;
+  }
+}
+
 function ConnectDeviceRequestToasts({
   environmentId,
   environmentLabel,
@@ -210,11 +228,13 @@ function ConnectDeviceRequestToasts({
   const access = useEnvironmentQuery(authEnvironment.accessChanges({ environmentId, input: null }));
   const approve = useAtomCommand(authEnvironment.approveConnectDevice, { reportFailure: false });
   const deny = useAtomCommand(authEnvironment.revokePairingLink, { reportFailure: false });
-  const toasts = useRef(new Map<string, { toastId: string; renderedKey: string }>());
+  const toasts = useRef(new Map<string, TrackedDeviceRequestToast>());
   const [, setRetryGeneration] = useState(0);
   // A failed approve or deny forgets its toast and re-renders, so the request is offered again.
   const settle = async (id: string, failed: Promise<boolean>) => {
     if (!(await failed)) return;
+    const current = toasts.current.get(id);
+    if (current) clearTrackedArmTimer(current);
     toasts.current.delete(id);
     setRetryGeneration((generation) => generation + 1);
   };
@@ -234,86 +254,136 @@ function ConnectDeviceRequestToasts({
     // The server publishes no event when a request expires, so the toast ends itself then.
     const now = Date.now();
     const live = requests.flatMap((entry) => {
-      const remainingMs = DateTime.toEpochMillis(entry.expiresAt) - now;
-      return remainingMs > 0 ? [{ ...entry, remainingMs }] : [];
+      const expiresAtMs = DateTime.toEpochMillis(entry.expiresAt);
+      const remainingMs = expiresAtMs - now;
+      return remainingMs > 0 ? [{ ...entry, expiresAtMs, remainingMs }] : [];
     });
     const pendingIds = new Set(live.map(({ id }) => id));
     for (const [id, tracked] of toasts.current) {
       if (pendingIds.has(id)) continue;
+      clearTrackedArmTimer(tracked);
       toastManager.close(tracked.toastId);
       toasts.current.delete(id);
     }
-    for (const { id, request, remainingMs } of live) {
+    for (const { id, request, expiresAtMs, remainingMs } of live) {
       const device = describeConnectDeviceClient(request);
       const renderedKey = `${request.verificationCode}:${device}`;
       const tracked = toasts.current.get(id);
       if (tracked?.renderedKey === renderedKey) continue;
+      if (tracked) clearTrackedArmTimer(tracked);
       const close = () => {
         const current = toasts.current.get(id);
-        if (current) toastManager.close(current.toastId);
+        if (!current) return;
+        clearTrackedArmTimer(current);
+        toastManager.close(current.toastId);
+      };
+      const handleApprove = () => {
+        const current = toasts.current.get(id);
+        if (
+          !current ||
+          current.renderedKey !== renderedKey ||
+          current.decided ||
+          !current.armed ||
+          Date.now() - current.presentedAt < CONNECT_DEVICE_APPROVAL_ARM_DELAY_MS
+        ) {
+          return;
+        }
+        current.decided = true;
+        close();
+        void settle(
+          id,
+          reportFailure(m(msg("Could not approve the device")), () =>
+            approve({ environmentId, input: { pairingLinkId: id } }),
+          ),
+        );
+      };
+      const handleDeny = () => {
+        const current = toasts.current.get(id);
+        if (!current || current.renderedKey !== renderedKey || current.decided) {
+          return;
+        }
+        current.decided = true;
+        close();
+        void settle(
+          id,
+          reportFailure(m(msg("Could not deny the device")), () =>
+            deny({ environmentId, input: { id } }),
+          ),
+        );
       };
       const groupedCode = formatGroupedVerificationCode(request.verificationCode);
-      const options = stackedThreadToast({
-        type: "info",
-        title: m(msg("A device wants to connect to {environmentLabel}", { environmentLabel })),
-        description: (
-          <div className="mt-1 space-y-2">
-            <p className="text-xs text-muted-foreground">
-              <T>
-                <Var>{device}</Var>. Approve only if it shows this code:
-              </T>
-            </p>
-            <div className="inline-flex items-center rounded-md border border-border/75 bg-muted/45 px-2.5 py-1 font-mono text-sm font-semibold tracking-wider text-foreground tabular-nums">
-              {groupedCode}
+      const buildOptions = (armed: boolean, timeoutMs: number) =>
+        stackedThreadToast({
+          type: "info",
+          title: m(msg("A device wants to connect to {environmentLabel}", { environmentLabel })),
+          description: (
+            <div className="mt-1 space-y-2">
+              <p className="text-xs text-muted-foreground">
+                <T>
+                  <Var>{device}</Var>. Approve only if it shows this code:
+                </T>
+              </p>
+              <div className="inline-flex items-center rounded-md border border-border/75 bg-muted/45 px-2.5 py-1 font-mono text-sm font-semibold tracking-wider text-foreground tabular-nums">
+                {groupedCode}
+              </div>
             </div>
-          </div>
-        ),
-        timeout: remainingMs,
-        actionProps: {
-          children: m(msg("Approve")),
-          onClick: () => {
-            close();
-            void settle(
-              id,
-              reportFailure(m(msg("Could not approve the device")), () =>
-                approve({ environmentId, input: { pairingLinkId: id } }),
-              ),
-            );
+          ),
+          timeout: timeoutMs,
+          actionProps: {
+            children: m(msg("Approve")),
+            disabled: !armed,
+            onClick: handleApprove,
           },
-        },
-        data: {
-          leadingIcon: <ShieldCheckIcon className="size-4 text-primary" aria-hidden />,
-          hideCopyButton: true,
-          secondaryActionProps: {
-            children: m(msg("Deny")),
-            onClick: () => {
-              close();
-              void settle(
-                id,
-                reportFailure(m(msg("Could not deny the device")), () =>
-                  deny({ environmentId, input: { id } }),
-                ),
-              );
+          data: {
+            leadingIcon: <ShieldCheckIcon className="size-4 text-primary" aria-hidden />,
+            hideCopyButton: true,
+            onClose: () => {
+              const current = toasts.current.get(id);
+              if (current?.renderedKey === renderedKey) clearTrackedArmTimer(current);
             },
-          },
-          additionalActions: [
-            {
-              id: "review",
-              props: {
-                children: m(msg("Review", { $context: "verb, opens the device in settings" })),
-                onClick: () =>
-                  void navigate({ to: "/settings/access", search: { machine: environmentId } }),
+            secondaryActionProps: {
+              children: m(msg("Deny")),
+              onClick: handleDeny,
+            },
+            additionalActions: [
+              {
+                id: "review",
+                props: {
+                  children: m(msg("Review", { $context: "verb, opens the device in settings" })),
+                  onClick: () =>
+                    void navigate({ to: "/settings/access", search: { machine: environmentId } }),
+                },
               },
-            },
-          ],
-        },
-      });
+            ],
+          },
+        });
+      const initialOptions = buildOptions(false, remainingMs);
+      const toastId = tracked ? tracked.toastId : toastManager.add(initialOptions);
       if (tracked) {
-        toastManager.update(tracked.toastId, options);
-        toasts.current.set(id, { toastId: tracked.toastId, renderedKey });
-      } else {
-        toasts.current.set(id, { toastId: toastManager.add(options), renderedKey });
+        toastManager.update(toastId, initialOptions);
       }
+      const nextTracked: TrackedDeviceRequestToast = {
+        toastId,
+        renderedKey,
+        presentedAt: now,
+        armed: false,
+        decided: false,
+        armTimer: null,
+      };
+      nextTracked.armTimer = window.setTimeout(() => {
+        const current = toasts.current.get(id);
+        if (current !== nextTracked || current.decided) return;
+        current.armTimer = null;
+        const remainingAfterArmMs = expiresAtMs - Date.now();
+        if (remainingAfterArmMs <= 0) {
+          toastManager.close(current.toastId);
+          toasts.current.delete(id);
+          return;
+        }
+        current.armed = true;
+        toastManager.update(current.toastId, buildOptions(true, remainingAfterArmMs));
+      }, CONNECT_DEVICE_APPROVAL_ARM_DELAY_MS);
+      toasts.current.set(id, nextTracked);
     }
   });
 
@@ -321,7 +391,10 @@ function ConnectDeviceRequestToasts({
   useEffect(() => {
     const tracked = toasts.current;
     return () => {
-      for (const { toastId } of tracked.values()) toastManager.close(toastId);
+      for (const entry of tracked.values()) {
+        clearTrackedArmTimer(entry);
+        toastManager.close(entry.toastId);
+      }
       tracked.clear();
     };
   }, []);
