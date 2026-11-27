@@ -51,6 +51,7 @@ export function resolveToastStackLayer(visibleIndex: number): ToastStackLayer {
 }
 
 const TOAST_SWIPE_DISMISS_VELOCITY_PX_PER_MS = 0.11;
+const TOAST_SWIPE_DISMISS_MIN_TRAVEL_PX = 24;
 const DEFAULT_TOAST_COUNTDOWN_MS = 5000;
 
 export function resolveToastCountdownMs(toast: {
@@ -79,15 +80,27 @@ export type ToastSwipeDirection = "left" | "right" | "up" | "down";
 export function shouldDismissToastBySwipeVelocity(params: {
   readonly vxPerMs: number;
   readonly vyPerMs: number;
+  readonly dxPx: number;
+  readonly dyPx: number;
   readonly swipeDirections: readonly ToastSwipeDirection[];
   readonly thresholdPxPerMs?: number;
+  readonly minTravelPx?: number;
 }): boolean {
   const threshold = params.thresholdPxPerMs ?? TOAST_SWIPE_DISMISS_VELOCITY_PX_PER_MS;
+  const minTravel = params.minTravelPx ?? TOAST_SWIPE_DISMISS_MIN_TRAVEL_PX;
   for (const direction of params.swipeDirections) {
-    if (direction === "right" && params.vxPerMs >= threshold) return true;
-    if (direction === "left" && params.vxPerMs <= -threshold) return true;
-    if (direction === "down" && params.vyPerMs >= threshold) return true;
-    if (direction === "up" && params.vyPerMs <= -threshold) return true;
+    if (direction === "right" && params.dxPx >= minTravel && params.vxPerMs >= threshold) {
+      return true;
+    }
+    if (direction === "left" && params.dxPx <= -minTravel && params.vxPerMs <= -threshold) {
+      return true;
+    }
+    if (direction === "down" && params.dyPx >= minTravel && params.vyPerMs >= threshold) {
+      return true;
+    }
+    if (direction === "up" && params.dyPx <= -minTravel && params.vyPerMs <= -threshold) {
+      return true;
+    }
   }
   return false;
 }

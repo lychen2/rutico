@@ -621,11 +621,23 @@ function useDocumentActive(): boolean {
 interface ToastSwipeGesture {
   readonly pointerId: number;
   readonly startX: number;
+  readonly startY: number;
   readonly tracker: VelocityTracker;
 }
 
 const TOAST_SWIPE_TILT_DEG_PER_PX = 0.035;
 const TOAST_SWIPE_TILT_MAX_DEG = 4.5;
+const TOAST_SWIPE_INTERACTIVE_TARGET_SELECTOR =
+  'button, a, input, textarea, select, summary, [role="button"], [role="link"], [contenteditable=""], [contenteditable="true"]';
+
+function isInteractiveToastSwipeTarget(
+  target: EventTarget | null,
+  currentTarget: HTMLElement,
+): boolean {
+  if (!(target instanceof Element)) return false;
+  const interactive = target.closest(TOAST_SWIPE_INTERACTIVE_TARGET_SELECTOR);
+  return interactive !== null && interactive !== currentTarget;
+}
 
 function Toasts({ position }: { position: ToastPosition }) {
   const { toasts } = Toast.useToastManager<ThreadToastData>();
@@ -661,11 +673,13 @@ function Toasts({ position }: { position: ToastPosition }) {
 
   const handleToastPointerDown = (toastId: ToastId, event: ReactPointerEvent<HTMLDivElement>) => {
     if (event.button !== 0 && event.pointerType === "mouse") return;
+    if (isInteractiveToastSwipeTarget(event.target, event.currentTarget)) return;
     const tracker = createVelocityTracker(90);
     tracker.push(event.clientX, event.clientY, performance.now());
     swipeGesturesRef.current.set(toastId, {
       pointerId: event.pointerId,
       startX: event.clientX,
+      startY: event.clientY,
       tracker,
     });
   };
@@ -700,6 +714,8 @@ function Toasts({ position }: { position: ToastPosition }) {
       shouldDismissToastBySwipeVelocity({
         vxPerMs: velocity.vxPerMs,
         vyPerMs: velocity.vyPerMs,
+        dxPx: event.clientX - gesture.startX,
+        dyPx: event.clientY - gesture.startY,
         swipeDirections,
       })
     ) {

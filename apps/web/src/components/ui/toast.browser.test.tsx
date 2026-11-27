@@ -197,6 +197,120 @@ describe("toastManager", () => {
     toastManager.close(toastId);
   });
 
+  it("ignores a 4px/30ms jitter click on both the toast body and a child action button without firing onClose", async () => {
+    await using _screen = await render(<ToastProvider position="top-right">{null}</ToastProvider>);
+
+    const onClose = vi.fn();
+    const onActionClick = vi.fn();
+    const toastId = toastManager.add({
+      type: "warning",
+      title: "New device connected",
+      timeout: 0,
+      actionProps: { children: "Review", onClick: onActionClick },
+      data: { onClose },
+    });
+    await expect.element(page.getByText("New device connected")).toBeVisible();
+
+    const root = Array.from(
+      document.querySelectorAll<HTMLElement>('[data-slot="toast-root"]'),
+    ).find((node) => node.textContent?.includes("New device connected"))!;
+    const actionButton = Array.from(root.querySelectorAll<HTMLButtonElement>("button")).find(
+      (button) => button.textContent?.includes("Review"),
+    )!;
+    expect(actionButton).not.toBeUndefined();
+
+    vi.spyOn(root, "setPointerCapture").mockImplementation(() => {});
+    vi.spyOn(root, "releasePointerCapture").mockImplementation(() => {});
+    vi.spyOn(root, "hasPointerCapture").mockReturnValue(true);
+
+    const nowSpy = vi.spyOn(performance, "now");
+
+    // 1. 4px / 30ms jitter on the toast body (0.133 px/ms > 0.11 px/ms, but below minimum travel).
+    nowSpy.mockReturnValue(2_000);
+    root.dispatchEvent(
+      new PointerEvent("pointerdown", {
+        bubbles: true,
+        button: 0,
+        pointerId: 11,
+        clientX: 100,
+        clientY: 20,
+      }),
+    );
+    nowSpy.mockReturnValue(2_030);
+    root.dispatchEvent(
+      new PointerEvent("pointerup", {
+        bubbles: true,
+        button: 0,
+        pointerId: 11,
+        clientX: 104,
+        clientY: 20,
+      }),
+    );
+    expect(onClose).not.toHaveBeenCalled();
+    await expect.element(page.getByText("New device connected")).toBeVisible();
+
+    // 2. Pointer gesture starting on a child action button (even with >= 24px movement) must not swipe-dismiss.
+    nowSpy.mockReturnValue(3_000);
+    actionButton.dispatchEvent(
+      new PointerEvent("pointerdown", {
+        bubbles: true,
+        button: 0,
+        pointerId: 12,
+        clientX: 100,
+        clientY: 20,
+      }),
+    );
+    nowSpy.mockReturnValue(3_030);
+    actionButton.dispatchEvent(
+      new PointerEvent("pointerup", {
+        bubbles: true,
+        button: 0,
+        pointerId: 12,
+        clientX: 132,
+        clientY: 20,
+      }),
+    );
+    expect(onClose).not.toHaveBeenCalled();
+    await expect.element(page.getByText("New device connected")).toBeVisible();
+
+    // 3. Deliberate horizontal flick on the toast body (>= 24px travel and >= 0.11 px/ms) dismisses and calls onClose.
+    nowSpy.mockReturnValue(4_000);
+    root.dispatchEvent(
+      new PointerEvent("pointerdown", {
+        bubbles: true,
+        button: 0,
+        pointerId: 13,
+        clientX: 100,
+        clientY: 20,
+      }),
+    );
+    nowSpy.mockReturnValue(4_020);
+    root.dispatchEvent(
+      new PointerEvent("pointermove", {
+        bubbles: true,
+        button: 0,
+        pointerId: 13,
+        clientX: 116,
+        clientY: 20,
+      }),
+    );
+    nowSpy.mockReturnValue(4_040);
+    root.dispatchEvent(
+      new PointerEvent("pointerup", {
+        bubbles: true,
+        button: 0,
+        pointerId: 13,
+        clientX: 132,
+        clientY: 20,
+      }),
+    );
+    nowSpy.mockRestore();
+
+    expect(onClose).toHaveBeenCalledOnce();
+    await expect.element(page.getByText("New device connected")).not.toBeInTheDocument();
+    toastManager.close(toastId);
+  });
+
   it("renders a directional AnchoredToast micro-pill with crisp emerald check mark on success", async () => {
     await using screen = await render(
       <AnchoredToastProvider>
