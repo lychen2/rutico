@@ -79,16 +79,89 @@ export function isQrFinderModule(x: number, y: number, size: number): boolean {
   return (inTop && inLeft) || (inTop && inRight) || (inBottom && inLeft);
 }
 
+function getQrVersionFromSize(size: number): number | null {
+  if (size < 21 || (size - 17) % 4 !== 0) return null;
+  const version = (size - 17) / 4;
+  return version >= QrCode.MIN_VERSION && version <= QrCode.MAX_VERSION ? version : null;
+}
+
+/** ISO 18004 alignment pattern axis positions, matching `@t3tools/shared/qrCode`. */
+export function getQrAlignmentPatternPositions(version: number): ReadonlyArray<number> {
+  if (version <= 1) return [];
+  const size = version * 4 + 17;
+  const numAlign = Math.floor(version / 7) + 2;
+  const step = version === 32 ? 26 : Math.ceil((version * 4 + 4) / (numAlign * 2 - 2)) * 2;
+  const result: Array<number> = [6];
+  for (let pos = size - 7; result.length < numAlign; pos -= step) {
+    result.splice(1, 0, pos);
+  }
+  return result;
+}
+
+/** Centers of every 5x5 alignment pattern in a QR symbol (excluding the 3 finder corners). */
+export function getQrAlignmentPatternCenters(
+  version: number,
+): ReadonlyArray<readonly [x: number, y: number]> {
+  const positions = getQrAlignmentPatternPositions(version);
+  const count = positions.length;
+  const centers: Array<readonly [number, number]> = [];
+  for (let i = 0; i < count; i += 1) {
+    for (let j = 0; j < count; j += 1) {
+      if ((i === 0 && j === 0) || (i === 0 && j === count - 1) || (i === count - 1 && j === 0)) {
+        continue;
+      }
+      centers.push([positions[i]!, positions[j]!]);
+    }
+  }
+  return centers;
+}
+
+/**
+ * Returns true when `(x, y)` belongs to any ISO 18004 QR function pattern: finder patterns +
+ * 1-module separators, timing lines, format info + dark module, version info (V7+), or any
+ * 5x5 alignment pattern (V2+).
+ */
+export function isQrFunctionModule(x: number, y: number, size: number): boolean {
+  if (x < 0 || x >= size || y < 0 || y >= size) return false;
+  // Finder patterns (7x7) plus 1-module separators (8x8 corners).
+  if ((x <= 7 && y <= 7) || (x >= size - 8 && y <= 7) || (x <= 7 && y >= size - 8)) {
+    return true;
+  }
+  // Timing patterns.
+  if (x === 6 || y === 6) return true;
+  // Format information and fixed dark module.
+  if ((x === 8 && (y <= 8 || y >= size - 8)) || (y === 8 && (x <= 8 || x >= size - 8))) {
+    return true;
+  }
+  const version = getQrVersionFromSize(size);
+  if (version === null) return false;
+  // Version information blocks (3x6 and 6x3, V7+).
+  if (
+    version >= 7 &&
+    ((x >= size - 11 && x <= size - 9 && y <= 5) || (y >= size - 11 && y <= size - 9 && x <= 5))
+  ) {
+    return true;
+  }
+  // 5x5 alignment patterns (V2+).
+  for (const [cx, cy] of getQrAlignmentPatternCenters(version)) {
+    if (Math.abs(x - cx) <= 2 && Math.abs(y - cy) <= 2) {
+      return true;
+    }
+  }
+  return false;
+}
+
 /**
  * Computes a compact centered aperture for the branded emblem. Only enabled at Q/H ECC
- * and QR sizes >= 25 so obscured modules stay well below Reed-Solomon recovery capacity
- * (< 6% of total modules) and never touch finder, timing, or format-info patterns.
+ * and QR sizes >= 25 when the aperture stays well below Reed-Solomon recovery capacity
+ * (< 6% of total modules) and never intersects any QR function pattern (finder, separator,
+ * timing, format, version, or alignment pattern).
  */
 export function getQrCenterMarkAperture(
   size: number,
   level: QRCodeErrorCorrectionLevel,
 ): QrCenterMarkAperture | null {
-  if ((level !== "Q" && level !== "H") || size < 25) {
+  if ((level !== "Q" && level !== "H") || size < 25 || getQrVersionFromSize(size) === null) {
     return null;
   }
   // Keep span odd (matching odd QR dimensions) and capped at <= 7 modules for fast CameraX lock.
@@ -98,6 +171,15 @@ export function getQrCenterMarkAperture(
   // Never encroach on timing patterns (index 6) or finder/format guard zones (index <= 8).
   if (start <= 8 || end >= size - 8) {
     return null;
+  }
+  // Suppress the centered emblem whenever its aperture would overlap any reserved function pattern
+  // (e.g., the central 5x5 alignment pattern on QR versions with an odd alignment grid such as V7).
+  for (let y = start; y < end; y += 1) {
+    for (let x = start; x < end; x += 1) {
+      if (isQrFunctionModule(x, y, size)) {
+        return null;
+      }
+    }
   }
   return { start, end, span };
 }
