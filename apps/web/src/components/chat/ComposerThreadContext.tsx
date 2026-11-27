@@ -138,7 +138,7 @@ export function ComposerThreadContext({
         <Popover>
           <PopoverTrigger render={<button type="button" data-v9-stats-trig="session" />}>
             <span data-session-primary="" className="inline-flex items-center gap-1.5">
-              <span className="flex items-center gap-1.5">
+              <span className="flex items-center gap-1.5 whitespace-nowrap">
                 <span
                   ref={running ? observeVisibleAnimation : undefined}
                   aria-hidden
@@ -157,11 +157,11 @@ export function ComposerThreadContext({
                 <span className="sr-only">{resolve(runStatusLabels[status])}</span>
               ) : null}
               {stepCount !== null ? (
-                <span>
+                <span className="whitespace-nowrap">
                   {gt("{steps, plural, one {# step} other {# steps}}", { steps: stepCount })}
                 </span>
               ) : null}
-              <span ref={rateRef} />
+              <span ref={rateRef} className="whitespace-nowrap" />
             </span>
             {!compact || firstOutput !== null ? (
               <span className="whitespace-nowrap">
@@ -271,7 +271,9 @@ export function ComposerThreadContext({
             }
           >
             {total !== null && (
-              <span>{gt("{tokens} tokens", { tokens: total.toLocaleString(locale) })}</span>
+              <span className="whitespace-nowrap">
+                {gt("{tokens} tokens", { tokens: total.toLocaleString(locale) })}
+              </span>
             )}
             {!compact || cachePercent !== null ? (
               <span className="whitespace-nowrap">

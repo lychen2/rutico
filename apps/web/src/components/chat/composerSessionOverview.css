@@ -2,13 +2,21 @@
   display: flex;
   justify-content: center;
   align-items: center;
+  width: 100%;
   min-height: 32px;
   margin-top: 4px;
   container: stats-bar / inline-size;
 }
 [data-session-footer][data-compact="true"] {
+  display: inline-flex;
+  width: auto;
+  max-width: 100%;
   min-height: 24px;
   margin-top: 0;
+  container: none;
+}
+[data-session-footer][data-compact="true"] [data-v9-stats-cluster] {
+  justify-content: flex-end;
 }
 [data-v9-stats-cluster] {
   display: inline-flex;
@@ -58,6 +66,11 @@
 }
 @container stats-bar (max-width: 460px) {
   [data-v9-stats-sep] {
+    display: none;
+  }
+}
+@container composer-surface (max-width: 460px) {
+  [data-session-footer][data-compact="true"] [data-v9-stats-sep] {
     display: none;
   }
 }

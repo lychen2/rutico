@@ -4289,38 +4289,40 @@ export default function ChatView(props: ChatViewProps) {
                                       : undefined
                                   }
                                   availableEnvironments={logicalProjectEnvironments}
-                                  {...(!isServerThread || composerSessionStatus
+                                  {...(!isServerThread
                                     ? {
                                         trailing: (
-                                          <div className="ms-auto flex min-w-0 shrink-0 flex-wrap items-center justify-end gap-1">
-                                            {composerSessionStatus}
-                                            {!isServerThread ? (
-                                              <ComposerContextPermissions
-                                                environmentId={environmentId}
-                                                runtimeMode={runtimeMode}
-                                                supportedRuntimeModes={draftSupportedRuntimeModes(
-                                                  activeProviderStatus?.supportedRuntimeModes,
-                                                  multipleModelSelections,
-                                                  providerStatuses,
-                                                )}
-                                                instanceId={draftRuntimeModeLimitsInstance(
-                                                  activeProviderStatus?.instanceId,
-                                                  multipleModelSelections,
-                                                )}
-                                                cwd={gitCwd}
-                                                onRuntimeModeChange={handleRuntimeModeChangeStable}
-                                              />
-                                            ) : null}
-                                          </div>
+                                          <ComposerContextPermissions
+                                            environmentId={environmentId}
+                                            runtimeMode={runtimeMode}
+                                            supportedRuntimeModes={draftSupportedRuntimeModes(
+                                              activeProviderStatus?.supportedRuntimeModes,
+                                              multipleModelSelections,
+                                              providerStatuses,
+                                            )}
+                                            instanceId={draftRuntimeModeLimitsInstance(
+                                              activeProviderStatus?.instanceId,
+                                              multipleModelSelections,
+                                            )}
+                                            cwd={gitCwd}
+                                            onRuntimeModeChange={handleRuntimeModeChangeStable}
+                                          />
                                         ),
                                       }
                                     : {})}
                                 />
                               </div>
-                            ) : composerSessionStatus ? (
-                              <ComposerSurface.ContextStrip className="pointer-events-auto justify-end">
+                            ) : null}
+                            {composerSessionStatus ? (
+                              <div
+                                className={
+                                  showComposerContextStrip
+                                    ? "pointer-events-auto flex w-full justify-end px-2 pt-1"
+                                    : "pointer-events-auto flex w-full justify-end px-2 pt-2"
+                                }
+                              >
                                 {composerSessionStatus}
-                              </ComposerSurface.ContextStrip>
+                              </div>
                             ) : null}
                           </div>
                         </div>

@@ -261,3 +261,62 @@ it("keeps round token and cache totals separate from the current context window"
   await expect.element(details.getByText("Reasoning", { exact: true })).not.toBeInTheDocument();
   await expect.element(details.getByText("Round token usage")).not.toBeInTheDocument();
 });
+
+it("keeps horizontal layout without collapsing inside a flex-end container in compact mode", async () => {
+  using stack = new DisposableStack();
+  const style = document.createElement("style");
+  style.textContent = appCss;
+  document.head.append(style);
+  stack.defer(() => style.remove());
+
+  const startedAt = DateTime.makeUnsafe("2026-11-20T12:00:00Z");
+  const runId = RunId.make("run-5");
+  const run = {
+    id: runId,
+    rootNodeId: NodeId.make("run-5-root"),
+    ordinal: 5,
+    status: "completed",
+    startedAt,
+    workStartedAt: DateTime.add(startedAt, { seconds: 1 }),
+    completedAt: DateTime.add(startedAt, { seconds: 12 }),
+  } as const;
+
+  await using screen = await render(
+    <div className="flex w-[720px] justify-end px-2 pt-2">
+      <ComposerThreadContext
+        compact
+        usage={deriveLatestContextWindowSnapshot([], {
+          usedTokens: 42_000,
+          maxTokens: 200_000,
+          updatedAt: "2026-11-20T12:00:12Z",
+        })}
+        run={run}
+        stepCount={3}
+        turnUsage={{
+          usageScope: "main_agent",
+          usageStatus: "complete",
+          hasSubagents: false,
+          inputTokens: 350_000,
+          outputTokens: 5_933,
+          cachedInputTokens: 262_500,
+        }}
+      />
+    </div>,
+  );
+
+  const roundTrigger = screen.getByRole("button", { name: /Round 5/ });
+  const tokensTrigger = screen.getByRole("button", { name: /Cache hit 75%/ });
+  await expect.element(roundTrigger).toBeVisible();
+  await expect.element(tokensTrigger.getByText("355,933 tokens", { exact: true })).toBeVisible();
+  await expect.element(tokensTrigger.getByText("Context 21%", { exact: true })).toBeVisible();
+
+  const footer = roundTrigger.element().closest("[data-session-footer]");
+  expect(footer).toBeInstanceOf(HTMLElement);
+  const footerRect = (footer as HTMLElement).getBoundingClientRect();
+  const roundRect = roundTrigger.element().getBoundingClientRect();
+  const tokensRect = tokensTrigger.element().getBoundingClientRect();
+
+  expect(footerRect.width).toBeGreaterThan(200);
+  expect(footerRect.height).toBeLessThanOrEqual(36);
+  expect(Math.abs(roundRect.top - tokensRect.top)).toBeLessThan(8);
+});
