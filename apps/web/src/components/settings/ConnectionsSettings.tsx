@@ -260,6 +260,39 @@ function AccessSettings() {
   );
 }
 
+function compareSessionIssuedAt(
+  left: Pick<ServerClientSessionRecord, "issuedAt">,
+  right: Pick<ServerClientSessionRecord, "issuedAt">,
+): number {
+  const leftMs = Date.parse(left.issuedAt);
+  const rightMs = Date.parse(right.issuedAt);
+  if (Number.isFinite(leftMs) && Number.isFinite(rightMs)) {
+    return leftMs - rightMs;
+  }
+  if (Number.isFinite(leftMs)) return 1;
+  if (Number.isFinite(rightMs)) return -1;
+  return left.issuedAt.localeCompare(right.issuedAt);
+}
+
+/** Picks the arriving non-current session with the greatest `issuedAt`, independent of list order. */
+export function selectNewestArrivedNonCurrentSession(
+  arrived: ReadonlyArray<ServerClientSessionRecord>,
+  currentRecent: ServerClientSessionRecord | null,
+): ServerClientSessionRecord | null {
+  let newestArrived: ServerClientSessionRecord | null = null;
+  for (const session of arrived) {
+    if (session.current) continue;
+    if (newestArrived === null || compareSessionIssuedAt(session, newestArrived) > 0) {
+      newestArrived = session;
+    }
+  }
+  if (newestArrived === null) return currentRecent;
+  if (currentRecent === null || compareSessionIssuedAt(newestArrived, currentRecent) >= 0) {
+    return newestArrived;
+  }
+  return currentRecent;
+}
+
 function ConnectionsSettingsContent({
   view,
   accessEnvironmentId,
@@ -519,20 +552,20 @@ function ConnectionsSettingsContent({
       if (arrived.length > 0) {
         const nextKnown = new Set(pairedBloomState.knownSessionIds);
         const nextNewlyPaired = new Set(pairedBloomState.newlyPairedSessionIds);
-        let newestNonCurrent: ServerClientSessionRecord | null =
-          pairedBloomState.recentPairedSession;
         for (const session of arrived) {
           nextKnown.add(session.sessionId);
           if (!session.current) {
             nextNewlyPaired.add(session.sessionId);
-            newestNonCurrent = session;
           }
         }
         setPairedBloomState({
           initialized: true,
           knownSessionIds: nextKnown,
           newlyPairedSessionIds: nextNewlyPaired,
-          recentPairedSession: newestNonCurrent,
+          recentPairedSession: selectNewestArrivedNonCurrentSession(
+            arrived,
+            pairedBloomState.recentPairedSession,
+          ),
         });
       }
     }
