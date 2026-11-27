@@ -1,6 +1,6 @@
 import "~/index.css";
 import { expect, it, vi } from "vite-plus/test";
-import { render } from "../../../test/render";
+import { fakeTimers, render } from "../../../test/render";
 import { ThreadFindBar } from "./ThreadFindBar";
 import { TimelineMinimap } from "./TimelineMinimap";
 import type { TimelineMinimapItem } from "./timelineMinimapItems";
@@ -370,3 +370,80 @@ it("renders amber find heatmap dots on TimelineMinimap and shakes ThreadFindBar 
   expect(shakeSpy.mock.calls[0]?.[1]).toEqual({ duration: 220, easing: "ease-out" });
   expect(bar.dataset.threadFindShaking).toBe("true");
 });
+
+it.each(["pointercancel", "lostpointercapture"] as const)(
+  "cancels pending scrub on %s without committing navigation or swallowing the next click",
+  async (cancelEventType) => {
+    using _timers = fakeTimers();
+    const onScrub = vi.fn();
+    const onSelect = vi.fn();
+    const cancelRafSpy = vi.spyOn(window, "cancelAnimationFrame");
+
+    await using screen = await render(
+      <div data-assistant-citation-viewport="true" className="relative h-96 w-full">
+        <TimelineMinimap
+          hasPersistentGutter
+          hitStrip={{ left: 0, width: 24 }}
+          currentIndex={0}
+          atEnd={false}
+          items={MINIMAP_ITEMS}
+          stripMap={new Map()}
+          onWheel={() => {}}
+          onSelect={onSelect}
+          onScrub={onScrub}
+        />
+      </div>,
+      { router: false },
+    );
+
+    const rail = screen.container.querySelector<HTMLButtonElement>(
+      '[data-testid="timeline-minimap"] button[aria-label^="Jump to message"]',
+    )!;
+    const rect = rail.getBoundingClientRect();
+
+    // Start scrubbing and cancel before the queued rAF flushes.
+    rail.dispatchEvent(
+      new PointerEvent("pointerdown", {
+        bubbles: true,
+        button: 0,
+        buttons: 1,
+        pointerId: 11,
+        clientX: rect.left + 8,
+        clientY: rect.top + 2,
+      }),
+    );
+    rail.dispatchEvent(
+      new PointerEvent("pointermove", {
+        bubbles: true,
+        buttons: 1,
+        pointerId: 11,
+        clientX: rect.left + 8,
+        clientY: rect.bottom - 2,
+      }),
+    );
+    rail.dispatchEvent(
+      new PointerEvent(cancelEventType, {
+        bubbles: true,
+        pointerId: 11,
+        clientX: rect.left + 8,
+        clientY: rect.bottom - 2,
+      }),
+    );
+
+    expect(cancelRafSpy).toHaveBeenCalledOnce();
+    await vi.advanceTimersByTimeAsync(50);
+    expect(onScrub).not.toHaveBeenCalled();
+    expect(onSelect).not.toHaveBeenCalled();
+
+    // A fresh click without an intervening pointerdown must not be swallowed.
+    rail.dispatchEvent(
+      new MouseEvent("click", {
+        bubbles: true,
+        clientX: rect.left + 8,
+        clientY: rect.bottom - 2,
+      }),
+    );
+    expect(onSelect).toHaveBeenCalledTimes(1);
+    expect(onSelect).toHaveBeenCalledWith(MINIMAP_ITEMS[2]);
+  },
+);

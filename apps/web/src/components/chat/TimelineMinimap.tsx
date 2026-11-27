@@ -428,6 +428,7 @@ export function TimelineMinimap({
     if (event.button !== 0) return;
     event.preventDefault();
     clearHoverSettleTimer();
+    suppressNextClickRef.current = false;
     pressedOnStripRef.current = true;
     const railRect = event.currentTarget.getBoundingClientRect();
     const { discreteIndex, continuousIndex } = resolvePointerGeometry(event.clientY, railRect);
@@ -531,7 +532,10 @@ export function TimelineMinimap({
     });
   };
 
-  const finishRailPointerDrag = (event: PointerEvent<HTMLButtonElement>) => {
+  const endRailPointerDrag = (
+    event: PointerEvent<HTMLButtonElement>,
+    mode: "commit" | "cancel",
+  ) => {
     const drag = dragRef.current;
     if (!drag || drag.pointerId !== event.pointerId) return;
     dragRef.current = null;
@@ -549,14 +553,14 @@ export function TimelineMinimap({
     } catch {
       // Ignore synthetic capture release errors.
     }
-    if (drag.scrubbing) {
+    if (scrubRafRef.current !== null) {
+      cancelAnimationFrame(scrubRafRef.current);
+      scrubRafRef.current = null;
+    }
+    const pending = pendingScrubItemRef.current;
+    pendingScrubItemRef.current = null;
+    if (mode === "commit" && drag.scrubbing) {
       suppressNextClickRef.current = true;
-      if (scrubRafRef.current !== null) {
-        cancelAnimationFrame(scrubRafRef.current);
-        scrubRafRef.current = null;
-      }
-      const pending = pendingScrubItemRef.current;
-      pendingScrubItemRef.current = null;
       if (pending) {
         (onScrub ?? onSelect)(pending);
       }
@@ -654,9 +658,9 @@ export function TimelineMinimap({
             }}
             onPointerDown={handleRailPointerDown}
             onPointerMove={handleRailPointerMove}
-            onPointerUp={finishRailPointerDrag}
-            onPointerCancel={finishRailPointerDrag}
-            onLostPointerCapture={finishRailPointerDrag}
+            onPointerUp={(event) => endRailPointerDrag(event, "commit")}
+            onPointerCancel={(event) => endRailPointerDrag(event, "cancel")}
+            onLostPointerCapture={(event) => endRailPointerDrag(event, "cancel")}
             onPointerLeave={() => {
               if (dragRef.current) return;
               hidePreviewDirectDom();
