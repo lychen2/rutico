@@ -37,7 +37,7 @@ export function AssistantSelectionToolbar({
     sourceAnchor: AssistantCitationSourceAnchor;
   } | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
-  const toolbarRef = useRef<HTMLButtonElement>(null);
+  const citeButtonRef = useRef<HTMLButtonElement>(null);
   const actionsRef = useRef<ReturnType<typeof observeSelectionActions> | null>(null);
   const backgroundThread = use(BackgroundThreadContext);
   const gt = useGT();
@@ -157,7 +157,8 @@ export function AssistantSelectionToolbar({
     });
     actionsRef.current = actions;
     const focusActions = (event: KeyboardEvent) => {
-      const toolbar = toolbarRef.current;
+      const container = containerRef.current;
+      const citeButton = citeButtonRef.current;
       if (
         event.key !== "Tab" ||
         event.shiftKey ||
@@ -166,15 +167,15 @@ export function AssistantSelectionToolbar({
         event.metaKey ||
         event.isComposing ||
         event.defaultPrevented ||
-        !toolbar ||
-        toolbar.contains(event.target as Node)
+        !citeButton ||
+        (event.target instanceof Node && container?.contains(event.target))
       ) {
         return;
       }
-      if (toolbar.disabled) return;
+      if (citeButton.disabled) return;
       event.preventDefault();
       event.stopPropagation();
-      toolbar.focus({ preventScroll: true });
+      citeButton.focus({ preventScroll: true });
     };
     // Tab belongs to the foreground chat; a background timeline only follows its selection.
     if (!backgroundThread) document.addEventListener("keydown", focusActions, true);
@@ -220,7 +221,7 @@ export function AssistantSelectionToolbar({
         }}
       >
         <Button
-          ref={toolbarRef}
+          ref={citeButtonRef}
           type="button"
           size="xs"
           variant="ghost"
