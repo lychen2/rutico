@@ -336,3 +336,110 @@ it("focuses a reasoning level by its first letter without selecting it", async (
     .element(screen.getByRole("radio", { name: "High" }))
     .toHaveAttribute("aria-checked", "true");
 });
+
+it("commits effort slider drags once on release and ignores cancelled drags", async () => {
+  const onModelOptionsChange = vi.fn();
+  function TrackedColumn() {
+    const [options, setOptions] = useState<ReadonlyArray<ProviderOptionSelection>>([]);
+    const traits = traitsInput(options, (next) => {
+      onModelOptionsChange(next);
+      setOptions(next ?? []);
+    });
+    return (
+      <div className="w-80" data-model-picker-effort>
+        <ComposerEffortColumn traits={traits} />
+      </div>
+    );
+  }
+
+  await using screen = await render(<TrackedColumn />, { router: false });
+  const track = screen.container.querySelector<HTMLElement>("[data-cosmic-track]")!;
+  const bounds = track.getBoundingClientRect();
+  const y = bounds.top + bounds.height / 2;
+
+  // Drag from Medium across High and all the way to Low: preview updates without committing mid-drag.
+  track.dispatchEvent(
+    new PointerEvent("pointerdown", {
+      bubbles: true,
+      button: 0,
+      isPrimary: true,
+      pointerId: 1,
+      clientX: bounds.left + bounds.width * 0.5,
+      clientY: y,
+    }),
+  );
+  track.dispatchEvent(
+    new PointerEvent("pointermove", {
+      bubbles: true,
+      button: 0,
+      isPrimary: true,
+      pointerId: 1,
+      clientX: bounds.left + bounds.width * 0.9,
+      clientY: y,
+    }),
+  );
+  expect(onModelOptionsChange).not.toHaveBeenCalled();
+  await expect
+    .element(screen.container.querySelector<HTMLElement>("[data-cosmic-level-heading]"))
+    .toHaveTextContent("Thinking · High");
+
+  track.dispatchEvent(
+    new PointerEvent("pointermove", {
+      bubbles: true,
+      button: 0,
+      isPrimary: true,
+      pointerId: 1,
+      clientX: bounds.left + 8,
+      clientY: y,
+    }),
+  );
+  expect(onModelOptionsChange).not.toHaveBeenCalled();
+
+  track.dispatchEvent(
+    new PointerEvent("pointerup", {
+      bubbles: true,
+      button: 0,
+      isPrimary: true,
+      pointerId: 1,
+      clientX: bounds.left + 8,
+      clientY: y,
+    }),
+  );
+  expect(onModelOptionsChange).toHaveBeenCalledOnce();
+  await expect
+    .element(screen.getByRole("radio", { name: "Low" }))
+    .toHaveAttribute("aria-checked", "true");
+
+  // Cancelled drag reverts preview without emitting an extra commit.
+  track.dispatchEvent(
+    new PointerEvent("pointerdown", {
+      bubbles: true,
+      button: 0,
+      isPrimary: true,
+      pointerId: 2,
+      clientX: bounds.left + 8,
+      clientY: y,
+    }),
+  );
+  track.dispatchEvent(
+    new PointerEvent("pointermove", {
+      bubbles: true,
+      button: 0,
+      isPrimary: true,
+      pointerId: 2,
+      clientX: bounds.left + bounds.width * 0.9,
+      clientY: y,
+    }),
+  );
+  track.dispatchEvent(
+    new PointerEvent("pointercancel", {
+      bubbles: true,
+      isPrimary: true,
+      pointerId: 2,
+    }),
+  );
+  expect(onModelOptionsChange).toHaveBeenCalledOnce();
+  await expect
+    .element(screen.getByRole("radio", { name: "Low" }))
+    .toHaveAttribute("aria-checked", "true");
+});

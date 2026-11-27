@@ -12,11 +12,48 @@ import {
 } from "@t3tools/provider-core/server/nativeProtocolLogging";
 import type * as AcpSessionRuntime from "./AcpSessionRuntime.ts";
 
+const MAX_LOGGED_MCP_SERVERS = 16;
+
+function summarizeMcpServers(payload: unknown) {
+  if (typeof payload !== "object" || payload === null || Array.isArray(payload)) {
+    return undefined;
+  }
+  const raw = (payload as { readonly mcpServers?: unknown }).mcpServers;
+  if (!Array.isArray(raw)) return undefined;
+  const servers = raw.slice(0, MAX_LOGGED_MCP_SERVERS).map((entry) => {
+    if (typeof entry !== "object" || entry === null || Array.isArray(entry)) {
+      return { name: "unknown", transport: "unknown" };
+    }
+    const record = entry as {
+      readonly name?: unknown;
+      readonly type?: unknown;
+      readonly command?: unknown;
+      readonly url?: unknown;
+    };
+    const name =
+      typeof record.name === "string" && record.name.length > 0
+        ? record.name.slice(0, 64)
+        : "unknown";
+    const transport =
+      typeof record.type === "string" && record.type.length > 0
+        ? record.type.slice(0, 32)
+        : typeof record.command === "string"
+          ? "stdio"
+          : typeof record.url === "string"
+            ? "http"
+            : "unknown";
+    return { name, transport };
+  });
+  return { count: raw.length, servers };
+}
+
 function formatRequestLogPayload(event: AcpSessionRuntime.AcpSessionRequestLogEvent) {
+  const mcpServers = summarizeMcpServers(event.payload);
   return {
     method: structuralProtocolMethod(event.method),
     status: event.status,
     request: summarizeNativeProtocolPayload(event.payload),
+    ...(mcpServers !== undefined ? { mcpServers } : {}),
     ...(event.result !== undefined ? { result: summarizeNativeProtocolPayload(event.result) } : {}),
     ...(event.cause !== undefined
       ? {

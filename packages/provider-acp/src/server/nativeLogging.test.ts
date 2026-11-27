@@ -49,6 +49,56 @@ nodeServicesIt("ACP native logging", (it) => {
     }),
   );
 
+  it.effect("summarizes mcpServers count, names, and transports without logging secrets", () =>
+    Effect.gen(function* () {
+      const records: Array<unknown> = [];
+      const nativeEventLogger: ProviderEventLoggers.EventNdjsonLogger = {
+        filePath: "/tmp/provider-native.ndjson",
+        write: (event) => Effect.sync(() => void records.push(event)),
+        close: () => Effect.void,
+      };
+      const makeLogger = yield* makeAcpNativeLoggerFactory();
+      const logger = makeLogger({
+        nativeEventLogger,
+        provider: ProviderDriverKind.make("antigravity"),
+        threadId: ThreadId.make("thread-mcp"),
+      });
+      const requestLogger = logger.requestLogger;
+      assert.exists(requestLogger);
+      if (!requestLogger) return;
+
+      const bearerSecret = "Bearer super-secret-mcp-token";
+      yield* requestLogger({
+        method: "session/new",
+        payload: {
+          cwd: "/workspace",
+          mcpServers: [
+            {
+              name: "t3-code",
+              command: "/usr/local/bin/t3",
+              args: ["acp-mcp-bridge"],
+              env: [{ name: "T3_ACP_MCP_AUTHORIZATION", value: bearerSecret }],
+            },
+            {
+              type: "http",
+              name: "remote-mcp",
+              url: "http://127.0.0.1:43125/mcp",
+              headers: [{ name: "Authorization", value: bearerSecret }],
+            },
+          ],
+        },
+        status: "succeeded",
+      });
+      const serialized = encodeUnknownJson(records);
+      assert.notInclude(serialized, bearerSecret);
+      assert.notInclude(serialized, "43125");
+      assert.include(
+        serialized,
+        '"mcpServers":{"count":2,"servers":[{"name":"t3-code","transport":"stdio"},{"name":"remote-mcp","transport":"http"}]}',
+      );
+    }),
+  );
+
   it.effect("preserves native writer interruption", () =>
     Effect.gen(function* () {
       const makeLogger = yield* makeAcpNativeLoggerFactory();

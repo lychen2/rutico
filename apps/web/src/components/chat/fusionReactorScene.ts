@@ -96,6 +96,24 @@ export function reactorStoryAtRatio(ratio: number): ReactorStoryBeat {
 const BLOOM_SPRITE_SIZE = 128;
 let bloomSprites: HTMLCanvasElement[] | null = null;
 
+interface SceneGradientCache {
+  bgKey: string;
+  bgGradient: CanvasGradient | null;
+  jetWidth: number;
+  jetGradient: CanvasGradient | null;
+}
+
+const gradientCacheByCtx = new WeakMap<CanvasRenderingContext2D, SceneGradientCache>();
+
+function getGradientCache(ctx: CanvasRenderingContext2D): SceneGradientCache {
+  let cache = gradientCacheByCtx.get(ctx);
+  if (!cache) {
+    cache = { bgKey: "", bgGradient: null, jetWidth: -1, jetGradient: null };
+    gradientCacheByCtx.set(ctx, cache);
+  }
+  return cache;
+}
+
 function getBloomSprites(): readonly HTMLCanvasElement[] {
   if (bloomSprites) return bloomSprites;
   bloomSprites = ACCENTS.map((accent, tier) => {
@@ -135,12 +153,18 @@ export function drawReactorScene(
   const c0 = rgbCss(sampleRgb(BG_LEFT, r));
   const c1 = rgbCss(sampleRgb(BG_CENTER, r));
 
-  // Background containment chamber gradient
-  const bg = ctx.createLinearGradient(0, 0, w, 0);
-  bg.addColorStop(0, c0);
-  bg.addColorStop(0.5, c1);
-  bg.addColorStop(1, c0);
-  ctx.fillStyle = bg;
+  // Background containment chamber gradient (cached across settled frames)
+  const gradCache = getGradientCache(ctx);
+  const bgKey = `${w}:${c0}:${c1}`;
+  if (gradCache.bgKey !== bgKey || !gradCache.bgGradient) {
+    const bg = ctx.createLinearGradient(0, 0, w, 0);
+    bg.addColorStop(0, c0);
+    bg.addColorStop(0.5, c1);
+    bg.addColorStop(1, c0);
+    gradCache.bgKey = bgKey;
+    gradCache.bgGradient = bg;
+  }
+  ctx.fillStyle = gradCache.bgGradient;
   ctx.fillRect(0, 0, w, h);
 
   // Subtle magnetic flux grid lines on chamber floor
@@ -213,13 +237,17 @@ export function drawReactorScene(
     ctx.globalAlpha = pulsarAlpha;
     ctx.translate(kx, cy);
     ctx.rotate(-0.18);
-    const jet = ctx.createLinearGradient(-w * 0.6, 0, w * 0.6, 0);
-    jet.addColorStop(0, "transparent");
-    jet.addColorStop(0.35, "#00F0FF");
-    jet.addColorStop(0.5, "#FFFFFF");
-    jet.addColorStop(0.65, "#FF47E8");
-    jet.addColorStop(1, "transparent");
-    ctx.fillStyle = jet;
+    if (gradCache.jetWidth !== w || !gradCache.jetGradient) {
+      const jet = ctx.createLinearGradient(-w * 0.6, 0, w * 0.6, 0);
+      jet.addColorStop(0, "transparent");
+      jet.addColorStop(0.35, "#00F0FF");
+      jet.addColorStop(0.5, "#FFFFFF");
+      jet.addColorStop(0.65, "#FF47E8");
+      jet.addColorStop(1, "transparent");
+      gradCache.jetWidth = w;
+      gradCache.jetGradient = jet;
+    }
+    ctx.fillStyle = gradCache.jetGradient;
     ctx.fillRect(-w * 0.6, -3.5, w * 1.2, 7);
     ctx.restore();
 

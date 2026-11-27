@@ -24,6 +24,7 @@ const MINIMAP_HOVER_VELOCITY_THRESHOLD_PX_PER_MS = 0.1;
 const MINIMAP_HOVER_SETTLE_DELAY_MS = 90;
 const MINIMAP_SCRUB_THRESHOLD_PX = 3;
 const MINIMAP_BASE_STRIP_SCALE = 0.333;
+const MINIMAP_FISHEYE_RADIUS = 3.2;
 
 let activeArrivalHighlight: { element: HTMLElement; animation: Animation } | null = null;
 
@@ -154,7 +155,7 @@ function readEventTimestamp(timeStamp: number): number {
 }
 
 function computeFisheyeScale(distance: number, scrubbing: boolean): number {
-  if (distance >= 3.2) return MINIMAP_BASE_STRIP_SCALE;
+  if (distance >= MINIMAP_FISHEYE_RADIUS) return MINIMAP_BASE_STRIP_SCALE;
   const peak = scrubbing ? 1.1 : 1;
   const bell = Math.exp(-0.58 * distance * distance);
   return MINIMAP_BASE_STRIP_SCALE + (peak - MINIMAP_BASE_STRIP_SCALE) * bell;
@@ -250,11 +251,21 @@ export function TimelineMinimap({
     }
   };
 
+  const touchedStripsRef = useRef<Set<number>>(new Set());
+  const cachedPreviewRef = useRef<{
+    item: TimelineMinimapItem;
+    preview: ReturnType<typeof resolveTimelineMinimapPreview>;
+  } | null>(null);
+
   const resetStripsDirectDom = () => {
-    for (const strip of stripNodesRef.current.values()) {
-      strip.style.transform = `translateY(-50%) scaleX(${MINIMAP_BASE_STRIP_SCALE})`;
+    const baseTransform = `translateY(-50%) scaleX(${MINIMAP_BASE_STRIP_SCALE})`;
+    for (const stripIndex of touchedStripsRef.current) {
+      const strip = stripNodesRef.current.get(stripIndex);
+      if (!strip) continue;
+      strip.style.transform = baseTransform;
       strip.dataset.minimapActive = "false";
     }
+    touchedStripsRef.current.clear();
   };
 
   const hidePreviewDirectDom = () => {
@@ -291,17 +302,54 @@ export function TimelineMinimap({
     const item = items[discreteIndex];
     if (!item) return;
 
+    const prevDiscreteIndex = activeIndexRef.current;
     activeIndexRef.current = discreteIndex;
-    for (const [stripIndex, strip] of stripNodesRef.current.entries()) {
+
+    // Only touch strips inside the old or new fisheye neighborhood instead of every turn strip.
+    const minIndex = Math.max(0, Math.floor(continuousIndex - MINIMAP_FISHEYE_RADIUS));
+    const maxIndex = Math.min(
+      items.length - 1,
+      Math.ceil(continuousIndex + MINIMAP_FISHEYE_RADIUS),
+    );
+    const baseTransform = `translateY(-50%) scaleX(${MINIMAP_BASE_STRIP_SCALE})`;
+    const nextTouched = new Set<number>();
+
+    for (const stripIndex of touchedStripsRef.current) {
+      if (stripIndex < minIndex || stripIndex > maxIndex) {
+        const strip = stripNodesRef.current.get(stripIndex);
+        if (strip) {
+          strip.style.transform = baseTransform;
+          strip.dataset.minimapActive = "false";
+        }
+      }
+    }
+
+    for (let stripIndex = minIndex; stripIndex <= maxIndex; stripIndex += 1) {
+      const strip = stripNodesRef.current.get(stripIndex);
+      if (!strip) continue;
       const distance = Math.abs(stripIndex - continuousIndex);
       const scale = computeFisheyeScale(distance, options.scrubbing);
       strip.style.transform = `translateY(-50%) scaleX(${scale.toFixed(3)})`;
       strip.dataset.minimapActive = stripIndex === discreteIndex ? "true" : "false";
+      if (distance < MINIMAP_FISHEYE_RADIUS || stripIndex === discreteIndex) {
+        nextTouched.add(stripIndex);
+      }
     }
+    touchedStripsRef.current = nextTouched;
 
-    const preview = resolveTimelineMinimapPreview(item);
+    // Defer Markdown preview parsing during fast sweeps when the card is hidden.
+    if (!options.showCard && prevDiscreteIndex === discreteIndex) return;
+    let preview: ReturnType<typeof resolveTimelineMinimapPreview>;
+    if (cachedPreviewRef.current?.item === item) {
+      preview = cachedPreviewRef.current.preview;
+    } else if (options.showCard) {
+      preview = resolveTimelineMinimapPreview(item);
+      cachedPreviewRef.current = { item, preview };
+    } else {
+      preview = null;
+    }
     const userLabel = preview?.userText ?? gt("User message");
-    if (railButtonRef.current) {
+    if (railButtonRef.current && options.showCard) {
       railButtonRef.current.setAttribute(
         "aria-label",
         gt("Jump to message: {text}", { text: userLabel }),

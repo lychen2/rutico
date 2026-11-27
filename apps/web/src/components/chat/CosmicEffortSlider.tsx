@@ -17,15 +17,87 @@ const TRACK_H = 50;
 const PAD = 28;
 const LENS_W = 50;
 const LENS_H = 44;
+const LENS_SHADOW_PAD = 18;
+const LENS_SPRITE_SCALE = 2;
 const SNAP = 0.032;
 // Idle open-popover repaint cadence (~24fps keeps fluid motion silky while staying light on GPU).
 const IDLE_FRAME_MS = 1000 / 24;
-// Auto-sleep the canvas loop after 2s of settled idle to drop idle GPU/CPU cost to zero.
-const IDLE_SLEEP_MS = 2000;
+// Auto-sleep the canvas loop once settled so an open popover drops idle GPU/CPU cost to zero quickly.
+const IDLE_SLEEP_MS = 900;
+
+interface LensSprites {
+  readonly shadowIdle: HTMLCanvasElement;
+  readonly shadowDrag: HTMLCanvasElement;
+  readonly gloss: HTMLCanvasElement;
+}
+
+let cachedLensSprites: LensSprites | null = null;
+
+function createLensShadowSprite(blur: number): HTMLCanvasElement {
+  const cssW = LENS_W + LENS_SHADOW_PAD * 2;
+  const cssH = LENS_H + LENS_SHADOW_PAD * 2;
+  const canvas = document.createElement("canvas");
+  canvas.width = cssW * LENS_SPRITE_SCALE;
+  canvas.height = cssH * LENS_SPRITE_SCALE;
+  const gctx = canvas.getContext("2d");
+  if (!gctx) return canvas;
+  gctx.scale(LENS_SPRITE_SCALE, LENS_SPRITE_SCALE);
+  gctx.shadowColor = "rgba(0,0,0,0.42)";
+  gctx.shadowBlur = blur;
+  gctx.shadowOffsetY = 2.5;
+  gctx.fillStyle = "rgba(0,0,0,0.18)";
+  gctx.beginPath();
+  gctx.roundRect(LENS_SHADOW_PAD, LENS_SHADOW_PAD, LENS_W, LENS_H, LENS_H / 2);
+  gctx.fill();
+  return canvas;
+}
+
+function createLensGlossSprite(): HTMLCanvasElement {
+  const canvas = document.createElement("canvas");
+  canvas.width = LENS_W * LENS_SPRITE_SCALE;
+  canvas.height = LENS_H * LENS_SPRITE_SCALE;
+  const gctx = canvas.getContext("2d");
+  if (!gctx) return canvas;
+  gctx.scale(LENS_SPRITE_SCALE, LENS_SPRITE_SCALE);
+  const kr = LENS_H / 2;
+  gctx.beginPath();
+  gctx.roundRect(0, 0, LENS_W, LENS_H, kr);
+  gctx.clip();
+  const gg = gctx.createLinearGradient(0, 0, 0, LENS_H);
+  gg.addColorStop(0, "rgba(255,255,255,0.34)");
+  gg.addColorStop(0.2, "rgba(255,255,255,0.02)");
+  gg.addColorStop(0.84, "rgba(255,255,255,0.01)");
+  gg.addColorStop(1, "rgba(255,255,255,0.22)");
+  gctx.fillStyle = gg;
+  gctx.fillRect(0, 0, LENS_W, LENS_H);
+  gctx.fillStyle = "rgba(255,255,255,0.68)";
+  gctx.beginPath();
+  gctx.ellipse(
+    LENS_W / 2 - 2,
+    LENS_H / 2 - LENS_H * 0.36,
+    LENS_W * 0.28,
+    LENS_H * 0.06,
+    0,
+    0,
+    Math.PI * 2,
+  );
+  gctx.fill();
+  return canvas;
+}
+
+function getLensSprites(): LensSprites {
+  if (!cachedLensSprites) {
+    cachedLensSprites = {
+      shadowIdle: createLensShadowSprite(9),
+      shadowDrag: createLensShadowSprite(14),
+      gloss: createLensGlossSprite(),
+    };
+  }
+  return cachedLensSprites;
+}
 
 function applyShiftJuice(
   st: {
-    hitstop: number;
     flash: number;
     shake: number;
     recoil: number;
@@ -37,14 +109,12 @@ function applyShiftJuice(
 ): void {
   const up = nextIdx > prevIdx;
   if (up) {
-    st.hitstop = 0.028;
-    st.flash = 0.36;
-    st.shake = 0.95;
-    st.recoil = -5.5;
+    st.flash = 0.32;
+    st.shake = 0.85;
+    st.recoil = -4.5;
     st.chroma = 1;
     st.shock = 1;
   } else {
-    st.hitstop = 0;
     st.flash = 0.1;
     st.shake = 0.22;
     st.recoil = 2.2;
@@ -81,7 +151,15 @@ export function CosmicEffortSlider(props: {
   const targetRatio = count <= 1 ? 0 : selectedIndex / (count - 1);
 
   const pointerId = useRef<number | null>(null);
+  const committedOnUpRef = useRef(false);
+  const dragGeometryRef = useRef<{
+    left: number;
+    width: number;
+    clientWidth: number;
+  } | null>(null);
+  const layoutWidthRef = useRef(0);
   const [dragging, setDragging] = useState(false);
+  const [previewIdx, setPreviewIdx] = useState<number | null>(null);
   const [dragStory, setDragStory] = useState<ReactorStoryBeat | null>(null);
 
   const stateRef = useRef({
@@ -90,7 +168,6 @@ export function CosmicEffortSlider(props: {
     dragging: false,
     lastIdx: selectedIndex,
     t: 2.4,
-    hitstop: 0,
     flash: 0,
     shake: 0,
     recoil: 0,
@@ -132,9 +209,11 @@ export function CosmicEffortSlider(props: {
 
     const motion = window.matchMedia("(prefers-reduced-motion: reduce)");
     const well = wellRef.current;
+    const lensSprites = getLensSprites();
 
     let raf = 0;
     let lastTs = performance.now();
+    layoutWidthRef.current = wrap.clientWidth;
 
     const drawFrame = (now: number) => {
       const reducedMotion = motion.matches;
@@ -144,8 +223,8 @@ export function CosmicEffortSlider(props: {
         return;
       }
 
-      // Use untransformed layout clientWidth so CSS scale() popover open animations never resize/clear the canvas.
-      const layoutW = wrap.clientWidth;
+      // Use ResizeObserver-cached layout width so rAF frames never trigger sync layout reads.
+      const layoutW = layoutWidthRef.current;
       if (layoutW < 2) {
         raf = 0;
         return;
@@ -154,7 +233,6 @@ export function CosmicEffortSlider(props: {
       const st = stateRef.current;
       const activeMotion =
         st.dragging ||
-        st.hitstop > 0 ||
         st.flash > 0.01 ||
         st.shake > 0.02 ||
         Math.abs(st.recoil) > 0.08 ||
@@ -165,7 +243,7 @@ export function CosmicEffortSlider(props: {
       if (activeMotion) {
         st.lastActivityMs = now;
       } else if (!reducedMotion && st.hasPainted && now - st.lastActivityMs >= IDLE_SLEEP_MS) {
-        // Settled & idle for 2s: stop scheduling frames until the user interacts again.
+        // Settled & idle: stop scheduling frames until the user interacts again.
         raf = 0;
         canvas.dataset.renderState = "sleeping";
         return;
@@ -202,17 +280,15 @@ export function CosmicEffortSlider(props: {
 
       if (reducedMotion) {
         st.val = st.target;
-        st.hitstop = 0;
         st.flash = 0;
         st.shake = 0;
         st.recoil = 0;
         st.chroma = 0;
         st.shock = 0;
-      } else if (st.hitstop > 0) {
-        st.hitstop = Math.max(0, st.hitstop - dt);
       } else {
         st.t += dt;
-        st.val += (st.target - st.val) * (st.dragging ? 0.45 : 0.24);
+        const followRate = st.dragging ? 28 : 16;
+        st.val += (st.target - st.val) * (1 - Math.exp(-followRate * dt));
         if (Math.abs(st.target - st.val) < 0.0005) st.val = st.target;
         st.flash = Math.max(0, st.flash - dt * 4.6);
         st.shake = Math.max(0, st.shake - dt * 6.4);
@@ -261,83 +337,63 @@ export function CosmicEffortSlider(props: {
       ctx.clearRect(0, 0, cw, ch);
       ctx.drawImage(off, 0, 0);
 
-      // Crystal-clear Liquid Glass capsule lens (thin rim highlight keeps the Starship sharp).
+      // Crystal-clear Liquid Glass capsule lens using pre-baked shadow and gloss sprites.
       ctx.save();
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
       const kw = LENS_W + st.chroma * 3;
       const kh = LENS_H - st.chroma * 1.4;
       const kr = kh / 2;
+      const lensX = kx - kw / 2;
+      const lensY = ky - kh / 2;
 
-      ctx.save();
-      ctx.shadowColor = "rgba(0,0,0,0.42)";
-      ctx.shadowBlur = st.dragging ? 14 : 9;
-      ctx.shadowOffsetY = 2.5;
-      ctx.fillStyle = "rgba(0,0,0,0.18)";
-      ctx.beginPath();
-      ctx.roundRect(kx - kw / 2, ky - kh / 2, kw, kh, kr);
-      ctx.fill();
-      ctx.restore();
+      const shadowSprite = st.dragging ? lensSprites.shadowDrag : lensSprites.shadowIdle;
+      const padX = (LENS_SHADOW_PAD * kw) / LENS_W;
+      const padY = (LENS_SHADOW_PAD * kh) / LENS_H;
+      ctx.drawImage(shadowSprite, lensX - padX, lensY - padY, kw + padX * 2, kh + padY * 2);
 
       ctx.save();
       ctx.beginPath();
-      ctx.roundRect(kx - kw / 2, ky - kh / 2, kw, kh, kr);
+      ctx.roundRect(lensX, lensY, kw, kh, kr);
       ctx.clip();
       const mag = st.dragging ? 1.32 : 1.22;
       const sw = (kw / mag) * dpr;
       const sh = (kh / mag) * dpr;
       const sx = Math.max(0, Math.min(cw - sw, kx * dpr - sw / 2));
       const sy = Math.max(0, Math.min(ch - sh, ky * dpr - sh / 2));
-      ctx.drawImage(off, sx, sy, sw, sh, kx - kw / 2, ky - kh / 2, kw, kh);
+      ctx.drawImage(off, sx, sy, sw, sh, lensX, lensY, kw, kh);
 
-      const disp = 1.2 + st.chroma * 2.6;
-      ctx.globalCompositeOperation = "screen";
-      ctx.globalAlpha = 0.18 + st.chroma * 0.25;
-      ctx.drawImage(
-        off,
-        Math.max(0, sx - disp * dpr),
-        sy,
-        sw,
-        sh,
-        kx - kw / 2 - disp,
-        ky - kh / 2,
-        kw,
-        kh,
-      );
-      ctx.drawImage(
-        off,
-        Math.min(cw - sw, sx + disp * dpr),
-        sy,
-        sw,
-        sh,
-        kx - kw / 2 + disp,
-        ky - kh / 2,
-        kw,
-        kh,
-      );
-      ctx.globalCompositeOperation = "source-over";
-      ctx.globalAlpha = 1;
+      // Only run chromatic dispersion screen passes during the brief shift-juice burst.
+      if (st.chroma > 0.05) {
+        const disp = 1.2 + st.chroma * 2.6;
+        ctx.globalCompositeOperation = "screen";
+        ctx.globalAlpha = 0.18 + st.chroma * 0.25;
+        ctx.drawImage(off, Math.max(0, sx - disp * dpr), sy, sw, sh, lensX - disp, lensY, kw, kh);
+        ctx.drawImage(
+          off,
+          Math.min(cw - sw, sx + disp * dpr),
+          sy,
+          sw,
+          sh,
+          lensX + disp,
+          lensY,
+          kw,
+          kh,
+        );
+        ctx.globalCompositeOperation = "source-over";
+        ctx.globalAlpha = 1;
+      }
 
-      const gg = ctx.createLinearGradient(kx, ky - kh / 2, kx, ky + kh / 2);
-      gg.addColorStop(0, "rgba(255,255,255,0.34)");
-      gg.addColorStop(0.2, "rgba(255,255,255,0.02)");
-      gg.addColorStop(0.84, "rgba(255,255,255,0.01)");
-      gg.addColorStop(1, "rgba(255,255,255,0.22)");
-      ctx.fillStyle = gg;
-      ctx.fillRect(kx - kw / 2, ky - kh / 2, kw, kh);
-      ctx.fillStyle = "rgba(255,255,255,0.68)";
-      ctx.beginPath();
-      ctx.ellipse(kx - 2, ky - kh * 0.36, kw * 0.28, kh * 0.06, 0, 0, Math.PI * 2);
-      ctx.fill();
+      ctx.drawImage(lensSprites.gloss, lensX, lensY, kw, kh);
       ctx.restore();
 
-      const rg = ctx.createLinearGradient(kx, ky - kh / 2, kx, ky + kh / 2);
+      const rg = ctx.createLinearGradient(kx, lensY, kx, lensY + kh);
       rg.addColorStop(0, "rgba(255,255,255,0.92)");
       rg.addColorStop(0.5, "rgba(255,255,255,0.28)");
       rg.addColorStop(1, sampleReactorAccent(st.val));
       ctx.strokeStyle = rg;
       ctx.lineWidth = st.dragging || st.chroma > 0.2 ? 1.8 : 1.3;
       ctx.beginPath();
-      ctx.roundRect(kx - kw / 2 + 0.65, ky - kh / 2 + 0.65, kw - 1.3, kh - 1.3, kr);
+      ctx.roundRect(lensX + 0.65, lensY + 0.65, kw - 1.3, kh - 1.3, kr);
       ctx.stroke();
       ctx.restore();
 
@@ -347,6 +403,9 @@ export function CosmicEffortSlider(props: {
     };
 
     const wake = () => {
+      if (layoutWidthRef.current < 2) {
+        layoutWidthRef.current = wrap.clientWidth;
+      }
       const now = performance.now();
       stateRef.current.lastActivityMs = now;
       if (!raf) {
@@ -355,13 +414,18 @@ export function CosmicEffortSlider(props: {
       }
     };
 
+    const onResize = () => {
+      layoutWidthRef.current = wrap.clientWidth;
+      wake();
+    };
+
     const onVisibilityChange = () => {
       if (!document.hidden) wake();
     };
 
     wakeLoopRef.current = wake;
     wake();
-    const stopObserve = observeResize(wrap, wake);
+    const stopObserve = observeResize(wrap, onResize);
     motion.addEventListener("change", wake);
     document.addEventListener("visibilitychange", onVisibilityChange);
 
@@ -375,32 +439,54 @@ export function CosmicEffortSlider(props: {
     };
   }, [count]);
 
-  const updatePointer = (clientX: number, track: HTMLDivElement) => {
-    const rect = track.getBoundingClientRect();
-    if (rect.width <= 0 || count <= 1) return;
-    const pointerX = ((clientX - rect.left) / rect.width) * track.clientWidth;
-    const raw = Math.max(
-      0,
-      Math.min(1, (pointerX - PAD) / Math.max(1, track.clientWidth - PAD * 2)),
-    );
+  const updateDragPreview = (clientX: number, track: HTMLDivElement): number | null => {
+    const geom = dragGeometryRef.current;
+    const left = geom ? geom.left : track.getBoundingClientRect().left;
+    const width = geom ? geom.width : track.getBoundingClientRect().width;
+    const clientWidth = geom ? geom.clientWidth : track.clientWidth;
+    if (width <= 0 || count <= 1) return null;
+    const pointerX = ((clientX - left) / width) * clientWidth;
+    const raw = Math.max(0, Math.min(1, (pointerX - PAD) / Math.max(1, clientWidth - PAD * 2)));
     const idx = Math.round(raw * (count - 1));
     const detent = idx / (count - 1);
     const ratio = Math.abs(raw - detent) < SNAP ? detent : raw;
     const state = stateRef.current;
     state.target = ratio;
-    setDragStory(reactorStoryAtRatio(ratio));
+    const nextStory = reactorStoryAtRatio(ratio);
+    setDragStory((prev) => (prev === nextStory ? prev : nextStory));
     if (idx !== state.lastIdx) {
       applyShiftJuice(state, idx, state.lastIdx);
       state.lastIdx = idx;
-      const option = options[idx];
+      setPreviewIdx(idx);
+    }
+    return idx;
+  };
+
+  const finishDrag = (commit: boolean, finalIdx?: number | null) => {
+    pointerId.current = null;
+    dragGeometryRef.current = null;
+    const state = stateRef.current;
+    state.dragging = false;
+    const targetIdx = commit ? (finalIdx ?? state.lastIdx) : selectedIndex;
+    state.lastIdx = targetIdx;
+    state.target = count <= 1 ? 0 : targetIdx / (count - 1);
+    setDragging(false);
+    setPreviewIdx(null);
+    setDragStory(null);
+    wakeLoopRef.current?.();
+    if (commit && targetIdx !== selectedIndex) {
+      const option = options[targetIdx];
       if (option) onChange(option.id);
     }
   };
 
-  const activeOpt = foundIndex >= 0 ? options[foundIndex] : undefined;
-  const activeColor = sampleReactorAccent(targetRatio);
+  const displayIdx = previewIdx ?? selectedIndex;
+  const displayRatio = count <= 1 ? 0 : displayIdx / (count - 1);
+  const activeOpt =
+    previewIdx !== null ? options[previewIdx] : foundIndex >= 0 ? options[foundIndex] : undefined;
+  const activeColor = sampleReactorAccent(displayRatio);
   const levelLabel = activeOpt?.label ?? props.label;
-  const storyKey = dragStory ?? reactorStoryAtRatio(targetRatio);
+  const storyKey = dragStory ?? reactorStoryAtRatio(displayRatio);
 
   return (
     <div
@@ -445,33 +531,45 @@ export function CosmicEffortSlider(props: {
             )}
             onPointerDown={(event) => {
               if (disabled || !event.isPrimary || event.button !== 0) return;
-              event.currentTarget.setPointerCapture(event.pointerId);
+              try {
+                event.currentTarget.setPointerCapture(event.pointerId);
+              } catch {
+                // Synthetic pointer events in tests may not be capturable.
+              }
+              const rect = event.currentTarget.getBoundingClientRect();
+              dragGeometryRef.current = {
+                left: rect.left,
+                width: rect.width,
+                clientWidth: event.currentTarget.clientWidth,
+              };
               pointerId.current = event.pointerId;
+              committedOnUpRef.current = false;
               stateRef.current.dragging = true;
               stateRef.current.lastIdx = selectedIndex;
               setDragging(true);
-              updatePointer(event.clientX, event.currentTarget);
+              setPreviewIdx(selectedIndex);
+              updateDragPreview(event.clientX, event.currentTarget);
               wakeLoopRef.current?.();
             }}
             onPointerMove={(event) => {
               if (!disabled && pointerId.current === event.pointerId) {
-                updatePointer(event.clientX, event.currentTarget);
+                updateDragPreview(event.clientX, event.currentTarget);
               }
             }}
             onPointerUp={(event) => {
               if (!disabled && pointerId.current === event.pointerId) {
-                updatePointer(event.clientX, event.currentTarget);
+                const finalIdx = updateDragPreview(event.clientX, event.currentTarget);
+                committedOnUpRef.current = true;
+                finishDrag(true, finalIdx);
               }
+            }}
+            onPointerCancel={(event) => {
+              if (pointerId.current !== event.pointerId) return;
+              finishDrag(false);
             }}
             onLostPointerCapture={(event) => {
               if (pointerId.current !== event.pointerId) return;
-              pointerId.current = null;
-              const state = stateRef.current;
-              state.dragging = false;
-              state.target = state.lastIdx / (count - 1);
-              setDragging(false);
-              setDragStory(null);
-              wakeLoopRef.current?.();
+              finishDrag(committedOnUpRef.current);
             }}
           >
             <canvas

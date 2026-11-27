@@ -2596,6 +2596,136 @@ describe("AntigravityAdapterV2 thin-client editor mode", () => {
         assert.notInclude(sent, "<user_request>");
       }).pipe(Effect.provide(layerSession)),
   );
+
+  it.effect(
+    "passes stdio t3-code MCP bridge on session/new and cold session/resume when agy 1.5.18 advertises no mcpCapabilities",
+    () =>
+      Effect.gen(function* () {
+        const childProcessSpawner = yield* ChildProcessSpawner.ChildProcessSpawner;
+        const fileSystem = yield* FileSystem.FileSystem;
+        const path = yield* Path.Path;
+        const crypto = yield* SecureRandom.SecureRandom;
+        const mcpSessions = yield* McpProviderSessions.McpProviderSessions;
+        const mockAgentPath = yield* path.fromFileUrl(
+          new URL("../../../scripts/acp-mock-agent.ts", import.meta.url),
+        );
+        const logs = yield* fileSystem.makeTempDirectoryScoped({
+          prefix: "t3-antigravity-stdio-log-",
+        });
+        const requestLog = path.join(logs, "requests.ndjson");
+        const instanceId = ProviderInstanceId.make("antigravity-stdio-mcp-test");
+        const threadId = ThreadId.make("thread-antigravity-stdio-mcp");
+        const endpoint = "http://127.0.0.1:43126/mcp";
+        const authorizationHeader = "Bearer antigravity-stdio-token";
+        yield* mcpSessions.set({
+          environmentId: EnvironmentId.make("environment-antigravity-stdio-mcp"),
+          threadId,
+          providerSessionId: "mcp-session-antigravity-stdio-mcp",
+          providerInstanceId: instanceId,
+          endpoint,
+          authorizationHeader,
+          browserToolsAvailable: true,
+        });
+        const selfInvocation = yield* resolveSelfInvocation();
+        const makeTestAdapter = () =>
+          makeAntigravityAdapterV2({
+            instanceId,
+            selfInvocation,
+            makeRuntime: (input) =>
+              makeAntigravityAcpRuntime({
+                ...input,
+                childProcessSpawner,
+                spawn: {
+                  command: process.execPath,
+                  args: [mockAgentPath],
+                  cwd: input.cwd,
+                  env: {
+                    T3_ACP_ANTIGRAVITY: "1",
+                    T3_ACP_AGENT_VERSION: "1.5.18",
+                    T3_ACP_REQUEST_LOG_PATH: requestLog,
+                  },
+                },
+              }).pipe(Effect.provideService(SecureRandom.SecureRandom, crypto)),
+            withProcess: (_stop, task) => task,
+            defaultModel: Effect.undefined,
+          });
+        const workspace = yield* fileSystem.makeTempDirectoryScoped({ prefix: "t3-ag-stdio-" });
+        const runtimePolicy = ProviderAdapter.ProviderAdapterV2RuntimePolicy.make({
+          runtimeMode: "full-access",
+          interactionMode: "default",
+          cwd: workspace,
+        });
+        const modelSelection = { instanceId, model: "gemini-test-low" } as const;
+
+        const firstAdapter = yield* makeTestAdapter();
+        const firstSession = yield* firstAdapter.openSession({
+          threadId,
+          providerSessionId: ProviderSessionId.make("provider-session-antigravity-stdio-1"),
+          modelSelection,
+          runtimePolicy,
+        });
+        const providerThread = yield* firstSession.ensureThread({
+          threadId,
+          modelSelection,
+          runtimePolicy,
+        });
+        const nativeId = providerThread.nativeThreadRef?.nativeId;
+        assert.exists(nativeId);
+
+        // Cold resume with a fresh adapter instance should also pass the stdio t3-code bridge.
+        const secondAdapter = yield* makeTestAdapter();
+        const secondSession = yield* secondAdapter.openSession({
+          threadId,
+          providerSessionId: ProviderSessionId.make("provider-session-antigravity-stdio-2"),
+          initialNativeThreadId: nativeId,
+          modelSelection,
+          runtimePolicy,
+        });
+        yield* secondSession.ensureThread({
+          threadId,
+          existingProviderThread: providerThread,
+          modelSelection,
+          runtimePolicy,
+        });
+
+        const requests = (yield* fileSystem.readFileString(requestLog))
+          .trim()
+          .split("\n")
+          .map(
+            (line) =>
+              JSON.parse(line) as {
+                method?: string;
+                params?: {
+                  mcpServers?: ReadonlyArray<{
+                    name?: string;
+                    command?: string;
+                    args?: ReadonlyArray<string>;
+                    env?: ReadonlyArray<{ name: string; value: string }>;
+                  }>;
+                };
+              },
+          );
+        const sessionNew = requests.find((request) => request.method === "session/new");
+        const sessionResume = requests.find((request) => request.method === "session/resume");
+        for (const req of [sessionNew, sessionResume]) {
+          assert.exists(req);
+          const servers = req?.params?.mcpServers ?? [];
+          assert.equal(servers.length, 1);
+          const server = servers[0]!;
+          assert.equal(server.name, "t3-code");
+          assert.isString(server.command);
+          assert.include(server.args ?? [], "acp-mcp-bridge");
+          assert.deepInclude(server.env ?? [], {
+            name: "T3_ACP_MCP_ENDPOINT",
+            value: endpoint,
+          });
+          assert.deepInclude(server.env ?? [], {
+            name: "T3_ACP_MCP_AUTHORIZATION",
+            value: authorizationHeader,
+          });
+        }
+      }).pipe(Effect.provide(layerSession)),
+  );
 });
 
 describe("AntigravityAdapterV2 update_steps checklist", () => {

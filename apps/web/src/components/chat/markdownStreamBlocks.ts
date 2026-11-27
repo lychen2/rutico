@@ -16,23 +16,75 @@ const ATX_HEADING_PATTERN =
 const SETEXT_UNDERLINE_PATTERN =
   /^(?:[ \t]*(?:>|[-*+](?=[ \t])|\d{1,9}[.)](?=[ \t])))*[ \t]*(?:=+|-+)[ \t]*$/;
 
+interface MarkdownStreamSplitCacheEntry {
+  readonly prefix: string;
+  readonly guard: string;
+  readonly blocks: readonly string[];
+  readonly headingKeys: readonly string[];
+}
+
+const MAX_STREAM_SPLIT_CACHE_ENTRIES = 4;
+const streamSplitCache: MarkdownStreamSplitCacheEntry[] = [];
+
+function findCachedSplit(text: string): MarkdownStreamSplitCacheEntry | null {
+  let best: MarkdownStreamSplitCacheEntry | null = null;
+  for (const entry of streamSplitCache) {
+    const minLen = entry.prefix.length + entry.guard.length;
+    if (
+      text.length >= minLen &&
+      (best === null || entry.prefix.length > best.prefix.length) &&
+      text.startsWith(entry.prefix) &&
+      text.startsWith(entry.guard, entry.prefix.length)
+    ) {
+      best = entry;
+    }
+  }
+  return best;
+}
+
+function rememberSplit(entry: MarkdownStreamSplitCacheEntry): void {
+  const existingIndex = streamSplitCache.findIndex(
+    (cached) =>
+      cached.prefix.length <= entry.prefix.length &&
+      entry.prefix.startsWith(cached.prefix) &&
+      entry.prefix.startsWith(cached.guard, cached.prefix.length),
+  );
+  if (existingIndex >= 0) {
+    streamSplitCache.splice(existingIndex, 1);
+  }
+  streamSplitCache.unshift(entry);
+  if (streamSplitCache.length > MAX_STREAM_SPLIT_CACHE_ENTRIES) {
+    streamSplitCache.length = MAX_STREAM_SPLIT_CACHE_ENTRIES;
+  }
+}
+
 /**
  * Cuts Markdown at blank lines that close every open block, so each piece renders exactly as it
  * would inside the whole text. Returns null when the text uses syntax that spans blocks, such as
  * headings with the same slug, whose ids are numbered across the whole text.
  */
 export function splitMarkdownBlocks(text: string): string[] | null {
+  const cached = findCachedSplit(text);
+  const scanText = cached ? text.slice(cached.prefix.length) : text;
+  const baseOffset = cached ? cached.prefix.length : 0;
+
   // remark-parse strips a leading BOM before recognizing the first heading.
-  if (text.startsWith("\ufeff") || text.includes("\r") || DOCUMENT_WIDE_SYNTAX.test(text))
+  if (
+    (!cached && text.startsWith("\ufeff")) ||
+    scanText.includes("\r") ||
+    DOCUMENT_WIDE_SYNTAX.test(scanText)
+  ) {
     return null;
-  const blocks: string[] = [];
+  }
+
+  const blocks: string[] = cached ? [...cached.blocks] : [];
   let blockStart = 0;
   let lineStart = 0;
   let fence: string | null = null;
   let fenceIndent = 0;
   let afterBlankLine = false;
   let insightIndent: string | null = null;
-  const headingKeys = new Set<string>();
+  const headingKeys = new Set<string>(cached?.headingKeys);
   const needsWholeHeading = (headingText: string | undefined) => {
     if (headingText === undefined) return false;
     // Inline syntax and path/directive colons need the renderer before their slug is known.
@@ -48,14 +100,21 @@ export function splitMarkdownBlocks(text: string): string[] | null {
     needsWholeHeading(ATX_HEADING_PATTERN.exec(line)?.[1]);
   // Only a line right after paragraph text can underline it; elsewhere "---" is a thematic break.
   let afterContentLine = false;
-  for (const line of text.split("\n")) {
+  let confirmedBoundary: {
+    offset: number;
+    guard: string;
+    blockCount: number;
+    headingCount: number;
+  } | null = null;
+
+  for (const line of scanText.split("\n")) {
     const opener = FENCE_PATTERN.exec(line)?.[1];
     const mayUnderline = afterContentLine;
     afterContentLine = false;
     if (fence !== null) {
       // A line left of an indented fence may end the list item holding it, which isn't tracked.
       if (/\S/.test(line.slice(0, fenceIndent))) {
-        const rest = text.slice(lineStart).split("\n");
+        const rest = scanText.slice(lineStart).split("\n");
         for (const restLine of rest) {
           if (headingNeedsWholeDocument(restLine)) return null;
         }
@@ -75,6 +134,7 @@ export function splitMarkdownBlocks(text: string): string[] | null {
     } else if (line.trim() === "") {
       afterBlankLine = true;
     } else {
+      const headingCountBeforeLine = headingKeys.size;
       if (headingNeedsWholeDocument(line, mayUnderline)) return null;
       afterContentLine = opener === undefined;
       if (
@@ -83,8 +143,18 @@ export function splitMarkdownBlocks(text: string): string[] | null {
         lineStart > blockStart &&
         !CONTINUATION_PATTERN.test(line)
       ) {
-        blocks.push(text.slice(blockStart, lineStart));
+        blocks.push(scanText.slice(blockStart, lineStart));
         blockStart = lineStart;
+        // Only freeze a boundary once its following line is newline-terminated, so later appends
+        // cannot turn that line into a list continuation (e.g. "1" -> "1. item").
+        if (lineStart + line.length < scanText.length) {
+          confirmedBoundary = {
+            offset: baseOffset + lineStart,
+            guard: scanText.slice(lineStart, lineStart + line.length + 1),
+            blockCount: blocks.length,
+            headingCount: headingCountBeforeLine,
+          };
+        }
       }
       afterBlankLine = false;
       if (insightIndent === null) insightIndent = INSIGHT_OPEN_PATTERN.exec(line)?.[1] ?? null;
@@ -93,6 +163,16 @@ export function splitMarkdownBlocks(text: string): string[] | null {
     }
     lineStart += line.length + 1;
   }
-  blocks.push(text.slice(blockStart));
+  blocks.push(scanText.slice(blockStart));
+
+  if (confirmedBoundary !== null && confirmedBoundary.offset > baseOffset) {
+    rememberSplit({
+      prefix: text.slice(0, confirmedBoundary.offset),
+      guard: confirmedBoundary.guard,
+      blocks: blocks.slice(0, confirmedBoundary.blockCount),
+      headingKeys: [...headingKeys].slice(0, confirmedBoundary.headingCount),
+    });
+  }
+
   return blocks;
 }

@@ -65,7 +65,15 @@ export function useRestingComposerControlsLayout(
       measure();
     };
     observeControls();
-    const mutations = new MutationObserver(observeControls);
+    const mutations = new MutationObserver((records) => {
+      // Only rebind ResizeObserver when the set of control elements changes; text-only updates
+      // (such as switching effort label) just need a re-measure.
+      if (records.some((record) => record.type === "childList")) {
+        observeControls();
+      } else {
+        measure();
+      }
+    });
     mutations.observe(controls, { childList: true, subtree: true, characterData: true });
     document.fonts.addEventListener("loadingdone", measure);
     return () => {

@@ -88,4 +88,19 @@ describe("splitMarkdownBlocks", () => {
   ])("keeps text with document-wide syntax whole: %j", (text) => {
     expect(splitMarkdownBlocks(text)).toBeNull();
   });
+
+  it("handles incremental list continuation and duplicate heading slugs across cached prefixes", () => {
+    // Prefix ends with bare "1", which later becomes "1. second" (list continuation).
+    expect(splitMarkdownBlocks("- first\n\n1")).toEqual(["- first\n\n", "1"]);
+    expect(splitMarkdownBlocks("- first\n\n1. second")).toEqual(["- first\n\n1. second"]);
+
+    // Duplicate heading appearing after cached closed blocks must still fall back to whole doc.
+    const prefix = "# Intro\n\nFirst paragraph.\n\nSecond paragraph.\n\n";
+    expect(splitMarkdownBlocks(prefix)).toEqual([
+      "# Intro\n\n",
+      "First paragraph.\n\n",
+      "Second paragraph.\n\n",
+    ]);
+    expect(splitMarkdownBlocks(`${prefix}# Intro\n`)).toBeNull();
+  });
 });
