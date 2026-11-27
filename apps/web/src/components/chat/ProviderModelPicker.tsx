@@ -120,8 +120,8 @@ export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
   onInstanceModelChange: (instanceId: ProviderInstanceId, model: string) => void;
   /** Shown after the model name inside the same trigger, such as the effort level. */
   triggerSuffix?: ReactNode;
-  /** Normalized 0..4 effort track index (-1 for off) rendered under the compact model chip name. */
-  triggerEffortLevel?: number;
+  /** Effort track segment count and filled segments rendered under the compact model chip name. */
+  triggerEffortTrack?: { readonly count: number; readonly filled: number };
   /** Names the suffix for the tooltip and screen readers. */
   triggerDetail?: string | null;
   /** Composer shortcuts this trigger answers besides the picker's own. */
@@ -477,12 +477,12 @@ export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
                   {shortCharacters.slice(-7).join("")}
                 </span>
               ) : null}
-              {props.triggerEffortLevel !== undefined ? (
+              {props.triggerEffortTrack && props.triggerEffortTrack.count > 0 ? (
                 <span data-model-effort-track="" aria-hidden>
-                  {[0, 1, 2, 3, 4].map((segment) => (
+                  {Array.from({ length: props.triggerEffortTrack.count }, (_, segment) => (
                     <i
                       key={segment}
-                      data-filled={segment <= props.triggerEffortLevel! ? "" : undefined}
+                      data-filled={segment < props.triggerEffortTrack!.filled ? "" : undefined}
                     />
                   ))}
                 </span>

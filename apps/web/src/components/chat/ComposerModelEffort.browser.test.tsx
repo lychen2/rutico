@@ -1,6 +1,7 @@
 import {
   ProviderDriverKind,
   ProviderInstanceId,
+  type ProviderOptionDescriptor,
   type ProviderOptionSelection,
   type RuntimeMode,
   type ServerProviderModel,
@@ -442,4 +443,105 @@ it("commits effort slider drags once on release and ignores cancelled drags", as
   await expect
     .element(screen.getByRole("radio", { name: "Low" }))
     .toHaveAttribute("aria-checked", "true");
+});
+
+it("computes effort track segment counts directly from each model's reasoning levels", () => {
+  const makeTraits = (
+    optionDescriptors: ReadonlyArray<ProviderOptionDescriptor>,
+    modelOptions: ReadonlyArray<ProviderOptionSelection> = [],
+  ): TraitsSelectionInput => ({
+    provider: ProviderDriverKind.make("antigravity"),
+    instanceId: ProviderInstanceId.make("antigravity-main"),
+    models: [
+      {
+        slug: "gemini-4-neon",
+        name: "Gemini 4 Neon",
+        isCustom: false,
+        capabilities: createModelCapabilities({ optionDescriptors }),
+      },
+    ],
+    model: "gemini-4-neon",
+    modelOptions,
+    onModelOptionsChange: vi.fn(),
+  });
+
+  const fourLevels = [
+    {
+      id: "thinking_level",
+      label: "Thinking",
+      type: "select" as const,
+      role: "reasoning" as const,
+      currentValue: "high",
+      options: [
+        { id: "low", label: "Low" },
+        { id: "medium", label: "Medium" },
+        { id: "high", label: "High" },
+        { id: "xhigh", label: "Extra High" },
+      ],
+    },
+  ];
+  expect(describeComposerEffort(makeTraits(fourLevels), "bars", "sm").track).toEqual({
+    count: 4,
+    filled: 3,
+  });
+  expect(
+    describeComposerEffort(
+      makeTraits(fourLevels, [{ id: "thinking_level", value: "xhigh" }]),
+      "bars",
+      "sm",
+    ).track,
+  ).toEqual({ count: 4, filled: 4 });
+
+  const withOff = [
+    {
+      id: "effort",
+      label: "Reasoning",
+      type: "select" as const,
+      currentValue: "off",
+      options: [
+        { id: "off", label: "Off" },
+        { id: "low", label: "Low" },
+        { id: "medium", label: "Medium" },
+        { id: "high", label: "High" },
+      ],
+    },
+  ];
+  expect(describeComposerEffort(makeTraits(withOff), "bars", "sm").track).toEqual({
+    count: 3,
+    filled: 0,
+  });
+
+  const withMax = [
+    {
+      id: "effort",
+      label: "Reasoning",
+      type: "select" as const,
+      currentValue: "max",
+      options: [
+        { id: "low", label: "Low" },
+        { id: "medium", label: "Medium" },
+        { id: "high", label: "High" },
+        { id: "max", label: "Max" },
+      ],
+    },
+  ];
+  expect(describeComposerEffort(makeTraits(withMax), "bars", "sm").track).toEqual({
+    count: 3,
+    filled: 3,
+  });
+
+  expect(
+    describeComposerEffort(
+      makeTraits([{ id: "thinking", label: "Thinking", type: "boolean", currentValue: true }]),
+      "bars",
+      "sm",
+    ).track,
+  ).toEqual({ count: 1, filled: 1 });
+  expect(
+    describeComposerEffort(
+      makeTraits([{ id: "thinking", label: "Thinking", type: "boolean", currentValue: false }]),
+      "bars",
+      "sm",
+    ).track,
+  ).toEqual({ count: 1, filled: 0 });
 });

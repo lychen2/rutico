@@ -222,11 +222,11 @@ export function ComposerControlsBar(props: {
       triggerSuffix={
         multipleModelsEnabled && multipleModelSelections !== null
           ? effort.suffix
-          : effort.level !== undefined
+          : effort.track !== undefined
             ? effort.chipSuffix
             : effort.suffix
       }
-      {...(effort.level !== undefined ? { triggerEffortLevel: effort.level } : {})}
+      {...(effort.track !== undefined ? { triggerEffortTrack: effort.track } : {})}
       triggerDetail={effort.detail}
       triggerShortcuts={
         pickerOwnsModeShortcut ? "composer.effort composer.mode" : "composer.effort"

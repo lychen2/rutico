@@ -81,6 +81,11 @@ function columnControls(
   return { effort, others: controls.filter((control) => control !== effort) };
 }
 
+export interface ComposerEffortTrack {
+  readonly count: number;
+  readonly filled: number;
+}
+
 /**
  * What the model trigger shows after the model name: the effort word (or bars, per the
  * Appearance setting), a bolt for Fast, a workflow icon for Ultracode, and other traits such as a
@@ -95,12 +100,12 @@ export function describeComposerEffort(
   suffix: ReactNode;
   chipSuffix: ReactNode;
   detail: string | null;
-  level: number | undefined;
+  track: ComposerEffortTrack | undefined;
 } {
-  if (!traits) return { suffix: null, chipSuffix: null, detail: null, level: undefined };
+  if (!traits) return { suffix: null, chipSuffix: null, detail: null, track: undefined };
   const visibility = getTraitsSectionVisibility({ ...traits, resolve });
   if (!visibility.hasAnyControls)
-    return { suffix: null, chipSuffix: null, detail: null, level: undefined };
+    return { suffix: null, chipSuffix: null, detail: null, track: undefined };
   const modelSelection =
     traits.instanceId && traits.model
       ? { instanceId: traits.instanceId, model: traits.model, options: traits.modelOptions ?? [] }
@@ -130,20 +135,15 @@ export function describeComposerEffort(
             : getDescriptorStringValue(reasoning, modelSelection, traits.reportedModelSelection),
         )
       : null;
-  const level = glyph
-    ? glyph.special
-      ? 4
-      : glyph.filled <= 0
-        ? -1
-        : glyph.count <= 1
-          ? 4
-          : Math.round(((glyph.filled - 1) / (glyph.count - 1)) * 4)
+  const track: ComposerEffortTrack | undefined = glyph
+    ? {
+        count: glyph.count,
+        filled: glyph.special ? glyph.count : Math.max(0, Math.min(glyph.count, glyph.filled)),
+      }
     : reasoning?.type === "boolean"
-      ? reasoning.currentValue === true
-        ? 4
-        : -1
+      ? { count: 1, filled: reasoning.currentValue === true ? 1 : 0 }
       : ultrathink
-        ? 4
+        ? { count: 1, filled: 1 }
         : undefined;
   // Workflow levels such as Ultracode always show their name; the setting names every level.
   const word = glyph
@@ -170,7 +170,7 @@ export function describeComposerEffort(
       modelSelection,
       traits.reportedModelSelection,
     );
-  const chipWord = level === undefined ? word : (glyph?.special ?? null);
+  const chipWord = track === undefined ? word : (glyph?.special ?? null);
   const hasChipExtras = Boolean(chipWord || fast || display.ultracode || contextWindow);
   const chipSuffix = hasChipExtras ? (
     <span className="flex shrink-0 items-center gap-1 text-muted-foreground group-hover/model-trigger:text-foreground group-data-pressed/model-trigger:text-foreground group-data-popup-open/model-trigger:text-foreground">
@@ -195,10 +195,10 @@ export function describeComposerEffort(
     </span>
   ) : null;
   if (!word && !glyph && !fast && !display.ultracode && !contextWindow)
-    return { suffix: null, chipSuffix: null, detail: display.label, level };
+    return { suffix: null, chipSuffix: null, detail: display.label, track };
   return {
     detail: display.label,
-    level,
+    track,
     chipSuffix,
     suffix: (
       <span

@@ -588,7 +588,7 @@ it("renders the compact composer model chip with effort track, account badge, an
       lockedProvider={null}
       instanceEntries={entries}
       modelOptionsByInstance={new Map(entries.map((entry) => [entry.instanceId, entry.models]))}
-      triggerEffortLevel={3}
+      triggerEffortTrack={{ count: 4, filled: 3 }}
       onInstanceModelChange={vi.fn()}
     />,
   );
@@ -601,6 +601,6 @@ it("renders the compact composer model chip with effort track, account badge, an
   expect(trigger?.querySelector("[data-model-account-number]")?.textContent).toBe("1");
   expect(trigger?.querySelector("[data-model-chip-tail]")?.textContent).toHaveLength(7);
   const trackSegments = trigger?.querySelectorAll("[data-model-effort-track] i");
-  expect(trackSegments?.length).toBe(5);
-  expect(trigger?.querySelectorAll("[data-model-effort-track] i[data-filled]").length).toBe(4);
+  expect(trackSegments?.length).toBe(4);
+  expect(trigger?.querySelectorAll("[data-model-effort-track] i[data-filled]").length).toBe(3);
 });
