@@ -308,8 +308,16 @@ describe("V2 thread find", () => {
       const first = yield* projection.searchThread({ threadId, query: "needle" });
       assert.equal(first.navigation?.length, 17);
       assert.include(first.navigation?.map((entry) => entry.entryId) ?? [], "message:29");
+      // Full matchCounts stay complete and invariant across selection changes.
+      const expectedCounts = Array.from({ length: 30 }, (_, i) => ({
+        entryId: `message:${i}`,
+        count: (i % 3) + 1,
+      }));
+      assert.deepEqual(current.matchCounts, expectedCounts);
+      assert.deepEqual(first.matchCounts, expectedCounts);
       const empty = yield* projection.searchThread({ threadId, query: "absent" });
       assert.deepEqual(empty.navigation, []);
+      assert.deepEqual(empty.matchCounts, []);
     }).pipe(Effect.provide(layerTest)),
   );
 

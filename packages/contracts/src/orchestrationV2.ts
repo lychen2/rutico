@@ -4756,6 +4756,10 @@ export const OrchestrationV2ThreadFindMatch = Schema.Struct({
   runId: Schema.NullOr(RunId),
   occurrence: NonNegativeInt,
 });
+export const OrchestrationV2ThreadFindMatchCount = Schema.Struct({
+  entryId: TrimmedNonEmptyString,
+  count: NonNegativeInt,
+});
 export const OrchestrationV2SearchThreadResult = Schema.Struct({
   complete: Schema.optionalKey(Schema.Boolean),
   snapshotSequence: NonNegativeInt,
@@ -4772,6 +4776,7 @@ export const OrchestrationV2SearchThreadResult = Schema.Struct({
       }),
     ).check(Schema.isMaxLength(17)),
   ),
+  matchCounts: Schema.optionalKey(Schema.Array(OrchestrationV2ThreadFindMatchCount)),
 });
 export type OrchestrationV2SearchThreadResult = typeof OrchestrationV2SearchThreadResult.Type;
 

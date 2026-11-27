@@ -92,7 +92,7 @@ export function useThreadFind({
         ? { entryId, runId: runId ?? null, occurrence }
         : null,
     findNavigationId: navigationId,
-    findMatchNavigation: findExpanded ? (remote.data?.navigation ?? null) : null,
+    findMatchNavigation: findExpanded ? resolveThreadFindHeatmapCounts(remote.data) : null,
   };
   // Keep timeline identity stable during count and response updates to avoid extra jumps.
   const [storedTimeline, setTimeline] = useState(nextTimeline);
@@ -249,6 +249,12 @@ export function useThreadFind({
 export interface TimelineFindMatchEntry {
   readonly entryId: string;
   readonly count: number;
+}
+
+export function resolveThreadFindHeatmapCounts(
+  data: OrchestrationV2SearchThreadResult | null,
+): ReadonlyArray<TimelineFindMatchEntry> | null {
+  return data?.matchCounts ?? data?.navigation ?? null;
 }
 
 export interface TimelineFields {

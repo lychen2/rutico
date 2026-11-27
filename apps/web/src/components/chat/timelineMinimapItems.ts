@@ -28,12 +28,12 @@ export interface TimelineMinimapItem {
 export function annotateTimelineMinimapFindMatches(
   items: ReadonlyArray<TimelineMinimapItem>,
   rows: ReadonlyArray<MessagesTimelineRow>,
-  findMatchNavigation: ReadonlyArray<{ readonly entryId: string; readonly count: number }> | null,
+  findMatchCounts: ReadonlyArray<{ readonly entryId: string; readonly count: number }> | null,
   activeEntryId: string | null,
 ): ReadonlyArray<TimelineMinimapItem> {
   if (
     items.length === 0 ||
-    ((!findMatchNavigation || findMatchNavigation.length === 0) && activeEntryId === null)
+    ((!findMatchCounts || findMatchCounts.length === 0) && activeEntryId === null)
   ) {
     return items;
   }
@@ -53,8 +53,8 @@ export function annotateTimelineMinimapFindMatches(
   }
 
   const countByTurn = new Map<number, number>();
-  if (findMatchNavigation) {
-    for (const entry of findMatchNavigation) {
+  if (findMatchCounts) {
+    for (const entry of findMatchCounts) {
       if (entry.count <= 0) continue;
       const turnIndex = turnIndexByRowId.get(entry.entryId);
       if (turnIndex === undefined) continue;

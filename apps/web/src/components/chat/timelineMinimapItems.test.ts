@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vite-plus/test";
-import { EnvironmentId, MessageId, ThreadId } from "@t3tools/contracts";
+import {
+  EnvironmentId,
+  MessageId,
+  ThreadId,
+  type OrchestrationV2SearchThreadResult,
+} from "@t3tools/contracts";
 import { serializeAssistantCitation } from "@t3tools/shared/assistantCitations";
 import {
   ATTACHMENT_ONLY_BOOTSTRAP_PROMPT,
@@ -7,7 +12,13 @@ import {
   toComposerContextId,
 } from "@t3tools/shared/composerContextReferences";
 
-import { deriveTimelineMinimapItems, resolveTimelineMinimapPreview } from "./timelineMinimapItems";
+import type { MessagesTimelineRow } from "./MessagesTimeline.logic";
+import {
+  annotateTimelineMinimapFindMatches,
+  deriveTimelineMinimapItems,
+  resolveTimelineMinimapPreview,
+} from "./timelineMinimapItems";
+import { resolveThreadFindHeatmapCounts } from "./useThreadFind";
 
 describe("deriveTimelineMinimapItems", () => {
   it.each(["", "Ultrathink:\n"])(
@@ -90,5 +101,132 @@ describe("resolveTimelineMinimapPreview", () => {
       assistantText: null,
     });
     expect(preview?.userText).toBe("Build log");
+  });
+});
+
+describe("annotateTimelineMinimapFindMatches", () => {
+  function makeTurnRows(turnCount: number): MessagesTimelineRow[] {
+    const at = "2026-10-01T00:00:00Z";
+    const rows: MessagesTimelineRow[] = [];
+    for (let i = 0; i < turnCount; i += 1) {
+      rows.push(
+        {
+          kind: "message",
+          id: `user-${i}`,
+          createdAt: at,
+          showAssistantMeta: false,
+          showAssistantCopyButton: false,
+          assistantCopyStreaming: false,
+          message: {
+            id: MessageId.make(`user-${i}`),
+            role: "user",
+            text: `Prompt ${i}`,
+            runId: null,
+            streaming: false,
+            createdAt: at,
+            updatedAt: at,
+          },
+        },
+        {
+          kind: "message",
+          id: `assistant-${i}`,
+          createdAt: at,
+          showAssistantMeta: false,
+          showAssistantCopyButton: false,
+          assistantCopyStreaming: false,
+          message: {
+            id: MessageId.make(`assistant-${i}`),
+            role: "assistant",
+            text: `Answer ${i} needle`,
+            runId: null,
+            streaming: false,
+            createdAt: at,
+            updatedAt: at,
+          },
+        },
+      );
+    }
+    return rows;
+  }
+
+  it("keeps minimap dots for all >20 matching turns and only moves the active dot when stepping", () => {
+    const turnCount = 24;
+    const rows = makeTurnRows(turnCount);
+    const items = deriveTimelineMinimapItems(rows);
+    const allEntries = Array.from({ length: turnCount }, (_, i) => ({
+      entryId: `assistant-${i}`,
+      runId: null,
+      startIndex: i * 2,
+      count: (i % 3) + 1,
+    }));
+    const fullMatchCounts = allEntries.map(({ entryId, count }) => ({ entryId, count }));
+
+    const resultForSelection = (selectedTurn: number): OrchestrationV2SearchThreadResult => ({
+      snapshotSequence: 1,
+      totalMatches: fullMatchCounts.reduce((sum, entry) => sum + entry.count, 0),
+      activeIndex: selectedTurn,
+      match: { entryId: `assistant-${selectedTurn}`, runId: null, occurrence: 0 },
+      navigation: Array.from(
+        { length: 17 },
+        (_, i) => allEntries[(selectedTurn + i - 8 + turnCount) % turnCount]!,
+      ),
+      matchCounts: fullMatchCounts,
+    });
+
+    const atStart = resultForSelection(0);
+    const atMiddle = resultForSelection(12);
+    const atEnd = resultForSelection(23);
+
+    const annotatedStart = annotateTimelineMinimapFindMatches(
+      items,
+      rows,
+      resolveThreadFindHeatmapCounts(atStart),
+      atStart.match?.entryId ?? null,
+    );
+    const annotatedMiddle = annotateTimelineMinimapFindMatches(
+      items,
+      rows,
+      resolveThreadFindHeatmapCounts(atMiddle),
+      atMiddle.match?.entryId ?? null,
+    );
+    const annotatedEnd = annotateTimelineMinimapFindMatches(
+      items,
+      rows,
+      resolveThreadFindHeatmapCounts(atEnd),
+      atEnd.match?.entryId ?? null,
+    );
+
+    const expectedCounts = Array.from({ length: turnCount }, (_, i) => (i % 3) + 1);
+    expect(annotatedStart.map((item) => item.findMatchCount)).toEqual(expectedCounts);
+    expect(annotatedMiddle.map((item) => item.findMatchCount)).toEqual(expectedCounts);
+    expect(annotatedEnd.map((item) => item.findMatchCount)).toEqual(expectedCounts);
+
+    expect(annotatedStart.findIndex((item) => item.hasActiveFindMatch)).toBe(0);
+    expect(annotatedMiddle.findIndex((item) => item.hasActiveFindMatch)).toBe(12);
+    expect(annotatedEnd.findIndex((item) => item.hasActiveFindMatch)).toBe(23);
+  });
+
+  it("falls back to navigation when matchCounts is omitted by an older server", () => {
+    const rows = makeTurnRows(3);
+    const items = deriveTimelineMinimapItems(rows);
+    const legacyResult: OrchestrationV2SearchThreadResult = {
+      snapshotSequence: 1,
+      totalMatches: 2,
+      activeIndex: 0,
+      match: { entryId: "assistant-0", runId: null, occurrence: 0 },
+      navigation: [
+        { entryId: "assistant-0", runId: null, startIndex: 0, count: 1 },
+        { entryId: "assistant-2", runId: null, startIndex: 1, count: 1 },
+      ],
+    };
+
+    const annotated = annotateTimelineMinimapFindMatches(
+      items,
+      rows,
+      resolveThreadFindHeatmapCounts(legacyResult),
+      legacyResult.match?.entryId ?? null,
+    );
+    expect(annotated.map((item) => item.findMatchCount)).toEqual([1, undefined, 1]);
+    expect(annotated.map((item) => item.hasActiveFindMatch)).toEqual([true, undefined, undefined]);
   });
 });

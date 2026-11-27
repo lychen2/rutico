@@ -179,11 +179,13 @@ function resultForSelection(
           { length: 17 },
           (_, i) => entries[(selectedEntry + i - 8 + entries.length) % entries.length]!,
         );
+  const matchCounts = entries.map(({ entryId, count }) => ({ entryId, count }));
   return {
     snapshotSequence,
     totalMatches: selected.totalMatches,
     activeIndex: selected.activeIndex,
     navigation,
+    matchCounts,
     match:
       selected.document === null
         ? null
