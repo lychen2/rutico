@@ -194,7 +194,7 @@ describe("sidebar project folder new thread", () => {
         <Sidebar routeReveal={{ observedKey: null, pendingKey: null }} />
       </SidebarProvider>,
     );
-    await userEvent.click(screen.getByRole("button", { name: "New thread in acme/demo-repo" }));
+    await userEvent.click(screen.getByRole("button", { name: "New thread", exact: true }));
 
     expect(startThread).toHaveBeenCalledExactlyOnceWith(dev1ProjectRef);
   });

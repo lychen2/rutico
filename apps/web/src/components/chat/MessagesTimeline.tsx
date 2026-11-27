@@ -1595,6 +1595,20 @@ const ConversationTimeline = memo(function ConversationTimeline({
       }
     }
   }
+  let latestAssistantMetaRowId: string | null = null;
+  for (let i = rows.length - 1; i >= 0; i -= 1) {
+    const candidate = rows[i]!;
+    if (
+      candidate.kind === "assistant-meta" ||
+      (candidate.kind === "message" &&
+        candidate.message.role === "assistant" &&
+        candidate.showAssistantMeta &&
+        !candidate.message.streaming)
+    ) {
+      latestAssistantMetaRowId = candidate.id;
+      break;
+    }
+  }
   const renderItem = ({ item, index }: { item: MessagesTimelineRow; index: number }) => {
     const foldCascadeDelay = revealingTurnFoldDelays.get(item.id);
     const inRewindPreviewVeil = revertPreviewRowIndex >= 0 && index >= revertPreviewRowIndex;
@@ -1651,7 +1665,10 @@ const ConversationTimeline = memo(function ConversationTimeline({
             }
           >
             <AudioPreviewUnmountContext value={onAudioUnmount}>
-              <TimelineRowContent row={item} />
+              <TimelineRowContent
+                row={item}
+                isLatestAssistantMeta={item.id === latestAssistantMetaRowId}
+              />
             </AudioPreviewUnmountContext>
           </div>
         </div>
@@ -1663,6 +1680,7 @@ const ConversationTimeline = memo(function ConversationTimeline({
     rowCount: rows.length,
     sharedState,
     revertPreviewMessageId,
+    latestAssistantMetaRowId,
   };
   const timelineListFooter = (
     <TimelineListFooter
@@ -1911,7 +1929,13 @@ function getItemType(item: MessagesTimelineRow) {
     : `message:${item.message.id}`;
 }
 
-const TimelineRowContent = memo(function TimelineRowContent({ row }: { row: TimelineRow }) {
+const TimelineRowContent = memo(function TimelineRowContent({
+  row,
+  isLatestAssistantMeta = false,
+}: {
+  row: TimelineRow;
+  isLatestAssistantMeta?: boolean;
+}) {
   const isExpandedToolGroup = row.kind === "work" && row.isExpandedToolGroup;
   const isSubagentGroup = row.kind === "event" && row.projectedItem.item.type === "subagent";
   const isWorkLogRow =
@@ -1985,9 +2009,11 @@ const TimelineRowContent = memo(function TimelineRowContent({ row }: { row: Time
       {row.kind === "context-compaction" ? <ContextCompactionTimelineRow row={row} /> : null}
       {row.kind === "message" && row.message.role === "user" ? <UserMessageRow row={row} /> : null}
       {row.kind === "message" && row.message.role === "assistant" ? (
-        <AssistantTimelineRow row={row} />
+        <AssistantTimelineRow row={row} isLatest={isLatestAssistantMeta} />
       ) : null}
-      {row.kind === "assistant-meta" ? <AssistantMetaTimelineRow row={row} /> : null}
+      {row.kind === "assistant-meta" ? (
+        <AssistantMetaTimelineRow row={row} isLatest={isLatestAssistantMeta} />
+      ) : null}
       {row.kind === "proposed-plan" ? <ProposedPlanTimelineRow row={row} /> : null}
       {row.kind === "html-render" ? <HtmlRenderTimelineRow row={row} /> : null}
       {row.kind === "sent-message" ? <SentMessageTimelineRow row={row} /> : null}

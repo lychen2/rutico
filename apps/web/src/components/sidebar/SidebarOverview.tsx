@@ -45,7 +45,6 @@ import {
   sidebarWorkbenchEase,
 } from "../Sidebar.motion";
 import { pickSnoozePreset, resolveSnoozePresets, type SnoozePreset } from "../Sidebar.snooze";
-import { AnimatedNumber } from "../ui/animated-number";
 import { Button } from "../ui/button";
 import { Menu, MenuItem, MenuItemDetail, MenuPopup, MenuSeparator, MenuTrigger } from "../ui/menu";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
@@ -165,7 +164,7 @@ function OverviewCount({ count, className }: { count: number; className: string 
   }, [count]);
   return (
     <span ref={badge} className={className}>
-      <AnimatedNumber value={count} />
+      {count}
     </span>
   );
 }
@@ -836,50 +835,46 @@ export function SidebarOverview({
   return (
     <div
       ref={attachSections}
-      className="relative mb-2 flex flex-col gap-1.5 border-b border-sidebar-border pb-2"
+      className="relative mb-4 flex flex-col gap-2 empty:hidden"
       data-thread-selection-safe
     >
-      <section aria-label={activeLabel}>
-        <h2 className={headingClass}>
-          <span>{activeLabel}</span>
-          {active.length === 0 && !incomplete ? (
-            <span className="truncate">
-              <span aria-hidden>· </span>
-              {gt("No running tasks")}
-            </span>
-          ) : null}
-          {childCount > 0 ? (
-            <span className="truncate">
-              {gt(
-                "{count, plural, one {Includes {count} subtask} other {Includes {count} subtasks}}",
-                { count: childCount },
-              )}
-            </span>
-          ) : null}
-          <OverviewCount count={active.length} className="ms-auto shrink-0 tabular-nums" />
-        </h2>
-        {incomplete ? (
-          <p role="status" className="px-2 text-2xs text-sidebar-muted-foreground">
-            {gt("Some connections are still syncing. Status may be out of date.")}
-          </p>
-        ) : null}
-        {renderActive()}
-        {hiddenActive ? (
-          <Button
-            variant="ghost"
-            size="compact"
-            aria-expanded={showAllRunning}
-            onClick={() => setShowAllRunning(!showAllRunning)}
-          >
-            {showAllRunning
-              ? gt("Collapse")
-              : gt(
-                  "{count, plural, one {Show all {count} running task} other {Show all {count} running tasks}}",
-                  { count: active.length + childCount },
+      {active.length > 0 || incomplete ? (
+        <section aria-label={activeLabel}>
+          <h2 className={headingClass}>
+            <span>{activeLabel}</span>
+            {childCount > 0 ? (
+              <span className="truncate">
+                {gt(
+                  "{count, plural, one {Includes {count} subtask} other {Includes {count} subtasks}}",
+                  { count: childCount },
                 )}
-          </Button>
-        ) : null}
-      </section>
+              </span>
+            ) : null}
+            <OverviewCount count={active.length} className="ms-auto shrink-0 tabular-nums" />
+          </h2>
+          {incomplete ? (
+            <p role="status" className="px-2 text-2xs text-sidebar-muted-foreground">
+              {gt("Some connections are still syncing. Status may be out of date.")}
+            </p>
+          ) : null}
+          {renderActive()}
+          {hiddenActive ? (
+            <Button
+              variant="ghost"
+              size="compact"
+              aria-expanded={showAllRunning}
+              onClick={() => setShowAllRunning(!showAllRunning)}
+            >
+              {showAllRunning
+                ? gt("Collapse")
+                : gt(
+                    "{count, plural, one {Show all {count} running task} other {Show all {count} running tasks}}",
+                    { count: active.length + childCount },
+                  )}
+            </Button>
+          ) : null}
+        </section>
+      ) : null}
       {attention.length > 0 ? (
         <section aria-label={attentionLabel} data-sidebar-motion-key="attention">
           <h2 className={headingClass}>

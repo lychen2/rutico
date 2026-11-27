@@ -35,7 +35,13 @@ import { SharedTooltipTrigger } from "../ui/shared-tooltip";
 
 const magicContextPrefix = /^\u00a7\d+\u00a7(?:[ \t]|$)/;
 
-export function AssistantTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" }> }) {
+export function AssistantTimelineRow({
+  row,
+  isLatest = false,
+}: {
+  row: Extract<TimelineRow, { kind: "message" }>;
+  isLatest?: boolean;
+}) {
   const ctx = use(TimelineRowCtx);
   const gt = useGT();
   // The timeline holds a streaming message's row while only its text grows.
@@ -179,6 +185,7 @@ export function AssistantTimelineRow({ row }: { row: Extract<TimelineRow, { kind
               message={row.message}
               showCopyButton={row.showAssistantCopyButton}
               copyStreaming={row.assistantCopyStreaming}
+              alwaysVisible={isLatest}
             />
           </div>
         ) : null}
@@ -271,18 +278,20 @@ function AssistantForkButton({
 
 export function AssistantMetaTimelineRow({
   row,
+  isLatest = false,
 }: {
   row: Extract<TimelineRow, { kind: "assistant-meta" }>;
+  isLatest?: boolean;
 }) {
   return (
-    <div className="px-1">
+    <div className="group/assistant px-1">
       <AssistantMessageMeta
         className="mt-0.5"
         projectedItem={row.projectedItem}
         message={row.message}
         showCopyButton={row.showAssistantCopyButton}
         copyStreaming={row.assistantCopyStreaming}
-        alwaysVisible
+        alwaysVisible={isLatest}
       />
     </div>
   );

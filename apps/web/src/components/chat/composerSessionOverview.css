@@ -2,32 +2,36 @@
   display: flex;
   justify-content: center;
   align-items: center;
-  min-height: 30px;
-  margin-top: 2px;
+  min-height: 32px;
+  margin-top: 4px;
   container: stats-bar / inline-size;
+}
+[data-session-footer][data-compact="true"] {
+  min-height: 24px;
+  margin-top: 0;
 }
 [data-v9-stats-cluster] {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   flex-wrap: wrap;
-  gap: 2px;
-  padding: 2px 4px;
+  gap: 4px;
+  padding: 0;
   max-width: 100%;
-  border-radius: 999px;
-  background: oklch(from var(--chat-composer-glass-surface, var(--card)) l calc(c * 0.7) h);
+  border-radius: 8px;
+  background: transparent;
 }
 [data-v9-stats-trig] {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   flex-wrap: wrap;
-  gap: 5px;
-  min-height: 26px;
-  padding: 0 9px;
-  border-radius: 999px;
-  font-size: 11.5px;
-  line-height: 1.4;
+  gap: 4px;
+  min-height: 24px;
+  padding: 0 8px;
+  border-radius: 6px;
+  font-size: 12px;
+  line-height: 1.333;
   font-variant-numeric: tabular-nums;
   color: var(--muted-foreground);
   cursor: pointer;
@@ -48,8 +52,8 @@
 }
 [data-v9-stats-sep] {
   width: 1px;
-  height: 11px;
-  margin-inline: 2px;
+  height: 12px;
+  margin-inline: 0;
   background: var(--border);
 }
 @container stats-bar (max-width: 460px) {
@@ -58,13 +62,21 @@
   }
 }
 [data-session-stats-popup] {
-  background: var(--popover);
   transform-origin: var(--transform-origin, bottom center);
+  -webkit-backdrop-filter: blur(min(var(--glass-blur), 12px)) saturate(var(--glass-saturation));
+  backdrop-filter: blur(min(var(--glass-blur), 12px)) saturate(var(--glass-saturation));
+}
+@media (prefers-reduced-transparency: reduce) {
+  [data-session-stats-popup] {
+    background: var(--popover);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
 }
 [data-context-meter] {
   position: relative;
   display: block;
-  height: 0.3125rem;
+  height: 0.25rem;
   overflow: hidden;
   border-radius: 999px;
   background: color-mix(in oklch, var(--foreground) 12%, transparent);

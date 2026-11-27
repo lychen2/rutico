@@ -3689,6 +3689,25 @@ export default function ChatView(props: ChatViewProps) {
     });
   };
 
+  const composerSessionStatus = showSessionStatus ? (
+    <ComposerThreadContext
+      compact
+      key={routeThreadKey}
+      run={composerContextRun}
+      contextStatus={extensionStatuses.find(({ key }) => key === "magic-context")?.text}
+      activity={composerActivity}
+      stepCount={
+        composerActivity ? composerActivity.tools.count + composerActivity.reasoning.count : null
+      }
+      turnUsage={composerProviderTurn?.turnTokenUsage ?? null}
+      modelOutputTiming={composerProviderTurn?.modelOutputTiming}
+      usage={
+        activeProviderThread?.providerInstanceId === selectedInstanceId ? activeContextWindow : null
+      }
+      fallbackTextThread={isAntigravityThread ? routeThreadDetailRef : null}
+    />
+  ) : null;
+
   const content = (
     <div
       ref={setWorkspaceLayoutElement}
@@ -3818,7 +3837,7 @@ export default function ChatView(props: ChatViewProps) {
               {...conversationArea}
               className={cn(
                 "relative flex min-h-0 flex-1 flex-col",
-                isDraftHeroState ? "bg-transparent" : "bg-background/38 dark:bg-background/48",
+                isDraftHeroState ? "bg-transparent" : "bg-background/24 dark:bg-background/46",
               )}
             >
               <div className="relative z-10 flex min-h-0 flex-1 flex-col">
@@ -4223,35 +4242,12 @@ export default function ChatView(props: ChatViewProps) {
                             )}
                           </div>
                         </ComposerSurface.Host>
-                        {showSessionStatus ? (
-                          <ComposerThreadContext
-                            key={routeThreadKey}
-                            run={composerContextRun}
-                            contextStatus={
-                              extensionStatuses.find(({ key }) => key === "magic-context")?.text
-                            }
-                            activity={composerActivity}
-                            stepCount={
-                              composerActivity
-                                ? composerActivity.tools.count + composerActivity.reasoning.count
-                                : null
-                            }
-                            turnUsage={composerProviderTurn?.turnTokenUsage ?? null}
-                            modelOutputTiming={composerProviderTurn?.modelOutputTiming}
-                            usage={
-                              activeProviderThread?.providerInstanceId === selectedInstanceId
-                                ? activeContextWindow
-                                : null
-                            }
-                            fallbackTextThread={isAntigravityThread ? routeThreadDetailRef : null}
-                          />
-                        ) : null}
                         <div className="min-h-0">
                           <div
                             data-terminal-open={terminalUiState.terminalOpen ? "true" : undefined}
                             className="relative z-0"
                           >
-                            {showComposerContextStrip && (
+                            {showComposerContextStrip ? (
                               <div className="pointer-events-auto">
                                 <BranchToolbar
                                   forceNewWorktree={multipleModelSelections !== null}
@@ -4293,30 +4289,39 @@ export default function ChatView(props: ChatViewProps) {
                                       : undefined
                                   }
                                   availableEnvironments={logicalProjectEnvironments}
-                                  {...(isServerThread
-                                    ? {}
-                                    : {
+                                  {...(!isServerThread || composerSessionStatus
+                                    ? {
                                         trailing: (
-                                          <ComposerContextPermissions
-                                            environmentId={environmentId}
-                                            runtimeMode={runtimeMode}
-                                            supportedRuntimeModes={draftSupportedRuntimeModes(
-                                              activeProviderStatus?.supportedRuntimeModes,
-                                              multipleModelSelections,
-                                              providerStatuses,
-                                            )}
-                                            instanceId={draftRuntimeModeLimitsInstance(
-                                              activeProviderStatus?.instanceId,
-                                              multipleModelSelections,
-                                            )}
-                                            cwd={gitCwd}
-                                            onRuntimeModeChange={handleRuntimeModeChangeStable}
-                                          />
+                                          <div className="ms-auto flex min-w-0 shrink-0 flex-wrap items-center justify-end gap-1">
+                                            {composerSessionStatus}
+                                            {!isServerThread ? (
+                                              <ComposerContextPermissions
+                                                environmentId={environmentId}
+                                                runtimeMode={runtimeMode}
+                                                supportedRuntimeModes={draftSupportedRuntimeModes(
+                                                  activeProviderStatus?.supportedRuntimeModes,
+                                                  multipleModelSelections,
+                                                  providerStatuses,
+                                                )}
+                                                instanceId={draftRuntimeModeLimitsInstance(
+                                                  activeProviderStatus?.instanceId,
+                                                  multipleModelSelections,
+                                                )}
+                                                cwd={gitCwd}
+                                                onRuntimeModeChange={handleRuntimeModeChangeStable}
+                                              />
+                                            ) : null}
+                                          </div>
                                         ),
-                                      })}
+                                      }
+                                    : {})}
                                 />
                               </div>
-                            )}
+                            ) : composerSessionStatus ? (
+                              <ComposerSurface.ContextStrip className="pointer-events-auto justify-end">
+                                {composerSessionStatus}
+                              </ComposerSurface.ContextStrip>
+                            ) : null}
                           </div>
                         </div>
                       </ComposerSurface.Shell>
@@ -4449,6 +4454,7 @@ export default function ChatView(props: ChatViewProps) {
                     sources: serverConfig?.usageLimitSources ?? EMPTY_USAGE_LIMIT_SOURCES,
                     contextWindow: activeContextWindow,
                   }}
+                  composerShowsContext={showComposerContextStrip}
                 />
 
                 <PullRequestThreadDialogHost

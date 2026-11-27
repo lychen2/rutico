@@ -3501,13 +3501,13 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
             />
           ) : null}
           {!isSearchingThreads ? (
-            <div className="flex items-center justify-between px-2 pb-1 text-2xs text-sidebar-muted-foreground">
+            <div className="group/sidebar-section flex items-center justify-between px-2 pb-1 text-2xs text-sidebar-muted-foreground">
               <h2>
                 {categoryPreset === "project"
                   ? gt("Projects")
                   : gt("Categories", { $context: "sidebar section" })}
               </h2>
-              <div className="flex items-center gap-1">
+              <div className="flex items-center gap-1 opacity-100 transition-opacity duration-150 [@media(hover:hover)_and_(pointer:fine)]:opacity-0 [@media(hover:hover)_and_(pointer:fine)]:group-hover/sidebar-section:opacity-100 [@media(hover:hover)_and_(pointer:fine)]:group-focus-within/sidebar-section:opacity-100">
                 {categoryPreset !== "project" ? (
                   <>
                     <SidebarCategorySuggestions
@@ -3688,6 +3688,8 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                     ref={activeThreadRailRef}
                     aria-hidden="true"
                     data-slot="sidebar-active-rail"
+                    className="pointer-events-none absolute top-0 left-0"
+                    style={{ pointerEvents: "none" }}
                   />
                   <ul
                     ref={attachTreeRef}

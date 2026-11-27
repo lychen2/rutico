@@ -45,6 +45,7 @@ interface SharedTooltipContent {
   readonly side?: "top" | "bottom" | "left" | "right";
   readonly align?: "start" | "center" | "end";
   readonly sideOffset?: number;
+  readonly openDelayMs?: number;
   readonly variant?: "default" | "glass" | "code";
   readonly className?: string;
 }
@@ -208,7 +209,7 @@ export function SharedTooltipProvider({ children }: { children: ReactNode }) {
         switchSeq: switchSeqRef.current,
       };
       startVelocityTracking();
-      schedulePendingCommit(OPEN_DELAY_MS);
+      schedulePendingCommit(content.openDelayMs ?? OPEN_DELAY_MS);
     };
     const hover: SharedTooltipApi["hover"] = (anchor, content, onHover) => {
       hovered.current.set(anchor, { content, onHover });
@@ -458,6 +459,7 @@ export function SharedTooltipTrigger({
   side = "top",
   align,
   sideOffset,
+  openDelayMs,
   variant,
   className,
   disabled = false,
@@ -468,6 +470,7 @@ export function SharedTooltipTrigger({
   side?: SharedTooltipContent["side"];
   align?: SharedTooltipContent["align"];
   sideOffset?: SharedTooltipContent["sideOffset"];
+  openDelayMs?: SharedTooltipContent["openDelayMs"];
   variant?: SharedTooltipContent["variant"];
   className?: SharedTooltipContent["className"];
   disabled?: boolean | undefined;
@@ -480,6 +483,7 @@ export function SharedTooltipTrigger({
       side,
       ...(align ? { align } : {}),
       ...(sideOffset === undefined ? {} : { sideOffset }),
+      ...(openDelayMs === undefined ? {} : { openDelayMs }),
       ...(variant ? { variant } : {}),
       ...(className ? { className } : {}),
     },

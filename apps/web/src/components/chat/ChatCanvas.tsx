@@ -171,6 +171,17 @@ export function ChatCanvas({
     detailsCardPlacement: model.detailsCardPlacement,
   };
   const { layout } = context;
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- mirrors computed chat lane insets onto [data-chat-column] so sibling [data-chat-header] aligns with the timeline and composer
+  useLayoutEffect(() => {
+    const column = elementRef.current?.closest<HTMLElement>("[data-chat-column]");
+    if (!column) return;
+    column.style.setProperty("--chat-lane-inset-start", `${layout.chat.insetStart}px`);
+    column.style.setProperty("--chat-lane-inset-end", `${layout.chat.insetEnd}px`);
+    return () => {
+      column.style.removeProperty("--chat-lane-inset-start");
+      column.style.removeProperty("--chat-lane-inset-end");
+    };
+  }, [layout.chat.insetStart, layout.chat.insetEnd]);
   const htmlPreviewLane =
     layout.htmlPreview.width > layout.chat.width
       ? {

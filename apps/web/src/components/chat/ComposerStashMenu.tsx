@@ -207,6 +207,7 @@ export const ComposerStashMenu = memo(function ComposerStashMenu(props: {
               role="presentation"
               data-shared-indicator="stash-menu"
               className="pointer-events-none absolute top-0 left-0 z-0 rounded-sm bg-accent opacity-0 will-change-transform"
+              style={{ pointerEvents: "none" }}
             />
           ) : null}
           {entries.length === 0 ? (

@@ -44,7 +44,7 @@ type DesktopThemeBridge = Pick<DesktopBridge, "setTheme">;
 const STORAGE_KEY = "t3code:theme";
 const MEDIA_QUERY = "(prefers-color-scheme: dark)";
 const DEFAULT_THEME_SNAPSHOT: ThemeSnapshot = {
-  theme: "system",
+  theme: "rutico",
   resolvedTheme: "light",
   systemDark: false,
   followSystem: true,
@@ -183,12 +183,16 @@ function getSystemDark() {
 }
 
 function readStoredFollowSystem(theme: Theme): boolean {
-  if (typeof window === "undefined") return theme === "system";
+  if (typeof window === "undefined") {
+    return theme === "system" || theme === DEFAULT_THEME_SNAPSHOT.theme;
+  }
 
   try {
     const raw = window.localStorage.getItem(THEME_FOLLOW_SYSTEM_STORAGE_KEY);
     if (raw === "true") return true;
     if (raw === "false") return false;
+    const storedTheme = window.localStorage.getItem(STORAGE_KEY);
+    if (storedTheme === null || !isKnownThemePreference(storedTheme)) return true;
   } catch {}
 
   return theme === "system";

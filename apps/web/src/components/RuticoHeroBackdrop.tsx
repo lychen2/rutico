@@ -59,12 +59,12 @@ export function RuticoHeroBackdrop({
         alt=""
         decoding="async"
         className={cn(
-          "h-full w-full object-cover object-right-bottom transition-[opacity,transform] duration-500 ease-(--spring-gentle) motion-reduce:scale-100 motion-reduce:transition-none",
+          "h-full w-full object-cover object-[78%_76%] transition-[opacity,transform] duration-500 ease-(--spring-gentle) motion-reduce:scale-100 motion-reduce:transition-none",
           !loaded
             ? "scale-[1.03] opacity-0"
             : isWorkspace
-              ? "scale-100 opacity-65 contrast-more:opacity-20 dark:opacity-36 dark:saturate-95 dark:contrast-more:opacity-12"
-              : "scale-100 opacity-80 contrast-more:opacity-20 dark:opacity-30 dark:saturate-90 dark:contrast-more:opacity-12",
+              ? "scale-100 opacity-58 contrast-more:opacity-18 dark:opacity-28 dark:brightness-70 dark:contrast-105 dark:saturate-90 dark:contrast-more:opacity-10"
+              : "scale-100 opacity-78 contrast-more:opacity-20 dark:opacity-38 dark:brightness-75 dark:contrast-105 dark:saturate-90 dark:contrast-more:opacity-10",
         )}
       />
       <div

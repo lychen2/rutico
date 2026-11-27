@@ -139,7 +139,7 @@ export function ThreadDetailsCard({
           }
         }}
       >
-        <Tabs.List className="mx-2 mt-2 grid grid-cols-3 gap-1 rounded-lg bg-muted/70 p-1">
+        <Tabs.List className="mx-2 mt-2 grid grid-cols-3 gap-1 border-b border-border/45 pb-1">
           <Tabs.Tab value="artifacts" className={detailTabClass}>
             {gt("Artifacts")}
             {artifactCount}
@@ -266,4 +266,4 @@ export function ThreadDetailsCard({
 }
 
 const detailTabClass =
-  "min-w-0 cursor-pointer truncate rounded-md px-2 py-1 text-xs font-medium text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring data-active:bg-background data-active:text-foreground data-active:shadow-xs";
+  "min-w-0 cursor-pointer truncate rounded-md px-2 py-1 text-xs font-medium text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring data-active:bg-secondary/75 data-active:text-foreground";

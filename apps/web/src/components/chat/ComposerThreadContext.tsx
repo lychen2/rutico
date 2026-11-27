@@ -39,6 +39,7 @@ export function ComposerThreadContext({
   activity,
   contextStatus,
   fallbackTextThread = null,
+  compact = false,
 }: {
   readonly usage: ContextWindowSnapshot | null;
   readonly run: Pick<
@@ -51,6 +52,7 @@ export function ComposerThreadContext({
   readonly activity?: ReturnType<typeof currentRoundActivity> | null;
   readonly contextStatus?: string | undefined;
   readonly fallbackTextThread?: ScopedThreadRef | null;
+  readonly compact?: boolean;
 }) {
   const gt = useGT();
   const locale = useLocale();
@@ -131,7 +133,7 @@ export function ComposerThreadContext({
           : "normal";
 
   return (
-    <div data-session-footer="">
+    <div data-session-footer="" data-compact={compact ? "true" : undefined}>
       <div data-v9-stats-cluster="">
         <Popover>
           <PopoverTrigger render={<button type="button" data-v9-stats-trig="session" />}>
@@ -161,9 +163,11 @@ export function ComposerThreadContext({
               ) : null}
               <span ref={rateRef} />
             </span>
-            <span className="whitespace-nowrap">
-              {gt("Time to first output")} {firstOutput ?? "–"}
-            </span>
+            {!compact || firstOutput !== null ? (
+              <span className="whitespace-nowrap">
+                {gt("Time to first output")} {firstOutput ?? "–"}
+              </span>
+            ) : null}
           </PopoverTrigger>
           <PopoverPopup
             data-session-stats-popup
@@ -269,9 +273,11 @@ export function ComposerThreadContext({
             {total !== null && (
               <span>{gt("{tokens} tokens", { tokens: total.toLocaleString(locale) })}</span>
             )}
-            <span className="whitespace-nowrap">
-              {gt("Cache hit")} {cachePercent === null ? "–" : `${cachePercent}%`}
-            </span>
+            {!compact || cachePercent !== null ? (
+              <span className="whitespace-nowrap">
+                {gt("Cache hit")} {cachePercent === null ? "–" : `${cachePercent}%`}
+              </span>
+            ) : null}
             <span data-context-percent-pill="" className="whitespace-nowrap">
               {gt("Context", { $context: "context window row label" })}{" "}
               {percent === null

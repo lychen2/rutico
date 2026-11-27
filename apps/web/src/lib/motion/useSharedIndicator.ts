@@ -129,6 +129,11 @@ function syncSharedIndicatorElement(
 ): void {
   if (!container || !indicator) return;
 
+  indicator.style.position = "absolute";
+  indicator.style.top = "0px";
+  indicator.style.left = "0px";
+  indicator.style.pointerEvents = "none";
+
   const target =
     config.activeKey === null ? null : measureActiveItem(container, config.activeSelector);
   state.lastActiveKey = config.activeKey;

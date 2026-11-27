@@ -318,8 +318,8 @@ function getIconOption(
 // Canvas surface hexes matching packages/shared/src/themePalettes.ts so cold-start
 // windows match the Rutico palette instead of flashing stark #000000/#ffffff.
 export const DEFAULT_WINDOW_BACKGROUND_COLORS = {
-  dark: "#1a1727",
-  light: "#faf8fd",
+  dark: "#121019",
+  light: "#faf7fd",
 } as const;
 
 const THEME_WINDOW_BACKGROUND_COLORS: Readonly<

@@ -27,6 +27,7 @@ export function ThreadHoverCardTrigger({
   side = "right",
   align = "start",
   sideOffset = 4,
+  openDelayMs = HOVER_CARD_INTENT_DELAY_MS,
   ...props
 }: Omit<ComponentProps<typeof SharedTooltipTrigger>, "label" | "variant" | "className"> & {
   card: ReactNode;
@@ -38,6 +39,7 @@ export function ThreadHoverCardTrigger({
       side={side}
       align={align}
       sideOffset={sideOffset}
+      openDelayMs={openDelayMs}
       variant="glass"
       className={HOVER_CARD_CLASS_NAME}
     />
