@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vite-plus/test";
 
-import { render } from "../../test/render";
+import { fakeTimers, render, stubGlobal } from "../../test/render";
 import { HistorySwipeNavigation } from "./HistorySwipeNavigation";
 
 const navigateHistory = vi.hoisted(() => vi.fn());
@@ -350,5 +350,52 @@ describe("HistorySwipeNavigation", () => {
         window.desktopBridge = originalBridge;
       }
     }
+  });
+
+  it("resets macOS wheel gesture state and clears parallax after a quiet period across consecutive gestures without desktopBridge", async () => {
+    navigateHistory.mockReset();
+    using _platform = vi.spyOn(navigator, "platform", "get").mockReturnValue("MacIntel");
+    using _bridge = stubGlobal("desktopBridge", undefined);
+    using _timers = fakeTimers();
+
+    await using screen = await render(
+      <div data-slot="sidebar-inset" style={{ width: "800px", height: "600px" }}>
+        <div data-testid="mac-canvas" style={{ width: "100px", height: "100px" }} />
+        <HistorySwipeNavigation />
+      </div>,
+    );
+
+    const inset = screen.container.querySelector<HTMLElement>('[data-slot="sidebar-inset"]')!;
+    const canvas = screen.container.querySelector<HTMLElement>('[data-testid="mac-canvas"]')!;
+
+    // 1. Vertical scroll enters ignored state; quiet period must reset it for subsequent gestures.
+    canvas.dispatchEvent(
+      new WheelEvent("wheel", { deltaX: 0, deltaY: 60, bubbles: true, composed: true }),
+    );
+    vi.advanceTimersByTime(200);
+    expect(navigateHistory).not.toHaveBeenCalled();
+
+    // 2. Short horizontal swipe with no zero-delta/momentum tail translates sidebar inset,
+    // then quiet period clears the parallax transform without navigating.
+    canvas.dispatchEvent(
+      new WheelEvent("wheel", { deltaX: -40, deltaY: 0, bubbles: true, composed: true }),
+    );
+    expect(inset.style.transform).toContain("translate3d(");
+    vi.advanceTimersByTime(200);
+    expect(inset.style.transform).toBe("");
+    expect(navigateHistory).not.toHaveBeenCalled();
+
+    // 3. Subsequent full horizontal swipe in the same mount navigates and clears parallax.
+    canvas.dispatchEvent(
+      new WheelEvent("wheel", { deltaX: -65, deltaY: 0, bubbles: true, composed: true }),
+    );
+    canvas.dispatchEvent(
+      new WheelEvent("wheel", { deltaX: -70, deltaY: 0, bubbles: true, composed: true }),
+    );
+    expect(inset.style.transform).toContain("translate3d(");
+    vi.advanceTimersByTime(200);
+    expect(inset.style.transform).toBe("");
+    expect(navigateHistory).toHaveBeenCalledTimes(1);
+    expect(navigateHistory).toHaveBeenLastCalledWith("back");
   });
 });

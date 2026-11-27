@@ -15,6 +15,7 @@ const SWIPE_DOMINANCE_DISTANCE = 30;
 const MOMENTUM_SAMPLE_SIZE = 5;
 
 const LINUX_WHEEL_SWIPE_STORAGE_KEY = "t3code:linux-wheel-history-swipe";
+const MAC_BROWSER_WHEEL_QUIET_TIMEOUT_MS = 140;
 const LINUX_WHEEL_QUIET_TIMEOUT_MS = 110;
 const LINUX_WHEEL_MIN_EVENTS = 3;
 const DISCRETE_NAV_DEDUPE_WINDOW_MS = 100;
@@ -250,6 +251,13 @@ export function HistorySwipeNavigation({
 
     if (isMac) {
       let gesture: SwipeGesture | null = null;
+      let macQuietTimerId: number | null = null;
+      const clearMacQuietTimer = () => {
+        if (macQuietTimerId !== null) {
+          window.clearTimeout(macQuietTimerId);
+          macQuietTimerId = null;
+        }
+      };
       const hideIndicator = () => {
         clearSidebarInsetParallax();
         setSwipe((current) => (current === null ? null : { ...current, tracking: false }));
@@ -262,15 +270,27 @@ export function HistorySwipeNavigation({
         gesture = { kind: "ignored" };
         hideIndicator();
       };
-      // Chromium brackets each trackpad scroll, momentum included, with these.
-      const unsubscribeScrollBegin = window.desktopBridge?.onTrackpadScrollBegin(() => {
+      // Chromium brackets each trackpad scroll, momentum included, with these in Electron.
+      const unsubscribeScrollBegin = window.desktopBridge?.onTrackpadScrollBegin?.(() => {
         if (gesture?.kind === "ignored") gesture = null;
       });
-      const unsubscribeScrollEnd = window.desktopBridge?.onTrackpadScrollEnd(() => {
+      const unsubscribeScrollEnd = window.desktopBridge?.onTrackpadScrollEnd?.(() => {
         if (gesture?.kind === "tracking") release();
         gesture = null;
       });
+      const hasTrackpadScrollPhases =
+        unsubscribeScrollBegin !== undefined && unsubscribeScrollEnd !== undefined;
+      const scheduleMacBrowserQuietReset = () => {
+        if (hasTrackpadScrollPhases) return;
+        clearMacQuietTimer();
+        macQuietTimerId = window.setTimeout(() => {
+          macQuietTimerId = null;
+          if (gesture?.kind === "tracking") release();
+          gesture = null;
+        }, MAC_BROWSER_WHEEL_QUIET_TIMEOUT_MS);
+      };
       const onWheel = (event: WheelEvent) => {
+        scheduleMacBrowserQuietReset();
         if (event.shiftKey) {
           if (gesture?.kind === "tracking") hideIndicator();
           gesture = { kind: "ignored" };
@@ -315,6 +335,7 @@ export function HistorySwipeNavigation({
       window.addEventListener("wheel", onWheel, { capture: true, passive: true });
       return () => {
         clearPulseTimer();
+        clearMacQuietTimer();
         clearSidebarInsetParallax();
         unsubscribeScrollBegin?.();
         unsubscribeScrollEnd?.();
